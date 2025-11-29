@@ -1,0 +1,10 @@
+{
+  "match_id": 7834664,
+  "step": 1,
+  "tool_call": 2,
+  "sql": "SELECT last_x_match_num, ordered_stats FROM team_lastx_stats WHERE team_name = 'Sport Recife' AND country = 'Brazil' AND window_scope = 'LAST_10' ORDER BY last_updated_match_timestamp DESC LIMIT 1;",
+  "params": [],
+  "rowCount": 0,
+  "returned": 0,
+  "rows": []
+}

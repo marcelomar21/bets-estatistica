@@ -1,0 +1,16 @@
+{
+  "match_id": 7834664,
+  "step": 2,
+  "tool_call": 2,
+  "tool_name": "team_lastx_raw",
+  "input": {
+    "team_id": 611,
+    "window_scope": "overall"
+  },
+  "output": {
+    "team_id": 611,
+    "window_scope": "overall",
+    "raw_payload": null,
+    "found": false
+  }
+}
