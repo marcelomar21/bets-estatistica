@@ -10,4 +10,5 @@ yarn-error.log*
 *.db
 coverage/
 dist/
-data/json/
+data/
+
