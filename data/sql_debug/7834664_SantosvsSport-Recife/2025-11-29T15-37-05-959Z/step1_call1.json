@@ -1,11 +1,15 @@
 {
   "match_id": 7834664,
-  "step": 2,
-  "tool_call": 2,
+  "step": 1,
+  "tool_call": 1,
   "tool_name": "match_detail_raw",
   "input": {
     "match_id": 7834664
   },
+  "sql_executed": "SELECT raw_payload FROM stats_match_details WHERE match_id = $1 LIMIT 1;",
+  "sql_params": [
+    7834664
+  ],
   "output": {
     "match_id": 7834664,
     "raw_payload": {
@@ -999,6 +1003,10 @@
         "request_reset_message": "Request limit is refreshed every hour."
       }
     },
-    "found": true
+    "found": true,
+    "executed_sql": "SELECT raw_payload FROM stats_match_details WHERE match_id = $1 LIMIT 1;",
+    "executed_params": [
+      7834664
+    ]
   }
 }

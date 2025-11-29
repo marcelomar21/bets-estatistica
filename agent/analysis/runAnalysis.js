@@ -278,6 +278,13 @@ const formatDate = (value) => {
       }).format(date);
 };
 
+const sanitizeDirName = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .slice(0, 40);
+
 const buildContextText = (matchRow, detailStats, homeLastxSummary, awayLastxSummary) => {
   const lines = [];
   lines.push(
@@ -288,6 +295,9 @@ const buildContextText = (matchRow, detailStats, homeLastxSummary, awayLastxSumm
     `Partida: ${matchRow.home_team_name} x ${matchRow.away_team_name} em ${formatDate(
       matchRow.kickoff_time,
     )} (match_id=${matchRow.match_id})`,
+  );
+  lines.push(
+    `Identificadores dos times: ${matchRow.home_team_name} (team_id=${matchRow.home_team_id}) | ${matchRow.away_team_name} (team_id=${matchRow.away_team_id}).`,
   );
   lines.push(
     `Status/placar atual: ${matchRow.status || 'pendente'} | ${matchRow.home_score ?? '-'}-${matchRow.away_score ??
@@ -407,7 +417,7 @@ const TOOL_NAMES = {
   LASTX: 'team_lastx_raw',
 };
 
-const runAgent = async ({ matchId, contextoJogo }) => {
+const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
   const prompt = ChatPromptTemplate.fromMessages([
     ['system', systemPrompt],
     ['human', humanTemplate],
@@ -433,15 +443,15 @@ const runAgent = async ({ matchId, contextoJogo }) => {
     contexto_jogo: contextoJogo,
   });
 
-const conversation = [...baseMessages];
+  const conversation = [...baseMessages];
   const toolExecutions = [];
   let finalMessage = null;
   let hasSuccessfulToolCall = false;
-let usedMatchDetailTool = false;
-let usedLastxTool = false;
-const captureToolError = (err) => {
-  return err instanceof Error ? err.message : String(err);
-};
+  let usedMatchDetailTool = false;
+  let usedLastxTool = false;
+  const captureToolError = (err) => {
+    return err instanceof Error ? err.message : String(err);
+  };
 
   for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
     infoLog(`Passo ${step + 1}: solicitando resposta do modelo (mensagens=${conversation.length}).`);
@@ -526,7 +536,15 @@ const captureToolError = (err) => {
         continue;
       }
       const dumpIndex = toolExecutions.length + 1;
-      const dumpPath = path.join(SQL_DUMPS_DIR, String(matchId), `step${step + 1}_call${dumpIndex}.json`);
+      const timestampLabel = new Date().toISOString().replace(/[:.]/g, '-');
+      const dumpDir = path.join(
+        SQL_DUMPS_DIR,
+        `${String(matchId)}_${sanitizeDirName(matchRow.home_team_name)}vs${sanitizeDirName(
+          matchRow.away_team_name,
+        )}`,
+        timestampLabel,
+      );
+      const dumpPath = path.join(dumpDir, `step${step + 1}_call${dumpIndex}.json`);
       try {
         await fs.ensureDir(path.dirname(dumpPath));
       } catch {}
@@ -540,6 +558,8 @@ const captureToolError = (err) => {
             tool_call: dumpIndex,
             tool_name: call.name,
             input: args,
+            sql_executed: parsed.executed_sql ?? null,
+            sql_params: parsed.executed_params ?? null,
             output: parsed,
           },
           { spaces: 2 },
@@ -605,7 +625,7 @@ async function main() {
   const awayLastxSummary = extractLastXStats(awayLastxRaw);
 
   const contextoJogo = buildContextText(matchRow, detailSummary, homeLastxSummary, awayLastxSummary);
-  const agentResult = await runAgent({ matchId, contextoJogo });
+  const agentResult = await runAgent({ matchId, contextoJogo, matchRow });
   const toolOutputsText = buildToolOutputText(agentResult.toolExecutions);
   const persistedContextText = toolOutputsText
     ? `${contextoJogo}\n\n==== Saídas de ferramentas durante a execução ====\n${toolOutputsText}`
