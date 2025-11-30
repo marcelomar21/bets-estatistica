@@ -181,9 +181,7 @@ const renderHtmlReport = (payload) => {
         max-width: 900px;
         margin: 0 auto;
         background: #ffffff;
-        border-radius: 16px;
-        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.1);
-        padding: 36px 42px 36px;
+        padding: 36px 42px 12px;
         display: flex;
         flex-direction: column;
         gap: 28px;
