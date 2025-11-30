@@ -54,7 +54,7 @@ const generatePdfFromHtml = async (html, outputPath, overrides = {}) => {
     await page.emulateMediaType('screen');
 
     const contentHeight = await getContentHeight(page);
-    const boundedHeight = Math.min(contentHeight + 20, 40000);
+    const boundedHeight = Math.min(Math.max(contentHeight, 600), 40000);
     const pdfOptions = {
       path: targetPath,
       width: overrides.width || '900px',
