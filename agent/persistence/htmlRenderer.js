@@ -39,11 +39,6 @@ const formatConfidence = (value) => {
   return `${(value * 100).toFixed(1)}%`;
 };
 
-const formatScore = (matchRow = {}) => {
-  const formatSide = (score) => (Number.isFinite(score) ? score : '-');
-  return `${formatSide(matchRow.home_score)} x ${formatSide(matchRow.away_score)}`;
-};
-
 const paragraphsFromText = (text) => {
   if (!text) return '<p>Sem análise disponível.</p>';
   return text
@@ -59,8 +54,6 @@ const renderContextSection = (matchRow = {}, detailSummary = null) => {
     { label: 'Competição', value: matchRow.competition_name || matchRow.league_name },
     { label: 'País', value: matchRow.country },
     { label: 'Data/Hora', value: formatDateTime(matchRow.kickoff_time) },
-    { label: 'Status', value: matchRow.status || 'Pendente' },
-    { label: 'Placar', value: formatScore(matchRow) },
     { label: 'Estádio', value: detailSummary?.stadium || matchRow.venue },
     { label: 'Localização', value: detailSummary?.location },
   ].filter((item) => item.value);
@@ -190,7 +183,7 @@ const renderHtmlReport = (payload) => {
         background: #ffffff;
         border-radius: 16px;
         box-shadow: 0 20px 40px rgba(15, 23, 42, 0.1);
-        padding: 36px 42px 60px;
+        padding: 36px 42px 36px;
         display: flex;
         flex-direction: column;
         gap: 28px;
