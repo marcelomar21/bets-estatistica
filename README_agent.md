@@ -22,25 +22,42 @@ npm install
 - `agent/analysis/prompt.js`: prompt PT-BR base.
 - `agent/persistence/generateMarkdown.js`: monta o texto final.
 - `agent/persistence/saveOutputs.js`: escreve Markdown e insere em `game_analysis`/`suggested_bets`.
-- `agent/persistence/main.js`: CLI do processo 2.
+- `agent/persistence/reportUtils.js`: helpers de caminhos, leitura do JSON intermediário e validações.
+- `agent/persistence/htmlRenderer.js`: converte o payload em HTML pronto para PDF.
+- `agent/persistence/pdfGenerator.js`: usa Puppeteer para renderizar o HTML.
+- `agent/persistence/reportService.js`: orquestra geração de HTML/PDF para um `match_id`.
+- `agent/persistence/generateReport.js`: CLI para gerar relatório pontual.
+- `agent/persistence/generateMissingReports.js`: CLI que percorre os intermediários e gera apenas os relatórios ausentes.
+- `agent/persistence/main.js`: CLI do processo 2 (Markdown + banco).
 - `data/analises_intermediarias/`: saídas JSON.
 - `data/analises_finais/`: arquivos Markdown finais.
+- `data/relatorios/`: HTML e PDFs prontos para distribuição.
 
 ## Pipeline diário
 1. `node scripts/daily_update.js` – garante dados atualizados nas tabelas de suporte.
 2. `node agent/analysis/runAnalysis.js <match_id>` – gera `data/analises_intermediarias/<match_id>.json`.
 3. `node agent/persistence/main.js <match_id>` – produz o Markdown final e atualiza Postgres.
+4. `node agent/persistence/generateMissingReports.js` – cria HTML/PDF somente para os JSON intermediários que ainda não possuem saída em `data/relatorios/`.
 
 ## Execução manual (exemplo com match_id 7834664)
 ```bash
 node agent/analysis/runAnalysis.js 7834664
 node agent/persistence/main.js 7834664
+node agent/persistence/generateMissingReports.js 7834664
 ```
 
-Após o segundo comando, verifique:
+Após o pipeline:
 - `data/analises_intermediarias/7834664.json`
 - `data/analises_finais/<campeonato>_<home>vs<away>_<data>.md`
+- `data/relatorios/<campeonato>_<home>vs<away>_<data>_match7834664.(html|pdf)`
 - Linhas em `game_analysis` e `suggested_bets`.
+
+## Relatórios HTML/PDF
+- `node agent/persistence/generateMissingReports.js [match_id]` lê `data/analises_intermediarias/`, ignora os que já possuem PDF correspondente e gera apenas os pendentes. Informe um `match_id` para limitar a execução a um único jogo.
+- `node agent/persistence/generateReport.js <match_id>` continua disponível para regenerações manuais caso precise forçar um único relatório.
+- Variáveis úteis:
+  - `PUPPETEER_EXECUTABLE_PATH` (ou `CHROMIUM_PATH`) para apontar o binário do Chromium/Chrome existente.
+  - `PUPPETEER_DISABLE_SANDBOX=true` caso rode em ambientes que exigem `--no-sandbox`.
 
 ## Dicas e resolução de problemas
 - Caso o agente solicite SQL adicionais, os logs mostrarão `pg_select_reader`.

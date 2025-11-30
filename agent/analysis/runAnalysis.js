@@ -662,6 +662,7 @@ async function main() {
   const outputFile = path.join(INTERMEDIATE_DIR, `${matchId}.json`);
   await fs.writeJson(outputFile, payload, { spaces: 2 });
   console.log(`Análise estruturada salva em ${outputFile}`);
+
 }
 
 main()

@@ -3,27 +3,7 @@ const fs = require('fs-extra');
 
 const { generateMarkdown } = require('./generateMarkdown');
 const { getPool } = require('../db');
-
-const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
-const FINAL_DIR = path.join(__dirname, '../../data/analises_finais');
-
-const slugify = (value) => {
-  if (!value) return 'na';
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-};
-
-const formatDateSlug = (value) => {
-  const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) {
-    return 'data';
-  }
-  return date.toISOString().slice(0, 10).replace(/-/g, '');
-};
+const { FINAL_DIR, loadAnalysisPayload, slugify, formatDateSlug } = require('./reportUtils');
 
 const normalizeOdds = (value) => {
   if (value === null || value === undefined || value === '') return null;
@@ -40,8 +20,6 @@ const collectBets = (output) => {
   }));
   return [...safe, ...opportunities];
 };
-
-const getIntermediatePath = (matchId) => path.join(INTERMEDIATE_DIR, `${matchId}.json`);
 
 const deriveFinalPath = (payload) => {
   const match = payload.context?.match_row || {};
@@ -99,13 +77,7 @@ const persistInDatabase = async (matchId, markdown, payload, bets) => {
 };
 
 const saveOutputs = async (matchId) => {
-  const filePath = getIntermediatePath(matchId);
-  const exists = await fs.pathExists(filePath);
-  if (!exists) {
-    throw new Error(`Arquivo intermediário não encontrado: ${filePath}`);
-  }
-
-  const payload = await fs.readJson(filePath);
+  const { payload } = await loadAnalysisPayload(matchId);
   const markdown = generateMarkdown(payload);
   await fs.ensureDir(FINAL_DIR);
   const finalPath = deriveFinalPath(payload);
