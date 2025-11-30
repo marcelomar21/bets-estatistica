@@ -4,6 +4,7 @@ const path = require('path');
 const { Pool } = require('pg');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'json', 'league-matches');
+const SEASON_IDS_ARG = '--season-ids';
 
 if (!fs.existsSync(DATA_DIR)) {
   console.error(`Diretório ${DATA_DIR} não encontrado. Rode o fetch antes de carregar os dados.`);
@@ -18,6 +19,24 @@ const pool = new Pool({
   password: process.env.PGPASSWORD || 'bets_pass_123',
   ssl: false,
 });
+
+const parseSeasonIdsArg = () => {
+  const arg = process.argv.find((token) => token.startsWith(`${SEASON_IDS_ARG}=`));
+  const envValue = process.env.SEASON_IDS;
+  const raw = arg ? arg.substring(SEASON_IDS_ARG.length + 1) : envValue;
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => Number(entry))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
+
+const seasonIdsFilter = parseSeasonIdsArg();
 
 function toTimestamp(dateUnix) {
   if (!dateUnix || Number.isNaN(dateUnix)) {
@@ -117,21 +136,40 @@ async function loadFile(filePath) {
 async function main() {
   const files = fs
     .readdirSync(DATA_DIR)
-    .filter((file) => file.startsWith('season-') && file.endsWith('.json'))
+    .filter((file) => /^season-\d+\.json$/.test(file))
     .sort();
 
-  if (!files.length) {
-    console.log('Nenhum arquivo season-*.json encontrado em league-matches.');
+  const targetFiles = files.filter((file) => {
+    if (!seasonIdsFilter.length) {
+      return true;
+    }
+    const match = file.match(/^season-(\d+)\.json$/);
+    if (!match) {
+      return false;
+    }
+    const id = Number(match[1]);
+    return seasonIdsFilter.includes(id);
+  });
+
+  if (!targetFiles.length) {
+    const label = seasonIdsFilter.length
+      ? `season-{${seasonIdsFilter.join(',')}}.json`
+      : 'season-*.json';
+    console.log(`Nenhum arquivo ${label} encontrado em league-matches.`);
+    await pool.end();
     return;
   }
 
   let total = 0;
-  for (const file of files) {
+  for (const file of targetFiles) {
     const filePath = path.join(DATA_DIR, file);
     total += await loadFile(filePath);
   }
 
-  console.log(`Importação de partidas concluída. ${total} registros processados.`);
+  const scopeLabel = seasonIdsFilter.length
+    ? `filtrado (${seasonIdsFilter.join(', ')})`
+    : 'completos';
+  console.log(`Importação de partidas ${scopeLabel} concluída. ${total} registros processados.`);
   await pool.end();
 }
 

@@ -8,6 +8,7 @@ const { Pool } = require('pg');
 const OUTPUT_DIR = path.join(__dirname, '..', 'data', 'json', 'league-matches');
 const BASE_URL = 'https://api.football-data-api.com/league-matches';
 const API_KEY = process.env.api_key;
+const SEASON_IDS_ARG = '--season-ids';
 
 if (!API_KEY) {
   console.error('api_key não encontrado no .env');
@@ -28,6 +29,22 @@ const pool = new Pool({
   password: process.env.PGPASSWORD || 'bets_pass_123',
   ssl: false,
 });
+
+const parseSeasonIdsArg = () => {
+  const arg = process.argv.find((token) => token.startsWith(`${SEASON_IDS_ARG}=`));
+  const envValue = process.env.SEASON_IDS;
+  const raw = arg ? arg.substring(SEASON_IDS_ARG.length + 1) : envValue;
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => Number(entry))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
 
 async function fetchSeasonIds() {
   const query = `
@@ -92,10 +109,31 @@ async function fetchSeasonMatches(seasonId, label) {
 }
 
 async function main() {
-  const seasons = await fetchSeasonIds();
+  const seasonIdsFilter = parseSeasonIdsArg();
+  let seasons;
+  if (seasonIdsFilter.length) {
+    const { rows } = await pool.query(
+      `
+        SELECT season_id, display_name
+          FROM league_seasons
+         WHERE season_id = ANY($1::int[])
+      `,
+      [seasonIdsFilter],
+    );
+    const missing = seasonIdsFilter.filter(
+      (id) => !rows.some((season) => season.season_id === id),
+    );
+    if (missing.length) {
+      console.warn(`Season IDs não encontrados na tabela league_seasons: ${missing.join(', ')}`);
+    }
+    seasons = rows;
+  } else {
+    seasons = await fetchSeasonIds();
+  }
 
   if (!seasons.length) {
-    console.log('Nenhuma temporada ativa encontrada para 2025.');
+    console.log('Nenhuma temporada disponível para download.');
+    await pool.end();
     return;
   }
 

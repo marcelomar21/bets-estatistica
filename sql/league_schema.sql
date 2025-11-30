@@ -178,3 +178,30 @@ CREATE TABLE IF NOT EXISTS team_lastx_stats (
 
 CREATE INDEX IF NOT EXISTS idx_team_lastx_team
     ON team_lastx_stats (team_id);
+
+CREATE OR REPLACE FUNCTION fn_sync_stats_match_details()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE stats_match_details
+       SET home_score = NEW.home_score,
+           away_score = NEW.away_score,
+           status = NEW.status,
+           updated_at = NOW()
+     WHERE match_id = NEW.match_id;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_sync_stats_match_details ON league_matches;
+
+CREATE TRIGGER trg_sync_stats_match_details
+AFTER UPDATE OF home_score, away_score, status
+ON league_matches
+FOR EACH ROW
+WHEN (
+    (OLD.home_score IS DISTINCT FROM NEW.home_score) OR
+    (OLD.away_score IS DISTINCT FROM NEW.away_score) OR
+    (OLD.status IS DISTINCT FROM NEW.status)
+)
+EXECUTE FUNCTION fn_sync_stats_match_details();

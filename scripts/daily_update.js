@@ -1,6 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const axios = require('axios');
 const https = require('https');
 const { Pool } = require('pg');
@@ -16,8 +17,12 @@ const MATCH_DETAILS_DIR = path.join(DATA_DIR, 'match-details');
 const LASTX_DIR = path.join(DATA_DIR, 'lastx');
 const UPCOMING_DIR = path.join(DATA_DIR, 'upcoming-matches');
 const ANALYZED_DIR = path.join(DATA_DIR, 'jogos-analisados');
+const MAX_PENDING_MATCHES = Number(process.env.MAX_PENDING_MATCHES ?? 50);
+const REPO_ROOT = path.join(__dirname, '..');
+const FETCH_LEAGUE_SCRIPT = path.join(__dirname, 'fetchLeagueMatches.js');
+const LOAD_LEAGUE_SCRIPT = path.join(__dirname, 'loadLeagueMatches.js');
 
-const FRESHNESS_WINDOW_HOURS = 48;
+const FRESHNESS_WINDOW_HOURS = 24;
 const FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
 
 [MATCH_DETAILS_DIR, LASTX_DIR, UPCOMING_DIR, ANALYZED_DIR].forEach((dir) => {
@@ -349,6 +354,72 @@ const saveAnalysisFile = (range, records) => {
   console.log(`Relatório de jogos analisados salvo em ${filePath}`);
 };
 
+const getPendingLeagueMatches = async (limit = MAX_PENDING_MATCHES) => {
+  if (!limit || limit <= 0) {
+    return [];
+  }
+
+  const query = `
+    SELECT match_id, season_id, kickoff_time, status
+      FROM league_matches
+     WHERE kickoff_time IS NOT NULL
+       AND kickoff_time <= NOW()
+       AND (status IS NULL OR LOWER(status) <> 'complete')
+     ORDER BY kickoff_time ASC
+     LIMIT $1;
+  `;
+
+  const { rows } = await pool.query(query, [limit]);
+  return rows;
+};
+
+const runNodeScript = (scriptPath, args = []) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [scriptPath, ...args], {
+      cwd: REPO_ROOT,
+      env: process.env,
+      stdio: 'inherit',
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`Script ${path.basename(scriptPath)} finalizou com código ${code}`));
+    });
+
+    child.on('error', reject);
+  });
+
+const syncPendingLeagueMatches = async () => {
+  const pending = await getPendingLeagueMatches(MAX_PENDING_MATCHES);
+  if (!pending.length) {
+    console.log('Nenhuma partida pendente em league_matches para atualização.');
+    return;
+  }
+
+  const seasonIds = Array.from(
+    new Set(pending.map((item) => item.season_id).filter((value) => Number.isInteger(value))),
+  );
+
+  if (!seasonIds.length) {
+    console.warn('Partidas pendentes encontradas, mas nenhum season_id válido foi identificado.');
+    return;
+  }
+
+  console.log(
+    `Sincronizando ${seasonIds.length} temporadas (${pending.length} partidas) via fetch/load league matches...`,
+  );
+  if (pending.length === MAX_PENDING_MATCHES) {
+    console.log(`  ↳ Atenção: limite de ${MAX_PENDING_MATCHES} partidas pendentes atingido.`);
+  }
+
+  const args = [`--season-ids=${seasonIds.join(',')}`];
+  await runNodeScript(FETCH_LEAGUE_SCRIPT, args);
+  await runNodeScript(LOAD_LEAGUE_SCRIPT, args);
+};
+
 const isMatchDetailFresh = async (matchId) => {
   const query = `
     SELECT 1
@@ -585,6 +656,7 @@ const processTeam = async (teamId, processedTeams) => {
 };
 
 async function main() {
+  await syncPendingLeagueMatches();
   const range = getRollingRange(FRESHNESS_WINDOW_HOURS);
   console.log(`Buscando partidas entre ${range.startISO} e ${range.endISO} (unix ${range.startUnix}..${range.endUnix})`);
 
