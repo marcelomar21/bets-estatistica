@@ -35,7 +35,7 @@ npm install
 
 ## Pipeline diário
 1. `node scripts/daily_update.js` – garante dados atualizados nas tabelas de suporte.
-2. `node agent/analysis/runAnalysis.js <match_id>` – gera `data/analises_intermediarias/<match_id>.json`.
+2. `node agent/analysis/runAnalysis.js <match_id>` – gera `data/analises_intermediarias/<match_id>.json`. Use `node agent/analysis/runAnalysis.js today` para rodar todos os jogos do dia corrente com status `incomplete`.
 3. `node agent/persistence/main.js <match_id>` – produz o Markdown final e atualiza Postgres.
 4. `node agent/persistence/generateMissingReports.js` – cria HTML/PDF somente para os JSON intermediários que ainda não possuem saída em `data/relatorios/`.
 
@@ -44,6 +44,7 @@ npm install
 node agent/analysis/runAnalysis.js 7834664
 node agent/persistence/main.js 7834664
 node agent/persistence/generateMissingReports.js 7834664
+node agent/analysis/runAnalysis.js today # executa para todos os jogos do dia atual que ainda estão 'incomplete'
 ```
 
 Após o pipeline:

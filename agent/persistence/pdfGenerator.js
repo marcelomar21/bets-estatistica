@@ -24,16 +24,19 @@ const buildLaunchOptions = () => {
   return options;
 };
 
-const DEFAULT_PDF_OPTIONS = {
-  format: 'A4',
-  margin: {
-    top: '16mm',
-    right: '16mm',
-    bottom: '20mm',
-    left: '16mm',
-  },
-  printBackground: true,
-  preferCSSPageSize: true,
+const getContentHeight = async (page) => {
+  const height = await page.evaluate(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    return Math.max(
+      body.scrollHeight,
+      body.offsetHeight,
+      html.clientHeight,
+      html.scrollHeight,
+      html.offsetHeight,
+    );
+  });
+  return Math.ceil(height);
 };
 
 const generatePdfFromHtml = async (html, outputPath, overrides = {}) => {
@@ -49,15 +52,23 @@ const generatePdfFromHtml = async (html, outputPath, overrides = {}) => {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
     await page.emulateMediaType('screen');
-    await page.pdf({
+
+    const contentHeight = await getContentHeight(page);
+    const boundedHeight = Math.min(Math.max(contentHeight + 40, 1200), 40000);
+    const pdfOptions = {
       path: targetPath,
-      ...DEFAULT_PDF_OPTIONS,
-      ...overrides,
-      margin: {
-        ...DEFAULT_PDF_OPTIONS.margin,
-        ...(overrides.margin || {}),
-      },
+      width: overrides.width || '900px',
+      height: overrides.height || `${boundedHeight}px`,
+      printBackground: true,
+      preferCSSPageSize: false,
+      ...(overrides || {}),
+    };
+    await page.setViewport({
+      width: Number.parseInt(pdfOptions.width, 10) || 1024,
+      height: Math.min(boundedHeight, 16384),
+      deviceScaleFactor: 2,
     });
+    await page.pdf(pdfOptions);
     return targetPath;
   } finally {
     await browser.close();

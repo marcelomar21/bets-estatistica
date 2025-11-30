@@ -1,3 +1,5 @@
+const { extractSections } = require('./analysisParser');
+
 const escapeHtml = (value = '') =>
   String(value)
     .replace(/&/g, '&amp;')
@@ -84,33 +86,30 @@ const renderContextSection = (matchRow = {}, detailSummary = null) => {
   </section>`;
 };
 
-const renderBetCard = (bet) => {
-  const fields = [
-    { label: 'Mercado', value: bet.mercado },
-    { label: 'Pick', value: bet.pick },
-    { label: 'Odds', value: formatOdds(bet.odds) },
-    { label: 'Confiança', value: formatConfidence(bet.confianca) },
-    { label: 'Risco', value: bet.risco },
-  ].filter((field) => field.value !== undefined && field.value !== null && field.value !== '');
-
-  const detailsHtml = fields
-    .map(
-      (field) =>
-        `<div class="bet-field"><span class="label">${escapeHtml(field.label)}</span><span class="value">${escapeHtml(
-          field.value,
-        )}</span></div>`,
-    )
-    .join('');
-
-  const reasoning = bet.justificativa
-    ? `<p class="bet-reasoning">${escapeHtml(bet.justificativa)}</p>`
-    : '';
-
-  return `<article class="bet-card">
-    ${detailsHtml}
-    ${reasoning}
-  </article>`;
-};
+const normalizeLegacyBets = (bets = []) =>
+  bets
+    .map((bet, index) => {
+      if (!bet || typeof bet !== 'object') return null;
+      const title =
+        bet.titulo ||
+        bet.title ||
+        bet.mercado ||
+        bet.pick ||
+        `Sugestão ${index + 1}`;
+      const reasoning =
+        bet.justificativa ||
+        bet.reasoning ||
+        bet.descricao ||
+        bet.motivo ||
+        null;
+      if (!title || !reasoning) return null;
+      return {
+        index: bet.index ?? index + 1,
+        title: title.trim(),
+        reasoning: reasoning.trim(),
+      };
+    })
+    .filter(Boolean);
 
 const renderBetSection = (title, bets = []) => {
   if (!Array.isArray(bets) || bets.length === 0) {
@@ -120,20 +119,44 @@ const renderBetSection = (title, bets = []) => {
     </section>`;
   }
 
+  const listItems = bets
+    .map(
+      (bet, idx) => `<li class="bet-item">
+        <div class="bet-index">${escapeHtml(String(bet.index ?? idx + 1))}</div>
+        <div class="bet-content">
+          <p class="bet-title">${escapeHtml(bet.title)}</p>
+          <p class="bet-reasoning">${escapeHtml(bet.reasoning)}</p>
+        </div>
+      </li>`,
+    )
+    .join('\n');
+
   return `<section class="bets">
     <h2>${escapeHtml(title)}</h2>
-    <div class="bet-grid">
-      ${bets.map(renderBetCard).join('\n')}
-    </div>
+    <ol class="bet-list">
+      ${listItems}
+    </ol>
   </section>`;
 };
 
 const renderHtmlReport = (payload) => {
   const match = payload.context?.match_row || {};
   const detailSummary = payload.context?.detail_summary || null;
-  const safeBets = payload.output?.apostas_seguras || [];
-  const opportunityBets = payload.output?.oportunidades || [];
-  const analysisHtml = paragraphsFromText(payload.output?.analise_texto);
+  const {
+    analysis: parsedAnalysis,
+    safe: parsedSafe,
+    opportunities: parsedOpp,
+  } = extractSections(payload.output?.analise_texto || '');
+
+  const safeBets =
+    parsedSafe.length > 0
+      ? parsedSafe
+      : normalizeLegacyBets(payload.output?.apostas_seguras);
+  const opportunityBets =
+    parsedOpp.length > 0
+      ? parsedOpp
+      : normalizeLegacyBets(payload.output?.oportunidades);
+  const analysisHtml = paragraphsFromText(parsedAnalysis || payload.output?.analise_texto);
 
   const title = `${match.home_team_name || 'Time da casa'} x ${match.away_team_name || 'Time visitante'}`;
   const competition = match.competition_name || match.league_name || 'Competição indefinida';
@@ -145,14 +168,21 @@ const renderHtmlReport = (payload) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(title)} – ${escapeHtml(competition)}</title>
     <style>
+      @page {
+        size: auto;
+        margin: 0;
+      }
       :root {
         font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
         color: #0f172a;
         background: #f8fafc;
       }
+      html,
       body {
         margin: 0;
-        padding: 32px;
+        padding: 0;
+        min-height: 100%;
+        background: #ffffff;
       }
       .report {
         max-width: 900px;
@@ -160,7 +190,11 @@ const renderHtmlReport = (payload) => {
         background: #ffffff;
         border-radius: 16px;
         box-shadow: 0 20px 40px rgba(15, 23, 42, 0.1);
-        padding: 48px;
+        padding: 36px 42px 60px;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+        page-break-inside: avoid;
       }
       header h1 {
         font-size: 2.4rem;
@@ -171,9 +205,6 @@ const renderHtmlReport = (payload) => {
         margin: 0;
         color: #475569;
         font-size: 1.05rem;
-      }
-      section {
-        margin-top: 32px;
       }
       .context .info-grid {
         display: grid;
@@ -201,51 +232,64 @@ const renderHtmlReport = (payload) => {
         line-height: 1.6;
         color: #1e293b;
         margin-bottom: 1.2em;
+        font-style: italic;
       }
       .bets h2 {
-        margin-bottom: 12px;
+        margin-bottom: 16px;
       }
-      .bet-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      .bet-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .bet-item {
+        display: flex;
         gap: 16px;
-      }
-      .bet-card {
+        padding: 16px;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
-        padding: 16px;
         background: #fff;
+        page-break-inside: avoid;
       }
-      .bet-field {
+      .bet-index {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #0f172a;
+        color: #fff;
         display: flex;
-        justify-content: space-between;
-        font-size: 0.9rem;
-        margin-bottom: 6px;
-      }
-      .bet-field .label {
+        align-items: center;
+        justify-content: center;
         font-weight: 600;
-        color: #475569;
+        flex-shrink: 0;
       }
-      .bet-field .value {
+      .bet-title {
+        font-weight: 600;
+        margin: 0 0 6px;
         color: #0f172a;
       }
       .bet-reasoning {
-        font-size: 0.9rem;
-        color: #0f172a;
-        margin-top: 12px;
+        margin: 0;
+        color: #1e293b;
       }
       .empty {
         color: #94a3b8;
         font-style: italic;
       }
       @media print {
+        * {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
         body {
           background: #fff;
-          padding: 0;
         }
         .report {
           box-shadow: none;
-          padding: 24px 32px;
+          border-radius: 0;
         }
       }
     </style>

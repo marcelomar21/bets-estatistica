@@ -199,18 +199,79 @@ const exitWithError = (message) => {
   process.exitCode = 1;
 };
 
-const parseMatchId = () => {
-  const matchIdArg = process.argv[2];
-  if (!matchIdArg) {
-    exitWithError('Uso: node agent/analysis/runAnalysis.js <match_id>');
-    process.exit(1);
-  }
-  const matchId = Number(matchIdArg);
+const TODAY_ALIASES = new Set(['today', '--today', '-t']);
+
+const usage = () =>
+  'Uso: node agent/analysis/runAnalysis.js <match_id | match_id,match_id | today>';
+
+const parseMatchIdValue = (value) => {
+  const matchId = Number(value);
   if (!Number.isInteger(matchId) || matchId <= 0) {
-    exitWithError('match_id deve ser um inteiro positivo.');
-    process.exit(1);
+    throw new Error('match_id deve ser um inteiro positivo.');
   }
   return matchId;
+};
+
+const fetchTodayMatches = async () => {
+  const query = `
+    SELECT lm.match_id,
+           lm.home_team_name,
+           lm.away_team_name,
+           lm.kickoff_time,
+           lm.status,
+           ls.display_name AS competition_name,
+           ls.country
+      FROM league_matches lm
+      LEFT JOIN league_seasons ls ON lm.season_id = ls.season_id
+     WHERE (lm.kickoff_time AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+       AND COALESCE(LOWER(lm.status), 'incomplete') = 'incomplete'
+     ORDER BY lm.kickoff_time;
+  `;
+  const { rows } = await runQuery(query);
+  return rows;
+};
+
+const describeMatchForLog = (match) =>
+  `${match.match_id} – ${match.home_team_name} x ${match.away_team_name} (${formatDate(
+    match.kickoff_time,
+  )}) [${match.status || 'pendente'}]`;
+
+const resolveMatchTargets = async () => {
+  const rawArg = process.argv[2];
+  if (!rawArg) {
+    exitWithError(usage());
+    process.exit(1);
+  }
+
+  const normalized = rawArg.trim();
+  if (TODAY_ALIASES.has(normalized.toLowerCase())) {
+    const matches = await fetchTodayMatches();
+    if (!matches.length) {
+      exitWithError('Nenhum jogo encontrado para hoje na tabela league_matches.');
+      process.exit(1);
+    }
+    infoLog(
+      `[alias today] Encontrados ${matches.length} jogo(s):\n${matches
+        .map((match) => `- ${describeMatchForLog(match)}`)
+        .join('\n')}`,
+    );
+    return matches.map((match) => Number(match.match_id));
+  }
+
+  const tokens = normalized.split(',').map((token) => token.trim()).filter(Boolean);
+  if (!tokens.length) {
+    exitWithError(usage());
+    process.exit(1);
+  }
+
+  let parsed;
+  try {
+    parsed = [...new Set(tokens.map(parseMatchIdValue))];
+  } catch (err) {
+    exitWithError(err.message);
+    process.exit(1);
+  }
+  return parsed;
 };
 
 const fetchMatchRow = async (matchId) => {
@@ -605,8 +666,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
   };
 };
 
-async function main() {
-  const matchId = parseMatchId();
+const processMatch = async (matchId) => {
   await fs.ensureDir(INTERMEDIATE_DIR);
 
   const matchRow = await fetchMatchRow(matchId);
@@ -662,7 +722,20 @@ async function main() {
   const outputFile = path.join(INTERMEDIATE_DIR, `${matchId}.json`);
   await fs.writeJson(outputFile, payload, { spaces: 2 });
   console.log(`Análise estruturada salva em ${outputFile}`);
+};
 
+async function main() {
+  const matchIds = await resolveMatchTargets();
+  for (let index = 0; index < matchIds.length; index += 1) {
+    const matchId = matchIds[index];
+    infoLog(`Iniciando análise ${index + 1}/${matchIds.length} para match_id ${matchId}.`);
+    try {
+      await processMatch(matchId);
+    } catch (err) {
+      console.error(`[agent][analysis] Falha ao processar match ${matchId}: ${err.message}`);
+      process.exitCode = 1;
+    }
+  }
 }
 
 main()
