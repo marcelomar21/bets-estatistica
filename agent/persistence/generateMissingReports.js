@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const fs = require('fs-extra');
 
-const { loadAnalysisPayload, resolveReportPaths, INTERMEDIATE_DIR } = require('./reportUtils');
+const { resolveReportPaths, listIntermediatePayloads } = require('./reportUtils');
 const { generateReportForMatch } = require('./reportService');
 
 const parseMatchFilter = () => {
@@ -18,30 +18,11 @@ const parseMatchFilter = () => {
   return matchId;
 };
 
-const listIntermediateMatchIds = async (matchFilter = null) => {
-  const exists = await fs.pathExists(INTERMEDIATE_DIR);
-  if (!exists) {
-    return [];
-  }
-
-  const entries = await fs.readdir(INTERMEDIATE_DIR);
-  const ids = entries
-    .filter((name) => name.toLowerCase().endsWith('.json'))
-    .map((name) => Number(name.replace(/\.json$/i, '')))
-    .filter((value) => Number.isInteger(value) && value > 0);
-
-  if (matchFilter) {
-    return ids.filter((id) => id === matchFilter);
-  }
-
-  return ids.sort((a, b) => a - b);
-};
-
 async function main() {
   const matchFilter = parseMatchFilter();
-  const matchIds = await listIntermediateMatchIds(matchFilter);
+  const entries = await listIntermediatePayloads(matchFilter);
 
-  if (!matchIds.length) {
+  if (!entries.length) {
     console.log(
       matchFilter
         ? `[report] Nenhum JSON intermediário encontrado para match_id ${matchFilter}.`
@@ -54,9 +35,9 @@ async function main() {
   let skipped = 0;
   const failures = [];
 
-  for (const matchId of matchIds) {
+  const orderedEntries = entries.sort((a, b) => a.matchId - b.matchId);
+  for (const { matchId, payload } of orderedEntries) {
     try {
-      const { payload } = await loadAnalysisPayload(matchId);
       const { pdfPath } = resolveReportPaths(payload);
       const alreadyExists = await fs.pathExists(pdfPath);
       if (alreadyExists) {

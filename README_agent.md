@@ -31,13 +31,13 @@ npm install
 - `agent/persistence/main.js`: CLI do processo 2 (Markdown + banco).
 - `data/analises_intermediarias/`: saídas JSON.
 - `data/analises_finais/`: arquivos Markdown finais.
-- `data/relatorios/`: HTML e PDFs prontos para distribuição.
+- `data/relatorios/`: contém `html/` e `pdf/` com os relatórios finais.
 
 ## Pipeline diário
 1. `node scripts/daily_update.js` – garante dados atualizados nas tabelas de suporte.
-2. `node agent/analysis/runAnalysis.js <match_id>` – gera `data/analises_intermediarias/<match_id>.json`. Use `node agent/analysis/runAnalysis.js today` para rodar todos os jogos do dia corrente com status `incomplete`.
+2. `node agent/analysis/runAnalysis.js <match_id>` – gera `data/analises_intermediarias/<ano_mes_dia>_<time-casa>x<time-fora>.json`, usando a data da análise como prefixo. Use `node agent/analysis/runAnalysis.js today` para rodar todos os jogos do dia corrente com status `incomplete`.
 3. `node agent/persistence/main.js <match_id>` – produz o Markdown final e atualiza Postgres.
-4. `node agent/persistence/generateMissingReports.js` – cria HTML/PDF somente para os JSON intermediários que ainda não possuem saída em `data/relatorios/`.
+4. `node agent/persistence/generateMissingReports.js` – cria HTML/PDF somente para os JSON intermediários que ainda não possuem saída em `data/relatorios/html/` e `data/relatorios/pdf/`.
 
 ## Execução manual (exemplo com match_id 7834664)
 ```bash
@@ -48,9 +48,10 @@ node agent/analysis/runAnalysis.js today # executa para todos os jogos do dia at
 ```
 
 Após o pipeline:
-- `data/analises_intermediarias/7834664.json`
+- `data/analises_intermediarias/<ano_mes_dia>_<time-casa>x<time-fora>.json`
 - `data/analises_finais/<campeonato>_<home>vs<away>_<data>.md`
-- `data/relatorios/<campeonato>_<home>vs<away>_<data>_match7834664.(html|pdf)`
+- `data/relatorios/html/<ano_mes_dia>_<campeonato>_<time-casa>x<time-fora>.html`
+- `data/relatorios/pdf/<ano_mes_dia>_<campeonato>_<time-casa>x<time-fora>.pdf`
 - Linhas em `game_analysis` e `suggested_bets`.
 
 ## Relatórios HTML/PDF

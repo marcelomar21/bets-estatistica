@@ -5,11 +5,13 @@ const { generatePdfFromHtml } = require('./pdfGenerator');
 const {
   loadAnalysisPayload,
   resolveReportPaths,
-  REPORTS_DIR,
+  REPORTS_HTML_DIR,
+  REPORTS_PDF_DIR,
   ensureDirectory,
 } = require('./reportUtils');
 
-const ensureReportsDir = () => ensureDirectory(REPORTS_DIR);
+const ensureReportDirs = () =>
+  Promise.all([ensureDirectory(REPORTS_HTML_DIR), ensureDirectory(REPORTS_PDF_DIR)]);
 
 const generateReportForMatch = async ({ matchId, payload, skipPdf = false, pdfOptions } = {}) => {
   if (!payload && (matchId === undefined || matchId === null)) {
@@ -20,7 +22,7 @@ const generateReportForMatch = async ({ matchId, payload, skipPdf = false, pdfOp
   const html = renderHtmlReport(analysisPayload);
   const { htmlPath, pdfPath } = resolveReportPaths(analysisPayload);
 
-  await ensureReportsDir();
+  await ensureReportDirs();
   await fs.writeFile(htmlPath, html, 'utf8');
 
   if (skipPdf) {

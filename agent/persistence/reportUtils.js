@@ -5,24 +5,10 @@ const DATA_DIR = path.join(__dirname, '../../data');
 const INTERMEDIATE_DIR = path.join(DATA_DIR, 'analises_intermediarias');
 const FINAL_DIR = path.join(DATA_DIR, 'analises_finais');
 const REPORTS_DIR = path.join(DATA_DIR, 'relatorios');
+const REPORTS_HTML_DIR = path.join(REPORTS_DIR, 'html');
+const REPORTS_PDF_DIR = path.join(REPORTS_DIR, 'pdf');
 
-const slugify = (value) => {
-  if (!value) return 'na';
-  return String(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-};
-
-const formatDateSlug = (value) => {
-  const date = value ? new Date(value) : null;
-  if (!date || Number.isNaN(date.getTime())) {
-    return 'data';
-  }
-  return date.toISOString().slice(0, 10).replace(/-/g, '');
-};
+const { buildReportBaseName } = require('../shared/naming');
 
 const assertMatchId = (matchId) => {
   const normalized = Number(matchId);
@@ -32,7 +18,7 @@ const assertMatchId = (matchId) => {
   return normalized;
 };
 
-const getIntermediatePath = (matchId) => path.join(INTERMEDIATE_DIR, `${assertMatchId(matchId)}.json`);
+const isJsonFile = (name = '') => name.toLowerCase().endsWith('.json');
 
 const ensureDirectory = async (dirPath) => {
   await fs.ensureDir(dirPath);
@@ -55,40 +41,64 @@ const validateAnalysisPayload = (payload) => {
   return payload;
 };
 
-const loadAnalysisPayload = async (matchId) => {
-  const filePath = getIntermediatePath(matchId);
-  const exists = await fs.pathExists(filePath);
-  if (!exists) {
-    throw new Error(`Arquivo intermediário não encontrado: ${filePath}`);
+const readValidatedPayload = async (filePath) => {
+  const raw = await fs.readJson(filePath);
+  return validateAnalysisPayload(raw);
+};
+
+const listIntermediatePayloads = async (matchFilter = null) => {
+  const exists = await fs.pathExists(INTERMEDIATE_DIR);
+  if (!exists) return [];
+
+  const entries = await fs.readdir(INTERMEDIATE_DIR);
+  const results = [];
+  for (const name of entries) {
+    if (!isJsonFile(name)) continue;
+    const filePath = path.join(INTERMEDIATE_DIR, name);
+    try {
+      const payload = await readValidatedPayload(filePath);
+      if (matchFilter && payload.match_id !== matchFilter) continue;
+      results.push({
+        matchId: payload.match_id,
+        payload,
+        fileName: name,
+        filePath,
+      });
+    } catch (err) {
+      console.warn(`[report] Ignorando arquivo inválido ${filePath}: ${err.message}`);
+    }
   }
-  const payload = await fs.readJson(filePath);
-  return {
-    payload: validateAnalysisPayload(payload),
-    filePath,
-  };
+  return results;
 };
 
-const fixtureSlug = (matchRow = {}) => {
-  const home = slugify(matchRow.home_team_name || 'casa');
-  const away = slugify(matchRow.away_team_name || 'fora');
-  return `${home}vs${away}`;
+const loadAnalysisPayload = async (matchId) => {
+  const normalizedId = assertMatchId(matchId);
+  const entries = await listIntermediatePayloads(normalizedId);
+  if (!entries.length) {
+    throw new Error(
+      `Arquivo intermediário não encontrado para match_id ${normalizedId} dentro de ${INTERMEDIATE_DIR}.`,
+    );
+  }
+  const { payload, filePath } = entries[0];
+  return { payload, filePath };
 };
 
-const deriveReportBaseName = (payload, { includeMatchId = true } = {}) => {
+const deriveReportBaseName = (payload) => {
   const match = payload.context?.match_row || {};
-  const competition = slugify(match.competition_name || match.league_name || 'competicao');
-  const fixture = fixtureSlug(match);
-  const date = formatDateSlug(match.kickoff_time);
-  const suffix = includeMatchId ? `_match${payload.match_id}` : '';
-  return `${competition}_${fixture}_${date}${suffix}`;
+  return buildReportBaseName({
+    generatedAt: payload.generated_at,
+    competitionName: match.competition_name || match.league_name || 'competicao',
+    homeName: match.home_team_name,
+    awayName: match.away_team_name,
+  });
 };
 
 const resolveReportPaths = (payload, options = {}) => {
   const baseName = deriveReportBaseName(payload, options);
   return {
     baseName,
-    htmlPath: path.join(REPORTS_DIR, `${baseName}.html`),
-    pdfPath: path.join(REPORTS_DIR, `${baseName}.pdf`),
+    htmlPath: path.join(REPORTS_HTML_DIR, `${baseName}.html`),
+    pdfPath: path.join(REPORTS_PDF_DIR, `${baseName}.pdf`),
   };
 };
 
@@ -97,14 +107,14 @@ module.exports = {
   INTERMEDIATE_DIR,
   FINAL_DIR,
   REPORTS_DIR,
-  slugify,
-  formatDateSlug,
-  getIntermediatePath,
+  REPORTS_HTML_DIR,
+  REPORTS_PDF_DIR,
   ensureDirectory,
   validateAnalysisPayload,
   loadAnalysisPayload,
   deriveReportBaseName,
   resolveReportPaths,
+  listIntermediatePayloads,
 };
 
 

@@ -13,6 +13,7 @@ const { z } = require('zod');
 const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
 const { runQuery, closePool } = require('../db');
+const { buildIntermediateFileName } = require('../shared/naming');
 
 const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
 const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
@@ -144,6 +145,19 @@ const formatNumber = (value, digits = 2) => {
   return value.toFixed(digits);
 };
 
+const pickStatValue = (stats, keys = []) => {
+  if (!stats || typeof stats !== 'object') return null;
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(stats, key)) {
+      const value = sanitizeStatValue(stats[key]);
+      if (value !== null && value !== undefined) {
+        return value;
+      }
+    }
+  }
+  return null;
+};
+
 const formatPercent = (value) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return 'n/d';
@@ -159,6 +173,25 @@ const describeLastX = (label, summary) => {
   const record = summary.record || {};
   const averages = summary.averages || {};
   const percentages = summary.percentages || {};
+  const corners = summary.corners || {};
+  const cards = summary.cards || {};
+  const extraLines = [];
+  if (corners.for_avg !== null || corners.against_avg !== null) {
+    extraLines.push(
+      `- Escanteios: cobra ${formatNumber(corners.for_avg, 2)} e cede ${formatNumber(
+        corners.against_avg,
+        2,
+      )} por jogo`,
+    );
+  }
+  if (cards.for_avg !== null || cards.against_avg !== null) {
+    extraLines.push(
+      `- Cartões: recebe ${formatNumber(cards.for_avg, 2)} e provoca ${formatNumber(
+        cards.against_avg,
+        2,
+      )} por partida`,
+    );
+  }
 
   return `${label} (${summary.last_x || '?'} jogos ${summary.scope || 'escopo não informado'}):
 - Resultado: ${record.wins ?? '-'}V/${record.draws ?? '-'}E/${record.losses ?? '-'}D | PPG ${formatNumber(
@@ -171,7 +204,7 @@ const describeLastX = (label, summary) => {
   )})
 - Indicadores: BTTS ${formatPercent(percentages.btts)} | Over 2.5 ${formatPercent(
     percentages.over25,
-  )} | Clean Sheets ${formatPercent(percentages.clean_sheet)}`;
+  )} | Clean Sheets ${formatPercent(percentages.clean_sheet)}${extraLines.length ? `\n${extraLines.join('\n')}` : ''}`;
 };
 
 const normalizePortugueseTerminology = (text = '') => {
@@ -190,6 +223,11 @@ const GOAL_DIRECTION_KEYWORDS = {
   under: ['menos de', 'abaixo de', 'inferior a', 'under'],
 };
 
+const BTTS_DIRECTION_KEYWORDS = {
+  yes: ['btts: sim', 'btts sim', 'ambas as equipes marcam', 'ambas marcam', 'both teams score'],
+  no: ['btts: nao', 'btts nao', 'btts: não', 'btts não', 'sem btts', 'btts: n', 'ambas nao marcam', 'ambas não marcam'],
+};
+
 const classifyGoalDirection = (text = '') => {
   if (!text) return null;
   const normalized = removeDiacritics(text).toLowerCase();
@@ -202,19 +240,49 @@ const classifyGoalDirection = (text = '') => {
   return null;
 };
 
+const classifyBttsDirection = (text = '') => {
+  if (!text) return null;
+  const normalized = removeDiacritics(text).toLowerCase();
+  if (BTTS_DIRECTION_KEYWORDS.yes.some((kw) => normalized.includes(kw))) {
+    return 'yes';
+  }
+  if (BTTS_DIRECTION_KEYWORDS.no.some((kw) => normalized.includes(kw))) {
+    return 'no';
+  }
+  return null;
+};
+
 const ensureAnalysisConsistency = (structured) => {
   if (!structured) return;
   const safeGoalBet = (structured.safe_bets || []).find((bet) => bet.category === 'gols');
-  if (!safeGoalBet) return;
-  const safeDirection = classifyGoalDirection(`${safeGoalBet.title || ''} ${safeGoalBet.reasoning || ''}`);
-  if (!safeDirection) return;
-  const conflictingBet = (structured.value_bets || []).find((bet) => {
-    const direction = classifyGoalDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
-    return direction && direction !== safeDirection;
+  if (safeGoalBet) {
+    const safeDirection = classifyGoalDirection(`${safeGoalBet.title || ''} ${safeGoalBet.reasoning || ''}`);
+    if (safeDirection) {
+      const conflictingBet = (structured.value_bets || []).find((bet) => {
+        const direction = classifyGoalDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
+        return direction && direction !== safeDirection;
+      });
+      if (conflictingBet) {
+        throw new Error(
+          `a linha segura aponta para "${safeGoalBet.title}" (${safeDirection}) e "${conflictingBet.title}" sugere direção oposta.`,
+        );
+      }
+    }
+  }
+
+  const safeBttsBet = (structured.safe_bets || []).find((bet) =>
+    classifyBttsDirection(`${bet.title || ''} ${bet.reasoning || ''}`),
+  );
+  if (!safeBttsBet) return;
+  const safeBttsDirection = classifyBttsDirection(`${safeBttsBet.title || ''} ${safeBttsBet.reasoning || ''}`);
+  if (!safeBttsDirection) return;
+  const conflictingBttsBet = (structured.value_bets || []).find((bet) => {
+    const direction = classifyBttsDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
+    return direction && direction !== safeBttsDirection;
   });
-  if (conflictingBet) {
+  if (conflictingBttsBet) {
     throw new Error(
-      `a linha segura aponta para "${safeGoalBet.title}" (${safeDirection}) e "${conflictingBet.title}" sugere direção oposta.`,
+      `a linha segura define BTTS como "${safeBttsBet.title}" (${safeBttsDirection}) e "${conflictingBttsBet.title}" aponta para direção contrária.`,
     );
   }
 };
@@ -490,6 +558,27 @@ const extractLastXStats = (rawLastx) => {
   if (!entry) return null;
   const stats = entry.stats || {};
 
+  const cornersForAvg = pickStatValue(stats, [
+    'corners_for_avg_overall',
+    'cornersAVG_overall',
+    'cornersForAVG_overall',
+  ]);
+  const cornersAgainstAvg = pickStatValue(stats, [
+    'corners_against_avg_overall',
+    'cornersAgainstAVG_overall',
+    'cornersAgainst_avg_overall',
+  ]);
+  const cardsForAvg = pickStatValue(stats, [
+    'cards_for_avg_overall',
+    'cardsAVG_overall',
+    'cardsForAVG_overall',
+  ]);
+  const cardsAgainstAvg = pickStatValue(stats, [
+    'cards_against_avg_overall',
+    'cardsAgainstAVG_overall',
+    'cardsAgainst_avg_overall',
+  ]);
+
   return {
     team_name: entry.name || entry.full_name || null,
     scope: scopeLabel(entry.last_x_home_away_or_overall),
@@ -509,6 +598,14 @@ const extractLastXStats = (rawLastx) => {
       over25: stats.seasonOver25Percentage_overall ?? null,
       btts: stats.seasonBTTSPercentage_overall ?? null,
       clean_sheet: stats.seasonCSPercentage_overall ?? null,
+    },
+    corners: {
+      for_avg: cornersForAvg,
+      against_avg: cornersAgainstAvg,
+    },
+    cards: {
+      for_avg: cardsForAvg,
+      against_avg: cardsAgainstAvg,
     },
   };
 };
@@ -820,7 +917,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
 
   const llmConfig = {
     apiKey: ensureApiKey(),
-    model: process.env.AGENT_MODEL || 'gpt-5-nano',
+    model: process.env.AGENT_MODEL || 'gpt-5.1-2025-11-13',
     timeout: Number(process.env.AGENT_TIMEOUT_MS ?? 180000),
   };
   if (process.env.AGENT_TEMPERATURE !== undefined) {
@@ -843,6 +940,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
   const toolExecutions = [];
   let finalMessage = null;
   let finalStructuredAnalysis = null;
+  let acceptedRawResponse = false;
   let hasSuccessfulToolCall = false;
   let usedMatchDetailTool = false;
   let usedLastxTool = false;
@@ -864,6 +962,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       `Passo ${step + 1}: modelo respondeu com ${response.tool_calls?.length || 0} chamadas de ferramenta (finish_reason=${finishReason}).`,
     );
 
+    const isLastStep = step === MAX_AGENT_STEPS - 1;
     if (!response.tool_calls || response.tool_calls.length === 0) {
       const missingTools = [];
       if (!usedMatchDetailTool) missingTools.push(TOOL_NAMES.MATCH_DETAIL);
@@ -895,6 +994,13 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
         try {
           candidateStructured = normalizeStructuredAnalysisFallback(candidateRaw);
         } catch (fallbackErr) {
+          if (isLastStep) {
+            infoLog('Última tentativa atingida; aceitando saída não estruturada como veio do modelo.');
+            acceptedRawResponse = true;
+            finalMessage = response;
+            finalStructuredAnalysis = null;
+            break;
+          }
           conversation.push(
             new HumanMessage(
               'O JSON final precisa seguir exatamente o formato solicitado (overview, safe_bets, value_bets). Reescreva a resposta obedecendo ao modelo indicado no sistema.',
@@ -906,6 +1012,14 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       try {
         ensureAnalysisConsistency(candidateStructured);
       } catch (validationErr) {
+        if (isLastStep) {
+          infoLog(
+            `Última tentativa atingida; aceitando resposta mesmo com inconsistência: ${validationErr.message}`,
+          );
+          finalMessage = response;
+          finalStructuredAnalysis = candidateStructured;
+          break;
+        }
         conversation.push(
           new HumanMessage(
             `As apostas ficaram incoerentes (${validationErr.message}). Reescreva mantendo coerência entre linhas seguras e de valor, sempre em português e usando apenas termos como "mais de"/"menos de"/"escanteios".`,
@@ -1029,14 +1143,24 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       try {
         structuredAnalysis = normalizeStructuredAnalysisFallback(rawContent);
       } catch (fallbackErr) {
-        throw new Error(
-          `Falha ao converter saída no formato estruturado: ${err.message}; fallback também falhou: ${fallbackErr.message}`,
+        if (!acceptedRawResponse) {
+          throw new Error(
+            `Falha ao converter saída no formato estruturado: ${err.message}; fallback também falhou: ${fallbackErr.message}`,
+          );
+        }
+        debugLog(
+          '[agent][analysis] Mantendo resposta bruta sem estrutura por solicitação de última tentativa.',
         );
+        structuredAnalysis = null;
       }
     }
-    ensureAnalysisConsistency(structuredAnalysis);
+    if (structuredAnalysis) {
+      ensureAnalysisConsistency(structuredAnalysis);
+    }
   }
-  const analysisText = buildAnalysisTextFromStructured(structuredAnalysis);
+  const analysisText = structuredAnalysis
+    ? buildAnalysisTextFromStructured(structuredAnalysis)
+    : normalizePortugueseTerminology(rawContent);
 
   return {
     analysisText,
@@ -1075,9 +1199,10 @@ const processMatch = async (matchId) => {
   const safeBetsPayload = mapStructuredBetsToPayload(agentResult.structuredAnalysis?.safe_bets);
   const valueBetsPayload = mapStructuredBetsToPayload(agentResult.structuredAnalysis?.value_bets);
 
+  const generatedAt = new Date();
   const payload = {
     match_id: matchId,
-    generated_at: new Date().toISOString(),
+    generated_at: generatedAt.toISOString(),
     context: {
       textual: persistedContextText,
       match_row: matchRow,
@@ -1101,7 +1226,14 @@ const processMatch = async (matchId) => {
     },
   };
 
-  const outputFile = path.join(INTERMEDIATE_DIR, `${matchId}.json`);
+  const outputFile = path.join(
+    INTERMEDIATE_DIR,
+    buildIntermediateFileName({
+      generatedAt,
+      homeName: matchRow.home_team_name,
+      awayName: matchRow.away_team_name,
+    }),
+  );
   await fs.writeJson(outputFile, payload, { spaces: 2 });
   console.log(`Análise estruturada salva em ${outputFile}`);
 };
