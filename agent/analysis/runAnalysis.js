@@ -7,6 +7,8 @@ const fs = require('fs-extra');
 const { ChatOpenAI } = require('@langchain/openai');
 const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const { ToolMessage, HumanMessage } = require('@langchain/core/messages');
+const { StructuredOutputParser } = require('@langchain/core/output_parsers');
+const { z } = require('zod');
 
 const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
@@ -24,6 +26,77 @@ Tabelas e colunas disponíveis para consultas SQL:
 - game_analysis(match_id, analysis_md, analysis_json, created_at, updated_at)
 - suggested_bets(match_id, bet_market, bet_pick, odds, confidence, reasoning, risk_level, bet_category, created_at)
 Use exatamente esses nomes de colunas (case-insensitive).`.trim();
+
+const SAFE_BET_CATEGORIES = ['gols', 'cartoes', 'escanteios', 'extra'];
+
+const baseBetSchema = z.object({
+  title: z
+    .string()
+    .min(8, 'Título da recomendação precisa ser descritivo.')
+    .describe('Frase imperativa breve (ex: "Aposte em under 3,5").'),
+  reasoning: z
+    .string()
+    .min(30, 'Explique com dados concretos.')
+    .describe('Parágrafo curto justificando com números coletados.'),
+});
+
+const safeBetSchema = baseBetSchema
+  .extend({
+    category: z
+      .enum(SAFE_BET_CATEGORIES)
+      .describe('Tema abordado: gols, cartoes, escanteios ou extra.'),
+  })
+  .superRefine((bet, ctx) => {
+    const normalized = bet.title.toLowerCase();
+    if (/(vit[oó]ria|vencer|win|handicap|moneyline|1x2)/i.test(normalized)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Safe bet não pode tratar de vitória/handicap.',
+        path: ['title'],
+      });
+    }
+  });
+
+const valueBetSchema = baseBetSchema.extend({
+  angle: z
+    .enum(['vitoria', 'handicap', 'gols', 'cartoes', 'escanteios', 'especial'])
+    .optional()
+    .describe('Identifique o ângulo principal da aposta de valor.'),
+});
+
+const structuredAnalysisSchema = z.object({
+  overview: z
+    .string()
+    .min(80, 'Contextualize o jogo com métricas objetivas.')
+    .describe(
+      'Texto corrido usado após o título "Análise Baseada nos Dados Brutos".',
+    ),
+  safe_bets: z
+    .array(safeBetSchema)
+    .length(4)
+    .superRefine((bets, ctx) => {
+      const categories = new Set(bets.map((bet) => bet.category));
+      SAFE_BET_CATEGORIES.forEach((category) => {
+        if (!categories.has(category)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Inclua uma recomendação de ${category}.`,
+          });
+        }
+      });
+    })
+    .describe('Lista fixa de 4 apostas conservadoras por tema.'),
+  value_bets: z
+    .array(valueBetSchema)
+    .min(3)
+    .max(4)
+    .describe('Lista numerada de oportunidades agressivas.'),
+});
+
+const structuredAnalysisParser = StructuredOutputParser.fromZodSchema(
+  structuredAnalysisSchema,
+);
+const STRUCTURED_FORMAT_INSTRUCTIONS = structuredAnalysisParser.getFormatInstructions();
 
 const parseJsonField = (value) => {
   if (!value) return null;
@@ -101,6 +174,253 @@ const describeLastX = (label, summary) => {
   )} | Clean Sheets ${formatPercent(percentages.clean_sheet)}`;
 };
 
+const normalizePortugueseTerminology = (text = '') => {
+  if (!text || typeof text !== 'string') return text;
+  let normalized = text;
+  normalized = normalized.replace(/\b[Cc]antos\b/g, 'escanteios').replace(/\b[Cc]anto\b/g, 'escanteio');
+  normalized = normalized.replace(/BTTS\s+Yes/gi, 'BTTS (ambas as equipes marcam)');
+  normalized = normalized.replace(/\bBTTS\b(?!\s*\()/gi, 'BTTS (ambas as equipes marcam)');
+  normalized = normalized.replace(/\bOver\b/gi, 'mais de');
+  normalized = normalized.replace(/\bUnder\b/gi, 'menos de');
+  return normalized;
+};
+
+const GOAL_DIRECTION_KEYWORDS = {
+  over: ['mais de', 'acima de', 'superior a', 'over'],
+  under: ['menos de', 'abaixo de', 'inferior a', 'under'],
+};
+
+const classifyGoalDirection = (text = '') => {
+  if (!text) return null;
+  const normalized = removeDiacritics(text).toLowerCase();
+  if (GOAL_DIRECTION_KEYWORDS.over.some((kw) => normalized.includes(kw))) {
+    return 'over';
+  }
+  if (GOAL_DIRECTION_KEYWORDS.under.some((kw) => normalized.includes(kw))) {
+    return 'under';
+  }
+  return null;
+};
+
+const ensureAnalysisConsistency = (structured) => {
+  if (!structured) return;
+  const safeGoalBet = (structured.safe_bets || []).find((bet) => bet.category === 'gols');
+  if (!safeGoalBet) return;
+  const safeDirection = classifyGoalDirection(`${safeGoalBet.title || ''} ${safeGoalBet.reasoning || ''}`);
+  if (!safeDirection) return;
+  const conflictingBet = (structured.value_bets || []).find((bet) => {
+    const direction = classifyGoalDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
+    return direction && direction !== safeDirection;
+  });
+  if (conflictingBet) {
+    throw new Error(
+      `a linha segura aponta para "${safeGoalBet.title}" (${safeDirection}) e "${conflictingBet.title}" sugere direção oposta.`,
+    );
+  }
+};
+
+const formatStructuredBetList = (bets, { showCategory = false } = {}) => {
+  if (!Array.isArray(bets) || bets.length === 0) {
+    return 'Nenhuma recomendação disponível.';
+  }
+  const formatted = bets
+    .map((bet, index) => {
+      const title = (bet.title || '').trim() || `Recomendação ${index + 1}`;
+      const reasoning = (bet.reasoning || '').trim();
+      const label = showCategory
+        ? bet.category || bet.angle
+          ? `[${(bet.category || bet.angle).toString()}] `
+          : ''
+        : '';
+      return `**${index + 1}) ${label}${title}** — ${reasoning}`;
+    })
+    .join('\n');
+  return normalizePortugueseTerminology(formatted);
+};
+
+const buildAnalysisTextFromStructured = (structured) => {
+  const overview = (structured.overview || '').trim();
+  const safeBlock = formatStructuredBetList(structured.safe_bets, {
+    showCategory: true,
+  });
+  const valueBlock = formatStructuredBetList(structured.value_bets, {
+    showCategory: true,
+  });
+  const text = [
+    `Análise Baseada nos Dados Brutos: ${overview}`,
+    `🛡️ Apostas Seguras (Bankroll Builder):\n${safeBlock}`,
+    `🚀 Oportunidades (Valor):\n${valueBlock}`,
+  ]
+    .map((section) => section.trim())
+    .join('\n\n')
+    .trim();
+  return normalizePortugueseTerminology(text);
+};
+
+const mapStructuredBetsToPayload = (bets = []) =>
+  (Array.isArray(bets) ? bets : []).map((bet, index) => ({
+    index: index + 1,
+    titulo: normalizePortugueseTerminology((bet.title || '').trim()),
+    justificativa: normalizePortugueseTerminology((bet.reasoning || '').trim()),
+    categoria: bet.category || bet.angle || null,
+  }));
+
+const stripDecorators = (text = '') =>
+  String(text)
+    .replace(/^[\s\-–—•*]+/, '')
+    .trim();
+
+const extractTitleAndReasoningFromString = (raw) => {
+  const cleaned = stripDecorators(raw);
+  if (!cleaned) {
+    return { title: 'Recomendação indefinida', reasoning: 'Sem detalhamento disponível.' };
+  }
+  const dashSplit = cleaned.split(/—| - | – /);
+  if (dashSplit.length >= 2) {
+    const [title, ...rest] = dashSplit;
+    return { title: title.trim(), reasoning: rest.join('—').trim() || cleaned };
+  }
+  const commaIndex = cleaned.indexOf(',');
+  if (commaIndex !== -1) {
+    return {
+      title: cleaned.slice(0, commaIndex).trim(),
+      reasoning: cleaned.slice(commaIndex + 1).trim() || cleaned,
+    };
+  }
+  return { title: cleaned, reasoning: cleaned };
+};
+
+const removeDiacritics = (value = '') =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+const inferSafeCategory = (text, fallback = 'extra') => {
+  const normalized = removeDiacritics(text);
+  if (normalized.includes('cart') || normalized.includes('disciplin')) return 'cartoes';
+  if (normalized.includes('escant') || normalized.includes('canto')) return 'escanteios';
+  if (normalized.includes('gol') || normalized.includes('btts')) return 'gols';
+  return fallback;
+};
+
+const inferValueAngle = (text) => {
+  const normalized = removeDiacritics(text);
+  if (/(vit[oó]ria|vencer|win|moneyline|1x2|handicap)/i.test(text)) return 'vitoria';
+  if (normalized.includes('handicap')) return 'handicap';
+  if (normalized.includes('escant') || normalized.includes('canto')) return 'escanteios';
+  if (normalized.includes('cart')) return 'cartoes';
+  if (normalized.includes('gol') || normalized.includes('btts')) return 'gols';
+  return 'especial';
+};
+
+const normalizeBetEntry = (entry, { enforceCategory = false } = {}) => {
+  if (!entry) return null;
+  if (typeof entry === 'object') {
+    const normalized = {
+      title: (entry.title || entry.titulo || entry.note || '').trim(),
+      reasoning: (
+        entry.reasoning ||
+        entry.justification ||
+        entry.justificativa ||
+        entry.content ||
+        entry.description ||
+        entry.rationale ||
+        ''
+      ).trim(),
+    };
+    if (!normalized.title || !normalized.reasoning) {
+      return null;
+    }
+    if (enforceCategory) {
+      normalized.category = entry.category || entry.categoria || null;
+    } else if (entry.angle || entry.categoria) {
+      normalized.angle = entry.angle || entry.categoria;
+    }
+    return normalized;
+  }
+  if (typeof entry === 'string') {
+    return extractTitleAndReasoningFromString(entry);
+  }
+  return null;
+};
+
+const ensureSafeCategories = (bets) => {
+  const categoryCounts = bets.reduce((acc, bet) => {
+    if (bet.category) {
+      acc[bet.category] = (acc[bet.category] || 0) + 1;
+    }
+    return acc;
+  }, {});
+  const missing = SAFE_BET_CATEGORIES.filter((category) => !bets.some((bet) => bet.category === category));
+  if (!missing.length) {
+    return bets;
+  }
+  const duplicates = bets.filter((bet) => (bet.category ? categoryCounts[bet.category] > 1 : false));
+  for (const category of missing) {
+    const candidate = duplicates.shift();
+    if (!candidate) break;
+    candidate.category = category;
+  }
+  const stillMissing = SAFE_BET_CATEGORIES.filter((category) => !bets.some((bet) => bet.category === category));
+  if (stillMissing.length) {
+    throw new Error(`A resposta não forneceu recomendações para: ${stillMissing.join(', ')}.`);
+  }
+  return bets;
+};
+
+const normalizeStructuredAnalysisFallback = (rawContent) => {
+  let parsed;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null;
+  }
+  const overview =
+    typeof parsed.overview === 'string'
+      ? parsed.overview
+      : Array.isArray(parsed.overview)
+        ? parsed.overview.join(' ')
+        : '';
+  const rawSafe = Array.isArray(parsed.safe_bets) ? parsed.safe_bets : [];
+  const rawValue = Array.isArray(parsed.value_bets) ? parsed.value_bets : [];
+  if (rawSafe.length !== 4) {
+    throw new Error('Quantidade inválida de apostas seguras no fallback.');
+  }
+  const safeBets = rawSafe
+    .map((entry) => normalizeBetEntry(entry, { enforceCategory: true }))
+    .map((bet) => {
+      if (!bet) return null;
+      const category = bet.category || inferSafeCategory(`${bet.title} ${bet.reasoning}`);
+      return {
+        ...bet,
+        category,
+      };
+    })
+    .filter(Boolean);
+  ensureSafeCategories(safeBets);
+  const valueBets = rawValue
+    .map((entry) => normalizeBetEntry(entry))
+    .filter(Boolean)
+    .map((bet) => ({
+      ...bet,
+      angle: bet.angle || inferValueAngle(`${bet.title} ${bet.reasoning}`),
+    }));
+  if (!overview || !safeBets.length || !valueBets.length) {
+    throw new Error('Falha ao normalizar o fallback do modelo.');
+  }
+  const normalized = {
+    overview,
+    safe_bets: safeBets,
+    value_bets: valueBets,
+  };
+  ensureAnalysisConsistency(normalized);
+  return normalized;
+};
+
 const extractMatchDetailStats = (rawDetail) => {
   if (!rawDetail) return null;
   const data = rawDetail?.data?.data || rawDetail?.data || rawDetail;
@@ -147,7 +467,6 @@ const extractMatchDetailStats = (rawDetail) => {
       first_half_over_15: sanitizeStatValue(data.o15HT_potential),
       first_half_over_05: sanitizeStatValue(data.o05HT_potential),
     },
-    narratives: data.trends || null,
   };
 };
 
@@ -415,9 +734,6 @@ const buildContextText = (matchRow, detailStats, homeLastxSummary, awayLastxSumm
           'n/d'}`,
       );
     }
-    if (detailStats.narratives) {
-      lines.push(`Narrativas recentes: ${JSON.stringify(detailStats.narratives)}`);
-    }
   } else {
     lines.push('Sem detalhes avançados (stats_match_details ausente nas últimas 48h).');
   }
@@ -426,13 +742,28 @@ const buildContextText = (matchRow, detailStats, homeLastxSummary, awayLastxSumm
   return `${lines.join('\n\n')}\n\nReferência SQL:\n${TABLE_SCHEMA_HINT}`;
 };
 
+const sanitizeToolOutput = (toolName, rawOutput) => {
+  if (!rawOutput) return rawOutput;
+  try {
+    const parsed = JSON.parse(rawOutput);
+    if (toolName === TOOL_NAMES.MATCH_DETAIL && parsed && typeof parsed === 'object') {
+      if (parsed.raw_payload) {
+        parsed.raw_payload = '[omitido para evitar payload multilíngue]';
+      }
+    }
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return rawOutput;
+  }
+};
+
 const buildToolOutputText = (executions) => {
   if (!executions?.length) return '';
   return executions
     .map((exec, index) => {
       const header = `[#${index + 1}] ${exec.name}`;
       const sql = exec.args?.sql ? `SQL: ${exec.args.sql}` : null;
-      const body = `Resultado:\n${exec.output}`;
+      const body = `Resultado:\n${sanitizeToolOutput(exec.name, exec.output)}`;
       return [header, sql, body].filter(Boolean).join('\n');
     })
     .join('\n\n');
@@ -505,11 +836,13 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
   const baseMessages = await prompt.formatMessages({
     match_id: matchId,
     contexto_jogo: contextoJogo,
+    format_instructions: STRUCTURED_FORMAT_INSTRUCTIONS,
   });
 
   const conversation = [...baseMessages];
   const toolExecutions = [];
   let finalMessage = null;
+  let finalStructuredAnalysis = null;
   let hasSuccessfulToolCall = false;
   let usedMatchDetailTool = false;
   let usedLastxTool = false;
@@ -553,13 +886,39 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
           ),
         );
         continue;
-      } else {
-        finalMessage = response;
-      infoLog(
-          `Passo ${step + 1}: modelo forneceu resposta final após ${toolExecutions.length} consulta(s) (match ${matchId}).`,
-      );
-        break;
       }
+      const candidateRaw = extractMessageText(response.content);
+      let candidateStructured;
+      try {
+        candidateStructured = await structuredAnalysisParser.parse(candidateRaw);
+      } catch (err) {
+        try {
+          candidateStructured = normalizeStructuredAnalysisFallback(candidateRaw);
+        } catch (fallbackErr) {
+          conversation.push(
+            new HumanMessage(
+              'O JSON final precisa seguir exatamente o formato solicitado (overview, safe_bets, value_bets). Reescreva a resposta obedecendo ao modelo indicado no sistema.',
+            ),
+          );
+          continue;
+        }
+      }
+      try {
+        ensureAnalysisConsistency(candidateStructured);
+      } catch (validationErr) {
+        conversation.push(
+          new HumanMessage(
+            `As apostas ficaram incoerentes (${validationErr.message}). Reescreva mantendo coerência entre linhas seguras e de valor, sempre em português e usando apenas termos como "mais de"/"menos de"/"escanteios".`,
+          ),
+        );
+        continue;
+      }
+      finalMessage = response;
+      finalStructuredAnalysis = candidateStructured;
+      infoLog(
+        `Passo ${step + 1}: modelo forneceu resposta final após ${toolExecutions.length} consulta(s) (match ${matchId}).`,
+      );
+      break;
     }
 
     for (const call of response.tool_calls) {
@@ -632,11 +991,12 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       } catch {
         infoLog(`Ferramenta ${call.name} retornou payload não JSON (tamanho=${output?.length ?? 0}).`);
       }
+      const sanitizedOutput = sanitizeToolOutput(call.name, output);
       toolExecutions.push({
         id: call.id,
         name: call.name,
         args,
-        output,
+        output: sanitizedOutput,
       });
       conversation.push(
         new ToolMessage({
@@ -660,8 +1020,27 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
     throw new Error('Modelo não retornou análise em texto.');
   }
 
+  let structuredAnalysis = finalStructuredAnalysis;
+  if (!structuredAnalysis) {
+    try {
+      structuredAnalysis = await structuredAnalysisParser.parse(rawContent);
+    } catch (err) {
+      debugLog('[agent][analysis] structured parse failed, tentando fallback.');
+      try {
+        structuredAnalysis = normalizeStructuredAnalysisFallback(rawContent);
+      } catch (fallbackErr) {
+        throw new Error(
+          `Falha ao converter saída no formato estruturado: ${err.message}; fallback também falhou: ${fallbackErr.message}`,
+        );
+      }
+    }
+    ensureAnalysisConsistency(structuredAnalysis);
+  }
+  const analysisText = buildAnalysisTextFromStructured(structuredAnalysis);
+
   return {
-    analysisText: rawContent.trim(),
+    analysisText,
+    structuredAnalysis,
     initialMessages: baseMessages.map(serializeMessage),
     finalMessage: serializeMessage(finalMessage),
     toolExecutions,
@@ -693,6 +1072,8 @@ const processMatch = async (matchId) => {
   const persistedContextText = toolOutputsText
     ? `${contextoJogo}\n\n==== Saídas de ferramentas durante a execução ====\n${toolOutputsText}`
     : contextoJogo;
+  const safeBetsPayload = mapStructuredBetsToPayload(agentResult.structuredAnalysis?.safe_bets);
+  const valueBetsPayload = mapStructuredBetsToPayload(agentResult.structuredAnalysis?.value_bets);
 
   const payload = {
     match_id: matchId,
@@ -700,11 +1081,8 @@ const processMatch = async (matchId) => {
     context: {
       textual: persistedContextText,
       match_row: matchRow,
-      detail_raw: detailRaw,
       detail_summary: detailSummary,
-      home_lastx_raw: homeLastxRaw,
       home_lastx_summary: homeLastxSummary,
-      away_lastx_raw: awayLastxRaw,
       away_lastx_summary: awayLastxSummary,
       tool_outputs_text: toolOutputsText || null,
     },
@@ -714,11 +1092,12 @@ const processMatch = async (matchId) => {
       final_message: agentResult.finalMessage,
       tool_executions: agentResult.toolExecutions,
       raw_response: agentResult.rawContent,
+      structured_analysis: agentResult.structuredAnalysis,
     },
     output: {
       analise_texto: agentResult.analysisText,
-      apostas_seguras: [],
-      oportunidades: [],
+      apostas_seguras: safeBetsPayload,
+      oportunidades: valueBetsPayload,
     },
   };
 
