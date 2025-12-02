@@ -304,10 +304,10 @@ const inferSafeCategory = (text, fallback = 'extra') => {
   return fallback;
 };
 
-const inferValueAngle = (text) => {
+const inferValueAngle = (text = '') => {
   const normalized = removeDiacritics(text);
-  if (/(vit[oó]ria|vencer|win|moneyline|1x2|handicap)/i.test(text)) return 'vitoria';
   if (normalized.includes('handicap')) return 'handicap';
+  if (/(vitoria|vencer|win|moneyline|1x2)/i.test(normalized)) return 'vitoria';
   if (normalized.includes('escant') || normalized.includes('canto')) return 'escanteios';
   if (normalized.includes('cart')) return 'cartoes';
   if (normalized.includes('gol') || normalized.includes('btts')) return 'gols';
@@ -1001,7 +1001,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       conversation.push(
         new ToolMessage({
           tool_call_id: call.id,
-          content: output,
+          content: sanitizedOutput,
         }),
       );
     }
