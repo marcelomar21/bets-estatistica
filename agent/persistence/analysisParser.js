@@ -68,6 +68,8 @@ const extractSections = (analysisText) => {
 
 module.exports = {
   extractSections,
+  SAFE_MARKER,
+  OPP_MARKER,
 };
 
 

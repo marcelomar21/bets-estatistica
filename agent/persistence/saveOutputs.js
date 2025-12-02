@@ -1,9 +1,6 @@
-const path = require('path');
-const fs = require('fs-extra');
-
-const { generateMarkdown } = require('./generateMarkdown');
 const { getPool } = require('../db');
-const { FINAL_DIR, loadAnalysisPayload, slugify, formatDateSlug } = require('./reportUtils');
+const { loadAnalysisPayload } = require('./reportUtils');
+const { extractSections } = require('./analysisParser');
 
 const normalizeOdds = (value) => {
   if (value === null || value === undefined || value === '') return null;
@@ -21,15 +18,7 @@ const collectBets = (output) => {
   return [...safe, ...opportunities];
 };
 
-const deriveFinalPath = (payload) => {
-  const match = payload.context?.match_row || {};
-  const competition = slugify(match.competition_name || match.league_name || 'competicao');
-  const fixture = `${slugify(match.home_team_name || 'casa')}vs${slugify(match.away_team_name || 'fora')}`;
-  const date = formatDateSlug(match.kickoff_time);
-  return path.join(FINAL_DIR, `${competition}_${fixture}_${date}.md`);
-};
-
-const persistInDatabase = async (matchId, markdown, payload, bets) => {
+const persistInDatabase = async (matchId, payload, bets, analysisText) => {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
@@ -42,7 +31,7 @@ const persistInDatabase = async (matchId, markdown, payload, bets) => {
               analysis_json = EXCLUDED.analysis_json,
               updated_at = NOW();
       `,
-      [matchId, markdown, JSON.stringify(payload)],
+      [matchId, analysisText, JSON.stringify(payload)],
     );
 
     await client.query('DELETE FROM suggested_bets WHERE match_id = $1', [matchId]);
@@ -78,17 +67,38 @@ const persistInDatabase = async (matchId, markdown, payload, bets) => {
 
 const saveOutputs = async (matchId) => {
   const { payload } = await loadAnalysisPayload(matchId);
-  const markdown = generateMarkdown(payload);
-  await fs.ensureDir(FINAL_DIR);
-  const finalPath = deriveFinalPath(payload);
-  await fs.writeFile(finalPath, markdown, 'utf8');
+  const analysisText =
+    payload.output?.analise_texto?.trim() || '# Análise não disponível\nSem conteúdo textual.';
+  let bets = collectBets(payload.output);
 
-  const bets = collectBets(payload.output);
-  await persistInDatabase(matchId, markdown, payload, bets);
+  let usedFallback = false;
+  if (bets.length === 0) {
+    const { safe, opportunities } = extractSections(analysisText);
+    const fallbackSafe = safe.map((item) => ({
+      mercado: item.title,
+      pick: item.title,
+      justificativa: item.reasoning,
+      confianca: null,
+      risco: 'Saldo',
+      category: 'SAFE',
+    }));
+    const fallbackOpp = opportunities.map((item) => ({
+      mercado: item.title,
+      pick: item.title,
+      justificativa: item.reasoning,
+      confianca: null,
+      risco: 'Agres',
+      category: 'OPORTUNIDADE',
+    }));
+    bets = [...fallbackSafe, ...fallbackOpp];
+    usedFallback = bets.length > 0;
+  }
+
+  await persistInDatabase(matchId, payload, bets, analysisText);
 
   return {
-    finalPath,
     betsPersisted: bets.length,
+    usedFallback,
   };
 };
 

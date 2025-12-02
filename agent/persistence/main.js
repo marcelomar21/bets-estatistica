@@ -22,9 +22,12 @@ const parseMatchId = () => {
 async function main() {
   const matchId = parseMatchId();
   const result = await saveOutputs(matchId);
-  console.log(
-    `Markdown final salvo em ${result.finalPath}. ${result.betsPersisted} apostas inseridas no banco.`,
-  );
+  const baseMessage = `${result.betsPersisted} aposta(s) inseridas/atualizadas no banco para match ${matchId}.`;
+  if (result.usedFallback) {
+    console.log(`${baseMessage} [fallback] Recomendações extraídas do texto por ausência nos arrays estruturados.`);
+  } else {
+    console.log(baseMessage);
+  }
 }
 
 main()
