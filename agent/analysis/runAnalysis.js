@@ -940,7 +940,6 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
   const toolExecutions = [];
   let finalMessage = null;
   let finalStructuredAnalysis = null;
-  let acceptedRawResponse = false;
   let hasSuccessfulToolCall = false;
   let usedMatchDetailTool = false;
   let usedLastxTool = false;
@@ -962,7 +961,6 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       `Passo ${step + 1}: modelo respondeu com ${response.tool_calls?.length || 0} chamadas de ferramenta (finish_reason=${finishReason}).`,
     );
 
-    const isLastStep = step === MAX_AGENT_STEPS - 1;
     if (!response.tool_calls || response.tool_calls.length === 0) {
       const missingTools = [];
       if (!usedMatchDetailTool) missingTools.push(TOOL_NAMES.MATCH_DETAIL);
@@ -994,13 +992,6 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
         try {
           candidateStructured = normalizeStructuredAnalysisFallback(candidateRaw);
         } catch (fallbackErr) {
-          if (isLastStep) {
-            infoLog('Última tentativa atingida; aceitando saída não estruturada como veio do modelo.');
-            acceptedRawResponse = true;
-            finalMessage = response;
-            finalStructuredAnalysis = null;
-            break;
-          }
           conversation.push(
             new HumanMessage(
               'O JSON final precisa seguir exatamente o formato solicitado (overview, safe_bets, value_bets). Reescreva a resposta obedecendo ao modelo indicado no sistema.',
@@ -1012,14 +1003,6 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       try {
         ensureAnalysisConsistency(candidateStructured);
       } catch (validationErr) {
-        if (isLastStep) {
-          infoLog(
-            `Última tentativa atingida; aceitando resposta mesmo com inconsistência: ${validationErr.message}`,
-          );
-          finalMessage = response;
-          finalStructuredAnalysis = candidateStructured;
-          break;
-        }
         conversation.push(
           new HumanMessage(
             `As apostas ficaram incoerentes (${validationErr.message}). Reescreva mantendo coerência entre linhas seguras e de valor, sempre em português e usando apenas termos como "mais de"/"menos de"/"escanteios".`,
@@ -1143,24 +1126,14 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       try {
         structuredAnalysis = normalizeStructuredAnalysisFallback(rawContent);
       } catch (fallbackErr) {
-        if (!acceptedRawResponse) {
-          throw new Error(
-            `Falha ao converter saída no formato estruturado: ${err.message}; fallback também falhou: ${fallbackErr.message}`,
-          );
-        }
-        debugLog(
-          '[agent][analysis] Mantendo resposta bruta sem estrutura por solicitação de última tentativa.',
+        throw new Error(
+          `Falha ao converter saída no formato estruturado: ${err.message}; fallback também falhou: ${fallbackErr.message}`,
         );
-        structuredAnalysis = null;
       }
     }
-    if (structuredAnalysis) {
-      ensureAnalysisConsistency(structuredAnalysis);
-    }
+    ensureAnalysisConsistency(structuredAnalysis);
   }
-  const analysisText = structuredAnalysis
-    ? buildAnalysisTextFromStructured(structuredAnalysis)
-    : normalizePortugueseTerminology(rawContent);
+  const analysisText = buildAnalysisTextFromStructured(structuredAnalysis);
 
   return {
     analysisText,
@@ -1260,5 +1233,3 @@ main()
   .finally(async () => {
     await closePool();
   });
-
-
