@@ -213,6 +213,8 @@ const parseMatchIdValue = (value) => {
 };
 
 const fetchTodayMatches = async () => {
+  // Ajustado para buscar jogos em uma janela de 48h (hoje e amanhã)
+  // para alinhar com o script de daily_update.
   const query = `
     SELECT lm.match_id,
            lm.home_team_name,
@@ -223,7 +225,8 @@ const fetchTodayMatches = async () => {
            ls.country
       FROM league_matches lm
       LEFT JOIN league_seasons ls ON lm.season_id = ls.season_id
-     WHERE (lm.kickoff_time AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date
+     WHERE lm.kickoff_time >= NOW()
+       AND lm.kickoff_time <= NOW() + INTERVAL '48 hours'
        AND COALESCE(LOWER(lm.status), 'incomplete') = 'incomplete'
      ORDER BY lm.kickoff_time;
   `;

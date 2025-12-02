@@ -22,7 +22,7 @@ const REPO_ROOT = path.join(__dirname, '..');
 const FETCH_LEAGUE_SCRIPT = path.join(__dirname, 'fetchLeagueMatches.js');
 const LOAD_LEAGUE_SCRIPT = path.join(__dirname, 'loadLeagueMatches.js');
 
-const FRESHNESS_WINDOW_HOURS = 24;
+const FRESHNESS_WINDOW_HOURS = 48;
 const FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
 
 [MATCH_DETAILS_DIR, LASTX_DIR, UPCOMING_DIR, ANALYZED_DIR].forEach((dir) => {
@@ -433,15 +433,42 @@ const isMatchDetailFresh = async (matchId) => {
 };
 
 const isTeamLastXFresh = async (teamId) => {
+  // Lógica inteligente: Só considera "fresh" se a nossa última atualização
+  // for POSTERIOR ao último jogo concluído do time.
+  // Damos uma margem de 4 horas após o kickoff para garantir que o jogo acabou e a API processou.
   const query = `
-    SELECT 1
+    WITH last_stats AS (
+      SELECT updated_at
       FROM team_lastx_stats
-     WHERE team_id = $1
-       AND updated_at >= NOW() - INTERVAL '${FRESHNESS_INTERVAL_SQL}'
-     LIMIT 1;
+      WHERE team_id = $1
+    ),
+    last_match AS (
+      SELECT MAX(kickoff_time) as match_time
+      FROM league_matches
+      WHERE (home_team_id = $1 OR away_team_id = $1)
+        AND status = 'complete'
+        AND kickoff_time <= NOW()
+    )
+    SELECT 1
+      FROM last_stats s
+      LEFT JOIN last_match m ON true
+     WHERE
+       -- Cenário 1: Não achamos jogo anterior (início de temporada ou base vazia),
+       -- então se tem stats, assumimos que valem.
+       (m.match_time IS NULL)
+       OR
+       -- Cenário 2: Tem jogo anterior. A atualização deve ser DEPOIS desse jogo.
+       -- (Kickoff + 4h de segurança para fim de jogo + delay da API)
+       (s.updated_at > m.match_time + INTERVAL '4 hours')
   `;
-  const { rowCount } = await pool.query(query, [teamId]);
-  return rowCount > 0;
+
+  try {
+    const { rowCount } = await pool.query(query, [teamId]);
+    return rowCount > 0; // Se retornou linha, está fresh (não precisa atualizar)
+  } catch (err) {
+    console.warn(`  ↳ Erro ao verificar freshness do time ${teamId}, forçando atualização.`);
+    return false;
+  }
 };
 
 const fetchMatchDetail = async (matchId) => {
