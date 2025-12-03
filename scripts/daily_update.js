@@ -5,6 +5,11 @@ const { spawn } = require('child_process');
 const axios = require('axios');
 const https = require('https');
 const { Pool } = require('pg');
+const {
+  fetchQueueMatches,
+  markAnalysisStatus,
+  MATCH_COMPLETION_GRACE_HOURS,
+} = require('./lib/matchScreening');
 
 const API_KEY = process.env.api_key || process.env.API_KEY;
 if (!API_KEY) {
@@ -304,19 +309,24 @@ const getRollingRange = (hours = FRESHNESS_WINDOW_HOURS) => {
   };
 };
 
-const fetchMatchesInRange = async ({ startUnix, endUnix }) => {
+const fetchMatchesByIds = async (matchIds = []) => {
+  const ids = (matchIds || []).filter((value) => Number.isInteger(value));
+  if (!ids.length) {
+    return [];
+  }
   const query = `
     SELECT match_id, season_id, home_team_id, away_team_id,
-           home_team_name, away_team_name, date_unix, game_week, round_id, kickoff_time
+           home_team_name, away_team_name, home_score, away_score,
+           status, game_week, round_id, date_unix, kickoff_time
       FROM league_matches
-     WHERE date_unix BETWEEN $1 AND $2
+     WHERE match_id = ANY($1::bigint[])
      ORDER BY kickoff_time NULLS LAST, match_id;
   `;
-  const { rows } = await pool.query(query, [startUnix, endUnix]);
+  const { rows } = await pool.query(query, [ids]);
   return rows;
 };
 
-const saveUpcomingFile = (range, matches) => {
+const saveUpcomingFile = (range, matches, queueSnapshot = null) => {
   const filePath = path.join(UPCOMING_DIR, `${range.label}.json`);
   const payload = {
     fetched_at: new Date().toISOString(),
@@ -331,6 +341,9 @@ const saveUpcomingFile = (range, matches) => {
     total_matches: matches.length,
     matches,
   };
+  if (queueSnapshot) {
+    payload.queue_snapshot = queueSnapshot;
+  }
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
   console.log(`Agenda das próximas ${range.hours}h salva em ${filePath}`);
 };
@@ -685,24 +698,47 @@ const processTeam = async (teamId, processedTeams) => {
 async function main() {
   await syncPendingLeagueMatches();
   const range = getRollingRange(FRESHNESS_WINDOW_HOURS);
-  console.log(`Buscando partidas entre ${range.startISO} e ${range.endISO} (unix ${range.startUnix}..${range.endUnix})`);
+  console.log(
+    `Buscando partidas pendentes na match_analysis_queue para janela ${range.startISO} – ${range.endISO}`,
+  );
 
   try {
-    const matches = await fetchMatchesInRange(range);
-    if (!matches.length) {
-      console.log('Nenhuma partida encontrada para as próximas 48 horas.');
-      saveUpcomingFile(range, []);
+    const queueEntries = await fetchQueueMatches(pool, {
+      statuses: ['pending'],
+      windowHours: FRESHNESS_WINDOW_HOURS,
+      lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
+    });
+
+    if (!queueEntries.length) {
+      console.log('Nenhum jogo pendente na match_analysis_queue.');
+      saveUpcomingFile(range, [], queueEntries);
       saveAnalysisFile(range, []);
       return;
     }
 
-    console.log(`Encontradas ${matches.length} partidas no intervalo ${range.label}.`);
-    saveUpcomingFile(range, matches);
+    const matchIds = queueEntries.map((entry) => entry.matchId);
+    const matchRows = await fetchMatchesByIds(matchIds);
+    const matchMap = new Map(matchRows.map((row) => [row.match_id, row]));
+    const orderedMatches = matchIds.map((id) => matchMap.get(id)).filter(Boolean);
+    const missingMatches = matchIds.filter((id) => !matchMap.has(id));
+    if (missingMatches.length) {
+      console.warn(
+        `Match_ids presentes na fila mas ausentes em league_matches: ${missingMatches.join(', ')}`,
+      );
+    }
+
+    console.log(`Fila pendente contém ${orderedMatches.length} partida(s).`);
+    saveUpcomingFile(range, orderedMatches, queueEntries);
 
     const processedTeams = new Map();
     const analysisRecords = [];
-    for (const match of matches) {
-      console.log(`\nProcessando match ${match.match_id} (${match.home_team_name} x ${match.away_team_name})`);
+    const queueMap = new Map(queueEntries.map((entry) => [entry.matchId, entry]));
+
+    for (const match of orderedMatches) {
+      console.log(
+        `\nProcessando match ${match.match_id} (${match.home_team_name} x ${match.away_team_name})`,
+      );
+      const queueMeta = queueMap.get(match.match_id) || null;
       const matchRecord = {
         match_id: match.match_id,
         home_team_id: match.home_team_id,
@@ -710,15 +746,28 @@ async function main() {
         home_team_name: match.home_team_name,
         away_team_name: match.away_team_name,
         kickoff_time: match.kickoff_time,
+        queue_status: queueMeta?.status || 'pending',
         detail: null,
         home_lastx: null,
         away_lastx: null,
       };
 
-      matchRecord.detail = await processMatch(match);
-      matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
-      matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
-      analysisRecords.push(matchRecord);
+      try {
+        matchRecord.detail = await processMatch(match);
+        matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
+        matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
+        analysisRecords.push(matchRecord);
+        await markAnalysisStatus(pool, match.match_id, queueMeta?.status || 'pending', {
+          clearErrorReason: true,
+        });
+      } catch (err) {
+        console.error(`  ↳ Falha ao atualizar match ${match.match_id}:`, err.message);
+        matchRecord.error = err.response?.data || err.message;
+        analysisRecords.push(matchRecord);
+        await markAnalysisStatus(pool, match.match_id, queueMeta?.status || 'pending', {
+          errorReason: err.response?.data || err.message,
+        });
+      }
     }
 
     saveAnalysisFile(range, analysisRecords);

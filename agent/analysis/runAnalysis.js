@@ -12,7 +12,12 @@ const { z } = require('zod');
 
 const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
-const { runQuery, closePool } = require('../db');
+const { runQuery, closePool, getPool } = require('../db');
+const {
+  fetchQueueMatches,
+  markAnalysisStatus,
+  MATCH_COMPLETION_GRACE_HOURS,
+} = require('../../scripts/lib/matchScreening');
 const { buildIntermediateFileName } = require('../shared/naming');
 
 const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
@@ -616,9 +621,37 @@ const exitWithError = (message) => {
 };
 
 const TODAY_ALIASES = new Set(['today', '--today', '-t']);
+const AGENT_QUEUE_WINDOW_HOURS = Number(process.env.AGENT_QUEUE_WINDOW_HOURS ?? 72);
+
+let queuePendingMatches = new Map();
 
 const usage = () =>
   'Uso: node agent/analysis/runAnalysis.js <match_id | match_id,match_id | today>';
+
+const describeQueueEntry = (entry) => {
+  const kickoff = entry.kickoffTime ? formatDate(entry.kickoffTime) : 'Data não informada';
+  return `${entry.matchId} – ${entry.homeTeamName || entry.homeTeamId} x ${entry.awayTeamName ||
+    entry.awayTeamId} (${kickoff})`;
+};
+
+const loadQueuePendingMatches = async () => {
+  const entries = await fetchQueueMatches(getPool(), {
+    statuses: ['pending'],
+    windowHours: AGENT_QUEUE_WINDOW_HOURS,
+    lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
+  });
+  queuePendingMatches = new Map(entries.map((entry) => [Number(entry.matchId), entry]));
+  return entries;
+};
+
+const queueHasMatch = (matchId) => queuePendingMatches.has(Number(matchId));
+
+const setQueueStatus = async (matchId, status, meta = {}) => {
+  if (!queueHasMatch(matchId)) {
+    return;
+  }
+  await markAnalysisStatus(getPool(), matchId, status, meta);
+};
 
 const parseMatchIdValue = (value) => {
   const matchId = Number(value);
@@ -627,33 +660,6 @@ const parseMatchIdValue = (value) => {
   }
   return matchId;
 };
-
-const fetchTodayMatches = async () => {
-  // Ajustado para buscar jogos em uma janela de 48h (hoje e amanhã)
-  // para alinhar com o script de daily_update.
-  const query = `
-    SELECT lm.match_id,
-           lm.home_team_name,
-           lm.away_team_name,
-           lm.kickoff_time,
-           lm.status,
-           ls.display_name AS competition_name,
-           ls.country
-      FROM league_matches lm
-      LEFT JOIN league_seasons ls ON lm.season_id = ls.season_id
-     WHERE lm.kickoff_time >= NOW()
-       AND lm.kickoff_time <= NOW() + INTERVAL '48 hours'
-       AND COALESCE(LOWER(lm.status), 'incomplete') = 'incomplete'
-     ORDER BY lm.kickoff_time;
-  `;
-  const { rows } = await runQuery(query);
-  return rows;
-};
-
-const describeMatchForLog = (match) =>
-  `${match.match_id} – ${match.home_team_name} x ${match.away_team_name} (${formatDate(
-    match.kickoff_time,
-  )}) [${match.status || 'pendente'}]`;
 
 const resolveMatchTargets = async () => {
   const rawArg = process.argv[2];
@@ -664,19 +670,22 @@ const resolveMatchTargets = async () => {
 
   const normalized = rawArg.trim();
   if (TODAY_ALIASES.has(normalized.toLowerCase())) {
-    const matches = await fetchTodayMatches();
-    if (!matches.length) {
-      exitWithError('Nenhum jogo encontrado para hoje na tabela league_matches.');
+    const queueEntries = await loadQueuePendingMatches();
+    if (!queueEntries.length) {
+      exitWithError(
+        'Nenhum jogo pendente na match_analysis_queue. Execute scripts/check_analysis_queue.js antes.',
+      );
       process.exit(1);
     }
     infoLog(
-      `[alias today] Encontrados ${matches.length} jogo(s):\n${matches
-        .map((match) => `- ${describeMatchForLog(match)}`)
+      `[fila] Encontrados ${queueEntries.length} jogo(s) pendentes:\n${queueEntries
+        .map((entry) => `- ${describeQueueEntry(entry)}`)
         .join('\n')}`,
     );
-    return matches.map((match) => Number(match.match_id));
+    return queueEntries.map((entry) => Number(entry.matchId));
   }
 
+  queuePendingMatches = new Map();
   const tokens = normalized.split(',').map((token) => token.trim()).filter(Boolean);
   if (!tokens.length) {
     exitWithError(usage());
@@ -1217,9 +1226,11 @@ async function main() {
     const matchId = matchIds[index];
     infoLog(`Iniciando análise ${index + 1}/${matchIds.length} para match_id ${matchId}.`);
     try {
+      await setQueueStatus(matchId, 'analyzing', { clearErrorReason: true });
       await processMatch(matchId);
     } catch (err) {
       console.error(`[agent][analysis] Falha ao processar match ${matchId}: ${err.message}`);
+      await setQueueStatus(matchId, 'pending', { errorReason: err.message });
       process.exitCode = 1;
     }
   }

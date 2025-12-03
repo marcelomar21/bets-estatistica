@@ -69,3 +69,21 @@ BEGIN
             ADD CONSTRAINT suggested_bets_category_check CHECK (bet_category IN ('SAFE', 'OPORTUNIDADE'));
     END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS match_analysis_queue (
+    match_id BIGINT PRIMARY KEY,
+    status TEXT NOT NULL DEFAULT 'pending',
+    last_checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    analysis_generated_at TIMESTAMPTZ,
+    error_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_match_analysis_queue_match
+        FOREIGN KEY (match_id) REFERENCES league_matches (match_id)
+        ON DELETE CASCADE,
+    CONSTRAINT match_analysis_queue_status_check
+        CHECK (status IN ('pending', 'analyzing', 'complete', 'skipped'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_analysis_queue_status
+    ON match_analysis_queue (status);
