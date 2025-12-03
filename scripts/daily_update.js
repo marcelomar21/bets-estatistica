@@ -450,54 +450,89 @@ const syncLeagueTeamStats = async (seasonIds = []) => {
   await runNodeScript(LOAD_LEAGUE_TEAMS_SCRIPT, [arg]);
 };
 
-const isMatchDetailFresh = async (matchId) => {
-  const query = `
-    SELECT 1
-      FROM stats_match_details
-     WHERE match_id = $1
-       AND updated_at >= NOW() - INTERVAL '${FRESHNESS_INTERVAL_SQL}'
-     LIMIT 1;
-  `;
-  const { rowCount } = await pool.query(query, [matchId]);
-  return rowCount > 0;
-};
+const TEAM_TIMELINE_CACHE = new Map();
+const TEAM_LASTX_UPDATED_CACHE = new Map();
 
-const isTeamLastXFresh = async (teamId) => {
-  // Lógica inteligente: Só considera "fresh" se a nossa última atualização
-  // for POSTERIOR ao último jogo concluído do time.
-  // Damos uma margem de 4 horas após o kickoff para garantir que o jogo acabou e a API processou.
+const getTeamTimeline = async (teamId) => {
+  if (TEAM_TIMELINE_CACHE.has(teamId)) {
+    return TEAM_TIMELINE_CACHE.get(teamId);
+  }
+  const timeline = { lastCompleted: null, nextMatch: null };
   const query = `
-    WITH last_stats AS (
-      SELECT updated_at
-      FROM team_lastx_stats
-      WHERE team_id = $1
-    ),
-    last_match AS (
-      SELECT MAX(kickoff_time) as match_time
+    WITH last_match AS (
+      SELECT MAX(kickoff_time) AS kickoff
       FROM league_matches
       WHERE (home_team_id = $1 OR away_team_id = $1)
-        AND status = 'complete'
         AND kickoff_time <= NOW()
+        AND (
+          LOWER(COALESCE(status, '')) = 'complete'
+          OR kickoff_time <= NOW() - make_interval(hours => $2::int)
+        )
+    ),
+    next_match AS (
+      SELECT MIN(kickoff_time) AS kickoff
+      FROM league_matches
+      WHERE (home_team_id = $1 OR away_team_id = $1)
+        AND kickoff_time >= NOW()
     )
-    SELECT 1
-      FROM last_stats s
-      LEFT JOIN last_match m ON true
-     WHERE
-       -- Cenário 1: Não achamos jogo anterior (início de temporada ou base vazia),
-       -- então se tem stats, assumimos que valem.
-       (m.match_time IS NULL)
-       OR
-       -- Cenário 2: Tem jogo anterior. A atualização deve ser DEPOIS desse jogo.
-       -- (Kickoff + 4h de segurança para fim de jogo + delay da API)
-       (s.updated_at > m.match_time + INTERVAL '4 hours')
+    SELECT
+      (SELECT kickoff FROM last_match) AS last_completed,
+      (SELECT kickoff FROM next_match) AS next_match;
   `;
-
   try {
-    const { rowCount } = await pool.query(query, [teamId]);
-    return rowCount > 0; // Se retornou linha, está fresh (não precisa atualizar)
+    const { rows } = await pool.query(query, [teamId, MATCH_COMPLETION_GRACE_HOURS]);
+    if (rows[0]) {
+      timeline.lastCompleted = rows[0].last_completed ? new Date(rows[0].last_completed) : null;
+      timeline.nextMatch = rows[0].next_match ? new Date(rows[0].next_match) : null;
+    }
   } catch (err) {
-    console.warn(`  ↳ Erro ao verificar freshness do time ${teamId}, forçando atualização.`);
+    console.warn(`  ↳ Falha ao montar timeline do time ${teamId}: ${err.message}`);
+  }
+  TEAM_TIMELINE_CACHE.set(teamId, timeline);
+  return timeline;
+};
+
+const getTeamLastxUpdatedAt = async (teamId) => {
+  if (TEAM_LASTX_UPDATED_CACHE.has(teamId)) {
+    return TEAM_LASTX_UPDATED_CACHE.get(teamId);
+  }
+  const query = `
+    SELECT MAX(updated_at) AS updated_at
+      FROM team_lastx_stats
+     WHERE team_id = $1;
+  `;
+  try {
+    const { rows } = await pool.query(query, [teamId]);
+    const value = rows[0]?.updated_at ? new Date(rows[0].updated_at) : null;
+    TEAM_LASTX_UPDATED_CACHE.set(teamId, value);
+    return value;
+  } catch (err) {
+    console.warn(`  ↳ Falha ao consultar updated_at do time ${teamId}: ${err.message}`);
+    TEAM_LASTX_UPDATED_CACHE.set(teamId, null);
+    return null;
+  }
+};
+
+const shouldRefreshLastX = async (teamId) => {
+  try {
+    const lastUpdatedAt = await getTeamLastxUpdatedAt(teamId);
+    if (!lastUpdatedAt) {
+      return true;
+    }
+    const { lastCompleted, nextMatch } = await getTeamTimeline(teamId);
+    if (!lastCompleted) {
+      return true;
+    }
+    if (lastUpdatedAt <= lastCompleted) {
+      return true;
+    }
+    if (nextMatch && lastUpdatedAt >= nextMatch) {
+      return true;
+    }
     return false;
+  } catch (err) {
+    console.warn(`  ↳ Não foi possível avaliar timeline do time ${teamId}: ${err.message}`);
+    return true;
   }
 };
 
@@ -661,12 +696,6 @@ const upsertLastX = async (payload) => {
 
 const processMatch = async (matchRow) => {
   try {
-    const fresh = await isMatchDetailFresh(matchRow.match_id);
-    if (fresh) {
-      console.log('  ↳ Detalhes já atualizados nas últimas 48h, pulando coleta.');
-      return { status: 'skipped', reason: 'fresh-db', match_id: matchRow.match_id };
-    }
-
     const detailPayload = await fetchMatchDetail(matchRow.match_id);
     saveMatchDetailFile(matchRow.match_id, detailPayload);
     await upsertMatchDetail(matchRow, detailPayload);
@@ -678,31 +707,29 @@ const processMatch = async (matchRow) => {
   }
 };
 
-const processTeam = async (teamId, processedTeams, { forceRefresh = false } = {}) => {
+const processTeam = async (teamId, processedTeams) => {
   if (!teamId) {
     return { status: 'failed', reason: 'missing-team-id', team_id: teamId ?? null };
   }
 
   const cached = processedTeams.get(teamId);
   if (cached) {
-    if (!forceRefresh || cached.forced) {
-      console.log(`  ↳ LastX do time ${teamId} já processado neste ciclo, reutilizando resultado.`);
-      return { ...cached.result, reused: true, team_id: teamId };
-    }
+    console.log(`  ↳ LastX do time ${teamId} já processado neste ciclo, reutilizando resultado.`);
+    return { ...cached, reused: true, team_id: teamId };
   }
 
   const storeResult = (result) => {
-    processedTeams.set(teamId, { result, forced: forceRefresh });
+    processedTeams.set(teamId, result);
     return result;
   };
 
   try {
-    if (!forceRefresh) {
-      const fresh = await isTeamLastXFresh(teamId);
-      if (fresh) {
-        console.log(`  ↳ LastX do time ${teamId} atualizado nas últimas 48h, pulando API.`);
-        return storeResult({ status: 'skipped', reason: 'fresh-db', team_id: teamId });
-      }
+    const needsRefresh = await shouldRefreshLastX(teamId);
+    if (!needsRefresh) {
+      console.log(
+        `  ↳ LastX do time ${teamId} já está entre o último e o próximo jogo, pulando API.`,
+      );
+      return storeResult({ status: 'skipped', reason: 'fresh-timeline', team_id: teamId });
     }
 
     const lastxPayload = await fetchLastX(teamId);
@@ -787,12 +814,8 @@ async function main() {
 
       try {
         matchRecord.detail = await processMatch(match);
-        matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams, {
-          forceRefresh: true,
-        });
-        matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams, {
-          forceRefresh: true,
-        });
+        matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
+        matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
         analysisRecords.push(matchRecord);
         await markAnalysisStatus(pool, matchId, queueMeta?.status || 'pending', {
           clearErrorReason: true,
