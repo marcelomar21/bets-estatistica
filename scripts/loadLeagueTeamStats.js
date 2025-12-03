@@ -44,12 +44,37 @@ const parseSeasonIdsArg = () => {
 
 const requestedSeasonIds = parseSeasonIdsArg();
 
+const parseTeamIdsArg = () => {
+  const args = process.argv.slice(2);
+  let rawValue = null;
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token.startsWith('--team-ids=')) {
+      rawValue = token.split('=')[1];
+      break;
+    }
+    if (token === '--team-ids') {
+      rawValue = args[index + 1];
+      break;
+    }
+  }
+  if (!rawValue) {
+    return [];
+  }
+  return rawValue
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
+
+const requestedTeamIds = new Set(parseTeamIdsArg());
+
 async function loadFile(filePath) {
   const payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   const seasonId = payload.season_id;
   const fetchedAt = payload.fetched_at || new Date().toISOString();
   const label = payload.label || '';
-  const teams = Array.isArray(payload.data) ? payload.data : [];
+  let teams = Array.isArray(payload.data) ? payload.data : [];
 
   console.log(`Carregando ${teams.length} times de ${label} (season_id=${seasonId})...`);
 
@@ -61,6 +86,16 @@ async function loadFile(filePath) {
   if (!teams.length) {
     console.warn(`Nenhum time no arquivo ${filePath}, ignorando.`);
     return 0;
+  }
+
+  if (requestedTeamIds.size) {
+    teams = teams.filter((team) => requestedTeamIds.has(Number(team?.id)));
+    if (!teams.length) {
+      console.warn(
+        `Nenhum dos times solicitados (${Array.from(requestedTeamIds).join(', ')}) está presente em ${filePath}, ignorando.`,
+      );
+      return 0;
+    }
   }
 
   const client = await pool.connect();
@@ -137,10 +172,10 @@ async function main() {
       .filter((file) => file.startsWith('season-') && file.endsWith('.json'))
       .sort();
 
-    if (!files.length) {
-      console.log('Nenhum arquivo season-*.json encontrado em league-teams.');
-      return;
-    }
+  if (!files.length) {
+    console.log('Nenhum arquivo season-*.json encontrado em league-teams.');
+    return;
+  }
   }
 
   let total = 0;

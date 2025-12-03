@@ -435,23 +435,32 @@ const syncPendingLeagueMatches = async () => {
   await runNodeScript(LOAD_LEAGUE_SCRIPT, args);
 };
 
-const syncLeagueTeamStats = async (seasonIds = []) => {
-  const unique = Array.from(
+const syncLeagueTeamStats = async (seasonIds = [], teamIds = []) => {
+  const uniqueSeasons = Array.from(
     new Set(seasonIds.filter((value) => Number.isInteger(value) && value > 0)),
   );
-  if (!unique.length) {
+  const uniqueTeams = Array.from(
+    new Set(teamIds.filter((value) => Number.isInteger(value) && value > 0)),
+  );
+  if (!uniqueSeasons.length || !uniqueTeams.length) {
+    console.log('Nenhum team_id precisando de atualização de league_team_stats, pulando fetch/load.');
     return;
   }
-  const arg = `--season-ids=${unique.join(',')}`;
+  const args = [
+    `--season-ids=${uniqueSeasons.join(',')}`,
+    `--team-ids=${uniqueTeams.join(',')}`,
+  ];
   console.log(
-    `Sincronizando league_team_stats para ${unique.length} temporada(s): ${unique.join(', ')}`,
+    `Sincronizando league_team_stats para ${uniqueTeams.length} time(s) nas temporadas ${uniqueSeasons.join(', ')}`,
   );
-  await runNodeScript(FETCH_LEAGUE_TEAMS_SCRIPT, [arg]);
-  await runNodeScript(LOAD_LEAGUE_TEAMS_SCRIPT, [arg]);
+  await runNodeScript(FETCH_LEAGUE_TEAMS_SCRIPT, args);
+  await runNodeScript(LOAD_LEAGUE_TEAMS_SCRIPT, args);
+  uniqueTeams.forEach((teamId) => TEAM_STATS_FETCHED_CACHE.set(teamId, new Date()));
 };
 
 const TEAM_TIMELINE_CACHE = new Map();
 const TEAM_LASTX_UPDATED_CACHE = new Map();
+const TEAM_STATS_FETCHED_CACHE = new Map();
 const MATCH_DETAIL_UPDATED_CACHE = new Map();
 
 const getTeamTimeline = async (teamId) => {
@@ -537,6 +546,46 @@ const shouldRefreshLastX = async (teamId) => {
   }
 };
 
+const getTeamStatsFetchedAt = async (teamId) => {
+  if (TEAM_STATS_FETCHED_CACHE.has(teamId)) {
+    return TEAM_STATS_FETCHED_CACHE.get(teamId);
+  }
+  const query = `
+    SELECT fetched_at
+      FROM league_team_stats
+     WHERE team_id = $1
+     ORDER BY fetched_at DESC
+     LIMIT 1;
+  `;
+  try {
+    const { rows } = await pool.query(query, [teamId]);
+    const value = rows[0]?.fetched_at ? new Date(rows[0].fetched_at) : null;
+    TEAM_STATS_FETCHED_CACHE.set(teamId, value);
+    return value;
+  } catch (err) {
+    console.warn(`  ↳ Falha ao consultar fetched_at do time ${teamId}: ${err.message}`);
+    TEAM_STATS_FETCHED_CACHE.set(teamId, null);
+    return null;
+  }
+};
+
+const shouldRefreshTeamStats = async (teamId) => {
+  try {
+    const fetchedAt = await getTeamStatsFetchedAt(teamId);
+    if (!fetchedAt) {
+      return true;
+    }
+    const { lastCompleted } = await getTeamTimeline(teamId);
+    if (!lastCompleted) {
+      return true;
+    }
+    return fetchedAt <= lastCompleted;
+  } catch (err) {
+    console.warn(`  ↳ Não foi possível avaliar team stats do time ${teamId}: ${err.message}`);
+    return true;
+  }
+};
+
 const getMatchDetailUpdatedAt = async (matchId) => {
   if (MATCH_DETAIL_UPDATED_CACHE.has(matchId)) {
     return MATCH_DETAIL_UPDATED_CACHE.get(matchId);
@@ -586,6 +635,29 @@ const shouldRefreshMatchDetail = async (matchRow) => {
     console.warn(`  ↳ Não foi possível avaliar necessidade de atualizar match ${matchRow.match_id}: ${err.message}`);
     return true;
   }
+};
+
+const collectTeamStatsTargets = async (matches) => {
+  const targets = new Set();
+  for (const match of matches) {
+    const candidates = [
+      Number(match.home_team_id),
+      Number(match.away_team_id),
+    ].filter((value) => Number.isInteger(value) && value > 0);
+
+    for (const teamId of candidates) {
+      try {
+        const needsRefresh = await shouldRefreshTeamStats(teamId);
+        if (needsRefresh) {
+          targets.add(teamId);
+        }
+      } catch (err) {
+        console.warn(`  ↳ Falha ao avaliar team stats do time ${teamId}: ${err.message}`);
+        targets.add(teamId);
+      }
+    }
+  }
+  return targets;
 };
 
 const fetchMatchDetail = async (matchId) => {
@@ -848,7 +920,8 @@ async function main() {
           .filter((value) => Number.isInteger(value) && value > 0),
       ),
     );
-    await syncLeagueTeamStats(pendingSeasonIds);
+    const teamStatsTargets = await collectTeamStatsTargets(orderedMatches);
+    await syncLeagueTeamStats(pendingSeasonIds, Array.from(teamStatsTargets));
 
     const processedTeams = new Map();
     const analysisRecords = [];

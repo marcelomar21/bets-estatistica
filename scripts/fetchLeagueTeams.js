@@ -52,7 +52,31 @@ const parseSeasonIdsArg = () => {
     .filter((value) => Number.isInteger(value) && value > 0);
 };
 
+const parseTeamIdsArg = () => {
+  const args = process.argv.slice(2);
+  let rawValue = null;
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token.startsWith('--team-ids=')) {
+      rawValue = token.split('=')[1];
+      break;
+    }
+    if (token === '--team-ids') {
+      rawValue = args[index + 1];
+      break;
+    }
+  }
+  if (!rawValue) {
+    return [];
+  }
+  return rawValue
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
+
 const requestedSeasonIds = parseSeasonIdsArg();
+const requestedTeamIds = new Set(parseTeamIdsArg());
 
 async function fetchSeasonIds() {
   if (requestedSeasonIds.length) {
@@ -113,16 +137,29 @@ async function fetchSeasonData(seasonId, label) {
     page += 1;
   } while (page <= maxPage);
 
+  let filtered = combined;
+  if (requestedTeamIds.size) {
+    filtered = combined.filter((team) => requestedTeamIds.has(Number(team.id)));
+    console.log(
+      `  ↳ Filtrando times solicitados: ${filtered.length}/${combined.length} registros mantidos.`,
+    );
+  }
+
+  if (!filtered.length) {
+    console.log('  ↳ Nenhum time solicitado encontrado nesta temporada, pulando escrita.');
+    return;
+  }
+
   const payload = {
     fetched_at: new Date().toISOString(),
     season_id: seasonId,
     label,
-    data: combined,
+    data: filtered,
   };
 
   const filePath = path.join(OUTPUT_DIR, `season-${seasonId}.json`);
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-  console.log(`Salvo ${combined.length} registros em ${filePath}`);
+  console.log(`Salvo ${filtered.length} registros em ${filePath}`);
 }
 
 async function main() {
