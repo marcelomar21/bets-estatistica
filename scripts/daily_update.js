@@ -452,6 +452,7 @@ const syncLeagueTeamStats = async (seasonIds = []) => {
 
 const TEAM_TIMELINE_CACHE = new Map();
 const TEAM_LASTX_UPDATED_CACHE = new Map();
+const MATCH_DETAIL_UPDATED_CACHE = new Map();
 
 const getTeamTimeline = async (teamId) => {
   if (TEAM_TIMELINE_CACHE.has(teamId)) {
@@ -532,6 +533,57 @@ const shouldRefreshLastX = async (teamId) => {
     return false;
   } catch (err) {
     console.warn(`  ↳ Não foi possível avaliar timeline do time ${teamId}: ${err.message}`);
+    return true;
+  }
+};
+
+const getMatchDetailUpdatedAt = async (matchId) => {
+  if (MATCH_DETAIL_UPDATED_CACHE.has(matchId)) {
+    return MATCH_DETAIL_UPDATED_CACHE.get(matchId);
+  }
+  const query = `
+    SELECT updated_at
+      FROM stats_match_details
+     WHERE match_id = $1
+     LIMIT 1;
+  `;
+  try {
+    const { rows } = await pool.query(query, [matchId]);
+    const value = rows[0]?.updated_at ? new Date(rows[0].updated_at) : null;
+    MATCH_DETAIL_UPDATED_CACHE.set(matchId, value);
+    return value;
+  } catch (err) {
+    console.warn(`  ↳ Falha ao consultar updated_at de match ${matchId}: ${err.message}`);
+    MATCH_DETAIL_UPDATED_CACHE.set(matchId, null);
+    return null;
+  }
+};
+
+const shouldRefreshMatchDetail = async (matchRow) => {
+  try {
+    const currentUpdatedAt = await getMatchDetailUpdatedAt(matchRow.match_id);
+    if (!currentUpdatedAt) {
+      return true;
+    }
+
+    const homeTimeline = await getTeamTimeline(matchRow.home_team_id);
+    const awayTimeline = await getTeamTimeline(matchRow.away_team_id);
+    const timestamps = [homeTimeline.lastCompleted, awayTimeline.lastCompleted].filter(Boolean);
+    if (!timestamps.length) {
+      return true;
+    }
+    const lastCompleted = new Date(Math.max(...timestamps.map((date) => date.getTime())));
+    const kickoff = matchRow.kickoff_time ? new Date(matchRow.kickoff_time) : null;
+
+    if (currentUpdatedAt <= lastCompleted) {
+      return true;
+    }
+    if (kickoff && currentUpdatedAt >= kickoff) {
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.warn(`  ↳ Não foi possível avaliar necessidade de atualizar match ${matchRow.match_id}: ${err.message}`);
     return true;
   }
 };
@@ -696,9 +748,18 @@ const upsertLastX = async (payload) => {
 
 const processMatch = async (matchRow) => {
   try {
+    const needsRefresh = await shouldRefreshMatchDetail(matchRow);
+    if (!needsRefresh) {
+      console.log(
+        `  ↳ Detalhes do match ${matchRow.match_id} já estão entre o último e o próximo jogo, pulando API.`,
+      );
+      return { status: 'skipped', reason: 'fresh-timeline', match_id: matchRow.match_id };
+    }
+
     const detailPayload = await fetchMatchDetail(matchRow.match_id);
     saveMatchDetailFile(matchRow.match_id, detailPayload);
     await upsertMatchDetail(matchRow, detailPayload);
+    MATCH_DETAIL_UPDATED_CACHE.set(matchRow.match_id, new Date(detailPayload.fetched_at));
     return { status: 'fetched', fetched_at: detailPayload.fetched_at, match_id: matchRow.match_id };
   } catch (err) {
     const message = err.response?.data || err.message;
