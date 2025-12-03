@@ -328,28 +328,6 @@ const fetchMatchesByIds = async (matchIds = []) => {
   return rows;
 };
 
-const saveUpcomingFile = (range, matches, queueSnapshot = null) => {
-  const filePath = path.join(UPCOMING_DIR, `${range.label}.json`);
-  const payload = {
-    fetched_at: new Date().toISOString(),
-    range_label: range.label,
-    range_hours: range.hours,
-    window: {
-      start_iso: range.startISO,
-      end_iso: range.endISO,
-      start_unix: range.startUnix,
-      end_unix: range.endUnix,
-    },
-    total_matches: matches.length,
-    matches,
-  };
-  if (queueSnapshot) {
-    payload.queue_snapshot = queueSnapshot;
-  }
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-  console.log(`Agenda das próximas ${range.hours}h salva em ${filePath}`);
-};
-
 const saveAnalysisFile = (range, records) => {
   const filePath = path.join(ANALYZED_DIR, `${range.label}.json`);
   const payload = {
@@ -367,6 +345,26 @@ const saveAnalysisFile = (range, records) => {
   };
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
   console.log(`Relatório de jogos analisados salvo em ${filePath}`);
+};
+
+const logSummary = (summary) => {
+  if (!summary) return;
+  console.log('\n===== Resumo daily_update =====');
+  console.log(`- Jogos na fila: ${summary.queueSize}`);
+  console.log(
+    `- Match details → fetched: ${summary.matches.fetched}, skipped: ${summary.matches.skipped}, falhas: ${summary.matches.failed}`,
+  );
+  console.log(
+    `- LastX → fetched: ${summary.lastx.fetched}, skipped: ${summary.lastx.skipped}, falhas: ${summary.lastx.failed}`,
+  );
+  const teamList =
+    Array.isArray(summary.teamStats.list) && summary.teamStats.list.length
+      ? summary.teamStats.list.join(', ')
+      : '';
+  console.log(
+    `- Team stats atualizados: ${summary.teamStats.synced}${teamList ? ` (times: ${teamList})` : ''}`,
+  );
+  console.log('================================\n');
 };
 
 const getPendingLeagueMatches = async (limit = MAX_PENDING_MATCHES) => {
@@ -890,10 +888,17 @@ async function main() {
       lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
     });
 
+    const summary = {
+      queueSize: queueEntries.length,
+      matches: { fetched: 0, skipped: 0, failed: 0 },
+      lastx: { fetched: 0, skipped: 0, failed: 0 },
+      teamStats: { synced: 0, list: [] },
+    };
+
     if (!queueEntries.length) {
       console.log('Nenhum jogo pendente na match_analysis_queue.');
-      saveUpcomingFile(range, [], queueEntries);
       saveAnalysisFile(range, []);
+      logSummary(summary);
       return;
     }
 
@@ -911,7 +916,6 @@ async function main() {
     }
 
     console.log(`Fila pendente contém ${orderedMatches.length} partida(s).`);
-    saveUpcomingFile(range, orderedMatches, queueEntries);
 
     const pendingSeasonIds = Array.from(
       new Set(
@@ -921,9 +925,21 @@ async function main() {
       ),
     );
     const teamStatsTargets = await collectTeamStatsTargets(orderedMatches);
-    await syncLeagueTeamStats(pendingSeasonIds, Array.from(teamStatsTargets));
+    summary.teamStats.synced = teamStatsTargets.size;
+    summary.teamStats.list = Array.from(teamStatsTargets);
+    if (teamStatsTargets.size) {
+      await syncLeagueTeamStats(pendingSeasonIds, Array.from(teamStatsTargets));
+    } else {
+      console.log('Nenhum time precisando de atualização de league_team_stats, pulando fetch/load.');
+    }
 
     const processedTeams = new Map();
+    const trackLastxStatus = (result) => {
+      if (!result?.status) return;
+      if (result.status === 'fetched') summary.lastx.fetched += 1;
+      else if (result.status === 'skipped') summary.lastx.skipped += 1;
+      else if (result.status === 'failed') summary.lastx.failed += 1;
+    };
     const analysisRecords = [];
     const queueMap = new Map(queueEntries.map((entry) => [entry.matchId, entry]));
 
@@ -962,9 +978,18 @@ async function main() {
           errorReason: err.response?.data || err.message,
         });
       }
+
+      const detailStatus = matchRecord.detail?.status;
+      if (detailStatus === 'fetched') summary.matches.fetched += 1;
+      else if (detailStatus === 'skipped') summary.matches.skipped += 1;
+      else if (detailStatus === 'failed') summary.matches.failed += 1;
+
+      trackLastxStatus(matchRecord.home_lastx);
+      trackLastxStatus(matchRecord.away_lastx);
     }
 
     saveAnalysisFile(range, analysisRecords);
+    logSummary(summary);
   } finally {
     await pool.end();
   }
