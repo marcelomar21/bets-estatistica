@@ -118,7 +118,10 @@ const QUEUE_SELECT_SQL = `
 WITH params AS (
   SELECT
     NOW() AS now_ts,
-    NOW() + make_interval(hours => $2::int) AS future_limit,
+    CASE
+      WHEN $2::int IS NULL THEN NULL
+      ELSE NOW() + make_interval(hours => $2::int)
+    END AS future_limit,
     NOW() - make_interval(hours => $3::int) AS past_limit
 )
 SELECT
@@ -138,7 +141,8 @@ FROM match_analysis_queue maq
 JOIN league_matches lm ON lm.match_id = maq.match_id
 CROSS JOIN params p
 WHERE maq.status = ANY($1)
-  AND lm.kickoff_time BETWEEN p.past_limit AND p.future_limit
+  AND lm.kickoff_time >= p.past_limit
+  AND (p.future_limit IS NULL OR lm.kickoff_time <= p.future_limit)
 ORDER BY lm.kickoff_time;
 `.trim();
 

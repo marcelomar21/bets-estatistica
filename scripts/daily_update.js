@@ -705,7 +705,7 @@ async function main() {
   try {
     const queueEntries = await fetchQueueMatches(pool, {
       statuses: ['pending'],
-      windowHours: FRESHNESS_WINDOW_HOURS,
+      windowHours: null,
       lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
     });
 
@@ -718,8 +718,10 @@ async function main() {
 
     const matchIds = queueEntries.map((entry) => entry.matchId);
     const matchRows = await fetchMatchesByIds(matchIds);
-    const matchMap = new Map(matchRows.map((row) => [row.match_id, row]));
-    const orderedMatches = matchIds.map((id) => matchMap.get(id)).filter(Boolean);
+    const matchMap = new Map(matchRows.map((row) => [Number(row.match_id), row]));
+    const orderedMatches = matchIds
+      .map((id) => matchMap.get(Number(id)))
+      .filter((row) => Boolean(row));
     const missingMatches = matchIds.filter((id) => !matchMap.has(id));
     if (missingMatches.length) {
       console.warn(
@@ -735,14 +737,15 @@ async function main() {
     const queueMap = new Map(queueEntries.map((entry) => [entry.matchId, entry]));
 
     for (const match of orderedMatches) {
+      const matchId = Number(match.match_id);
       console.log(
-        `\nProcessando match ${match.match_id} (${match.home_team_name} x ${match.away_team_name})`,
+        `\nProcessando match ${matchId} (${match.home_team_name} x ${match.away_team_name})`,
       );
-      const queueMeta = queueMap.get(match.match_id) || null;
+      const queueMeta = queueMap.get(matchId) || null;
       const matchRecord = {
-        match_id: match.match_id,
-        home_team_id: match.home_team_id,
-        away_team_id: match.away_team_id,
+        match_id: matchId,
+        home_team_id: Number(match.home_team_id),
+        away_team_id: Number(match.away_team_id),
         home_team_name: match.home_team_name,
         away_team_name: match.away_team_name,
         kickoff_time: match.kickoff_time,
@@ -757,14 +760,14 @@ async function main() {
         matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
         matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
         analysisRecords.push(matchRecord);
-        await markAnalysisStatus(pool, match.match_id, queueMeta?.status || 'pending', {
+        await markAnalysisStatus(pool, matchId, queueMeta?.status || 'pending', {
           clearErrorReason: true,
         });
       } catch (err) {
-        console.error(`  ↳ Falha ao atualizar match ${match.match_id}:`, err.message);
+        console.error(`  ↳ Falha ao atualizar match ${matchId}:`, err.message);
         matchRecord.error = err.response?.data || err.message;
         analysisRecords.push(matchRecord);
-        await markAnalysisStatus(pool, match.match_id, queueMeta?.status || 'pending', {
+        await markAnalysisStatus(pool, matchId, queueMeta?.status || 'pending', {
           errorReason: err.response?.data || err.message,
         });
       }
