@@ -29,7 +29,45 @@ const pool = new Pool({
   ssl: false,
 });
 
+const parseSeasonIdsArg = () => {
+  const args = process.argv.slice(2);
+  let rawValue = null;
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token.startsWith('--season-ids=')) {
+      rawValue = token.split('=')[1];
+      break;
+    }
+    if (token === '--season-ids') {
+      rawValue = args[index + 1];
+      break;
+    }
+  }
+  if (!rawValue) {
+    return [];
+  }
+  return rawValue
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
+
+const requestedSeasonIds = parseSeasonIdsArg();
+
 async function fetchSeasonIds() {
+  if (requestedSeasonIds.length) {
+    const { rows } = await pool.query(
+      `
+        SELECT season_id, display_name
+          FROM league_seasons
+         WHERE season_id = ANY($1::int[])
+         ORDER BY display_name;
+      `,
+      [requestedSeasonIds],
+    );
+    return rows;
+  }
+
   const query = `
     SELECT season_id, display_name
       FROM league_seasons
@@ -90,7 +128,11 @@ async function fetchSeasonData(seasonId, label) {
 async function main() {
   const seasons = await fetchSeasonIds();
   if (!seasons.length) {
-    console.log('Nenhuma temporada ativa encontrada para 2025.');
+    if (requestedSeasonIds.length) {
+      console.warn(`Nenhuma season encontrada para os IDs solicitados: ${requestedSeasonIds.join(', ')}`);
+    } else {
+      console.log('Nenhuma temporada ativa encontrada para 2025.');
+    }
     return;
   }
 

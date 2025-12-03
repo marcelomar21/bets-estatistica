@@ -26,6 +26,8 @@ const MAX_PENDING_MATCHES = Number(process.env.MAX_PENDING_MATCHES ?? 50);
 const REPO_ROOT = path.join(__dirname, '..');
 const FETCH_LEAGUE_SCRIPT = path.join(__dirname, 'fetchLeagueMatches.js');
 const LOAD_LEAGUE_SCRIPT = path.join(__dirname, 'loadLeagueMatches.js');
+const FETCH_LEAGUE_TEAMS_SCRIPT = path.join(__dirname, 'fetchLeagueTeams.js');
+const LOAD_LEAGUE_TEAMS_SCRIPT = path.join(__dirname, 'loadLeagueTeamStats.js');
 
 const FRESHNESS_WINDOW_HOURS = 48;
 const FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
@@ -433,6 +435,21 @@ const syncPendingLeagueMatches = async () => {
   await runNodeScript(LOAD_LEAGUE_SCRIPT, args);
 };
 
+const syncLeagueTeamStats = async (seasonIds = []) => {
+  const unique = Array.from(
+    new Set(seasonIds.filter((value) => Number.isInteger(value) && value > 0)),
+  );
+  if (!unique.length) {
+    return;
+  }
+  const arg = `--season-ids=${unique.join(',')}`;
+  console.log(
+    `Sincronizando league_team_stats para ${unique.length} temporada(s): ${unique.join(', ')}`,
+  );
+  await runNodeScript(FETCH_LEAGUE_TEAMS_SCRIPT, [arg]);
+  await runNodeScript(LOAD_LEAGUE_TEAMS_SCRIPT, [arg]);
+};
+
 const isMatchDetailFresh = async (matchId) => {
   const query = `
     SELECT 1
@@ -661,37 +678,41 @@ const processMatch = async (matchRow) => {
   }
 };
 
-const processTeam = async (teamId, processedTeams) => {
+const processTeam = async (teamId, processedTeams, { forceRefresh = false } = {}) => {
   if (!teamId) {
     return { status: 'failed', reason: 'missing-team-id', team_id: teamId ?? null };
   }
 
-  if (processedTeams.has(teamId)) {
-    console.log(`  ↳ LastX do time ${teamId} já processado neste ciclo, reutilizando resultado.`);
-    return { ...processedTeams.get(teamId), reused: true, team_id: teamId };
+  const cached = processedTeams.get(teamId);
+  if (cached) {
+    if (!forceRefresh || cached.forced) {
+      console.log(`  ↳ LastX do time ${teamId} já processado neste ciclo, reutilizando resultado.`);
+      return { ...cached.result, reused: true, team_id: teamId };
+    }
   }
 
+  const storeResult = (result) => {
+    processedTeams.set(teamId, { result, forced: forceRefresh });
+    return result;
+  };
+
   try {
-    const fresh = await isTeamLastXFresh(teamId);
-    if (fresh) {
-      console.log(`  ↳ LastX do time ${teamId} atualizado nas últimas 48h, pulando API.`);
-      const result = { status: 'skipped', reason: 'fresh-db', team_id: teamId };
-      processedTeams.set(teamId, result);
-      return result;
+    if (!forceRefresh) {
+      const fresh = await isTeamLastXFresh(teamId);
+      if (fresh) {
+        console.log(`  ↳ LastX do time ${teamId} atualizado nas últimas 48h, pulando API.`);
+        return storeResult({ status: 'skipped', reason: 'fresh-db', team_id: teamId });
+      }
     }
 
     const lastxPayload = await fetchLastX(teamId);
     saveLastXFile(teamId, lastxPayload);
     await upsertLastX(lastxPayload);
-    const result = { status: 'fetched', fetched_at: lastxPayload.fetched_at, team_id: teamId };
-    processedTeams.set(teamId, result);
-    return result;
+    return storeResult({ status: 'fetched', fetched_at: lastxPayload.fetched_at, team_id: teamId });
   } catch (err) {
     const message = err.response?.data || err.message;
     console.error(`  ↳ Falha ao processar lastx do time ${teamId}:`, message);
-    const result = { status: 'failed', message, team_id: teamId };
-    processedTeams.set(teamId, result);
-    return result;
+    return storeResult({ status: 'failed', message, team_id: teamId });
   }
 };
 
@@ -732,6 +753,15 @@ async function main() {
     console.log(`Fila pendente contém ${orderedMatches.length} partida(s).`);
     saveUpcomingFile(range, orderedMatches, queueEntries);
 
+    const pendingSeasonIds = Array.from(
+      new Set(
+        orderedMatches
+          .map((match) => Number(match.season_id))
+          .filter((value) => Number.isInteger(value) && value > 0),
+      ),
+    );
+    await syncLeagueTeamStats(pendingSeasonIds);
+
     const processedTeams = new Map();
     const analysisRecords = [];
     const queueMap = new Map(queueEntries.map((entry) => [entry.matchId, entry]));
@@ -757,8 +787,12 @@ async function main() {
 
       try {
         matchRecord.detail = await processMatch(match);
-        matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
-        matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
+        matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams, {
+          forceRefresh: true,
+        });
+        matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams, {
+          forceRefresh: true,
+        });
         analysisRecords.push(matchRecord);
         await markAnalysisStatus(pool, matchId, queueMeta?.status || 'pending', {
           clearErrorReason: true,

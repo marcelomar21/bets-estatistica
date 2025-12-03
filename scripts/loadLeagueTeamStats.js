@@ -19,6 +19,31 @@ const pool = new Pool({
   ssl: false,
 });
 
+const parseSeasonIdsArg = () => {
+  const args = process.argv.slice(2);
+  let rawValue = null;
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (token.startsWith('--season-ids=')) {
+      rawValue = token.split('=')[1];
+      break;
+    }
+    if (token === '--season-ids') {
+      rawValue = args[index + 1];
+      break;
+    }
+  }
+  if (!rawValue) {
+    return [];
+  }
+  return rawValue
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+};
+
+const requestedSeasonIds = parseSeasonIdsArg();
+
 async function loadFile(filePath) {
   const payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
   const seasonId = payload.season_id;
@@ -95,14 +120,27 @@ async function loadFile(filePath) {
 }
 
 async function main() {
-  const files = fs
-    .readdirSync(DATA_DIR)
-    .filter((file) => file.startsWith('season-') && file.endsWith('.json'))
-    .sort();
+  let files;
+  if (requestedSeasonIds.length) {
+    files = requestedSeasonIds
+      .map((id) => `season-${id}.json`)
+      .filter((file) => fs.existsSync(path.join(DATA_DIR, file)));
+    if (!files.length) {
+      console.warn(
+        `Nenhum arquivo encontrado para os season_ids solicitados: ${requestedSeasonIds.join(', ')}`,
+      );
+      return;
+    }
+  } else {
+    files = fs
+      .readdirSync(DATA_DIR)
+      .filter((file) => file.startsWith('season-') && file.endsWith('.json'))
+      .sort();
 
-  if (!files.length) {
-    console.log('Nenhum arquivo season-*.json encontrado em league-teams.');
-    return;
+    if (!files.length) {
+      console.log('Nenhum arquivo season-*.json encontrado em league-teams.');
+      return;
+    }
   }
 
   let total = 0;
