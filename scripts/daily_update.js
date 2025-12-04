@@ -924,7 +924,7 @@ const processTeam = async (teamId, processedTeams) => {
 };
 
 async function main() {
-  await syncPendingLeagueMatches();
+  const syncedSeasonsInitial = await syncPendingLeagueMatches();
   const range = getRollingRange(FRESHNESS_WINDOW_HOURS);
 
   try {
@@ -936,7 +936,10 @@ async function main() {
 
     const summary = {
       queueSize: queueEntries.length,
-      matchesSync: { seasonsSynced: 0, seasonList: [] },
+      matchesSync: {
+        seasonsSynced: Array.isArray(syncedSeasonsInitial) ? syncedSeasonsInitial.length : 0,
+        seasonList: Array.isArray(syncedSeasonsInitial) ? syncedSeasonsInitial : [],
+      },
       matches: { fetched: 0, skipped: 0, failed: 0 },
       lastx: { fetched: 0, skipped: 0, failed: 0 },
       teamStats: { synced: 0, list: [] },
@@ -971,11 +974,6 @@ async function main() {
           .filter((value) => Number.isInteger(value) && value > 0),
       ),
     );
-    const syncedSeasons = await syncPendingLeagueMatches();
-    if (Array.isArray(syncedSeasons) && syncedSeasons.length) {
-      summary.matchesSync.seasonsSynced = syncedSeasons.length;
-      summary.matchesSync.seasonList = syncedSeasons;
-    }
     const teamStatsTargets = await collectTeamStatsTargets(orderedMatches);
     summary.teamStats.synced = teamStatsTargets.size;
     summary.teamStats.list = Array.from(teamStatsTargets);
