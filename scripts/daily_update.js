@@ -352,6 +352,13 @@ const logSummary = (summary) => {
   console.log('\n===== Resumo daily_update =====');
   console.log(`- Jogos na fila: ${summary.queueSize}`);
   console.log(
+    `- league_matches -> seasons sincronizadas: ${summary.matchesSync.seasonsSynced}${
+      summary.matchesSync.seasonList.length
+        ? ` (${summary.matchesSync.seasonList.join(', ')})`
+        : ''
+    }`,
+  );
+  console.log(
     `- Match details → fetched: ${summary.matches.fetched}, skipped: ${summary.matches.skipped}, falhas: ${summary.matches.failed}`,
   );
   console.log(
@@ -445,7 +452,7 @@ const syncPendingLeagueMatches = async () => {
   const targets = await getSeasonSyncTargets(MAX_PENDING_MATCHES);
   if (!targets.length) {
     console.log('Nenhuma temporada pendente precisa de atualização de league_matches.');
-    return;
+    return [];
   }
 
   const seasonIds = targets.map((item) => item.season_id);
@@ -459,6 +466,7 @@ const syncPendingLeagueMatches = async () => {
   const args = [`--season-ids=${seasonIds.join(',')}`];
   await runNodeScript(FETCH_LEAGUE_SCRIPT, args);
   await runNodeScript(LOAD_LEAGUE_SCRIPT, args);
+  return seasonIds;
 };
 
 const syncLeagueTeamStats = async (seasonIds = [], teamIds = []) => {
@@ -918,6 +926,7 @@ async function main() {
 
     const summary = {
       queueSize: queueEntries.length,
+      matchesSync: { seasonsSynced: 0, seasonList: [] },
       matches: { fetched: 0, skipped: 0, failed: 0 },
       lastx: { fetched: 0, skipped: 0, failed: 0 },
       teamStats: { synced: 0, list: [] },
@@ -952,6 +961,11 @@ async function main() {
           .filter((value) => Number.isInteger(value) && value > 0),
       ),
     );
+    const syncedSeasons = await syncPendingLeagueMatches();
+    if (Array.isArray(syncedSeasons) && syncedSeasons.length) {
+      summary.matchesSync.seasonsSynced = syncedSeasons.length;
+      summary.matchesSync.seasonList = syncedSeasons;
+    }
     const teamStatsTargets = await collectTeamStatsTargets(orderedMatches);
     summary.teamStats.synced = teamStatsTargets.size;
     summary.teamStats.list = Array.from(teamStatsTargets);
