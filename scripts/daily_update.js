@@ -390,6 +390,19 @@ const getSeasonSyncTargets = async (limit = MAX_PENDING_MATCHES) => {
      LIMIT $1;
   `;
   const { rows } = await pool.query(query, [limit]);
+  const pendingSeasonIds = Array.from(
+    new Set(
+      rows
+        .map((row) => Number(row.season_id))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  );
+  if (pendingSeasonIds.length) {
+    console.log(`Temporadas com jogos pendentes em league_matches: ${pendingSeasonIds.join(', ')}`);
+  } else {
+    console.log('Nenhuma temporada possui jogos pendentes em league_matches.');
+  }
+
   for (const row of rows) {
     if (!Number.isInteger(row.season_id)) continue;
     const existing = seasonMap.get(row.season_id);
@@ -913,9 +926,6 @@ const processTeam = async (teamId, processedTeams) => {
 async function main() {
   await syncPendingLeagueMatches();
   const range = getRollingRange(FRESHNESS_WINDOW_HOURS);
-  console.log(
-    `Buscando partidas pendentes na match_analysis_queue para janela ${range.startISO} – ${range.endISO}`,
-  );
 
   try {
     const queueEntries = await fetchQueueMatches(pool, {
