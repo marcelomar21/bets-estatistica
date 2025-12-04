@@ -367,13 +367,14 @@ const logSummary = (summary) => {
   console.log('================================\n');
 };
 
-const getPendingLeagueMatches = async (limit = MAX_PENDING_MATCHES) => {
-  if (!limit || limit <= 0) {
-    return [];
-  }
-
+const getSeasonSyncTargets = async (limit = MAX_PENDING_MATCHES) => {
+  const seasonMap = new Map();
   const query = `
-    SELECT match_id, season_id, kickoff_time, status
+    SELECT season_id,
+           match_id,
+           kickoff_time,
+           status,
+           updated_at
       FROM league_matches
      WHERE kickoff_time IS NOT NULL
        AND kickoff_time <= NOW()
@@ -381,9 +382,44 @@ const getPendingLeagueMatches = async (limit = MAX_PENDING_MATCHES) => {
      ORDER BY kickoff_time ASC
      LIMIT $1;
   `;
-
   const { rows } = await pool.query(query, [limit]);
-  return rows;
+  for (const row of rows) {
+    if (!Number.isInteger(row.season_id)) continue;
+    const existing = seasonMap.get(row.season_id);
+    const kickoff = row.kickoff_time ? new Date(row.kickoff_time) : null;
+    const updatedAt = row.updated_at ? new Date(row.updated_at) : null;
+    if (!existing) {
+      seasonMap.set(row.season_id, {
+        season_id: row.season_id,
+        needsSync: true,
+        pendingMatches: [row.match_id],
+        lastKickoff: kickoff,
+        lastUpdatedAt: updatedAt,
+      });
+      continue;
+    }
+    existing.pendingMatches.push(row.match_id);
+    if (!existing.lastKickoff || (kickoff && kickoff > existing.lastKickoff)) {
+      existing.lastKickoff = kickoff;
+      existing.lastUpdatedAt = updatedAt;
+    }
+  }
+
+  const seasonTargets = [];
+  for (const season of seasonMap.values()) {
+    if (!season.lastKickoff) {
+      seasonTargets.push(season);
+      continue;
+    }
+    if (!season.lastUpdatedAt || season.lastUpdatedAt <= season.lastKickoff) {
+      seasonTargets.push(season);
+    } else {
+      console.log(
+        `Temporada ${season.season_id} já atualizada após o último jogo pendente, pulando fetch/load.`,
+      );
+    }
+  }
+  return seasonTargets;
 };
 
 const runNodeScript = (scriptPath, args = []) =>
@@ -406,25 +442,17 @@ const runNodeScript = (scriptPath, args = []) =>
   });
 
 const syncPendingLeagueMatches = async () => {
-  const pending = await getPendingLeagueMatches(MAX_PENDING_MATCHES);
-  if (!pending.length) {
-    console.log('Nenhuma partida pendente em league_matches para atualização.');
+  const targets = await getSeasonSyncTargets(MAX_PENDING_MATCHES);
+  if (!targets.length) {
+    console.log('Nenhuma temporada pendente precisa de atualização de league_matches.');
     return;
   }
 
-  const seasonIds = Array.from(
-    new Set(pending.map((item) => item.season_id).filter((value) => Number.isInteger(value))),
-  );
-
-  if (!seasonIds.length) {
-    console.warn('Partidas pendentes encontradas, mas nenhum season_id válido foi identificado.');
-    return;
-  }
-
+  const seasonIds = targets.map((item) => item.season_id);
   console.log(
-    `Sincronizando ${seasonIds.length} temporadas (${pending.length} partidas) via fetch/load league matches...`,
+    `Sincronizando ${seasonIds.length} temporada(s) via fetch/load league matches: ${seasonIds.join(', ')}`,
   );
-  if (pending.length === MAX_PENDING_MATCHES) {
+  if (targets.some((target) => target.pendingMatches.length === MAX_PENDING_MATCHES)) {
     console.log(`  ↳ Atenção: limite de ${MAX_PENDING_MATCHES} partidas pendentes atingido.`);
   }
 
