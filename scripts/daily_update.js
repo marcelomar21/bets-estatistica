@@ -384,7 +384,6 @@ const getSeasonSyncTargets = async (limit = MAX_PENDING_MATCHES) => {
            updated_at
       FROM league_matches
      WHERE kickoff_time IS NOT NULL
-       AND kickoff_time <= NOW()
        AND (status IS NULL OR LOWER(status) <> 'complete')
      ORDER BY kickoff_time ASC
      LIMIT $1;
