@@ -82,7 +82,14 @@ CREATE TABLE IF NOT EXISTS match_analysis_queue (
         FOREIGN KEY (match_id) REFERENCES league_matches (match_id)
         ON DELETE CASCADE,
     CONSTRAINT match_analysis_queue_status_check
-        CHECK (status IN ('pending', 'analyzing', 'complete', 'skipped'))
+        CHECK (
+            status IN (
+                'pending',
+                'dados_importados',
+                'analise_completa',
+                'relatorio_concluido'
+            )
+        )
 );
 
 CREATE INDEX IF NOT EXISTS idx_match_analysis_queue_status

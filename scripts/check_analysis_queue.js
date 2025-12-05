@@ -11,6 +11,10 @@ const {
   MATCH_COMPLETION_GRACE_HOURS,
 } = require('./lib/matchScreening');
 
+const IMPORTED_STATUS = 'dados_importados';
+const ANALYSIS_DONE_STATUS = 'analise_completa';
+const REPORT_DONE_STATUS = 'relatorio_concluido';
+
 const parseArgs = () => {
   const args = process.argv.slice(2);
   const options = {
@@ -111,15 +115,24 @@ async function main() {
 
     for (const row of targetPending) {
       const existing = existingMap.get(row.matchId);
-      if (existing && existing.status === 'analyzing') {
+      if (existing && existing.status === IMPORTED_STATUS) {
         actions.push({
-          type: 'retain-analyzing',
+          type: 'retain-imported',
           matchId: row.matchId,
           label: formatMatchLabel(row),
         });
-        if (!options.dryRun) {
-          await markAnalysisStatus(pool, row.matchId, 'analyzing');
-        }
+        continue;
+      }
+      if (
+        existing &&
+        (existing.status === ANALYSIS_DONE_STATUS || existing.status === REPORT_DONE_STATUS)
+      ) {
+        actions.push({
+          type: 'retain-analysis-done',
+          status: existing.status,
+          matchId: row.matchId,
+          label: formatMatchLabel(row),
+        });
         continue;
       }
       actions.push({ type: 'queue-pending', matchId: row.matchId, label: formatMatchLabel(row) });
@@ -131,9 +144,13 @@ async function main() {
     }
 
     for (const row of targetCompleted) {
-      actions.push({ type: 'mark-complete', matchId: row.matchId, label: formatMatchLabel(row) });
+      actions.push({
+        type: 'mark-analysis-complete',
+        matchId: row.matchId,
+        label: formatMatchLabel(row),
+      });
       if (!options.dryRun) {
-        await markAnalysisStatus(pool, row.matchId, 'complete', {
+        await markAnalysisStatus(pool, row.matchId, ANALYSIS_DONE_STATUS, {
           analysisGeneratedAt: row.lastAnalysisAt || new Date(),
         });
       }

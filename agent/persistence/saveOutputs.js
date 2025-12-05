@@ -136,7 +136,7 @@ const saveOutputs = async (matchId) => {
 
   await persistInDatabase(matchId, payload, bets, analysisText);
   const generatedAt = payload.generated_at ? new Date(payload.generated_at) : new Date();
-  await markAnalysisStatus(getPool(), matchId, 'complete', {
+  await markAnalysisStatus(getPool(), matchId, 'relatorio_concluido', {
     analysisGeneratedAt: generatedAt,
     clearErrorReason: true,
   });

@@ -622,6 +622,9 @@ const exitWithError = (message) => {
 
 const TODAY_ALIASES = new Set(['today', '--today', '-t']);
 const AGENT_QUEUE_WINDOW_HOURS = Number(process.env.AGENT_QUEUE_WINDOW_HOURS ?? 72);
+const IMPORTED_STATUS = 'dados_importados';
+const READY_QUEUE_STATUSES = [IMPORTED_STATUS];
+const LEGACY_QUEUE_STATUSES = ['pending'];
 
 let queuePendingMatches = new Map();
 
@@ -635,11 +638,18 @@ const describeQueueEntry = (entry) => {
 };
 
 const loadQueuePendingMatches = async () => {
-  const entries = await fetchQueueMatches(getPool(), {
-    statuses: ['pending'],
-    windowHours: AGENT_QUEUE_WINDOW_HOURS,
-    lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
-  });
+  const makeQuery = (statuses) =>
+    fetchQueueMatches(getPool(), {
+      statuses,
+      windowHours: AGENT_QUEUE_WINDOW_HOURS,
+      lookbackHours: MATCH_COMPLETION_GRACE_HOURS,
+    });
+
+  let entries = await makeQuery(READY_QUEUE_STATUSES);
+  if (!entries.length) {
+    entries = await makeQuery(LEGACY_QUEUE_STATUSES);
+  }
+
   queuePendingMatches = new Map(entries.map((entry) => [Number(entry.matchId), entry]));
   return entries;
 };
@@ -1218,6 +1228,7 @@ const processMatch = async (matchId) => {
   );
   await fs.writeJson(outputFile, payload, { spaces: 2 });
   console.log(`Análise estruturada salva em ${outputFile}`);
+  return { generatedAt, outputFile };
 };
 
 async function main() {
@@ -1226,8 +1237,11 @@ async function main() {
     const matchId = matchIds[index];
     infoLog(`Iniciando análise ${index + 1}/${matchIds.length} para match_id ${matchId}.`);
     try {
-      await setQueueStatus(matchId, 'analyzing', { clearErrorReason: true });
-      await processMatch(matchId);
+      const { generatedAt } = await processMatch(matchId);
+      await setQueueStatus(matchId, 'analise_completa', {
+        analysisGeneratedAt: generatedAt,
+        clearErrorReason: true,
+      });
     } catch (err) {
       console.error(`[agent][analysis] Falha ao processar match ${matchId}: ${err.message}`);
       await setQueueStatus(matchId, 'pending', { errorReason: err.message });

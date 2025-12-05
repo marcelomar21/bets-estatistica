@@ -377,18 +377,20 @@ const logSummary = (summary) => {
 const getSeasonSyncTargets = async (limit = MAX_PENDING_MATCHES) => {
   const seasonMap = new Map();
   const query = `
-    SELECT season_id,
-           match_id,
-           kickoff_time,
-           status,
-           updated_at
-      FROM league_matches
-     WHERE kickoff_time IS NOT NULL
-       AND (status IS NULL OR LOWER(status) <> 'complete')
-     ORDER BY kickoff_time ASC
-     LIMIT $1;
+    SELECT
+      season_id,
+      match_id,
+      kickoff_time,
+      status,
+      updated_at
+    FROM league_matches
+    WHERE kickoff_time IS NOT NULL
+      AND kickoff_time <= NOW() - make_interval(hours => $2::int)
+      AND (status IS NULL OR LOWER(status) <> 'complete')
+    ORDER BY kickoff_time ASC
+    LIMIT $1;
   `;
-  const { rows } = await pool.query(query, [limit]);
+  const { rows } = await pool.query(query, [limit, MATCH_COMPLETION_GRACE_HOURS]);
   const pendingSeasonIds = Array.from(
     new Set(
       rows
@@ -1016,7 +1018,7 @@ async function main() {
         matchRecord.home_lastx = await processTeam(match.home_team_id, processedTeams);
         matchRecord.away_lastx = await processTeam(match.away_team_id, processedTeams);
         analysisRecords.push(matchRecord);
-        await markAnalysisStatus(pool, matchId, queueMeta?.status || 'pending', {
+        await markAnalysisStatus(pool, matchId, 'dados_importados', {
           clearErrorReason: true,
         });
       } catch (err) {

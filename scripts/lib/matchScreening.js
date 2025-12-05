@@ -8,7 +8,15 @@ const DEFAULT_WINDOW_HOURS =
     : null;
 const QUEUE_LOOKBACK_HOURS = Number(process.env.ANALYSIS_QUEUE_LOOKBACK_HOURS ?? 12);
 
-const ANALYSIS_STATUSES = new Set(['pending', 'analyzing', 'complete', 'skipped']);
+const ANALYSIS_STATUSES = new Set(['pending', 'dados_importados', 'analise_completa', 'relatorio_concluido']);
+
+const formatStatusToken = (value) =>
+  String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
 
 const ensurePool = (maybePool) => {
   if (maybePool instanceof Pool) {
@@ -24,7 +32,7 @@ const normalizeStatus = (status) => {
   if (!status) {
     throw new Error('Status inválido para match_analysis_queue.');
   }
-  const lowered = String(status).toLowerCase();
+  const lowered = formatStatusToken(status);
   if (!ANALYSIS_STATUSES.has(lowered)) {
     throw new Error(
       `Status "${status}" não é suportado. Use: ${Array.from(ANALYSIS_STATUSES).join(', ')}.`,
