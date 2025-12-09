@@ -14,6 +14,7 @@ const ACTIVE_LEAGUES = new Set(
     'Brazil Serie A',
     'Brazil Copa do Brasil',
     'South America Copa Libertadores',
+    'Europe UEFA Champions League',
   ].map(normalizeName),
 );
 

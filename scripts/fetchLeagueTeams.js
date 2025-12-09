@@ -96,7 +96,6 @@ async function fetchSeasonIds() {
     SELECT season_id, display_name
       FROM league_seasons
      WHERE active = true
-       AND season_year = 2025
      ORDER BY display_name;
   `;
   const { rows } = await pool.query(query);

@@ -179,6 +179,14 @@ CREATE TABLE IF NOT EXISTS team_lastx_stats (
 CREATE INDEX IF NOT EXISTS idx_team_lastx_team
     ON team_lastx_stats (team_id);
 
+-- View com data local para o Brasil (UTC-3)
+DROP VIEW IF EXISTS league_matches_br;
+CREATE VIEW league_matches_br AS
+SELECT
+    lm.*,
+    (lm.kickoff_time AT TIME ZONE 'America/Sao_Paulo') AS kickoff_time_br
+FROM league_matches lm;
+
 CREATE OR REPLACE FUNCTION fn_sync_stats_match_details()
 RETURNS TRIGGER AS $$
 BEGIN
