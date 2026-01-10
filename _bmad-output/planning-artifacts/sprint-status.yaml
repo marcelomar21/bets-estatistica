@@ -1,0 +1,110 @@
+# Sprint Status - bets-estatistica
+# generated: 2026-01-10
+# project: bets-estatistica
+# tracking_system: yaml
+# story_location: _bmad-output/implementation-artifacts/stories
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# IMPLEMENTATION ORDER:
+# ====================
+# Epic 1 → Epic 6 → Epic 4 → Epic 2 → Epic 3 → Epic 5
+
+generated: "2026-01-10"
+project: "bets-estatistica"
+tracking_system: "yaml"
+story_location: "_bmad-output/implementation-artifacts/stories"
+
+development_status:
+  # ============================================
+  # Epic 1: Infraestrutura Supabase + Bot Básico
+  # ============================================
+  epic-1: backlog
+  1-1-configurar-projeto-supabase: backlog
+  1-2-migrar-schema-supabase: backlog
+  1-3-adicionar-campos-status-suggested-bets: backlog
+  1-4-criar-lib-supabase: backlog
+  1-5-criar-lib-logger: backlog
+  1-6-criar-bot-telegram-basico: backlog
+  1-7-configurar-deploy-render: backlog
+  epic-1-retrospective: optional
+
+  # ============================================
+  # Epic 6: Refinamento da Geração de Apostas
+  # ============================================
+  epic-6: backlog
+  6-1-gerar-apenas-safe-bets: backlog
+  6-2-salvar-apostas-status-inicial: backlog
+  6-3-filtrar-jogos-proximos: backlog
+  6-4-migrar-agent-db-supabase: backlog
+  epic-6-retrospective: optional
+
+  # ============================================
+  # Epic 4: Integração de Odds (The Odds API)
+  # ============================================
+  epic-4: backlog
+  4-1-criar-odds-service: backlog
+  4-2-mapear-mercados-odds-api: backlog
+  4-3-associar-odds-apostas: backlog
+  4-4-marcar-apostas-odds-insuficiente: backlog
+  4-5-manter-3-apostas-ativas-reposicao: backlog
+  4-6-cachear-odds: backlog
+  epic-4-retrospective: optional
+
+  # ============================================
+  # Epic 2: Fluxo de Coleta de Links (Grupo Admin)
+  # ============================================
+  epic-2: backlog
+  2-1-criar-job-pedido-links: backlog
+  2-2-formatar-pedido-link: backlog
+  2-3-detectar-resposta-link: backlog
+  2-4-validar-link-casa-apostas: backlog
+  2-5-salvar-link-bd: backlog
+  2-6-enviar-lembretes: backlog
+  2-7-confirmar-recebimento: backlog
+  epic-2-retrospective: optional
+
+  # ============================================
+  # Epic 3: Postagem no Grupo Público
+  # ============================================
+  epic-3: backlog
+  3-1-criar-job-postagem-publica: backlog
+  3-2-formatar-mensagem-aposta: backlog
+  3-3-incluir-deep-link-mensagem: backlog
+  3-4-validar-requisitos-antes-postar: backlog
+  3-5-fallback-odds-grupo-admin: backlog
+  3-6-variar-texto-mensagens: backlog
+  3-7-exibir-taxa-acerto: backlog
+  3-8-registrar-message-id-telegram: backlog
+  epic-3-retrospective: optional
+
+  # ============================================
+  # Epic 5: Tracking de Resultados & Métricas
+  # ============================================
+  epic-5: backlog
+  5-1-criar-job-tracking-resultados: backlog
+  5-2-detectar-fim-jogo: backlog
+  5-3-comparar-resultado-aposta: backlog
+  5-4-atualizar-status-automaticamente: backlog
+  5-5-calcular-taxa-acerto-30-dias: backlog
+  5-6-calcular-taxa-acerto-alltime: backlog
+  5-7-alertar-operador-falhas-criticas: backlog
+  5-8-comando-status-operador: backlog
+  5-9-comando-retry-reprocessar: backlog
+  epic-5-retrospective: optional

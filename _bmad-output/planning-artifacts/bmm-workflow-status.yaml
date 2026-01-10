@@ -80,7 +80,8 @@ workflow_status:
     name: "Implementation"
     workflows:
       - id: "sprint-planning"
-        status: "required"
+        status: "sprint-status.yaml"
         agent: "sm"
         command: "/bmad:bmm:workflows:sprint-planning"
         note: "Creates sprint plan - subsequent work tracked in sprint-status.yaml"
+        completed_at: "2026-01-10"
