@@ -70,9 +70,10 @@ workflow_status:
         agent: "tea"
         command: "/bmad:bmm:workflows:test-design"
       - id: "implementation-readiness"
-        status: "required"
+        status: "implementation-readiness-report.md"
         agent: "architect"
         command: "/bmad:bmm:workflows:implementation-readiness"
+        completed_at: "2026-01-10"
 
   # Phase 4: Implementation
   - phase: 4
