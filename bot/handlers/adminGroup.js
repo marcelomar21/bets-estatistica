@@ -16,6 +16,9 @@ const ODDS_PATTERN = /^\/odds?\s+(\d+)\s+([\d.,]+)/i;
 // Regex to match "/apostas" command (Story 8.1)
 const APOSTAS_PATTERN = /^\/apostas$/i;
 
+// Regex to match "/link ID URL" command (Story 8.3)
+const LINK_COMMAND_PATTERN = /^\/link\s+(\d+)\s+(https?:\/\/\S+)/i;
+
 /**
  * Validate if URL is from a valid bookmaker
  * @param {string} url - URL to validate
@@ -180,43 +183,16 @@ function getNumberEmoji(num) {
 }
 
 /**
- * Handle messages in admin group
- * @param {TelegramBot} bot - Bot instance
- * @param {object} msg - Telegram message object
+ * Handle link update - shared logic for "ID: URL" pattern and "/link ID URL" command (Story 8.3)
  */
-async function handleAdminMessage(bot, msg) {
-  const text = msg.text?.trim();
-  if (!text) return;
-
-  // Check if message is /apostas command (Story 8.1)
-  if (APOSTAS_PATTERN.test(text)) {
-    await handleApostasCommand(bot, msg);
-    return;
-  }
-
-  // Check if message is /odds command
-  const oddsMatch = text.match(ODDS_PATTERN);
-  if (oddsMatch) {
-    const betId = parseInt(oddsMatch[1], 10);
-    const oddsValue = oddsMatch[2];
-    await handleOddsCommand(bot, msg, betId, oddsValue);
-    return;
-  }
-
-  // Check if message matches link pattern
-  const match = text.match(LINK_PATTERN);
-  if (!match) return;
-
-  const betId = parseInt(match[1], 10);
-  const deepLink = match[2];
-
+async function handleLinkUpdate(bot, msg, betId, deepLink) {
   logger.info('Link received', { betId, link: deepLink.substring(0, 50) });
 
   // Validate URL
   if (!isValidBookmakerUrl(deepLink)) {
     await bot.sendMessage(
       msg.chat.id,
-      `❌ Link inválido. Use links do Bet365 ou Betano.\n\nRecebido: ${deepLink}`,
+      `❌ Link inválido. Use links de casas conhecidas (Bet365, Betano, etc).\n\nRecebido: ${deepLink}`,
       { reply_to_message_id: msg.message_id }
     );
     return;
@@ -269,7 +245,15 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Confirm receipt
+  // Confirm receipt with match details
+  const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
+  await bot.sendMessage(
+    msg.chat.id,
+    `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n🔗 Pronta para postagem`,
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
+
+  // Also trigger alertService confirmation
   await confirmLinkReceived({
     homeTeamName: bet.homeTeamName,
     awayTeamName: bet.awayTeamName,
@@ -278,6 +262,49 @@ async function handleAdminMessage(bot, msg) {
   });
 
   logger.info('Link saved successfully', { betId });
+}
+
+/**
+ * Handle messages in admin group
+ * @param {TelegramBot} bot - Bot instance
+ * @param {object} msg - Telegram message object
+ */
+async function handleAdminMessage(bot, msg) {
+  const text = msg.text?.trim();
+  if (!text) return;
+
+  // Check if message is /apostas command (Story 8.1)
+  if (APOSTAS_PATTERN.test(text)) {
+    await handleApostasCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /link command (Story 8.3)
+  const linkCommandMatch = text.match(LINK_COMMAND_PATTERN);
+  if (linkCommandMatch) {
+    const betId = parseInt(linkCommandMatch[1], 10);
+    const deepLink = linkCommandMatch[2];
+    await handleLinkUpdate(bot, msg, betId, deepLink);
+    return;
+  }
+
+  // Check if message is /odds command
+  const oddsMatch = text.match(ODDS_PATTERN);
+  if (oddsMatch) {
+    const betId = parseInt(oddsMatch[1], 10);
+    const oddsValue = oddsMatch[2];
+    await handleOddsCommand(bot, msg, betId, oddsValue);
+    return;
+  }
+
+  // Check if message matches "ID: URL" link pattern (legacy format)
+  const match = text.match(LINK_PATTERN);
+  if (match) {
+    const betId = parseInt(match[1], 10);
+    const deepLink = match[2];
+    await handleLinkUpdate(bot, msg, betId, deepLink);
+    return;
+  }
 }
 
 module.exports = { handleAdminMessage };
