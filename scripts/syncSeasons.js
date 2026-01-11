@@ -32,16 +32,35 @@ if (!API_KEY) {
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const pool = getPool();
 
-// Ligas alvo
+// Ligas habilitadas no FootyStats (Story 10.3)
 const TARGET_LEAGUES = [
+  // Europe - Top 5 leagues
+  'spain la liga',
+  'england premier league',
+  'italy serie a',
+  'germany bundesliga',
+  'france ligue 1',
+  // Brazil - Serie A + Estaduais
   'brazil serie a',
-  'brazil copa do brasil',
-  'south america copa libertadores',
-  'europe uefa champions league',
+  'brazil mineiro 1',
+  'brazil carioca 1',
+  'brazil paulista a1',
+  'brazil copa do nordeste',
 ];
 
 function normalizeLeagueName(name) {
   return (name || '').toLowerCase().trim();
+}
+
+// Exclude women's and youth leagues
+function isExcluded(name) {
+  const lower = (name || '').toLowerCase();
+  return lower.includes('women') || lower.includes('feminino') ||
+         lower.includes('femenil') || lower.includes('u19') ||
+         lower.includes('u20') || lower.includes('u21') ||
+         lower.includes('u23') || lower.includes('youth') ||
+         lower.includes('cup u') || lower.includes('play') ||
+         lower.includes('summer series');
 }
 
 function toTimestamp(dateUnix) {
@@ -68,12 +87,13 @@ function getActiveSeasons(leagues) {
     const leagueName = normalizeLeagueName(league.name || league.league_name);
     const isTarget = TARGET_LEAGUES.some(target => leagueName.includes(target));
     if (!isTarget) continue;
+    if (isExcluded(league.name || league.league_name)) continue;
 
     const seasons = Array.isArray(league.season) ? league.season : [];
     for (const season of seasons) {
       const year = String(season.year || '');
-      // Aceita temporadas do ano atual ou que incluem o ano atual
-      if (year.includes(String(currentYear)) || year.includes(String(currentYear - 1))) {
+      // Só temporada ATUAL: termina no ano atual (20252026 ou 2026)
+      if (year.endsWith(String(currentYear))) {
         results.push({
           season_id: season.id,
           year: season.year,
@@ -264,18 +284,26 @@ async function main() {
     // 4. Buscar e salvar jogos de cada temporada
     console.log('\n📥 Buscando jogos das temporadas...');
     let totalMatches = 0;
+    let errors = 0;
 
     for (const season of activeSeasons) {
-      const matches = await fetchSeasonMatches(season.season_id, `${season.league_name} ${season.year}`);
-      const saved = await upsertMatches(season.season_id, matches);
-      totalMatches += saved;
-      console.log(`      ✅ ${saved} jogos salvos no banco`);
+      try {
+        const matches = await fetchSeasonMatches(season.season_id, `${season.league_name} ${season.year}`);
+        const saved = await upsertMatches(season.season_id, matches);
+        totalMatches += saved;
+        console.log(`      ✅ ${saved} jogos salvos no banco`);
+      } catch (err) {
+        errors++;
+        const msg = err.response?.data?.message || err.message;
+        console.log(`      ⚠️  Erro: ${msg.substring(0, 80)}...`);
+      }
     }
 
     console.log('\n' + '═'.repeat(60));
     console.log(`🎉 Sincronização concluída!`);
     console.log(`   • ${activeSeasons.length} temporadas`);
     console.log(`   • ${totalMatches} jogos`);
+    if (errors > 0) console.log(`   • ⚠️  ${errors} temporadas com erro (liga não habilitada?)`);
     console.log('═'.repeat(60));
 
   } catch (err) {

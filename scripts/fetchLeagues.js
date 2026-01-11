@@ -25,16 +25,35 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Ligas que nos interessam
+// Ligas habilitadas no FootyStats (Story 10.3)
 const TARGET_LEAGUES = [
+  // Europe - Top 5 leagues
+  'spain la liga',
+  'england premier league',
+  'italy serie a',
+  'germany bundesliga',
+  'france ligue 1',
+  // Brazil - Serie A + Estaduais
   'brazil serie a',
-  'brazil copa do brasil', 
-  'south america copa libertadores',
-  'europe uefa champions league',
+  'brazil mineiro 1',
+  'brazil carioca 1',
+  'brazil paulista a1',
+  'brazil copa do nordeste',
 ];
 
 function normalizeLeagueName(name) {
   return (name || '').toLowerCase().trim();
+}
+
+// Exclude women's and youth leagues
+function isExcluded(name) {
+  const lower = (name || '').toLowerCase();
+  return lower.includes('women') || lower.includes('feminino') ||
+         lower.includes('femenil') || lower.includes('u19') ||
+         lower.includes('u20') || lower.includes('u21') ||
+         lower.includes('u23') || lower.includes('youth') ||
+         lower.includes('cup u') || lower.includes('play') ||
+         lower.includes('summer series');
 }
 
 async function fetchLeagues() {
@@ -59,15 +78,15 @@ function filterActiveSeasons(leagues) {
   for (const league of leagues) {
     const leagueName = normalizeLeagueName(league.name || league.league_name);
     const isTarget = TARGET_LEAGUES.some(target => leagueName.includes(target));
-    
-    if (!isTarget) continue;
 
-    // Pegar temporadas atuais (ano atual ou atual/próximo para temporadas europeias)
+    if (!isTarget) continue;
+    if (isExcluded(league.name || league.league_name)) continue;
+
+    // Só temporada ATUAL: termina no ano atual (20252026 ou 2026)
     const seasons = Array.isArray(league.season) ? league.season : [];
     const activeSeasons = seasons.filter(s => {
       const year = String(s.year || '');
-      // Aceita "2025", "2024/2025", "2025/2026"
-      return year.includes(String(currentYear)) || year.includes(String(currentYear - 1));
+      return year.endsWith(String(currentYear));
     });
 
     if (activeSeasons.length > 0) {

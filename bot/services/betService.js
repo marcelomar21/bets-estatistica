@@ -696,6 +696,134 @@ async function createManualBet(betData) {
   }
 }
 
+/**
+ * Get overview stats for admin (Story 10.3)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getOverviewStats() {
+  try {
+    // Get total analyzed bets (all with future matches)
+    const { data: allBets, error: allError } = await supabase
+      .from('suggested_bets')
+      .select('id, odds, deep_link, bet_status')
+      .eq('eligible', true)
+      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
+
+    if (allError) throw allError;
+
+    // Get posted bets (actively being shown)
+    const { data: postedBets, error: postedError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        odds_at_post,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .eq('bet_status', 'posted')
+      .gte('league_matches.kickoff_time', new Date().toISOString());
+
+    if (postedError) throw postedError;
+
+    // Get bets without odds
+    const withoutOdds = (allBets || []).filter(b => !b.odds || b.odds === 0);
+
+    // Get bets without links
+    const withoutLinks = (allBets || []).filter(b => !b.deep_link && ['generated', 'pending_link', 'ready'].includes(b.bet_status));
+
+    // Get ready but not posted
+    const readyNotPosted = (allBets || []).filter(b => b.bet_status === 'ready');
+
+    const stats = {
+      totalAnalyzed: allBets?.length || 0,
+      postedActive: postedBets?.length || 0,
+      postedIds: (postedBets || []).map(b => ({
+        id: b.id,
+        match: `${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}`,
+        kickoff: b.league_matches.kickoff_time,
+        odds: b.odds_at_post,
+      })),
+      withoutOdds: withoutOdds.length,
+      withoutLinks: withoutLinks.length,
+      readyNotPosted: readyNotPosted.length,
+    };
+
+    logger.info('Overview stats fetched', stats);
+    return { success: true, data: stats };
+  } catch (err) {
+    logger.error('Error fetching overview stats', { error: err.message });
+    return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Swap a posted bet with another eligible bet (Story 10.3)
+ * @param {number} oldBetId - ID of bet to remove from posting
+ * @param {number} newBetId - ID of bet to start posting
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function swapPostedBet(oldBetId, newBetId) {
+  try {
+    // Get old bet
+    const oldResult = await getBetById(oldBetId);
+    if (!oldResult.success) {
+      return { success: false, error: { code: 'NOT_FOUND', message: `Aposta #${oldBetId} não encontrada` } };
+    }
+    const oldBet = oldResult.data;
+
+    // Get new bet
+    const newResult = await getBetById(newBetId);
+    if (!newResult.success) {
+      return { success: false, error: { code: 'NOT_FOUND', message: `Aposta #${newBetId} não encontrada` } };
+    }
+    const newBet = newResult.data;
+
+    // Validate old bet is currently posted
+    if (oldBet.betStatus !== 'posted') {
+      return { success: false, error: { code: 'INVALID_STATE', message: `Aposta #${oldBetId} não está postada (status: ${oldBet.betStatus})` } };
+    }
+
+    // Validate new bet has a link (must be ready)
+    if (!newBet.deepLink) {
+      return { success: false, error: { code: 'MISSING_LINK', message: `Aposta #${newBetId} não tem link. Adicione com /link ${newBetId} URL` } };
+    }
+
+    // Swap: set old to ready (unposts it), set new to posted
+    const { error: oldError } = await supabase
+      .from('suggested_bets')
+      .update({ bet_status: 'ready' })
+      .eq('id', oldBetId);
+
+    if (oldError) throw oldError;
+
+    const { error: newError } = await supabase
+      .from('suggested_bets')
+      .update({
+        bet_status: 'posted',
+        telegram_posted_at: new Date().toISOString(),
+        odds_at_post: newBet.odds,
+      })
+      .eq('id', newBetId);
+
+    if (newError) throw newError;
+
+    logger.info('Swapped posted bet', { oldBetId, newBetId });
+    return {
+      success: true,
+      data: {
+        removed: { id: oldBetId, match: `${oldBet.homeTeamName} x ${oldBet.awayTeamName}` },
+        added: { id: newBetId, match: `${newBet.homeTeamName} x ${newBet.awayTeamName}` },
+      }
+    };
+  } catch (err) {
+    logger.error('Error swapping posted bet', { oldBetId, newBetId, error: err.message });
+    return { success: false, error: { code: 'SWAP_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   // Query functions
   getEligibleBets,
@@ -705,6 +833,7 @@ module.exports = {
   getActiveBetsForRepost,
   getAvailableBets,
   getBetById,
+  getOverviewStats,
 
   // Update functions
   updateBetStatus,
@@ -715,6 +844,7 @@ module.exports = {
   markBetResult,
   markLowOddsBetsIneligible,
   requestLinksForTopBets,
+  swapPostedBet,
 
   // Create functions
   createManualBet,

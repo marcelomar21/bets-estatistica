@@ -4,7 +4,7 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
@@ -39,6 +39,12 @@ const HELP_PATTERN = /^\/help$/i;
 
 // Regex to match "/status" command
 const STATUS_PATTERN = /^\/status$/i;
+
+// Regex to match "/overview" command (Story 10.3)
+const OVERVIEW_PATTERN = /^\/overview$/i;
+
+// Regex to match "/trocar ID_ANTIGO ID_NOVO" command (Story 10.3)
+const TROCAR_PATTERN = /^\/trocar\s+(\d+)\s+(\d+)$/i;
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -249,6 +255,85 @@ async function handleStatusCommand(bot, msg) {
 }
 
 /**
+ * Handle /overview command - Show bets overview stats (Story 10.3)
+ */
+async function handleOverviewCommand(bot, msg) {
+  logger.info('Received /overview command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  const result = await getOverviewStats();
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao buscar estatísticas: ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const stats = result.data;
+
+  // Format posted IDs list
+  const postedIdsList = stats.postedIds.length > 0
+    ? stats.postedIds.map(id => `#${id}`).join(', ')
+    : 'Nenhuma';
+
+  const overviewText = `
+📊 *OVERVIEW - APOSTAS*
+
+*Visão Geral (30 dias):*
+📈 Total analisados: ${stats.totalAnalyzed}
+📤 Postadas ativas: ${stats.postedActive}
+✅ Prontas (não postadas): ${stats.readyNotPosted}
+
+*IDs Postadas:*
+${postedIdsList}
+
+*Pendências:*
+⚠️ Sem odds: ${stats.withoutOdds}
+❌ Sem link: ${stats.withoutLinks}
+
+💡 Use \`/trocar ID_ATUAL ID_NOVO\` para trocar apostas
+  `.trim();
+
+  await bot.sendMessage(msg.chat.id, overviewText, { parse_mode: 'Markdown' });
+  logger.info('Overview command executed', stats);
+}
+
+/**
+ * Handle /trocar command - Swap posted bet with another (Story 10.3)
+ */
+async function handleTrocarCommand(bot, msg, oldBetId, newBetId) {
+  logger.info('Received /trocar command', { chatId: msg.chat.id, oldBetId, newBetId });
+
+  const result = await swapPostedBet(oldBetId, newBetId);
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const { oldBet, newBet } = result.data;
+
+  await bot.sendMessage(
+    msg.chat.id,
+    `✅ *Apostas trocadas!*\n\n` +
+    `📤 *Removida da postagem:*\n` +
+    `#${oldBetId} - ${oldBet.homeTeamName} x ${oldBet.awayTeamName}\n\n` +
+    `📥 *Nova aposta postável:*\n` +
+    `#${newBetId} - ${newBet.homeTeamName} x ${newBet.awayTeamName}\n\n` +
+    `_Use /postar para publicar ou aguarde o próximo ciclo._`,
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
+
+  logger.info('Bet swap completed', { oldBetId, newBetId });
+}
+
+/**
  * Handle /help command - Show all admin commands
  */
 async function handleHelpCommand(bot, msg) {
@@ -257,24 +342,26 @@ async function handleHelpCommand(bot, msg) {
 
 *📋 Consultas:*
 /apostas - Listar apostas disponíveis
+/overview - Resumo com estatísticas
 /status - Ver status do bot
 /help - Ver esta ajuda
 
 *✏️ Edição:*
 /odd ID valor - Ajustar odd de aposta
 /link ID URL - Adicionar link a aposta
+/trocar ID1 ID2 - Trocar aposta postada
 \`ID: URL\` - Adicionar link (atalho)
 
 *➕ Criação:*
 /adicionar - Ver formato de aposta manual
 
 *⚡ Ações:*
-/atualizar odds - Forçar atualização de odds
+/atualizar - Forçar atualização de odds
 /postar - Forçar postagem imediata
 
 *Exemplos:*
 \`/odd 45 1.90\`
-\`/link 45 https://betano.com/...\`
+\`/trocar 45 67\` _(troca #45 por #67)_
   `.trim();
 
   await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
@@ -563,6 +650,21 @@ async function handleAdminMessage(bot, msg) {
   // Check if message is /status command
   if (STATUS_PATTERN.test(text)) {
     await handleStatusCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /overview command (Story 10.3)
+  if (OVERVIEW_PATTERN.test(text)) {
+    await handleOverviewCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /trocar command (Story 10.3)
+  const trocarMatch = text.match(TROCAR_PATTERN);
+  if (trocarMatch) {
+    const oldBetId = parseInt(trocarMatch[1], 10);
+    const newBetId = parseInt(trocarMatch[2], 10);
+    await handleTrocarCommand(bot, msg, oldBetId, newBetId);
     return;
   }
 
