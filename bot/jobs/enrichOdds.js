@@ -182,6 +182,7 @@ async function getEligibleBets(daysAhead = 2) {
 
 /**
  * Update bet odds in database
+ * @returns {Promise<{success: boolean, error?: object}>}
  */
 async function updateBetOdds(betId, odds) {
   const { error } = await supabase
@@ -191,10 +192,10 @@ async function updateBetOdds(betId, odds) {
 
   if (error) {
     logger.error('Failed to update bet odds', { betId, error: error.message });
-    return false;
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
   }
 
-  return true;
+  return { success: true };
 }
 
 /**
@@ -234,13 +235,13 @@ async function runEnrichment() {
     let updated = 0;
     for (const bet of enrichedBets) {
       if (bet.odds && bet.odds !== bet.currentOdds) {
-        const success = await updateBetOdds(bet.id, bet.odds);
-        if (success) {
+        const result = await updateBetOdds(bet.id, bet.odds);
+        if (result.success) {
           updated++;
-          logger.debug('Updated active bet odds', { 
-            betId: bet.id, 
-            oldOdds: bet.currentOdds, 
-            newOdds: bet.odds 
+          logger.debug('Updated active bet odds', {
+            betId: bet.id,
+            oldOdds: bet.currentOdds,
+            newOdds: bet.odds
           });
         }
       }
@@ -326,13 +327,13 @@ async function runEnrichment() {
   let updated = 0;
   for (const bet of enrichedBets) {
     if (bet.odds && bet.odds !== bet.currentOdds) {
-      const success = await updateBetOdds(bet.id, bet.odds);
-      if (success) {
+      const result = await updateBetOdds(bet.id, bet.odds);
+      if (result.success) {
         updated++;
-        logger.debug('Updated bet odds', { 
-          betId: bet.id, 
-          oldOdds: bet.currentOdds, 
-          newOdds: bet.odds 
+        logger.debug('Updated bet odds', {
+          betId: bet.id,
+          oldOdds: bet.currentOdds,
+          newOdds: bet.odds
         });
       }
     }

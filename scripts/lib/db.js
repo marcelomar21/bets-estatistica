@@ -45,17 +45,26 @@ const getSupabaseConnectionConfig = () => {
 };
 
 // Local PostgreSQL connection
-const getLocalConnectionConfig = () => ({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl:
-    process.env.PGSSL === 'true'
-      ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
-      : false,
-});
+const getLocalConnectionConfig = () => {
+  // Validate required credentials - no hardcoded defaults for security
+  if (!process.env.PGPASSWORD) {
+    console.error('[db] PGPASSWORD não configurada!');
+    console.error('[db] Configure as variáveis de ambiente do PostgreSQL no .env');
+    return null;
+  }
+
+  return {
+    host: process.env.PGHOST || 'localhost',
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
+    database: process.env.PGDATABASE || 'bets_stats',
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD,
+    ssl:
+      process.env.PGSSL === 'true'
+        ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
+        : false,
+  };
+};
 
 const connectionConfig = useSupabase 
   ? getSupabaseConnectionConfig() 

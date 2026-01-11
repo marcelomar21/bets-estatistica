@@ -27,9 +27,38 @@ const PRIORITY_SPORTS = [
   'soccer_conmebol_copa_libertadores',
 ];
 
-// Simple in-memory cache
+// Simple in-memory cache with automatic cleanup
 const oddsCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 500; // Max entries to prevent memory leak
+const CACHE_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // Cleanup every 10 minutes
+
+// Periodic cache cleanup to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+
+  for (const [key, cached] of oddsCache.entries()) {
+    if (now - cached.timestamp > CACHE_TTL_MS) {
+      oddsCache.delete(key);
+      cleaned++;
+    }
+  }
+
+  // If still too big, remove oldest entries
+  if (oddsCache.size > CACHE_MAX_SIZE) {
+    const entries = [...oddsCache.entries()]
+      .sort((a, b) => a[1].timestamp - b[1].timestamp);
+
+    const toRemove = entries.slice(0, oddsCache.size - CACHE_MAX_SIZE);
+    toRemove.forEach(([key]) => oddsCache.delete(key));
+    cleaned += toRemove.length;
+  }
+
+  if (cleaned > 0) {
+    logger.debug('Cache cleanup completed', { removed: cleaned, remaining: oddsCache.size });
+  }
+}, CACHE_CLEANUP_INTERVAL_MS).unref(); // unref() so it doesn't prevent process exit
 
 // Retry configuration
 const MAX_RETRIES = config.retry.maxAttempts;

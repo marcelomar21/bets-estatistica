@@ -55,7 +55,7 @@ bot.onText(/\/status/, async (msg) => {
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
 
-  bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
+  await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
 });
 
 /**
@@ -79,7 +79,7 @@ Responda às solicitações com:
 Exemplo: \`123: https://bet365.com/...\`
   `.trim();
 
-  bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
+  await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
 });
 
 /**

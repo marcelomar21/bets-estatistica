@@ -3,6 +3,7 @@
  * Handles incoming messages in the admin group, primarily for receiving deep links
  */
 const { supabase } = require('../../lib/supabase');
+const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
 const { confirmLinkReceived } = require('../services/alertService');
 
@@ -12,16 +13,6 @@ const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
 // Regex to match "/odds ID valor" command
 const ODDS_PATTERN = /^\/odds\s+(\d+)\s+([\d.,]+)/i;
 
-// Valid bookmaker domains
-const VALID_DOMAINS = [
-  'bet365.com', 
-  'betano.com', 
-  'betano.com.br',
-  'betano.bet.br',  // Brasil
-  'betway.com',
-  'sportingbet.com',
-];
-
 /**
  * Validate if URL is from a valid bookmaker
  * @param {string} url - URL to validate
@@ -30,7 +21,8 @@ const VALID_DOMAINS = [
 function isValidBookmakerUrl(url) {
   try {
     const parsed = new URL(url);
-    return VALID_DOMAINS.some(domain => parsed.hostname.includes(domain));
+    const validDomains = config.betting.validBookmakerDomains;
+    return validDomains.some(domain => parsed.hostname.includes(domain));
   } catch {
     return false;
   }

@@ -114,6 +114,7 @@ function evaluateBetResult(bet) {
 /**
  * Refresh match data from database
  * @param {number} matchId
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function refreshMatchData(matchId) {
   const { data, error } = await supabase
@@ -124,10 +125,10 @@ async function refreshMatchData(matchId) {
 
   if (error) {
     logger.error('Failed to refresh match data', { matchId, error: error.message });
-    return null;
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
   }
 
-  return data;
+  return { success: true, data };
 }
 
 /**
@@ -150,20 +151,20 @@ async function runTrackResults() {
 
   for (const bet of bets) {
     // Refresh match data
-    const matchData = await refreshMatchData(bet.matchId);
-    if (!matchData) continue;
+    const matchResult = await refreshMatchData(bet.matchId);
+    if (!matchResult.success) continue;
 
     // Update bet with fresh data
     const updatedBet = {
       ...bet,
-      matchStatus: matchData.status,
-      homeScore: matchData.home_score,
-      awayScore: matchData.away_score,
+      matchStatus: matchResult.data.status,
+      homeScore: matchResult.data.home_score,
+      awayScore: matchResult.data.away_score,
     };
 
     // Check if match is complete
     if (!isMatchComplete(updatedBet)) {
-      logger.debug('Match not complete yet', { betId: bet.id, status: matchData.status });
+      logger.debug('Match not complete yet', { betId: bet.id, status: matchResult.data.status });
       continue;
     }
 
@@ -192,10 +193,10 @@ async function runTrackResults() {
         oddsAtPost: bet.oddsAtPost,
       }, won);
 
-      logger.info('Bet result tracked', { 
-        betId: bet.id, 
+      logger.info('Bet result tracked', {
+        betId: bet.id,
         won,
-        score: `${matchData.home_score}-${matchData.away_score}`,
+        score: `${matchResult.data.home_score}-${matchResult.data.away_score}`,
       });
     }
   }
