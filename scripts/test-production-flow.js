@@ -1,80 +1,118 @@
 #!/usr/bin/env node
 /**
- * Test Production Flow
+ * Test Production Flow - Teste Completo
  * 
- * Simula o fluxo completo como se fosse produção:
- * 1. Enriquece odds
- * 2. Mostra prévia no grupo admin
- * 3. Publica no grupo PÚBLICO (real!)
- * 
- * ⚠️ CUIDADO: Este script PUBLICA DE VERDADE no grupo público!
+ * Simula o fluxo de produção:
+ * 1. Atualiza odds das apostas ativas
+ * 2. Envia PRÉVIA para grupo de ADMIN
+ * 3. Envia mensagens para grupo PÚBLICO
  * 
  * Usage:
- *   node scripts/test-production-flow.js           # Só prévia (seguro)
- *   node scripts/test-production-flow.js --post    # Prévia + publica (real!)
+ *   node scripts/test-production-flow.js              # Teste completo
+ *   node scripts/test-production-flow.js --dry-run    # Só mostra, não envia
  */
 require('dotenv').config();
 
+const { supabase } = require('../lib/supabase');
 const { runEnrichment } = require('../bot/jobs/enrichOdds');
-const { runRequestLinks } = require('../bot/jobs/requestLinks');
-const { runPostBets } = require('../bot/jobs/postBets');
-const { getBetsReadyForPosting } = require('../bot/services/betService');
 const { alertAdmin, sendToPublic } = require('../bot/telegram');
+const { config } = require('../lib/config');
 
-const SHOULD_POST = process.argv.includes('--post');
+const DRY_RUN = process.argv.includes('--dry-run');
+
+// Message templates
+const TEMPLATES = [
+  { header: '🎯 *APOSTA DO DIA*', footer: '🍀 Boa sorte!' },
+  { header: '⚽ *DICA QUENTE*', footer: '💪 Bora lucrar!' },
+  { header: '🔥 *OPORTUNIDADE*', footer: '📈 Vamos juntos!' },
+];
+
+function getTemplate(index) {
+  return TEMPLATES[index % TEMPLATES.length];
+}
+
+function formatBetMessage(bet, template) {
+  const kickoff = new Date(bet.league_matches.kickoff_time).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  let msg = `${template.header}\n\n`;
+  msg += `⚽ *${bet.league_matches.home_team_name} x ${bet.league_matches.away_team_name}*\n`;
+  msg += `🗓 ${kickoff}\n\n`;
+  msg += `📊 *${bet.bet_market}*\n`;
+  msg += `💰 Odd: *${bet.odds?.toFixed(2) || 'N/A'}*\n\n`;
+  
+  if (bet.reasoning) {
+    msg += `📝 _${bet.reasoning.substring(0, 100)}..._\n\n`;
+  }
+  
+  if (bet.deep_link) {
+    msg += `🔗 [Apostar Agora](${bet.deep_link})\n\n`;
+  }
+  
+  msg += template.footer;
+  
+  return msg;
+}
 
 async function main() {
-  console.log('🧪 Test Production Flow\n');
+  console.log('🧪 Test Production Flow - COMPLETO\n');
   console.log('=' .repeat(60));
+  
+  if (DRY_RUN) {
+    console.log('⚠️  MODO DRY-RUN: Não vai enviar mensagens reais\n');
+  }
 
-  // Step 1: Check ready bets
-  console.log('\n📊 Step 1: Verificando bets prontas...\n');
+  // =========================================
+  // STEP 1: Atualizar odds das apostas ativas
+  // =========================================
+  console.log('\n📊 STEP 1: Atualizando odds das apostas ativas...\n');
   
-  const readyResult = await getBetsReadyForPosting();
-  const readyBets = readyResult.success ? readyResult.data : [];
+  const enrichResult = await runEnrichment();
+  console.log(`   Odds atualizadas: ${enrichResult.enriched}`);
+  console.log(`   Bets ativas: ${enrichResult.active}`);
+
+  // =========================================
+  // STEP 2: Buscar apostas ativas (posted)
+  // =========================================
+  console.log('\n📋 STEP 2: Buscando apostas ativas...\n');
   
-  console.log(`   Bets prontas: ${readyBets.length}`);
-  
-  if (readyBets.length === 0) {
-    console.log('\n⚠️  Nenhuma bet pronta para publicação.');
-    console.log('   Verifique se as bets têm:');
-    console.log('   - status = "ready"');
-    console.log('   - deep_link preenchido');
-    console.log('   - odds >= 1.60');
-    console.log('   - eligible = true');
-    
-    // Run enrichment to see what we have
-    console.log('\n📊 Rodando enrichment para ver status...\n');
-    await runEnrichment();
-    
+  const { data: activeBets, error } = await supabase
+    .from('suggested_bets')
+    .select(`
+      id, bet_market, bet_pick, odds, bet_status, deep_link, reasoning,
+      league_matches!inner (home_team_name, away_team_name, kickoff_time, status)
+    `)
+    .eq('bet_status', 'posted')
+    .eq('bet_category', 'SAFE')
+    .order('odds', { ascending: false });
+
+  if (error) {
+    console.error('❌ Erro ao buscar apostas:', error.message);
     return;
   }
 
-  // Step 2: Show preview
-  console.log('\n📋 Step 2: Prévia das apostas:\n');
-  
-  for (const bet of readyBets) {
-    const kickoff = new Date(bet.kickoffTime).toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-    });
-    
-    console.log(`   🏟️  ${bet.homeTeamName} vs ${bet.awayTeamName}`);
-    console.log(`   📅  ${kickoff}`);
-    console.log(`   📊  ${bet.betMarket}`);
-    console.log(`   💰  Odds: ${bet.odds?.toFixed(2) || 'N/A'}`);
-    console.log(`   🔗  Link: ${bet.deepLink ? '✅' : '❌'}`);
-    console.log('');
+  console.log(`   Apostas ativas encontradas: ${activeBets.length}`);
+
+  if (activeBets.length === 0) {
+    console.log('\n⚠️  Nenhuma aposta ativa. Execute o fluxo de postagem primeiro.');
+    return;
   }
 
-  // Step 3: Send preview to admin group
-  console.log('\n📨 Step 3: Enviando prévia para grupo admin...\n');
+  // =========================================
+  // STEP 3: Enviar PRÉVIA para grupo ADMIN
+  // =========================================
+  console.log('\n📨 STEP 3: Enviando PRÉVIA para grupo ADMIN...\n');
   
-  let previewMsg = `👁️ *PRÉVIA - TESTE*\n\n`;
-  previewMsg += `⚠️ _Modo de teste - verificando fluxo_\n\n`;
+  let previewMsg = `👁️ *PRÉVIA - APOSTAS ATIVAS*\n\n`;
+  previewMsg += `_Status atual das apostas publicadas:_\n\n`;
   
-  for (let i = 0; i < readyBets.length; i++) {
-    const bet = readyBets[i];
-    const kickoff = new Date(bet.kickoffTime).toLocaleString('pt-BR', {
+  activeBets.forEach((bet, i) => {
+    const kickoff = new Date(bet.league_matches.kickoff_time).toLocaleString('pt-BR', {
       timeZone: 'America/Sao_Paulo',
       day: '2-digit',
       month: '2-digit',
@@ -82,32 +120,70 @@ async function main() {
       minute: '2-digit',
     });
     
-    previewMsg += `${i + 1}️⃣ *${bet.homeTeamName} vs ${bet.awayTeamName}*\n`;
+    previewMsg += `${i + 1}️⃣ *${bet.league_matches.home_team_name} vs ${bet.league_matches.away_team_name}*\n`;
     previewMsg += `   📅 ${kickoff}\n`;
-    previewMsg += `   📊 ${bet.betMarket}\n`;
+    previewMsg += `   📊 ${bet.bet_market}\n`;
     previewMsg += `   💰 Odds: ${bet.odds?.toFixed(2) || 'N/A'}\n`;
-    previewMsg += `   🔗 Link: ${bet.deepLink ? '✅' : '❌'}\n\n`;
-  }
+    previewMsg += `   🔗 ${bet.deep_link ? '✅ Link OK' : '❌ Sem link'}\n\n`;
+  });
 
-  await alertAdmin('INFO', 'Prévia de Teste', previewMsg);
-  console.log('   ✅ Prévia enviada para grupo admin!');
+  previewMsg += `_Total: ${activeBets.length} apostas ativas_`;
 
-  // Step 4: Post to public (only if --post flag)
-  if (SHOULD_POST) {
-    console.log('\n🚀 Step 4: PUBLICANDO NO GRUPO PÚBLICO...\n');
-    
-    const result = await runPostBets();
-    
-    console.log(`   ✅ Publicadas: ${result.posted}`);
-    console.log(`   ⏭️  Puladas: ${result.skipped}`);
+  if (DRY_RUN) {
+    console.log('   [DRY-RUN] Prévia que seria enviada:');
+    console.log('   ---');
+    console.log(previewMsg.split('\n').map(l => '   ' + l).join('\n'));
+    console.log('   ---');
   } else {
-    console.log('\n⏸️  Step 4: Publicação pulada (use --post para publicar)\n');
-    console.log('   Para publicar de verdade, rode:');
-    console.log('   node scripts/test-production-flow.js --post');
+    await alertAdmin('INFO', 'Prévia Apostas Ativas', previewMsg);
+    console.log('   ✅ Prévia enviada para grupo admin!');
   }
 
+  // =========================================
+  // STEP 4: Enviar para grupo PÚBLICO
+  // =========================================
+  console.log('\n📢 STEP 4: Enviando para grupo PÚBLICO...\n');
+  
+  for (let i = 0; i < activeBets.length; i++) {
+    const bet = activeBets[i];
+    const template = getTemplate(i);
+    const message = formatBetMessage(bet, template);
+    
+    console.log(`   ${i + 1}. ${bet.league_matches.home_team_name} vs ${bet.league_matches.away_team_name}`);
+    
+    if (DRY_RUN) {
+      console.log('      [DRY-RUN] Mensagem que seria enviada');
+    } else {
+      const result = await sendToPublic(message);
+      if (result.success) {
+        console.log(`      ✅ Enviada! (messageId: ${result.data.messageId})`);
+      } else {
+        console.log(`      ❌ Erro: ${result.error?.message}`);
+      }
+      
+      // Delay entre mensagens para não spammar
+      if (i < activeBets.length - 1) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  // =========================================
+  // RESUMO
+  // =========================================
   console.log('\n' + '=' .repeat(60));
-  console.log('✅ Teste concluído!\n');
+  console.log('\n✅ TESTE COMPLETO!\n');
+  console.log('📊 Resumo:');
+  console.log(`   - Odds atualizadas: ${enrichResult.enriched}`);
+  console.log(`   - Prévia enviada: ✅ Admin`);
+  console.log(`   - Mensagens enviadas: ${activeBets.length} (Público)`);
+  
+  if (DRY_RUN) {
+    console.log('\n⚠️  Modo DRY-RUN - nenhuma mensagem foi enviada de verdade.');
+    console.log('   Para enviar, rode sem --dry-run');
+  }
+  
+  console.log('');
 }
 
 main().catch(err => {
