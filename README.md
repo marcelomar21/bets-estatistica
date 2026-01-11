@@ -181,27 +181,72 @@ O bot publica automaticamente:
 🍀 Boa sorte!
 ```
 
-## 🚀 Deploy no Render
+## 🚀 Deploy no Render (100% Gratuito)
 
-### Opção 1: Worker (recomendado - $7/mês)
+### Arquitetura
 
-```yaml
-# render.yaml já configurado
-services:
-  - type: worker
-    name: bets-bot
-    startCommand: node bot/scheduler.js
+```
+┌─────────────────────────────────────────────────────────┐
+│                    RENDER (FREE)                         │
+├─────────────────────────────────────────────────────────┤
+│  Web Service (bets-bot)                                  │
+│  ├─ Recebe webhooks do Telegram                         │
+│  ├─ Processa links dos admins                           │
+│  └─ Spin down após 15min (wake on webhook)              │
+├─────────────────────────────────────────────────────────┤
+│  Cron Jobs                                               │
+│  ├─ 06:00 Pipeline (análise IA)                         │
+│  ├─ 08:00/13:00/20:00 Prep (odds + pede links)          │
+│  ├─ 10:00/15:00/22:00 Post (publica apostas)            │
+│  └─ */hora Track (verifica resultados)                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Opção 2: Cron Jobs (grátis, mas limitado)
+### Horários dos Jobs
 
-Veja `render.yaml` para configuração de cron jobs individuais.
+| Horário (SP) | Job | Descrição |
+|--------------|-----|-----------|
+| 06:00 | daily-pipeline | Pipeline completo (análise IA) |
+| 08:00 | morning-prep | Enriquece odds + pede links |
+| 10:00 | morning-post | Publica apostas + **PRÉVIA** |
+| 13:00 | afternoon-prep | Enriquece odds + pede links |
+| 15:00 | afternoon-post | Publica apostas + **PRÉVIA** |
+| 20:00 | night-prep | Enriquece odds + pede links |
+| 22:00 | night-post | Publica apostas + **PRÉVIA** |
+| */hora | track-results | Verifica resultados |
+
+### Como Funciona
+
+1. **06:00** - Pipeline roda análise IA e gera apostas
+2. **08:00** - Bot enriquece odds e pede links no grupo admin
+3. **Admin responde** com os links (webhook acorda o server)
+4. **10:00** - Bot mostra PRÉVIA no grupo admin, depois publica
 
 ### Configurar no Render
 
-1. Conecte o repositório
-2. Crie o Environment Group `bets-secrets` com as variáveis
-3. Deploy!
+1. Push o código para GitHub
+2. Vá em [render.com](https://render.com) → **New → Blueprint**
+3. Conecte seu repositório
+4. Render detecta o `render.yaml` automaticamente
+5. Crie o Environment Group `bets-secrets` com:
+
+```
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJhbGc...
+DATABASE_URL=postgresql://...
+FOOTYSTATS_API_KEY=xxx
+OPENAI_API_KEY=sk-...
+THE_ODDS_API_KEY=xxx
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_ADMIN_GROUP_ID=-100123456789
+TELEGRAM_PUBLIC_GROUP_ID=-100987654321
+```
+
+6. Deploy!
+
+### Após Deploy
+
+O webhook é configurado automaticamente. Verifique com `/status` no grupo admin.
 
 ## 🧪 Testes
 

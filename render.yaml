@@ -1,22 +1,113 @@
 # Render Blueprint - bets-estatistica
 # Deploy: https://render.com/docs/blueprint-spec
+#
+# Arquitetura 100% gratuita:
+# - Web Service (free): Recebe webhooks do Telegram
+# - Cron Jobs (free): Executam tarefas agendadas
+#
+# O Web Service faz spin down após 15min sem tráfego,
+# mas o Telegram webhook acorda ele quando há mensagens.
 
+# Web Service para receber webhooks (gratuito)
 services:
-  # Bot Scheduler - Runs 24/7 with cron jobs
-  - type: worker
+  - type: web
     name: bets-bot
     runtime: node
-    plan: starter # $7/month - stays on 24/7
+    plan: free
     buildCommand: npm install
-    startCommand: node bot/scheduler.js
+    startCommand: node bot/server.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: TZ
         value: America/Sao_Paulo
+      # WEBHOOK_URL será preenchido manualmente após o primeiro deploy
+      # com o formato: https://bets-bot.onrender.com
+      - key: WEBHOOK_URL
+        sync: false
       - fromGroup: bets-secrets
 
-# Environment Variables Group
+# Cron Jobs (gratuito)
+crons:
+  # ===== MANHÃ =====
+  # Prep: Enriquece odds + pede links - 08:00 São Paulo (11:00 UTC)
+  - name: morning-prep
+    schedule: "0 11 * * *"
+    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js morning
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # Post: Publica apostas - 10:00 São Paulo (13:00 UTC)
+  - name: morning-post
+    schedule: "0 13 * * *"
+    command: node bot/jobs/postBets.js morning
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # ===== TARDE =====
+  # Prep: Enriquece odds + pede links - 13:00 São Paulo (16:00 UTC)
+  - name: afternoon-prep
+    schedule: "0 16 * * *"
+    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js afternoon
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # Post: Publica apostas - 15:00 São Paulo (18:00 UTC)
+  - name: afternoon-post
+    schedule: "0 18 * * *"
+    command: node bot/jobs/postBets.js afternoon
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # ===== NOITE =====
+  # Prep: Enriquece odds + pede links - 20:00 São Paulo (23:00 UTC)
+  - name: night-prep
+    schedule: "0 23 * * *"
+    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js night
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # Post: Publica apostas - 22:00 São Paulo (01:00 UTC dia seguinte)
+  - name: night-post
+    schedule: "0 1 * * *"
+    command: node bot/jobs/postBets.js night
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # ===== PIPELINE DIÁRIO =====
+  # Roda análise completa - 06:00 São Paulo (09:00 UTC)
+  - name: daily-pipeline
+    schedule: "0 9 * * *"
+    command: node scripts/pipeline.js
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+  # ===== TRACKING =====
+  # Verifica resultados - a cada hora
+  - name: track-results
+    schedule: "0 * * * *"
+    command: node bot/jobs/trackResults.js
+    runtime: node
+    plan: free
+    envVars:
+      - fromGroup: bets-secrets
+
+# Environment Variables Group (configurar no Render Dashboard)
 envVarGroups:
   - name: bets-secrets
     envVars:
@@ -38,61 +129,3 @@ envVarGroups:
         sync: false
       - key: TELEGRAM_PUBLIC_GROUP_ID
         sync: false
-
-# Cron Jobs (alternative to worker - cheaper but limited)
-# Uncomment if you prefer cron jobs instead of worker
-#
-# crons:
-#   # Morning workflow - 08:00 São Paulo (11:00 UTC)
-#   - name: morning-prep
-#     schedule: "0 11 * * *"
-#     command: node bot/jobs/requestLinks.js morning
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets
-#
-#   # Morning post - 10:00 São Paulo (13:00 UTC)
-#   - name: morning-post
-#     schedule: "0 13 * * *"
-#     command: node bot/jobs/postBets.js morning
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets
-#
-#   # Afternoon prep - 13:00 São Paulo (16:00 UTC)
-#   - name: afternoon-prep
-#     schedule: "0 16 * * *"
-#     command: node bot/jobs/requestLinks.js afternoon
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets
-#
-#   # Afternoon post - 15:00 São Paulo (18:00 UTC)
-#   - name: afternoon-post
-#     schedule: "0 18 * * *"
-#     command: node bot/jobs/postBets.js afternoon
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets
-#
-#   # Night prep - 20:00 São Paulo (23:00 UTC)
-#   - name: night-prep
-#     schedule: "0 23 * * *"
-#     command: node bot/jobs/requestLinks.js night
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets
-#
-#   # Night post - 22:00 São Paulo (01:00 UTC next day)
-#   - name: night-post
-#     schedule: "0 1 * * *"
-#     command: node bot/jobs/postBets.js night
-#     runtime: node
-#     plan: free
-#     envVars:
-#       - fromGroup: bets-secrets

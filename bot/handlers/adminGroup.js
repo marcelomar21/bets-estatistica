@@ -148,7 +148,7 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Find and update bet
+  // Find bet
   const { data: bet, error: fetchError } = await supabase
     .from('suggested_bets')
     .select(`
@@ -158,6 +158,7 @@ async function handleAdminMessage(bot, msg) {
       bet_pick,
       odds,
       bet_status,
+      deep_link,
       league_matches!inner (
         home_team_name,
         away_team_name
@@ -176,14 +177,23 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Check if bet is in correct status
-  if (bet.bet_status !== 'pending_link' && bet.bet_status !== 'generated') {
+  // If already posted, don't allow changes
+  if (bet.bet_status === 'posted') {
     await bot.sendMessage(
       msg.chat.id,
-      `⚠️ Aposta #${betId} já tem status: ${bet.bet_status}`,
+      `🔒 Aposta #${betId} já foi publicada. Link não pode ser alterado.`,
       { reply_to_message_id: msg.message_id }
     );
     return;
+  }
+
+  // If already has link and status is ready, warn but allow update
+  if (bet.deep_link && bet.bet_status === 'ready') {
+    await bot.sendMessage(
+      msg.chat.id,
+      `⚠️ Aposta #${betId} já tinha link. Atualizando...`,
+      { reply_to_message_id: msg.message_id }
+    );
   }
 
   // Update bet with link
