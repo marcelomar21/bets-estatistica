@@ -119,6 +119,7 @@ function setupScheduler() {
   const { runEnrichment } = require('./jobs/enrichOdds');
   const { runRequestLinks } = require('./jobs/requestLinks');
   const { runPostBets } = require('./jobs/postBets');
+  const { runHealthCheck } = require('./jobs/healthCheck');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -185,6 +186,16 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
+  // Health check - every 5 minutes
+  cron.schedule('*/5 * * * *', async () => {
+    logger.debug('Running health-check job');
+    try {
+      await runHealthCheck();
+    } catch (err) {
+      logger.error('health-check failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   08:00 - Enrich + Request links');
@@ -193,6 +204,7 @@ function setupScheduler() {
   console.log('   15:00 - Post bets (afternoon)');
   console.log('   20:00 - Enrich + Request links');
   console.log('   22:00 - Post bets (night)');
+  console.log('   */5   - Health check');
 }
 
 /**

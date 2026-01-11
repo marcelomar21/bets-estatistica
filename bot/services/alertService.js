@@ -123,6 +123,31 @@ ${emoji} *RESULTADO: ${result}*
   return sendToAdmin(text);
 }
 
+/**
+ * Send health check alert
+ * @param {Array} alerts - Array of alert objects { severity, check, message, action }
+ * @param {boolean} hasErrors - Whether any errors (vs just warnings)
+ */
+async function healthCheckAlert(alerts, hasErrors) {
+  const emoji = hasErrors ? '🔴' : '🟡';
+  const type = hasErrors ? 'ERROR' : 'WARN';
+
+  const alertsList = alerts.map(a => {
+    const sev = a.severity === 'error' ? '🔴' : '🟡';
+    return `${sev} *${a.check}*\n   └ ${a.message}\n   └ _${a.action}_`;
+  }).join('\n\n');
+
+  const text = `
+${emoji} *HEALTH CHECK: ${type}*
+
+${alertsList}
+
+🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+  `.trim();
+
+  return sendToAdmin(text);
+}
+
 module.exports = {
   apiErrorAlert,
   dbErrorAlert,
@@ -130,4 +155,5 @@ module.exports = {
   requestLinksAlert,
   confirmLinkReceived,
   trackingResultAlert,
+  healthCheckAlert,
 };
