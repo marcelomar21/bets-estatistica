@@ -37,6 +37,9 @@ const POSTAR_PATTERN = /^\/postar$/i;
 // Regex to match "/help" command
 const HELP_PATTERN = /^\/help$/i;
 
+// Regex to match "/status" command
+const STATUS_PATTERN = /^\/status$/i;
+
 /**
  * Validate if URL is from a valid bookmaker
  * @param {string} url - URL to validate
@@ -132,7 +135,7 @@ async function handleApostasCommand(bot, msg, page = 1) {
     return;
   }
 
-  const bets = result.data;
+  let bets = result.data;
 
   if (bets.length === 0) {
     await bot.sendMessage(
@@ -143,16 +146,44 @@ async function handleApostasCommand(bot, msg, page = 1) {
     return;
   }
 
-  // Pagination
-  const PAGE_SIZE = 15;
+  // Sort: posted first, then by date (nearest first), then by odds (higher first)
+  bets = bets.sort((a, b) => {
+    // Posted comes first
+    if (a.betStatus === 'posted' && b.betStatus !== 'posted') return -1;
+    if (b.betStatus === 'posted' && a.betStatus !== 'posted') return 1;
+
+    // Then by kickoff time (nearest first)
+    const dateA = new Date(a.kickoffTime).getTime();
+    const dateB = new Date(b.kickoffTime).getTime();
+    if (dateA !== dateB) return dateA - dateB;
+
+    // Then by odds (higher first)
+    const oddsA = a.odds || 0;
+    const oddsB = b.odds || 0;
+    return oddsB - oddsA;
+  });
+
+  // Pagination (10 per page for better formatting)
+  const PAGE_SIZE = 10;
   const totalPages = Math.ceil(bets.length / PAGE_SIZE);
   const currentPage = Math.min(Math.max(1, page), totalPages);
   const startIdx = (currentPage - 1) * PAGE_SIZE;
   const endIdx = startIdx + PAGE_SIZE;
   const displayBets = bets.slice(startIdx, endIdx);
 
-  // Format message - compact format
-  const lines = [`📋 *APOSTAS* (pág ${currentPage}/${totalPages} • total: ${bets.length})\n`];
+  // Status labels for business users
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'posted': return '📤 POSTADA';
+      case 'ready': return '✅ PRONTA';
+      case 'pending_link': return '⏳ AGUARDA LINK';
+      case 'generated': return '🆕 NOVA';
+      default: return '❓ ' + status;
+    }
+  };
+
+  // Format message with clear visual separation
+  const lines = [`📋 *APOSTAS DISPONÍVEIS*`, `Página ${currentPage} de ${totalPages} • Total: ${bets.length}\n`];
 
   displayBets.forEach((bet) => {
     const kickoff = new Date(bet.kickoffTime);
@@ -162,33 +193,59 @@ async function handleApostasCommand(bot, msg, page = 1) {
       timeZone: 'America/Sao_Paulo',
     });
     const dateStr = kickoff.toLocaleDateString('pt-BR', {
+      weekday: 'short',
       day: '2-digit',
       month: '2-digit',
       timeZone: 'America/Sao_Paulo',
     });
 
-    const linkIcon = bet.hasLink ? '🔗' : '⚠️';
-    const statusIcon = bet.betStatus === 'posted' ? '📤' : bet.betStatus === 'ready' ? '✅' : '⏳';
+    // Clear indicators for missing data
+    const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ *SEM ODD*';
+    const linkDisplay = bet.hasLink ? '🔗 Com link' : '❌ *SEM LINK*';
+    const statusLabel = getStatusLabel(bet.betStatus);
 
-    // Compact single line per bet
-    lines.push(`${statusIcon} *${bet.id}* | ${bet.homeTeamName} x ${bet.awayTeamName}`);
-    lines.push(`   ${dateStr} ${timeStr} | ${bet.betMarket} | ${bet.odds?.toFixed(2) || '-'} ${linkIcon}`);
+    lines.push(`━━━━━━━━━━━━━━━━━━`);
+    lines.push(`🆔 *#${bet.id}* │ ${statusLabel}`);
+    lines.push(`⚽ ${bet.homeTeamName} x ${bet.awayTeamName}`);
+    lines.push(`📅 ${dateStr} às ${timeStr}`);
+    lines.push(`🎯 ${bet.betMarket}`);
+    lines.push(`${oddsDisplay} │ ${linkDisplay}`);
   });
+
+  lines.push(`━━━━━━━━━━━━━━━━━━`);
 
   // Navigation hints
   if (totalPages > 1) {
     lines.push('');
-    if (currentPage < totalPages) {
-      lines.push(`➡️ Próxima: \`/apostas ${currentPage + 1}\``);
-    }
-    if (currentPage > 1) {
-      lines.push(`⬅️ Anterior: \`/apostas ${currentPage - 1}\``);
-    }
+    const navParts = [];
+    if (currentPage > 1) navParts.push(`⬅️ \`/apostas ${currentPage - 1}\``);
+    if (currentPage < totalPages) navParts.push(`➡️ \`/apostas ${currentPage + 1}\``);
+    lines.push(navParts.join('  │  '));
   }
+
+  // Quick commands hint
+  lines.push('');
+  lines.push('💡 `/odd ID valor` │ `/link ID url`');
 
   await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
 
   logger.info('Listed available bets', { count: displayBets.length, page: currentPage, totalPages });
+}
+
+/**
+ * Handle /status command - Show bot status
+ */
+async function handleStatusCommand(bot, msg) {
+  const statusText = `
+🤖 *Status do Bot*
+
+✅ Bot online (webhook mode)
+📊 Ambiente: ${config.env}
+🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+  `.trim();
+
+  await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
+  logger.info('Status command executed');
 }
 
 /**
@@ -502,6 +559,12 @@ async function handleLinkUpdate(bot, msg, betId, deepLink) {
 async function handleAdminMessage(bot, msg) {
   const text = msg.text?.trim();
   if (!text) return;
+
+  // Check if message is /status command
+  if (STATUS_PATTERN.test(text)) {
+    await handleStatusCommand(bot, msg);
+    return;
+  }
 
   // Check if message is /help command
   if (HELP_PATTERN.test(text)) {

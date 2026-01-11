@@ -83,16 +83,9 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
     if (update.message) {
       const msg = update.message;
 
-      // Only process admin group messages
+      // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
       if (msg.chat.id.toString() === config.telegram.adminGroupId) {
         await handleAdminMessage(bot, msg);
-      }
-
-      // Handle commands
-      if (msg.text?.startsWith('/status')) {
-        await handleStatusCommand(bot, msg);
-      } else if (msg.text?.startsWith('/help')) {
-        await handleHelpCommand(bot, msg);
       }
     }
 
@@ -102,59 +95,6 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
     res.sendStatus(200); // Always respond 200 to avoid retries
   }
 });
-
-/**
- * Handle /status command
- */
-async function handleStatusCommand(bot, msg) {
-  if (msg.chat.id.toString() !== config.telegram.adminGroupId) return;
-
-  const statusText = `
-🤖 *Status do Bot*
-
-✅ Bot online (webhook mode)
-📊 Ambiente: ${config.env}
-🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
-  `.trim();
-
-  await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
-}
-
-/**
- * Handle /help command - Updated with all admin commands (Story 8.x)
- */
-async function handleHelpCommand(bot, msg) {
-  if (msg.chat.id.toString() !== config.telegram.adminGroupId) return;
-
-  const helpText = `
-📚 *Comandos do Admin*
-
-*📋 Consultas:*
-/apostas - Listar apostas disponíveis
-/status - Ver status do bot
-/help - Ver esta ajuda
-
-*✏️ Edição:*
-/odd ID valor - Ajustar odd de aposta
-/link ID URL - Adicionar link a aposta
-\`ID: URL\` - Adicionar link (atalho)
-
-*➕ Criação:*
-/adicionar - Ver formato de aposta manual
-/adicionar "Time A vs Time B" "Mercado" odd [link]
-
-*⚡ Ações:*
-/atualizar odds - Forçar atualização de odds
-/postar - Forçar postagem imediata
-
-*Exemplos:*
-\`/odd 45 1.90\`
-\`/link 45 https://betano.com/...\`
-\`45: https://betano.com/...\`
-  `.trim();
-
-  await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
-}
 
 /**
  * Setup webhook
