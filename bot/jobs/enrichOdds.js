@@ -199,6 +199,11 @@ async function updateBetOdds(betId, odds) {
 
 /**
  * Main enrichment job
+ * 
+ * Estratégia otimizada:
+ * 1. Se já tem 3 bets postadas (ativas), só atualiza essas
+ * 2. Só busca novas bets quando slots ficam disponíveis
+ * 3. Economiza requisições da Odds API
  */
 async function runEnrichment() {
   logger.info('Starting odds enrichment job');
@@ -208,8 +213,46 @@ async function runEnrichment() {
   const activeCount = activeBets.length;
   logger.info('Active posted bets', { count: activeCount });
 
-  // Step 2: Get all eligible bets that need odds (to have options for selection)
-  // Always enrich all eligible bets so we can pick the best ones
+  // Step 2: Check if we have enough active bets
+  const slotsAvailable = MAX_ACTIVE_BETS - activeCount;
+  
+  // If we already have 3 active bets, ONLY update those (save API calls!)
+  if (slotsAvailable === 0) {
+    logger.info('All slots filled with active bets - only enriching those');
+    
+    // Only enrich the active bets
+    const betsToEnrich = [...activeBets];
+    
+    if (betsToEnrich.length === 0) {
+      logger.info('No bets to enrich');
+      return { enriched: 0, markedIneligible: 0, active: activeCount };
+    }
+
+    // Enrich only active bets (no market interpretation needed - they were already validated)
+    const enrichedBets = await enrichBetsWithOdds(betsToEnrich);
+    
+    let updated = 0;
+    for (const bet of enrichedBets) {
+      if (bet.odds && bet.odds !== bet.currentOdds) {
+        const success = await updateBetOdds(bet.id, bet.odds);
+        if (success) {
+          updated++;
+          logger.debug('Updated active bet odds', { 
+            betId: bet.id, 
+            oldOdds: bet.currentOdds, 
+            newOdds: bet.odds 
+          });
+        }
+      }
+    }
+
+    logger.info('Active bets odds updated', { count: updated });
+    return { enriched: updated, markedIneligible: 0, active: activeCount, needsAdminOdds: 0 };
+  }
+
+  // Step 3: We need more bets - get eligible ones
+  logger.info('Slots available, fetching eligible bets', { slots: slotsAvailable });
+  
   let eligibleBets = [];
 
   // Try games in next 2 days first
@@ -228,7 +271,8 @@ async function runEnrichment() {
     logger.info('Eligible bets (no time limit)', { count: eligibleBets.length });
   }
   
-  // Note: We enrich ALL eligible bets so we can pick the best 3 by odds later
+  // Limit eligible bets to avoid too many API calls (only need enough to fill slots)
+  eligibleBets = eligibleBets.slice(0, slotsAvailable * 3); // 3x for backups
 
   // Combine active + eligible bets (active first, then eligible)
   const betsToEnrich = [...activeBets, ...eligibleBets];
