@@ -153,6 +153,19 @@ async function upsertSeasons(seasons) {
   }
 }
 
+async function countSeasonMatches(seasonId) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      'SELECT COUNT(*) as count FROM league_matches WHERE season_id = $1',
+      [seasonId]
+    );
+    return parseInt(result.rows[0].count, 10);
+  } finally {
+    client.release();
+  }
+}
+
 async function fetchSeasonMatches(seasonId, label) {
   console.log(`   📡 Buscando jogos: ${label}...`);
   
@@ -281,13 +294,23 @@ async function main() {
     // 3. Salvar temporadas no banco
     await upsertSeasons(activeSeasons);
 
-    // 4. Buscar e salvar jogos de cada temporada
-    console.log('\n📥 Buscando jogos das temporadas...');
+    // 4. Buscar e salvar jogos de cada temporada (só se não existir)
+    console.log('\n📥 Verificando jogos das temporadas...');
     let totalMatches = 0;
+    let skipped = 0;
     let errors = 0;
 
     for (const season of activeSeasons) {
       try {
+        const existing = await countSeasonMatches(season.season_id);
+        if (existing > 0) {
+          console.log(`   ⏭️  ${season.league_name} ${season.year}: ${existing} jogos já no banco`);
+          totalMatches += existing;
+          skipped++;
+          continue;
+        }
+
+        console.log(`   📡 Buscando: ${season.league_name} ${season.year}...`);
         const matches = await fetchSeasonMatches(season.season_id, `${season.league_name} ${season.year}`);
         const saved = await upsertMatches(season.season_id, matches);
         totalMatches += saved;
@@ -302,8 +325,9 @@ async function main() {
     console.log('\n' + '═'.repeat(60));
     console.log(`🎉 Sincronização concluída!`);
     console.log(`   • ${activeSeasons.length} temporadas`);
-    console.log(`   • ${totalMatches} jogos`);
-    if (errors > 0) console.log(`   • ⚠️  ${errors} temporadas com erro (liga não habilitada?)`);
+    console.log(`   • ${totalMatches} jogos no total`);
+    if (skipped > 0) console.log(`   • ⏭️  ${skipped} temporadas já populadas (puladas)`);
+    if (errors > 0) console.log(`   • ⚠️  ${errors} temporadas com erro`);
     console.log('═'.repeat(60));
 
   } catch (err) {
