@@ -50,12 +50,10 @@ const normalizeBetEntry = (bet, category, index) => {
 
 const collectBets = (output) => {
   if (!output) return [];
+  // Story 6.1: Gerar apenas safe_bets (não salvar value_bets/oportunidades)
   const safe =
     output.apostas_seguras?.map((bet, index) => normalizeBetEntry(bet, 'SAFE', index)) || [];
-  const opportunities =
-    output.oportunidades?.map((bet, index) => normalizeBetEntry(bet, 'OPORTUNIDADE', index)) ||
-    [];
-  return [...safe, ...opportunities].filter(Boolean);
+  return safe.filter(Boolean);
 };
 
 const persistInDatabase = async (matchId, payload, bets, analysisText) => {
@@ -74,14 +72,20 @@ const persistInDatabase = async (matchId, payload, bets, analysisText) => {
       [matchId, analysisText, JSON.stringify(payload)],
     );
 
-    await client.query('DELETE FROM suggested_bets WHERE match_id = $1', [matchId]);
+    // Story 6.1: Deletar apenas SAFE bets antigas (manter histórico de outras)
+    await client.query(
+      "DELETE FROM suggested_bets WHERE match_id = $1 AND bet_category = 'SAFE'",
+      [matchId]
+    );
+    
     for (const bet of bets) {
+      // Story 6.2: Salvar com bet_status='generated' e eligible=true
       await client.query(
         `
           INSERT INTO suggested_bets
-            (match_id, bet_market, bet_pick, odds, confidence, reasoning, risk_level, bet_category)
+            (match_id, bet_market, bet_pick, odds, confidence, reasoning, risk_level, bet_category, bet_status, eligible)
           VALUES
-            ($1, $2, $3, $4, $5, $6, $7, $8);
+            ($1, $2, $3, $4, $5, $6, $7, $8, 'generated', true);
         `,
         [
           matchId,
