@@ -1,12 +1,14 @@
 /**
- * Bot Web Server - Webhook mode for Render Free Tier
- * 
+ * Bot Web Server (Webhook Mode)
+ *
+ * This is the main entry point for the Telegram bot in WEBHOOK mode.
+ * Use this for production on Render. For local development, use index.js instead.
+ *
  * Render free tier spins down after 15min of inactivity,
  * but Telegram webhooks will wake it up when messages arrive.
- * 
- * Usage:
- *   node bot/server.js
- * 
+ *
+ * Usage: node bot/server.js
+ *
  * Environment:
  *   PORT - Server port (Render sets this automatically)
  *   WEBHOOK_URL - Your Render URL (e.g., https://bets-bot.onrender.com)
@@ -14,9 +16,9 @@
 require('dotenv').config();
 
 const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
+const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage } = require('./handlers/adminGroup');
 
 // Validate config
@@ -31,16 +33,17 @@ const PORT = process.env.PORT || 3000;
 // Ou você pode definir WEBHOOK_URL manualmente
 const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
 
-// Create bot in webhook mode (no polling)
-const bot = new TelegramBot(config.telegram.botToken);
+// Initialize bot in webhook mode (no polling)
+initBot('webhook');
 
 /**
  * Health check endpoint
  */
 app.get('/', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     bot: 'GuruBet',
+    mode: 'webhook',
     time: new Date().toISOString(),
   });
 });
@@ -55,24 +58,25 @@ app.get('/health', (req, res) => {
 app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
   try {
     const update = req.body;
-    
+    const bot = getBot();
+
     // Process message
     if (update.message) {
       const msg = update.message;
-      
+
       // Only process admin group messages
       if (msg.chat.id.toString() === config.telegram.adminGroupId) {
         await handleAdminMessage(bot, msg);
       }
-      
+
       // Handle commands
       if (msg.text?.startsWith('/status')) {
-        await handleStatusCommand(msg);
+        await handleStatusCommand(bot, msg);
       } else if (msg.text?.startsWith('/help')) {
-        await handleHelpCommand(msg);
+        await handleHelpCommand(bot, msg);
       }
     }
-    
+
     res.sendStatus(200);
   } catch (err) {
     logger.error('Webhook error', { error: err.message });
@@ -83,9 +87,9 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
 /**
  * Handle /status command
  */
-async function handleStatusCommand(msg) {
+async function handleStatusCommand(bot, msg) {
   if (msg.chat.id.toString() !== config.telegram.adminGroupId) return;
-  
+
   const statusText = `
 🤖 *Status do Bot*
 
@@ -100,9 +104,9 @@ async function handleStatusCommand(msg) {
 /**
  * Handle /help command
  */
-async function handleHelpCommand(msg) {
+async function handleHelpCommand(bot, msg) {
   if (msg.chat.id.toString() !== config.telegram.adminGroupId) return;
-  
+
   const helpText = `
 📚 *Comandos Disponíveis*
 
@@ -115,7 +119,7 @@ async function handleHelpCommand(msg) {
 *Para definir odds:*
 \`/odds ID valor\`
 
-Exemplo: 
+Exemplo:
 \`40: https://betano.bet.br/...\`
 \`/odds 40 1.85\`
   `.trim();
@@ -133,15 +137,8 @@ async function setupWebhook() {
   }
 
   const webhookUrl = `${WEBHOOK_URL}/webhook/${config.telegram.botToken}`;
-  
-  try {
-    await bot.setWebHook(webhookUrl);
-    logger.info('Webhook set', { url: webhookUrl.replace(config.telegram.botToken, '***') });
-    return true;
-  } catch (err) {
-    logger.error('Failed to set webhook', { error: err.message });
-    return false;
-  }
+  const result = await setWebhook(webhookUrl);
+  return result.success;
 }
 
 /**
@@ -153,7 +150,7 @@ function setupScheduler() {
   const { runEnrichment } = require('./jobs/enrichOdds');
   const { runRequestLinks } = require('./jobs/requestLinks');
   const { runPostBets } = require('./jobs/postBets');
-  
+
   const TZ = 'America/Sao_Paulo';
 
   // Morning prep - 08:00 São Paulo
@@ -233,8 +230,15 @@ function setupScheduler() {
  * Start server
  */
 async function start() {
-  console.log('🤖 Starting GuruBet Server...\n');
-  
+  console.log('🤖 Starting GuruBet Server in WEBHOOK mode...\n');
+
+  // Test connection first
+  const connResult = await testConnection();
+  if (!connResult.success) {
+    console.error('❌ Failed to connect to Telegram:', connResult.error.message);
+    process.exit(1);
+  }
+
   // Setup webhook if URL provided
   if (WEBHOOK_URL) {
     await setupWebhook();
@@ -245,9 +249,10 @@ async function start() {
 
   // Setup internal scheduler
   setupScheduler();
-  
+
   app.listen(PORT, () => {
     console.log(`\n✅ Server running on port ${PORT}`);
+    console.log(`🤖 Bot: @${connResult.data.username}`);
     console.log(`📍 Admin Group: ${config.telegram.adminGroupId}`);
     console.log(`📍 Public Group: ${config.telegram.publicGroupId}`);
     console.log('\n🔗 Endpoints:');

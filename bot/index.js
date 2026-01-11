@@ -1,27 +1,22 @@
 /**
- * Bot Entry Point
- * 
- * This is the main entry point for the Telegram bot.
- * In production (Render), this runs as a long-lived process that:
- * 1. Listens for messages in admin group (for receiving links)
- * 2. Handles commands
- * 
- * Cron jobs are executed separately via Render Cron.
+ * Bot Entry Point (Polling Mode)
+ *
+ * This is the main entry point for the Telegram bot in POLLING mode.
+ * Use this for local development. For production on Render, use server.js instead.
+ *
+ * Usage: node bot/index.js
  */
 require('dotenv').config();
-const TelegramBot = require('node-telegram-bot-api');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
-const { testConnection } = require('./telegram');
+const { initBot, stopBot, testConnection } = require('./telegram');
+const { handleAdminMessage } = require('./handlers/adminGroup');
 
 // Validate config on startup
 validateConfig();
 
-// Create bot with polling for receiving messages
-const bot = new TelegramBot(config.telegram.botToken, { polling: true });
-
-// Import handlers
-const { handleAdminMessage } = require('./handlers/adminGroup');
+// Initialize bot with polling mode
+const bot = initBot('polling');
 
 /**
  * Handle messages in admin group
@@ -50,7 +45,7 @@ bot.onText(/\/status/, async (msg) => {
   const statusText = `
 🤖 *Status do Bot*
 
-✅ Bot online
+✅ Bot online (polling mode)
 📊 Ambiente: ${config.env}
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
@@ -86,20 +81,20 @@ Exemplo: \`123: https://bet365.com/...\`
  * Startup
  */
 async function startup() {
-  logger.info('Starting bot...');
-  
+  logger.info('Starting bot in polling mode...');
+
   const result = await testConnection();
   if (!result.success) {
     logger.error('Failed to connect to Telegram', { error: result.error.message });
     process.exit(1);
   }
 
-  logger.info('Bot started successfully', { 
+  logger.info('Bot started successfully', {
     username: result.data.username,
-    env: config.env 
+    env: config.env
   });
 
-  console.log(`\n🤖 Bot @${result.data.username} is running!`);
+  console.log(`\n🤖 Bot @${result.data.username} is running in POLLING mode!`);
   console.log(`📍 Admin Group: ${config.telegram.adminGroupId}`);
   console.log(`📍 Public Group: ${config.telegram.publicGroupId}`);
   console.log('\nPress Ctrl+C to stop.\n');
@@ -110,12 +105,12 @@ startup();
 // Graceful shutdown
 process.on('SIGINT', () => {
   logger.info('Shutting down bot...');
-  bot.stopPolling();
+  stopBot();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   logger.info('Shutting down bot...');
-  bot.stopPolling();
+  stopBot();
   process.exit(0);
 });
