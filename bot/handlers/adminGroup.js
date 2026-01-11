@@ -15,8 +15,8 @@ const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
 // Regex to match "/odds ID valor" or "/odd ID valor" command (Story 8.2)
 const ODDS_PATTERN = /^\/odds?\s+(\d+)\s+([\d.,]+)/i;
 
-// Regex to match "/apostas" command (Story 8.1)
-const APOSTAS_PATTERN = /^\/apostas$/i;
+// Regex to match "/apostas" or "/apostas N" for pagination (Story 8.1)
+const APOSTAS_PATTERN = /^\/apostas(?:\s+(\d+))?$/i;
 
 // Regex to match "/link ID URL" command (Story 8.3)
 const LINK_COMMAND_PATTERN = /^\/link\s+(\d+)\s+(https?:\/\/\S+)/i;
@@ -115,10 +115,11 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
 }
 
 /**
- * Handle /apostas command - List all available bets (Story 8.1)
+ * Handle /apostas command - List available bets with pagination (Story 8.1)
+ * Usage: /apostas or /apostas 2 (for page 2)
  */
-async function handleApostasCommand(bot, msg) {
-  logger.info('Received /apostas command', { chatId: msg.chat.id, userId: msg.from?.id });
+async function handleApostasCommand(bot, msg, page = 1) {
+  logger.info('Received /apostas command', { chatId: msg.chat.id, userId: msg.from?.id, page });
 
   const result = await getAvailableBets();
 
@@ -142,13 +143,16 @@ async function handleApostasCommand(bot, msg) {
     return;
   }
 
-  // Limit to first 15 bets to avoid "message too long" error
-  const MAX_BETS = 15;
-  const displayBets = bets.slice(0, MAX_BETS);
-  const hasMore = bets.length > MAX_BETS;
+  // Pagination
+  const PAGE_SIZE = 15;
+  const totalPages = Math.ceil(bets.length / PAGE_SIZE);
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const endIdx = startIdx + PAGE_SIZE;
+  const displayBets = bets.slice(startIdx, endIdx);
 
   // Format message - compact format
-  const lines = [`📋 *APOSTAS* (${displayBets.length}/${bets.length})\n`];
+  const lines = [`📋 *APOSTAS* (pág ${currentPage}/${totalPages} • total: ${bets.length})\n`];
 
   displayBets.forEach((bet) => {
     const kickoff = new Date(bet.kickoffTime);
@@ -171,17 +175,20 @@ async function handleApostasCommand(bot, msg) {
     lines.push(`   ${dateStr} ${timeStr} | ${bet.betMarket} | ${bet.odds?.toFixed(2) || '-'} ${linkIcon}`);
   });
 
-  if (hasMore) {
-    lines.push(`\n_...e mais ${bets.length - MAX_BETS} apostas_`);
+  // Navigation hints
+  if (totalPages > 1) {
+    lines.push('');
+    if (currentPage < totalPages) {
+      lines.push(`➡️ Próxima: \`/apostas ${currentPage + 1}\``);
+    }
+    if (currentPage > 1) {
+      lines.push(`⬅️ Anterior: \`/apostas ${currentPage - 1}\``);
+    }
   }
-
-  lines.push('💡 *Comandos:*');
-  lines.push('• Adicionar link: `ID: URL`');
-  lines.push('• Ajustar odd: `/odds ID valor`');
 
   await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
 
-  logger.info('Listed available bets', { count: bets.length });
+  logger.info('Listed available bets', { count: displayBets.length, page: currentPage, totalPages });
 }
 
 /**
@@ -502,9 +509,11 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Check if message is /apostas command (Story 8.1)
-  if (APOSTAS_PATTERN.test(text)) {
-    await handleApostasCommand(bot, msg);
+  // Check if message is /apostas command with optional page (Story 8.1)
+  const apostasMatch = text.match(APOSTAS_PATTERN);
+  if (apostasMatch) {
+    const page = apostasMatch[1] ? parseInt(apostasMatch[1], 10) : 1;
+    await handleApostasCommand(bot, msg, page);
     return;
   }
 
