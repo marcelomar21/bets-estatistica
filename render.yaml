@@ -2,13 +2,12 @@
 # Deploy: https://render.com/docs/blueprint-spec
 #
 # Arquitetura 100% gratuita:
-# - Web Service (free): Recebe webhooks do Telegram
-# - Cron Jobs (free): Executam tarefas agendadas
-#
+# - Web Service (free): Roda o bot + scheduler interno
+# 
 # O Web Service faz spin down após 15min sem tráfego,
 # mas o Telegram webhook acorda ele quando há mensagens.
+# O scheduler interno roda os jobs nos horários programados.
 
-# Web Service para receber webhooks (gratuito)
 services:
   - type: web
     name: bets-bot
@@ -22,92 +21,8 @@ services:
         value: production
       - key: TZ
         value: America/Sao_Paulo
-      # WEBHOOK_URL será preenchido manualmente após o primeiro deploy
-      # com o formato: https://bets-bot.onrender.com
-      - key: WEBHOOK_URL
-        sync: false
       - fromGroup: bets-secrets
 
-# Cron Jobs (gratuito)
-crons:
-  # ===== MANHÃ =====
-  # Prep: Enriquece odds + pede links - 08:00 São Paulo (11:00 UTC)
-  - name: morning-prep
-    schedule: "0 11 * * *"
-    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js morning
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # Post: Publica apostas - 10:00 São Paulo (13:00 UTC)
-  - name: morning-post
-    schedule: "0 13 * * *"
-    command: node bot/jobs/postBets.js morning
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # ===== TARDE =====
-  # Prep: Enriquece odds + pede links - 13:00 São Paulo (16:00 UTC)
-  - name: afternoon-prep
-    schedule: "0 16 * * *"
-    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js afternoon
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # Post: Publica apostas - 15:00 São Paulo (18:00 UTC)
-  - name: afternoon-post
-    schedule: "0 18 * * *"
-    command: node bot/jobs/postBets.js afternoon
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # ===== NOITE =====
-  # Prep: Enriquece odds + pede links - 20:00 São Paulo (23:00 UTC)
-  - name: night-prep
-    schedule: "0 23 * * *"
-    command: node scripts/pipeline.js --step=6 && node bot/jobs/requestLinks.js night
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # Post: Publica apostas - 22:00 São Paulo (01:00 UTC dia seguinte)
-  - name: night-post
-    schedule: "0 1 * * *"
-    command: node bot/jobs/postBets.js night
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # ===== PIPELINE DIÁRIO =====
-  # Roda análise completa - 06:00 São Paulo (09:00 UTC)
-  - name: daily-pipeline
-    schedule: "0 9 * * *"
-    command: node scripts/pipeline.js
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-  # ===== TRACKING =====
-  # Verifica resultados - a cada hora
-  - name: track-results
-    schedule: "0 * * * *"
-    command: node bot/jobs/trackResults.js
-    runtime: node
-    plan: free
-    envVars:
-      - fromGroup: bets-secrets
-
-# Environment Variables Group (configurar no Render Dashboard)
 envVarGroups:
   - name: bets-secrets
     envVars:

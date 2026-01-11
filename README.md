@@ -187,37 +187,38 @@ O bot publica automaticamente:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    RENDER (FREE)                         │
+│              RENDER WEB SERVICE (FREE)                   │
 ├─────────────────────────────────────────────────────────┤
-│  Web Service (bets-bot)                                  │
-│  ├─ Recebe webhooks do Telegram                         │
-│  ├─ Processa links dos admins                           │
+│  bets-bot                                                │
+│  ├─ Recebe webhooks do Telegram (links dos admins)      │
+│  ├─ Scheduler interno (node-cron)                       │
+│  │   ├─ 08:00/13:00/20:00 - Prep (odds + pede links)   │
+│  │   └─ 10:00/15:00/22:00 - Post (publica apostas)     │
 │  └─ Spin down após 15min (wake on webhook)              │
-├─────────────────────────────────────────────────────────┤
-│  Cron Jobs                                               │
-│  ├─ 06:00 Pipeline (análise IA)                         │
-│  ├─ 08:00/13:00/20:00 Prep (odds + pede links)          │
-│  ├─ 10:00/15:00/22:00 Post (publica apostas)            │
-│  └─ */hora Track (verifica resultados)                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### Horários dos Jobs
+### ⚠️ Limitação do Free Tier
+
+O Render free faz **spin down após 15min sem tráfego**. Isso significa:
+- Jobs agendados só rodam se o server estiver acordado
+- Webhooks do Telegram acordam o server
+- Para garantir execução, configure um **ping externo** (UptimeRobot, cron-job.org)
+
+### Horários dos Jobs Internos
 
 | Horário (SP) | Job | Descrição |
 |--------------|-----|-----------|
-| 06:00 | daily-pipeline | Pipeline completo (análise IA) |
 | 08:00 | morning-prep | Enriquece odds + pede links |
 | 10:00 | morning-post | Publica apostas + **PRÉVIA** |
 | 13:00 | afternoon-prep | Enriquece odds + pede links |
 | 15:00 | afternoon-post | Publica apostas + **PRÉVIA** |
 | 20:00 | night-prep | Enriquece odds + pede links |
 | 22:00 | night-post | Publica apostas + **PRÉVIA** |
-| */hora | track-results | Verifica resultados |
 
 ### Como Funciona
 
-1. **06:00** - Pipeline roda análise IA e gera apostas
+1. **Pipeline local** - Rode manualmente ou via GitHub Actions
 2. **08:00** - Bot enriquece odds e pede links no grupo admin
 3. **Admin responde** com os links (webhook acorda o server)
 4. **10:00** - Bot mostra PRÉVIA no grupo admin, depois publica
@@ -246,7 +247,9 @@ TELEGRAM_PUBLIC_GROUP_ID=-100987654321
 
 ### Após Deploy
 
-O webhook é configurado automaticamente. Verifique com `/status` no grupo admin.
+O Render fornece automaticamente a variável `RENDER_EXTERNAL_URL`, então o webhook é configurado automaticamente no primeiro start.
+
+Verifique com `/status` no grupo admin - deve mostrar "Bot online (webhook mode)".
 
 ## 🧪 Testes
 

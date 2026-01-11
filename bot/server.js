@@ -26,7 +26,10 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+
+// Render fornece RENDER_EXTERNAL_URL automaticamente
+// Ou você pode definir WEBHOOK_URL manualmente
+const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
 
 // Create bot in webhook mode (no polling)
 const bot = new TelegramBot(config.telegram.botToken);
@@ -142,6 +145,91 @@ async function setupWebhook() {
 }
 
 /**
+ * Setup internal scheduler (node-cron)
+ * This runs inside the web service to avoid paid cron jobs
+ */
+function setupScheduler() {
+  const cron = require('node-cron');
+  const { runEnrichment } = require('./jobs/enrichOdds');
+  const { runRequestLinks } = require('./jobs/requestLinks');
+  const { runPostBets } = require('./jobs/postBets');
+  
+  const TZ = 'America/Sao_Paulo';
+
+  // Morning prep - 08:00 São Paulo
+  cron.schedule('0 8 * * *', async () => {
+    logger.info('Running morning-prep job');
+    try {
+      await runEnrichment();
+      await runRequestLinks('morning');
+    } catch (err) {
+      logger.error('morning-prep failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Morning post - 10:00 São Paulo
+  cron.schedule('0 10 * * *', async () => {
+    logger.info('Running morning-post job');
+    try {
+      await runPostBets('morning');
+    } catch (err) {
+      logger.error('morning-post failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Afternoon prep - 13:00 São Paulo
+  cron.schedule('0 13 * * *', async () => {
+    logger.info('Running afternoon-prep job');
+    try {
+      await runEnrichment();
+      await runRequestLinks('afternoon');
+    } catch (err) {
+      logger.error('afternoon-prep failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Afternoon post - 15:00 São Paulo
+  cron.schedule('0 15 * * *', async () => {
+    logger.info('Running afternoon-post job');
+    try {
+      await runPostBets('afternoon');
+    } catch (err) {
+      logger.error('afternoon-post failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Night prep - 20:00 São Paulo
+  cron.schedule('0 20 * * *', async () => {
+    logger.info('Running night-prep job');
+    try {
+      await runEnrichment();
+      await runRequestLinks('night');
+    } catch (err) {
+      logger.error('night-prep failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Night post - 22:00 São Paulo
+  cron.schedule('0 22 * * *', async () => {
+    logger.info('Running night-post job');
+    try {
+      await runPostBets('night');
+    } catch (err) {
+      logger.error('night-post failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  logger.info('Internal scheduler started');
+  console.log('⏰ Scheduler jobs:');
+  console.log('   08:00 - Enrich + Request links');
+  console.log('   10:00 - Post bets (morning)');
+  console.log('   13:00 - Enrich + Request links');
+  console.log('   15:00 - Post bets (afternoon)');
+  console.log('   20:00 - Enrich + Request links');
+  console.log('   22:00 - Post bets (night)');
+}
+
+/**
  * Start server
  */
 async function start() {
@@ -152,11 +240,14 @@ async function start() {
     await setupWebhook();
   } else {
     console.log('⚠️  WEBHOOK_URL not set - webhook not configured');
-    console.log('   Set WEBHOOK_URL=https://your-app.onrender.com in Render\n');
+    console.log('   Render provides RENDER_EXTERNAL_URL automatically\n');
   }
+
+  // Setup internal scheduler
+  setupScheduler();
   
   app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`\n✅ Server running on port ${PORT}`);
     console.log(`📍 Admin Group: ${config.telegram.adminGroupId}`);
     console.log(`📍 Public Group: ${config.telegram.publicGroupId}`);
     console.log('\n🔗 Endpoints:');
