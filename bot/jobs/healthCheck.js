@@ -16,7 +16,7 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { supabase, testConnection } = require('../../lib/supabase');
-const { healthCheckAlert } = require('../services/alertService');
+const { healthCheckAlert, postingFailureAlert } = require('../services/alertService');
 
 // Thresholds for health checks
 const THRESHOLDS = {
@@ -70,7 +70,7 @@ async function checkDatabaseConnection() {
 
 /**
  * Check if last posting occurred on schedule
- * @returns {Promise<{success: boolean, lastPost?: Date, warning?: string, error?: string}>}
+ * @returns {Promise<{success: boolean, lastPost?: Date, warning?: string, error?: string, failedPeriod?: string, isPostingFailure?: boolean}>}
  */
 async function checkLastPosting() {
   try {
@@ -129,15 +129,26 @@ async function checkLastPosting() {
     // Check if last post is after expected time
     if (lastPostTime < expectedPost) {
       const hoursSince = Math.round((now - lastPostTime) / (1000 * 60 * 60));
+
+      // Determine if this is a recent failure (within last 2 hours of expected time)
+      // This helps distinguish between "missed posting" vs "old data"
+      const timeSinceExpected = now - expectedPost;
+      const isRecentFailure = timeSinceExpected < 2 * 60 * 60 * 1000; // Within 2 hours
+
       logger.warn('Health check: Last post is old', {
         lastPost: lastPostTime.toISOString(),
         expected: expectedPost.toISOString(),
-        hoursSince
+        hoursSince,
+        isRecentFailure,
+        expectedPostHour
       });
+
       return {
         success: true,
         lastPost: lastPostTime,
-        warning: `Last post ${hoursSince}h ago, expected post at ${expectedPostHour}:00`
+        warning: `Last post ${hoursSince}h ago, expected post at ${expectedPostHour}:00`,
+        failedPeriod: `${expectedPostHour}h`,
+        isPostingFailure: isRecentFailure
       };
     }
 
@@ -291,7 +302,7 @@ async function runHealthCheck() {
     });
   }
 
-  // Posting issues
+  // Posting issues - use specific alert for recent failures
   if (!postResult.success) {
     hasErrors = true;
     alerts.push({
@@ -302,12 +313,29 @@ async function runHealthCheck() {
     });
   } else if (postResult.warning) {
     hasWarnings = true;
-    alerts.push({
-      severity: 'warn',
-      check: 'Postagem',
-      message: postResult.warning,
-      action: 'Use /postar para forçar postagem'
-    });
+
+    // If this is a recent posting failure, send the specific operator alert
+    if (postResult.isPostingFailure && postResult.failedPeriod) {
+      const detectedAt = new Date().toLocaleTimeString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      try {
+        await postingFailureAlert(postResult.failedPeriod, detectedAt);
+        logger.info('Posting failure alert sent', { failedPeriod: postResult.failedPeriod });
+      } catch (err) {
+        logger.error('Failed to send posting failure alert', { error: err.message });
+      }
+    } else {
+      // For older issues, use regular health check alert
+      alerts.push({
+        severity: 'warn',
+        check: 'Postagem',
+        message: postResult.warning,
+        action: 'Use /postar para forçar postagem'
+      });
+    }
   }
 
   // Jobs issues

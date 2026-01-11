@@ -124,6 +124,32 @@ ${emoji} *RESULTADO: ${result}*
 }
 
 /**
+ * Send posting failure alert with operator mention
+ * @param {string} period - Which posting period failed (morning/afternoon/night or hour like "10h")
+ * @param {string} detectedAt - When the failure was detected
+ * @param {string} reason - Reason for failure (optional)
+ */
+async function postingFailureAlert(period, detectedAt, reason = null) {
+  const operatorUsername = process.env.TELEGRAM_OPERATOR_USERNAME || 'marcelomendes';
+
+  const reasonText = reason ? `\n📋 Motivo: ${reason}` : '';
+
+  const text = `
+🚨 *ALERTA DE SISTEMA*
+
+@${operatorUsername} Problema detectado!
+
+❌ *Falha:* Postagem das ${period} não executada
+⏰ *Detectado:* ${detectedAt}${reasonText}
+💡 *Ação:* Use /postar para forçar
+
+\`/status\` para mais detalhes
+  `.trim();
+
+  return sendToAdmin(text);
+}
+
+/**
  * Send health check alert
  * @param {Array} alerts - Array of alert objects { severity, check, message, action }
  * @param {boolean} hasErrors - Whether any errors (vs just warnings)
@@ -155,5 +181,6 @@ module.exports = {
   requestLinksAlert,
   confirmLinkReceived,
   trackingResultAlert,
+  postingFailureAlert,
   healthCheckAlert,
 };
