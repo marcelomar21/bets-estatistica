@@ -122,10 +122,10 @@ development_status:
   # ============================================
   # Epic 7: Bug Fixes Críticos
   # ============================================
-  epic-7: in-progress
+  epic-7: done
   7-1-implementar-repostagem-apostas-ativas: done
-  7-2-corrigir-matching-odds: backlog
-  7-3-adicionar-logs-debug-matching: backlog
+  7-2-corrigir-matching-odds: done
+  7-3-adicionar-logs-debug-matching: done
   epic-7-retrospective: optional
 
   # ============================================

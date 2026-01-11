@@ -213,11 +213,11 @@ async function getEventOdds(sportKey, eventId, market = 'totals') {
 }
 
 /**
- * Find best odds for a bet from multiple bookmakers
+ * Find best odds for a bet from multiple bookmakers (Story 7.2: Fixed matching)
  * Strategy:
- * 1. First try to find exact line match
- * 2. If not found, find closest available line for the same bet type
- * 3. Prefer target bookmakers
+ * 1. STRICT: Only accept exact line match (±0.01 tolerance for floats)
+ * 2. Type must match exactly (case-insensitive)
+ * 3. Prefer target bookmakers, then highest odds
  * 
  * @param {object} oddsData - Odds data from API
  * @param {string} betType - 'over' or 'under' for totals, 'yes'/'no' for btts
@@ -225,49 +225,102 @@ async function getEventOdds(sportKey, eventId, market = 'totals') {
  * @returns {object|null} - { bookmaker, odds, line, exactMatch } or null
  */
 function findBestOdds(oddsData, betType, line = null) {
-  if (!oddsData?.bookmakers?.length) return null;
+  // Normalize betType to lowercase
+  const normalizedBetType = betType?.toLowerCase()?.trim();
+  
+  logger.debug('findBestOdds: Starting search', { 
+    betType: normalizedBetType, 
+    line,
+    hasBookmakers: !!oddsData?.bookmakers?.length,
+    bookmakerCount: oddsData?.bookmakers?.length || 0
+  });
+
+  if (!oddsData?.bookmakers?.length) {
+    logger.debug('findBestOdds: No bookmakers in odds data');
+    return null;
+  }
 
   // Collect all matching outcomes
   const candidates = [];
+  const allOutcomes = []; // For debug logging
 
   for (const bookmaker of oddsData.bookmakers) {
     const isPreferred = TARGET_BOOKMAKERS.includes(bookmaker.key);
     
     for (const market of bookmaker.markets || []) {
       for (const outcome of market.outcomes || []) {
-        // Match bet type
-        const outcomeType = outcome.name?.toLowerCase();
-        if (betType && outcomeType !== betType) continue;
+        // Normalize outcome type
+        const outcomeType = outcome.name?.toLowerCase()?.trim();
+        const outcomePoint = typeof outcome.point === 'string' 
+          ? parseFloat(outcome.point) 
+          : outcome.point;
         
-        const outcomePoint = outcome.point;
-        const lineDiff = (line !== null && outcomePoint !== undefined) 
-          ? Math.abs(outcomePoint - line) 
-          : 0;
+        // Log all outcomes for debugging
+        allOutcomes.push({
+          bookmaker: bookmaker.key,
+          type: outcomeType,
+          point: outcomePoint,
+          price: outcome.price
+        });
+
+        // STRICT TYPE MATCH
+        if (normalizedBetType && outcomeType !== normalizedBetType) {
+          continue;
+        }
         
+        // STRICT LINE MATCH (if line specified)
+        if (line !== null) {
+          // Skip if outcome has no point
+          if (outcomePoint === undefined || outcomePoint === null || isNaN(outcomePoint)) {
+            continue;
+          }
+          // Only accept exact match (±0.01 tolerance for float comparison)
+          const lineDiff = Math.abs(outcomePoint - line);
+          if (lineDiff > 0.01) {
+            continue;
+          }
+        }
+        
+        // This is a valid candidate (exact match)
         candidates.push({
           bookmaker: bookmaker.key,
           bookmakerTitle: bookmaker.title,
           odds: outcome.price,
           line: outcomePoint ?? null,
-          lineDiff,
           isPreferred,
-          exactMatch: lineDiff < 0.1,
+          exactMatch: true,
         });
       }
     }
   }
 
-  if (candidates.length === 0) return null;
+  // Log all outcomes found for debugging
+  logger.debug('findBestOdds: All outcomes found', { 
+    totalOutcomes: allOutcomes.length,
+    outcomes: allOutcomes.slice(0, 20), // Limit to first 20 for log size
+    searchCriteria: { type: normalizedBetType, line }
+  });
 
-  // Sort candidates: exact match first, then by line difference, then by preferred, then by odds
+  if (candidates.length === 0) {
+    logger.warn('findBestOdds: No exact match found', { 
+      betType: normalizedBetType, 
+      line,
+      availableLines: [...new Set(allOutcomes.filter(o => o.type === normalizedBetType).map(o => o.point))].sort()
+    });
+    return null;
+  }
+
+  logger.debug('findBestOdds: Candidates found', { 
+    count: candidates.length,
+    candidates: candidates.map(c => ({ 
+      bookmaker: c.bookmaker, 
+      odds: c.odds, 
+      line: c.line 
+    }))
+  });
+
+  // Sort candidates: preferred bookmakers first, then by highest odds
   candidates.sort((a, b) => {
-    // Exact matches first
-    if (a.exactMatch && !b.exactMatch) return -1;
-    if (!a.exactMatch && b.exactMatch) return 1;
-    
-    // Closer lines first
-    if (a.lineDiff !== b.lineDiff) return a.lineDiff - b.lineDiff;
-    
     // Preferred bookmakers first
     if (a.isPreferred && !b.isPreferred) return -1;
     if (!a.isPreferred && b.isPreferred) return 1;
@@ -278,14 +331,13 @@ function findBestOdds(oddsData, betType, line = null) {
 
   const best = candidates[0];
   
-  // Log if using non-exact line
-  if (!best.exactMatch && line !== null) {
-    logger.debug('Using closest available line', { 
-      requested: line, 
-      found: best.line,
-      bookmaker: best.bookmakerTitle,
-    });
-  }
+  logger.info('findBestOdds: Selected best odds', { 
+    bookmaker: best.bookmakerTitle,
+    odds: best.odds,
+    line: best.line,
+    betType: normalizedBetType,
+    isPreferred: best.isPreferred
+  });
   
   return {
     bookmaker: best.bookmaker,
@@ -422,13 +474,25 @@ function findEventByTeams(events, homeTeam, awayTeam) {
 }
 
 /**
- * Get odds for a specific bet
+ * Get odds for a specific bet (Story 7.2: Enhanced logging)
  * @param {object} bet - Bet object with homeTeamName, awayTeamName, betMarket
  * @param {string} sportKey - Sport key (optional, defaults to searching all soccer)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getOddsForBet(bet, sportKey = null) {
+  logger.debug('getOddsForBet: Starting', { 
+    betId: bet.id,
+    betMarket: bet.betMarket,
+    homeTeam: bet.homeTeamName,
+    awayTeam: bet.awayTeamName
+  });
+
   const { marketKey, betType, line, supported, reason } = await parseBetMarket(bet.betMarket);
+  
+  logger.debug('getOddsForBet: Market parsed', { 
+    betMarket: bet.betMarket,
+    parsed: { marketKey, betType, line, supported, reason }
+  });
   
   if (!supported || !marketKey) {
     logger.warn('Bet market not supported by Odds API', { 
