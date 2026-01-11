@@ -1,15 +1,15 @@
 /**
  * Job: Enrich bets with live odds from The Odds API
- * 
+ *
  * Logic:
  * 1. Always enrich odds for ACTIVE bets (already posted)
  * 2. If active bets < 3, enrich odds for games in next 2 days
  * 3. If no games in next 2 days, remove time restriction
- * 
+ *
  * Stories covered:
  * - 4.3: Associar odds às apostas
  * - 4.4: Marcar apostas com odds < 1.60 como inelegíveis
- * 
+ *
  * Run: node bot/jobs/enrichOdds.js
  */
 require('dotenv').config();
@@ -17,8 +17,12 @@ require('dotenv').config();
 const { supabase } = require('../../lib/supabase');
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { enrichBetsWithOdds, getOddsForBet } = require('../services/oddsService');
-const { markLowOddsBetsIneligible } = require('../services/betService');
+const { enrichBetsWithOdds } = require('../services/oddsService');
+const {
+  markLowOddsBetsIneligible,
+  updateBetOdds,
+  setBetPendingWithNote,
+} = require('../services/betService');
 const { interpretMarket } = require('../services/marketInterpreter');
 const { alertAdmin } = require('../telegram');
 
@@ -47,10 +51,10 @@ async function requestAdminOdds(bets) {
 
   // Send one message per match
   for (const [matchKey, data] of byMatch) {
-    const kickoff = data.kickoffTime 
+    const kickoff = data.kickoffTime
       ? new Date(data.kickoffTime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
       : 'A definir';
-    
+
     let message = `⚠️ *ODDS NECESSÁRIAS*\n\n`;
     message += `🏟️ *${matchKey}*\n`;
     message += `📅 ${kickoff}\n\n`;
@@ -59,30 +63,28 @@ async function requestAdminOdds(bets) {
     for (const bet of data.bets) {
       message += `📊 ${bet.betMarket}\n`;
       message += `   → Responda: \`/odds ${bet.id} [valor]\`\n\n`;
-      
-      // Update bet status to pending_odds_manual
-      await supabase
-        .from('suggested_bets')
-        .update({ 
-          bet_status: 'pending_link',
-          notes: 'Aguardando odds manual do admin (mercado não suportado pela API)' 
-        })
-        .eq('id', bet.id);
+
+      // Update bet status using betService
+      await setBetPendingWithNote(
+        bet.id,
+        'Aguardando odds manual do admin (mercado não suportado pela API)'
+      );
     }
 
     message += `\n_Sem resposta, essas apostas não serão postadas._`;
 
     await alertAdmin('INFO', 'Odds Manual Necessária', message);
-    
-    logger.info('Requested admin odds', { 
-      match: matchKey, 
-      betsCount: data.bets.length 
+
+    logger.info('Requested admin odds', {
+      match: matchKey,
+      betsCount: data.bets.length
     });
   }
 }
 
 /**
  * Get active posted bets (need to keep odds updated)
+ * Note: This is a specialized query for enrichment that filters by match status
  */
 async function getActiveBets() {
   const { data, error } = await supabase
@@ -126,11 +128,12 @@ async function getActiveBets() {
 
 /**
  * Get eligible bets with time filter
+ * Note: This is a specialized query for enrichment with dynamic time filtering
  * @param {number|null} daysAhead - Max days ahead (null = no limit)
  */
-async function getEligibleBets(daysAhead = 2) {
+async function getEligibleBetsForEnrichment(daysAhead = 2) {
   const now = new Date().toISOString();
-  
+
   let query = supabase
     .from('suggested_bets')
     .select(`
@@ -152,7 +155,7 @@ async function getEligibleBets(daysAhead = 2) {
     .in('bet_status', ['generated', 'pending_link', 'ready'])
     .gte('league_matches.kickoff_time', now)
     .order('odds', { ascending: false, nullsFirst: false })
-    .limit(100); // Get more bets to have options
+    .limit(100);
 
   // Apply time filter if specified
   if (daysAhead !== null) {
@@ -181,26 +184,8 @@ async function getEligibleBets(daysAhead = 2) {
 }
 
 /**
- * Update bet odds in database
- * @returns {Promise<{success: boolean, error?: object}>}
- */
-async function updateBetOdds(betId, odds) {
-  const { error } = await supabase
-    .from('suggested_bets')
-    .update({ odds })
-    .eq('id', betId);
-
-  if (error) {
-    logger.error('Failed to update bet odds', { betId, error: error.message });
-    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
-  }
-
-  return { success: true };
-}
-
-/**
  * Main enrichment job
- * 
+ *
  * Estratégia otimizada:
  * 1. Se já tem 3 bets postadas (ativas), só atualiza essas
  * 2. Só busca novas bets quando slots ficam disponíveis
@@ -216,14 +201,14 @@ async function runEnrichment() {
 
   // Step 2: Check if we have enough active bets
   const slotsAvailable = MAX_ACTIVE_BETS - activeCount;
-  
+
   // If we already have 3 active bets, ONLY update those (save API calls!)
   if (slotsAvailable === 0) {
     logger.info('All slots filled with active bets - only enriching those');
-    
+
     // Only enrich the active bets
     const betsToEnrich = [...activeBets];
-    
+
     if (betsToEnrich.length === 0) {
       logger.info('No bets to enrich');
       return { enriched: 0, markedIneligible: 0, active: activeCount };
@@ -231,10 +216,11 @@ async function runEnrichment() {
 
     // Enrich only active bets (no market interpretation needed - they were already validated)
     const enrichedBets = await enrichBetsWithOdds(betsToEnrich);
-    
+
     let updated = 0;
     for (const bet of enrichedBets) {
       if (bet.odds && bet.odds !== bet.currentOdds) {
+        // Use betService.updateBetOdds
         const result = await updateBetOdds(bet.id, bet.odds);
         if (result.success) {
           updated++;
@@ -253,58 +239,58 @@ async function runEnrichment() {
 
   // Step 3: We need more bets - get eligible ones
   logger.info('Slots available, fetching eligible bets', { slots: slotsAvailable });
-  
+
   let eligibleBets = [];
 
   // Try games in next 2 days first
-  eligibleBets = await getEligibleBets(2);
+  eligibleBets = await getEligibleBetsForEnrichment(2);
   logger.info('Eligible bets (next 2 days)', { count: eligibleBets.length });
 
   // If no games in next 2 days, expand to 14 days
   if (eligibleBets.length === 0) {
-    eligibleBets = await getEligibleBets(14);
+    eligibleBets = await getEligibleBetsForEnrichment(14);
     logger.info('Eligible bets (next 14 days)', { count: eligibleBets.length });
   }
 
   // If still no games, remove time restriction
   if (eligibleBets.length === 0) {
-    eligibleBets = await getEligibleBets(null);
+    eligibleBets = await getEligibleBetsForEnrichment(null);
     logger.info('Eligible bets (no time limit)', { count: eligibleBets.length });
   }
-  
+
   // Limit eligible bets to avoid too many API calls (only need enough to fill slots)
   eligibleBets = eligibleBets.slice(0, slotsAvailable * 3); // 3x for backups
 
   // Combine active + eligible bets (active first, then eligible)
   const betsToEnrich = [...activeBets, ...eligibleBets];
-  
+
   if (betsToEnrich.length === 0) {
     logger.info('No bets to enrich');
     return { enriched: 0, markedIneligible: 0, active: activeCount };
   }
 
-  logger.info('Bets to enrich', { 
-    total: betsToEnrich.length, 
-    active: activeCount, 
-    eligible: eligibleBets.length 
+  logger.info('Bets to enrich', {
+    total: betsToEnrich.length,
+    active: activeCount,
+    eligible: eligibleBets.length
   });
 
   // Step 3: Separate bets by market support
   let needsAdminCount = 0;
   const supportedBets = [];
   const needsAdminOdds = [];
-  
+
   for (const bet of betsToEnrich) {
     const interpretation = await interpretMarket(bet.betMarket);
-    
+
     if (!interpretation.supported) {
       needsAdminCount++;
       needsAdminOdds.push(bet);
-      
-      logger.debug('Bet market needs admin odds', { 
-        betId: bet.id, 
+
+      logger.debug('Bet market needs admin odds', {
+        betId: bet.id,
         market: bet.betMarket,
-        reason: interpretation.reason 
+        reason: interpretation.reason
       });
     } else {
       supportedBets.push({
@@ -313,7 +299,7 @@ async function runEnrichment() {
       });
     }
   }
-  
+
   // Step 3.1: Request odds from admins for unsupported markets
   if (needsAdminOdds.length > 0) {
     await requestAdminOdds(needsAdminOdds);
@@ -323,7 +309,7 @@ async function runEnrichment() {
   // Step 4: Enrich supported bets with live odds
   const enrichedBets = await enrichBetsWithOdds(supportedBets);
 
-  // Step 5: Update odds in database
+  // Step 5: Update odds in database using betService
   let updated = 0;
   for (const bet of enrichedBets) {
     if (bet.odds && bet.odds !== bet.currentOdds) {
@@ -344,7 +330,7 @@ async function runEnrichment() {
   const markResult = await markLowOddsBetsIneligible();
   const markedIneligible = markResult.success ? markResult.data?.markedCount || 0 : 0;
 
-  logger.info('Odds enrichment complete', { 
+  logger.info('Odds enrichment complete', {
     totalBets: betsToEnrich.length,
     supported: supportedBets.length,
     needsAdminOdds: needsAdminCount,
@@ -353,8 +339,8 @@ async function runEnrichment() {
     activeBets: activeCount,
   });
 
-  return { 
-    enriched: updated, 
+  return {
+    enriched: updated,
     markedIneligible,
     active: activeCount,
     needsAdminOdds: needsAdminCount,

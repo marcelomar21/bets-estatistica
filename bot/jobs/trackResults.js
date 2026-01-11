@@ -12,9 +12,9 @@
  */
 require('dotenv').config();
 
-const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { markBetResult, getActivePostedBets } = require('../services/betService');
+const { getMatchStatus } = require('../services/matchService');
 const { trackingResultAlert } = require('../services/alertService');
 
 // How long after kickoff to start checking (2 hours)
@@ -112,23 +112,26 @@ function evaluateBetResult(bet) {
 }
 
 /**
- * Refresh match data from database
+ * Refresh match data from database using matchService
  * @param {number} matchId
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function refreshMatchData(matchId) {
-  const { data, error } = await supabase
-    .from('league_matches')
-    .select('status, home_score, away_score')
-    .eq('match_id', matchId)
-    .single();
+  const result = await getMatchStatus(matchId);
 
-  if (error) {
-    logger.error('Failed to refresh match data', { matchId, error: error.message });
-    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  if (!result.success) {
+    return result;
   }
 
-  return { success: true, data };
+  // Map matchService response to expected format
+  return {
+    success: true,
+    data: {
+      status: result.data.status,
+      home_score: result.data.homeScore,
+      away_score: result.data.awayScore,
+    },
+  };
 }
 
 /**

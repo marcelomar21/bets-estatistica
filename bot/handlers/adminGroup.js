@@ -2,9 +2,9 @@
  * Admin Group Message Handler
  * Handles incoming messages in the admin group, primarily for receiving deep links
  */
-const { supabase } = require('../../lib/supabase');
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
+const { getBetById, updateBetLink, updateBetOdds } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
 
 // Regex to match "ID: link" pattern
@@ -34,7 +34,7 @@ function isValidBookmakerUrl(url) {
 async function handleOddsCommand(bot, msg, betId, oddsValue) {
   // Parse odds value (handle both 1.85 and 1,85)
   const odds = parseFloat(oddsValue.replace(',', '.'));
-  
+
   if (isNaN(odds) || odds < 1) {
     await bot.sendMessage(
       msg.chat.id,
@@ -44,24 +44,10 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
     return;
   }
 
-  // Find bet
-  const { data: bet, error: fetchError } = await supabase
-    .from('suggested_bets')
-    .select(`
-      id,
-      bet_market,
-      bet_pick,
-      odds,
-      bet_status,
-      league_matches!inner (
-        home_team_name,
-        away_team_name
-      )
-    `)
-    .eq('id', betId)
-    .single();
+  // Find bet using betService
+  const betResult = await getBetById(betId);
 
-  if (fetchError || !bet) {
+  if (!betResult.success) {
     await bot.sendMessage(
       msg.chat.id,
       `❌ Aposta #${betId} não encontrada.`,
@@ -70,31 +56,27 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
     return;
   }
 
-  // Update bet with manual odds
-  const { error: updateError } = await supabase
-    .from('suggested_bets')
-    .update({
-      odds: odds,
-      notes: `Odds manual via admin: ${odds}`,
-    })
-    .eq('id', betId);
+  const bet = betResult.data;
 
-  if (updateError) {
-    logger.error('Failed to save manual odds', { betId, error: updateError.message });
+  // Update bet with manual odds using betService
+  const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`);
+
+  if (!updateResult.success) {
+    logger.error('Failed to save manual odds', { betId, error: updateResult.error.message });
     await bot.sendMessage(
       msg.chat.id,
-      `❌ Erro ao salvar odds: ${updateError.message}`,
+      `❌ Erro ao salvar odds: ${updateResult.error.message}`,
       { reply_to_message_id: msg.message_id }
     );
     return;
   }
 
   // Confirm
-  const match = `${bet.league_matches.home_team_name} vs ${bet.league_matches.away_team_name}`;
+  const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
   await bot.sendMessage(
     msg.chat.id,
-    `✅ Odds atualizada!\n\n🏟️ ${match}\n📊 ${bet.bet_market}\n💰 Odds: ${odds}\n\n_Agora envie o link: \`${betId}: URL\`_`,
-    { 
+    `✅ Odds atualizada!\n\n🏟️ ${match}\n📊 ${bet.betMarket}\n💰 Odds: ${odds}\n\n_Agora envie o link: \`${betId}: URL\`_`,
+    {
       reply_to_message_id: msg.message_id,
       parse_mode: 'Markdown',
     }
@@ -140,26 +122,10 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Find bet
-  const { data: bet, error: fetchError } = await supabase
-    .from('suggested_bets')
-    .select(`
-      id,
-      match_id,
-      bet_market,
-      bet_pick,
-      odds,
-      bet_status,
-      deep_link,
-      league_matches!inner (
-        home_team_name,
-        away_team_name
-      )
-    `)
-    .eq('id', betId)
-    .single();
+  // Find bet using betService
+  const betResult = await getBetById(betId);
 
-  if (fetchError || !bet) {
+  if (!betResult.success) {
     await bot.sendMessage(
       msg.chat.id,
       `❌ Aposta #${betId} não encontrada.`,
@@ -169,8 +135,10 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
+  const bet = betResult.data;
+
   // If already posted, don't allow changes
-  if (bet.bet_status === 'posted') {
+  if (bet.betStatus === 'posted') {
     await bot.sendMessage(
       msg.chat.id,
       `🔒 Aposta #${betId} já foi publicada. Link não pode ser alterado.`,
@@ -180,7 +148,7 @@ async function handleAdminMessage(bot, msg) {
   }
 
   // If already has link and status is ready, warn but allow update
-  if (bet.deep_link && bet.bet_status === 'ready') {
+  if (bet.deepLink && bet.betStatus === 'ready') {
     await bot.sendMessage(
       msg.chat.id,
       `⚠️ Aposta #${betId} já tinha link. Atualizando...`,
@@ -188,20 +156,14 @@ async function handleAdminMessage(bot, msg) {
     );
   }
 
-  // Update bet with link
-  const { error: updateError } = await supabase
-    .from('suggested_bets')
-    .update({
-      deep_link: deepLink,
-      bet_status: 'ready',
-    })
-    .eq('id', betId);
+  // Update bet with link using betService
+  const updateResult = await updateBetLink(betId, deepLink);
 
-  if (updateError) {
-    logger.error('Failed to save link', { betId, error: updateError.message });
+  if (!updateResult.success) {
+    logger.error('Failed to save link', { betId, error: updateResult.error.message });
     await bot.sendMessage(
       msg.chat.id,
-      `❌ Erro ao salvar link: ${updateError.message}`,
+      `❌ Erro ao salvar link: ${updateResult.error.message}`,
       { reply_to_message_id: msg.message_id }
     );
     return;
@@ -209,10 +171,10 @@ async function handleAdminMessage(bot, msg) {
 
   // Confirm receipt
   await confirmLinkReceived({
-    homeTeamName: bet.league_matches.home_team_name,
-    awayTeamName: bet.league_matches.away_team_name,
-    betMarket: bet.bet_market,
-    betPick: bet.bet_pick,
+    homeTeamName: bet.homeTeamName,
+    awayTeamName: bet.awayTeamName,
+    betMarket: bet.betMarket,
+    betPick: bet.betPick,
   });
 
   logger.info('Link saved successfully', { betId });
