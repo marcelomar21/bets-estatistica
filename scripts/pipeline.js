@@ -85,6 +85,14 @@ const STEPS = [
     args: [],
     optional: true,
   },
+  {
+    id: 8,
+    name: 'post-bets',
+    description: 'Publica apostas no grupo público do Telegram',
+    script: 'bot/jobs/postBets.js',
+    args: [],
+    optional: true,
+  },
 ];
 
 function parseArgs() {

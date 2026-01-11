@@ -65,7 +65,7 @@ function filterActiveSeasons(leagues) {
     // Pegar temporadas atuais (ano atual ou atual/próximo para temporadas europeias)
     const seasons = Array.isArray(league.season) ? league.season : [];
     const activeSeasons = seasons.filter(s => {
-      const year = s.year || '';
+      const year = String(s.year || '');
       // Aceita "2025", "2024/2025", "2025/2026"
       return year.includes(String(currentYear)) || year.includes(String(currentYear - 1));
     });

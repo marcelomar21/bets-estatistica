@@ -621,7 +621,8 @@ const exitWithError = (message) => {
 };
 
 const TODAY_ALIASES = new Set(['today', '--today', '-t']);
-const AGENT_QUEUE_WINDOW_HOURS = Number(process.env.AGENT_QUEUE_WINDOW_HOURS ?? 72);
+// Janela padrão: 14 dias (336 horas) para cobrir jogos da semana
+const AGENT_QUEUE_WINDOW_HOURS = Number(process.env.AGENT_QUEUE_WINDOW_HOURS ?? 336);
 const IMPORTED_STATUS = 'dados_importados';
 const READY_QUEUE_STATUSES = [IMPORTED_STATUS];
 const LEGACY_QUEUE_STATUSES = ['pending'];

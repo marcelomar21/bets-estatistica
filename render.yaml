@@ -1,23 +1,36 @@
 # Render Blueprint - bets-estatistica
-# Deploy: Connect repo to Render and it will auto-detect this file
+# Deploy: https://render.com/docs/blueprint-spec
 
 services:
-  # Main bot service (long-running for receiving messages)
-  - type: web
+  # Bot Scheduler - Runs 24/7 with cron jobs
+  - type: worker
     name: bets-bot
     runtime: node
-    plan: free
+    plan: starter # $7/month - stays on 24/7
     buildCommand: npm install
-    startCommand: node bot/index.js
-    healthCheckPath: /
+    startCommand: node bot/scheduler.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: TZ
         value: America/Sao_Paulo
+      - fromGroup: bets-secrets
+
+# Environment Variables Group
+envVarGroups:
+  - name: bets-secrets
+    envVars:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: FOOTYSTATS_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: THE_ODDS_API_KEY
         sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -25,49 +38,61 @@ services:
         sync: false
       - key: TELEGRAM_PUBLIC_GROUP_ID
         sync: false
-      - key: THE_ODDS_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: FOOTYSTATS_API_KEY
-        sync: false
 
-# Cron jobs for scheduled tasks
-# Note: Render Cron requires paid plan. For free tier, use external cron service.
-# Times are in UTC. São Paulo is UTC-3, so:
-#   - 8h SP = 11h UTC
-#   - 10h SP = 13h UTC
-#   - 13h SP = 16h UTC
-#   - 15h SP = 18h UTC
-#   - 20h SP = 23h UTC
-#   - 22h SP = 01h UTC (next day)
-
-# Uncomment below if using Render paid plan:
-# cron:
-#   - name: request-links-morning
+# Cron Jobs (alternative to worker - cheaper but limited)
+# Uncomment if you prefer cron jobs instead of worker
+#
+# crons:
+#   # Morning workflow - 08:00 São Paulo (11:00 UTC)
+#   - name: morning-prep
 #     schedule: "0 11 * * *"
 #     command: node bot/jobs/requestLinks.js morning
-#   - name: post-bets-morning
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
+#
+#   # Morning post - 10:00 São Paulo (13:00 UTC)
+#   - name: morning-post
 #     schedule: "0 13 * * *"
 #     command: node bot/jobs/postBets.js morning
-#   - name: request-links-afternoon
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
+#
+#   # Afternoon prep - 13:00 São Paulo (16:00 UTC)
+#   - name: afternoon-prep
 #     schedule: "0 16 * * *"
 #     command: node bot/jobs/requestLinks.js afternoon
-#   - name: post-bets-afternoon
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
+#
+#   # Afternoon post - 15:00 São Paulo (18:00 UTC)
+#   - name: afternoon-post
 #     schedule: "0 18 * * *"
 #     command: node bot/jobs/postBets.js afternoon
-#   - name: request-links-night
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
+#
+#   # Night prep - 20:00 São Paulo (23:00 UTC)
+#   - name: night-prep
 #     schedule: "0 23 * * *"
 #     command: node bot/jobs/requestLinks.js night
-#   - name: post-bets-night
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
+#
+#   # Night post - 22:00 São Paulo (01:00 UTC next day)
+#   - name: night-post
 #     schedule: "0 1 * * *"
 #     command: node bot/jobs/postBets.js night
-#   - name: reminders
-#     schedule: "*/30 * * * *"
-#     command: node bot/jobs/reminders.js
-#   - name: track-results
-#     schedule: "*/5 * * * *"
-#     command: node bot/jobs/trackResults.js
-#   - name: enrich-odds
-#     schedule: "0 */2 * * *"
-#     command: node bot/jobs/enrichOdds.js
+#     runtime: node
+#     plan: free
+#     envVars:
+#       - fromGroup: bets-secrets
