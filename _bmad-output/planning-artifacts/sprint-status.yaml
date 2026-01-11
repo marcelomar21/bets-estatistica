@@ -131,8 +131,8 @@ development_status:
   # ============================================
   # Epic 8: Admin Tools - Gestão de Apostas
   # ============================================
-  epic-8: backlog
-  8-1-comando-apostas-listar-disponiveis: backlog
+  epic-8: in-progress
+  8-1-comando-apostas-listar-disponiveis: done
   8-2-comando-odd-ajustar: backlog
   8-3-comando-link-adicionar: backlog
   8-4-comando-adicionar-aposta-manual: backlog

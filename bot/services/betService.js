@@ -292,6 +292,63 @@ async function getActiveBetsForRepost() {
 }
 
 /**
+ * Get all available bets for admin listing (Story 8.1)
+ * Includes all bets with future matches regardless of status
+ * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
+ */
+async function getAvailableBets() {
+  try {
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        match_id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        deep_link,
+        eligible,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .in('bet_status', ['generated', 'pending_link', 'ready', 'posted'])
+      .eq('eligible', true)
+      .gte('league_matches.kickoff_time', new Date().toISOString())
+      .order('league_matches(kickoff_time)', { ascending: true });
+
+    if (error) {
+      logger.error('Failed to fetch available bets', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const bets = (data || []).map(bet => ({
+      id: bet.id,
+      matchId: bet.match_id,
+      betMarket: bet.bet_market,
+      betPick: bet.bet_pick,
+      odds: bet.odds,
+      betStatus: bet.bet_status,
+      deepLink: bet.deep_link,
+      eligible: bet.eligible,
+      homeTeamName: bet.league_matches.home_team_name,
+      awayTeamName: bet.league_matches.away_team_name,
+      kickoffTime: bet.league_matches.kickoff_time,
+      hasLink: !!bet.deep_link,
+    }));
+
+    logger.debug('Fetched available bets for admin', { count: bets.length });
+    return { success: true, data: bets };
+  } catch (err) {
+    logger.error('Error fetching available bets', { error: err.message });
+    return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Update bet status
  * @param {number} betId - Bet ID
  * @param {string} status - New status
@@ -570,6 +627,7 @@ module.exports = {
   getBetsPendingLinks,
   getActivePostedBets,
   getActiveBetsForRepost,
+  getAvailableBets,
   getBetById,
 
   // Update functions

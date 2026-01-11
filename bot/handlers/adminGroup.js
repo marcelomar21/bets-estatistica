@@ -4,7 +4,7 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
 
 // Regex to match "ID: link" pattern
@@ -12,6 +12,9 @@ const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
 
 // Regex to match "/odds ID valor" command
 const ODDS_PATTERN = /^\/odds\s+(\d+)\s+([\d.,]+)/i;
+
+// Regex to match "/apostas" command (Story 8.1)
+const APOSTAS_PATTERN = /^\/apostas$/i;
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -86,6 +89,92 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
 }
 
 /**
+ * Handle /apostas command - List all available bets (Story 8.1)
+ */
+async function handleApostasCommand(bot, msg) {
+  logger.info('Received /apostas command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  const result = await getAvailableBets();
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao buscar apostas: ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const bets = result.data;
+
+  if (bets.length === 0) {
+    await bot.sendMessage(
+      msg.chat.id,
+      '📋 Nenhuma aposta disponível no momento.\n\n_Aguarde a geração de novas análises._',
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  // Format message
+  const lines = [`📋 *APOSTAS DISPONÍVEIS* (${bets.length})\n`];
+
+  bets.forEach((bet, index) => {
+    const kickoff = new Date(bet.kickoffTime);
+    const dateStr = kickoff.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+
+    const linkIcon = bet.hasLink ? '✅' : '❌';
+    const statusEmoji = getStatusEmoji(bet.betStatus);
+    const num = getNumberEmoji(index + 1);
+
+    lines.push(`${num} *[ID:${bet.id}]* ${bet.homeTeamName} vs ${bet.awayTeamName}`);
+    lines.push(`   📅 ${dateStr} às ${timeStr}`);
+    lines.push(`   🎯 ${bet.betMarket}`);
+    lines.push(`   📊 Odd: ${bet.odds?.toFixed(2) || 'N/A'} | 🔗 ${linkIcon} ${statusEmoji}`);
+    lines.push('');
+  });
+
+  lines.push('💡 *Comandos:*');
+  lines.push('• Adicionar link: `ID: URL`');
+  lines.push('• Ajustar odd: `/odds ID valor`');
+
+  await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
+
+  logger.info('Listed available bets', { count: bets.length });
+}
+
+/**
+ * Get emoji for bet status
+ */
+function getStatusEmoji(status) {
+  const statusMap = {
+    generated: '🆕',
+    pending_link: '⏳',
+    ready: '✅',
+    posted: '📤',
+  };
+  return statusMap[status] || '';
+}
+
+/**
+ * Get number emoji
+ */
+function getNumberEmoji(num) {
+  const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+  if (num <= 10) return emojis[num];
+  return `${num}.`;
+}
+
+/**
  * Handle messages in admin group
  * @param {TelegramBot} bot - Bot instance
  * @param {object} msg - Telegram message object
@@ -93,6 +182,12 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
 async function handleAdminMessage(bot, msg) {
   const text = msg.text?.trim();
   if (!text) return;
+
+  // Check if message is /apostas command (Story 8.1)
+  if (APOSTAS_PATTERN.test(text)) {
+    await handleApostasCommand(bot, msg);
+    return;
+  }
 
   // Check if message is /odds command
   const oddsMatch = text.match(ODDS_PATTERN);
