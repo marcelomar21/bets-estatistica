@@ -152,8 +152,8 @@ development_status:
   # ============================================
   # Epic 10: Melhorias de Produto
   # ============================================
-  epic-10: backlog
-  10-1-copy-dinamico-llm: backlog
+  epic-10: in-progress
+  10-1-copy-dinamico-llm: done
   10-2-cache-copies-llm: backlog
   10-3-adicionar-novas-ligas: backlog
   epic-10-retrospective: optional

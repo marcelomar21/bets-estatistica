@@ -1,12 +1,13 @@
 /**
  * Job: Post bets to public Telegram group
- * 
+ *
  * Stories covered:
  * - 3.1: Criar job postagem pública
  * - 3.2: Formatar mensagem aposta
  * - 3.3: Incluir deep link na mensagem
  * - 3.4: Validar requisitos antes de postar
- * 
+ * - 10.1: Copy dinâmico com LLM
+ *
  * Run: node bot/jobs/postBets.js [morning|afternoon|night]
  */
 require('dotenv').config();
@@ -16,6 +17,7 @@ const { config } = require('../../lib/config');
 const { sendToPublic } = require('../telegram');
 const { getBetsReadyForPosting, markBetAsPosted, getActivePostedBets, getActiveBetsForRepost } = require('../services/betService');
 const { getSuccessRate } = require('../services/metricsService');
+const { generateBetCopy } = require('../services/copyService');
 
 // Message templates for variety (Story 3.6)
 const MESSAGE_TEMPLATES = [
@@ -65,13 +67,13 @@ function getPeriod() {
 }
 
 /**
- * Format bet message for Telegram
+ * Format bet message for Telegram (Story 10.1: LLM copy)
  * @param {object} bet - Bet object
  * @param {object} template - Message template
  * @param {number} successRate - Historical success rate
- * @returns {string}
+ * @returns {Promise<string>}
  */
-function formatBetMessage(bet, template, successRate) {
+async function formatBetMessage(bet, template, successRate) {
   const kickoffDate = new Date(bet.kickoffTime);
   const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -80,6 +82,24 @@ function formatBetMessage(bet, template, successRate) {
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  // Generate engaging copy with LLM (Story 10.1)
+  let copyText = bet.reasoning; // Fallback to original reasoning
+  try {
+    const copyResult = await generateBetCopy(bet);
+    if (copyResult.success && copyResult.data?.copy) {
+      copyText = copyResult.data.copy;
+      logger.debug('Using LLM-generated copy', {
+        betId: bet.id,
+        fromCache: copyResult.data.fromCache
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to generate LLM copy, using fallback', {
+      betId: bet.id,
+      error: err.message
+    });
+  }
 
   // Build message parts
   const parts = [
@@ -91,7 +111,7 @@ function formatBetMessage(bet, template, successRate) {
     `📊 *${bet.betMarket}*: ${bet.betPick}`,
     `💰 Odd: *${bet.odds?.toFixed(2) || 'N/A'}*`,
     '',
-    `📝 _${bet.reasoning}_`,
+    `📝 _${copyText}_`,
   ];
 
   // Add success rate if available (Story 3.7)
@@ -184,8 +204,8 @@ async function repostActiveBets(bets, successRate) {
 
     // Format and send message
     const template = getRandomTemplate();
-    const message = formatBetMessage(bet, template, successRate);
-    
+    const message = await formatBetMessage(bet, template, successRate);
+
     const sendResult = await sendToPublic(message);
     
     if (sendResult.success) {
@@ -267,8 +287,8 @@ async function runPostBets() {
 
         // Format and send message
         const template = getRandomTemplate();
-        const message = formatBetMessage(bet, template, successRate);
-        
+        const message = await formatBetMessage(bet, template, successRate);
+
         const sendResult = await sendToPublic(message);
         
         if (sendResult.success) {
