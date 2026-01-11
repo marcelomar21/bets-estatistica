@@ -53,6 +53,25 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * Reset webhook endpoint (useful when local polling breaks it)
+ */
+app.get('/reset-webhook', async (req, res) => {
+  if (!WEBHOOK_URL) {
+    return res.json({ success: false, error: 'WEBHOOK_URL not configured' });
+  }
+  
+  const webhookUrl = `${WEBHOOK_URL}/webhook/${config.telegram.botToken}`;
+  const result = await setWebhook(webhookUrl);
+  
+  if (result.success) {
+    logger.info('Webhook reset via endpoint');
+    res.json({ success: true, message: 'Webhook configured' });
+  } else {
+    res.json({ success: false, error: result.error?.message });
+  }
+});
+
+/**
  * Telegram webhook endpoint
  */
 app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
