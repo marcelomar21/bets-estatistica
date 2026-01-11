@@ -4,8 +4,10 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds, getAvailableBets } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
+const { runEnrichment } = require('../jobs/enrichOdds');
+const { runPostBets } = require('../jobs/postBets');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -18,6 +20,21 @@ const APOSTAS_PATTERN = /^\/apostas$/i;
 
 // Regex to match "/link ID URL" command (Story 8.3)
 const LINK_COMMAND_PATTERN = /^\/link\s+(\d+)\s+(https?:\/\/\S+)/i;
+
+// Regex to match "/adicionar" command (Story 8.4)
+// Format: /adicionar "Time A vs Time B" "Mercado" odd [link]
+const ADICIONAR_PATTERN = /^\/adicionar\s+"([^"]+)"\s+"([^"]+)"\s+([\d.,]+)(?:\s+(https?:\/\/\S+))?$/i;
+// Also accept simpler format without quotes for teams
+const ADICIONAR_HELP_PATTERN = /^\/adicionar$/i;
+
+// Regex to match "/atualizar odds" command (Story 8.5)
+const ATUALIZAR_ODDS_PATTERN = /^\/atualizar\s+odds$/i;
+
+// Regex to match "/postar" command (Story 8.6)
+const POSTAR_PATTERN = /^\/postar$/i;
+
+// Regex to match "/help" command
+const HELP_PATTERN = /^\/help$/i;
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -183,6 +200,227 @@ function getNumberEmoji(num) {
 }
 
 /**
+ * Handle /help command - Show all admin commands
+ */
+async function handleHelpCommand(bot, msg) {
+  const helpText = `
+📚 *Comandos do Admin*
+
+*📋 Consultas:*
+/apostas - Listar apostas disponíveis
+/status - Ver status do bot
+/help - Ver esta ajuda
+
+*✏️ Edição:*
+/odd ID valor - Ajustar odd de aposta
+/link ID URL - Adicionar link a aposta
+\`ID: URL\` - Adicionar link (atalho)
+
+*➕ Criação:*
+/adicionar - Ver formato de aposta manual
+
+*⚡ Ações:*
+/atualizar odds - Forçar atualização de odds
+/postar - Forçar postagem imediata
+
+*Exemplos:*
+\`/odd 45 1.90\`
+\`/link 45 https://betano.com/...\`
+  `.trim();
+
+  await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
+  logger.info('Help command executed');
+}
+
+/**
+ * Handle /postar command - Force posting (Story 8.6)
+ */
+async function handlePostarCommand(bot, msg) {
+  logger.info('Received /postar command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  // Send "working" message
+  const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Executando postagem... Aguarde.');
+
+  try {
+    const result = await runPostBets();
+
+    // Delete "working" message
+    try {
+      await bot.deleteMessage(msg.chat.id, workingMsg.message_id);
+    } catch (e) {
+      // Ignore delete errors
+    }
+
+    const totalSent = (result.reposted || 0) + (result.posted || 0);
+
+    if (totalSent === 0) {
+      await bot.sendMessage(
+        msg.chat.id,
+        `📭 *Nenhuma aposta postada*\n\n` +
+        `Não havia apostas prontas para postagem.\n\n` +
+        `_Use /apostas para ver apostas disponíveis._`,
+        { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+      );
+    } else {
+      await bot.sendMessage(
+        msg.chat.id,
+        `✅ *Postagem executada!*\n\n` +
+        `🔄 Repostadas: ${result.reposted || 0}\n` +
+        `🆕 Novas: ${result.posted || 0}\n` +
+        `📤 Total enviadas: ${totalSent}`,
+        { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+      );
+    }
+
+    logger.info('Posting completed via command', result);
+  } catch (err) {
+    logger.error('Failed to post via command', { error: err.message });
+
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao executar postagem: ${err.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+}
+
+/**
+ * Handle /atualizar odds command - Force odds refresh (Story 8.5)
+ */
+async function handleAtualizarOddsCommand(bot, msg) {
+  logger.info('Received /atualizar odds command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  // Send "working" message
+  const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Atualizando odds... Aguarde.');
+
+  try {
+    const result = await runEnrichment();
+
+    // Delete "working" message
+    try {
+      await bot.deleteMessage(msg.chat.id, workingMsg.message_id);
+    } catch (e) {
+      // Ignore delete errors
+    }
+
+    await bot.sendMessage(
+      msg.chat.id,
+      `✅ *Odds atualizadas!*\n\n` +
+      `📊 Enriquecidas: ${result.enriched || 0}\n` +
+      `⏭️ Puladas: ${result.skipped || 0}\n` +
+      `❌ Erros: ${result.errors || 0}`,
+      { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+    );
+
+    logger.info('Odds update completed via command', result);
+  } catch (err) {
+    logger.error('Failed to update odds via command', { error: err.message });
+
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao atualizar odds: ${err.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+  }
+}
+
+/**
+ * Handle /adicionar command - Create manual bet (Story 8.4)
+ */
+async function handleAdicionarCommand(bot, msg, matchStr, market, oddsStr, link) {
+  logger.info('Received /adicionar command', { matchStr, market, oddsStr, hasLink: !!link });
+
+  // Parse teams from "Time A vs Time B" format
+  const vsMatch = matchStr.match(/(.+?)\s+(?:vs|x|versus)\s+(.+)/i);
+  if (!vsMatch) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Formato de jogo inválido.\n\nUse: "Time A vs Time B"`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const homeTeamName = vsMatch[1].trim();
+  const awayTeamName = vsMatch[2].trim();
+
+  // Parse odds
+  const odds = parseFloat(oddsStr.replace(',', '.'));
+  if (isNaN(odds) || odds < 1) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Odds inválida: ${oddsStr}\n\nUse um valor decimal, ex: 1.85`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  // Validate link if provided
+  if (link && !isValidBookmakerUrl(link)) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Link inválido. Use links de casas conhecidas (Bet365, Betano, etc).`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  // Create manual bet
+  const result = await createManualBet({
+    homeTeamName,
+    awayTeamName,
+    betMarket: market,
+    odds,
+    deepLink: link || null,
+  });
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao criar aposta: ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const bet = result.data;
+  const statusIcon = bet.betStatus === 'ready' ? '✅' : '⏳';
+  const linkStatus = bet.deepLink ? '🔗 Com link' : '🔗 Aguardando link';
+
+  await bot.sendMessage(
+    msg.chat.id,
+    `✅ *Aposta manual criada!*\n\n` +
+    `🆔 ID: ${bet.id}\n` +
+    `🏟️ ${homeTeamName} vs ${awayTeamName}\n` +
+    `🎯 ${market}\n` +
+    `📊 Odd: ${odds.toFixed(2)}\n` +
+    `${statusIcon} Status: ${bet.betStatus}\n` +
+    `${linkStatus}\n\n` +
+    (bet.betStatus === 'pending_link' ? `_Envie o link: \`${bet.id}: URL\`_` : '_Pronta para postagem!_'),
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
+
+  logger.info('Manual bet created via command', { betId: bet.id });
+}
+
+/**
+ * Show help for /adicionar command
+ */
+async function showAdicionarHelp(bot, msg) {
+  await bot.sendMessage(
+    msg.chat.id,
+    `📝 *Comando /adicionar*\n\n` +
+    `Cria uma aposta manual.\n\n` +
+    `*Formato:*\n` +
+    `\`/adicionar "Time A vs Time B" "Mercado" odd [link]\`\n\n` +
+    `*Exemplos:*\n` +
+    `\`/adicionar "Liverpool vs Arsenal" "Over 2.5 gols" 1.85\`\n\n` +
+    `\`/adicionar "Real Madrid vs Barcelona" "Ambas marcam" 1.72 https://betano.com/...\``,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+/**
  * Handle link update - shared logic for "ID: URL" pattern and "/link ID URL" command (Story 8.3)
  */
 async function handleLinkUpdate(bot, msg, betId, deepLink) {
@@ -273,9 +511,41 @@ async function handleAdminMessage(bot, msg) {
   const text = msg.text?.trim();
   if (!text) return;
 
+  // Check if message is /help command
+  if (HELP_PATTERN.test(text)) {
+    await handleHelpCommand(bot, msg);
+    return;
+  }
+
   // Check if message is /apostas command (Story 8.1)
   if (APOSTAS_PATTERN.test(text)) {
     await handleApostasCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /postar command (Story 8.6)
+  if (POSTAR_PATTERN.test(text)) {
+    await handlePostarCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /atualizar odds command (Story 8.5)
+  if (ATUALIZAR_ODDS_PATTERN.test(text)) {
+    await handleAtualizarOddsCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /adicionar help (Story 8.4)
+  if (ADICIONAR_HELP_PATTERN.test(text)) {
+    await showAdicionarHelp(bot, msg);
+    return;
+  }
+
+  // Check if message is /adicionar command with args (Story 8.4)
+  const adicionarMatch = text.match(ADICIONAR_PATTERN);
+  if (adicionarMatch) {
+    const [, matchStr, market, oddsStr, link] = adicionarMatch;
+    await handleAdicionarCommand(bot, msg, matchStr, market, oddsStr, link);
     return;
   }
 

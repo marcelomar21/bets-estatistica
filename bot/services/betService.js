@@ -620,6 +620,82 @@ async function requestLinksForTopBets(count = config.betting.maxActiveBets) {
   return { success: true, data: updatedBets };
 }
 
+/**
+ * Create a manual bet (Story 8.4)
+ * @param {object} betData - Manual bet data
+ * @param {string} betData.homeTeamName - Home team name
+ * @param {string} betData.awayTeamName - Away team name  
+ * @param {string} betData.betMarket - Market description (e.g., "Over 2.5 gols")
+ * @param {number} betData.odds - Odds value
+ * @param {string} [betData.deepLink] - Optional deep link
+ * @param {string} [betData.kickoffTime] - Optional kickoff time
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function createManualBet(betData) {
+  try {
+    const { homeTeamName, awayTeamName, betMarket, odds, deepLink, kickoffTime } = betData;
+
+    // Determine status based on whether we have a link
+    const betStatus = deepLink ? 'ready' : 'pending_link';
+
+    const insertData = {
+      // No match_id for manual bets
+      match_id: null,
+      bet_market: betMarket,
+      bet_pick: betMarket, // Same as market for manual
+      odds: odds,
+      confidence: 0.8, // Default confidence for manual
+      reasoning: `Aposta manual: ${homeTeamName} vs ${awayTeamName}`,
+      risk_level: 'medium',
+      bet_status: betStatus,
+      bet_category: 'SAFE',
+      deep_link: deepLink || null,
+      eligible: true,
+      source: 'manual',
+      notes: `Manual bet created at ${new Date().toISOString()}`,
+      // Store team names in notes since we don't have match_id
+      manual_home_team: homeTeamName,
+      manual_away_team: awayTeamName,
+      manual_kickoff: kickoffTime || null,
+    };
+
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .insert(insertData)
+      .select('id')
+      .single();
+
+    if (error) {
+      logger.error('Failed to create manual bet', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('Manual bet created', { 
+      betId: data.id, 
+      match: `${homeTeamName} vs ${awayTeamName}`,
+      market: betMarket,
+      odds,
+      status: betStatus
+    });
+
+    return { 
+      success: true, 
+      data: { 
+        id: data.id,
+        homeTeamName,
+        awayTeamName,
+        betMarket,
+        odds,
+        betStatus,
+        deepLink: deepLink || null,
+      } 
+    };
+  } catch (err) {
+    logger.error('Error creating manual bet', { error: err.message });
+    return { success: false, error: { code: 'CREATE_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   // Query functions
   getEligibleBets,
@@ -639,4 +715,7 @@ module.exports = {
   markBetResult,
   markLowOddsBetsIneligible,
   requestLinksForTopBets,
+
+  // Create functions
+  createManualBet,
 };

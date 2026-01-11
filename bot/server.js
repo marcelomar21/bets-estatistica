@@ -102,26 +102,36 @@ async function handleStatusCommand(bot, msg) {
 }
 
 /**
- * Handle /help command
+ * Handle /help command - Updated with all admin commands (Story 8.x)
  */
 async function handleHelpCommand(bot, msg) {
   if (msg.chat.id.toString() !== config.telegram.adminGroupId) return;
 
   const helpText = `
-📚 *Comandos Disponíveis*
+📚 *Comandos do Admin*
 
+*📋 Consultas:*
+/apostas - Listar apostas disponíveis
 /status - Ver status do bot
 /help - Ver esta ajuda
 
-*Para enviar links:*
-\`ID: link_da_aposta\`
+*✏️ Edição:*
+/odd ID valor - Ajustar odd de aposta
+/link ID URL - Adicionar link a aposta
+\`ID: URL\` - Adicionar link (atalho)
 
-*Para definir odds:*
-\`/odds ID valor\`
+*➕ Criação:*
+/adicionar - Ver formato de aposta manual
+/adicionar "Time A vs Time B" "Mercado" odd [link]
 
-Exemplo:
-\`40: https://betano.bet.br/...\`
-\`/odds 40 1.85\`
+*⚡ Ações:*
+/atualizar odds - Forçar atualização de odds
+/postar - Forçar postagem imediata
+
+*Exemplos:*
+\`/odd 45 1.90\`
+\`/link 45 https://betano.com/...\`
+\`45: https://betano.com/...\`
   `.trim();
 
   await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });

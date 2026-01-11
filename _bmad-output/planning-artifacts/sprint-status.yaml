@@ -131,13 +131,13 @@ development_status:
   # ============================================
   # Epic 8: Admin Tools - Gestão de Apostas
   # ============================================
-  epic-8: in-progress
+  epic-8: done
   8-1-comando-apostas-listar-disponiveis: done
   8-2-comando-odd-ajustar: done
   8-3-comando-link-adicionar: done
-  8-4-comando-adicionar-aposta-manual: backlog
-  8-5-comando-atualizar-forcar-refresh: backlog
-  8-6-comando-postar-forcar-postagem: backlog
+  8-4-comando-adicionar-aposta-manual: done
+  8-5-comando-atualizar-forcar-refresh: done
+  8-6-comando-postar-forcar-postagem: done
   epic-8-retrospective: optional
 
   # ============================================
