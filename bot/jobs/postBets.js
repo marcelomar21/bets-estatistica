@@ -14,7 +14,7 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { sendToPublic } = require('../telegram');
-const { getBetsReadyForPosting, markBetAsPosted, getActivePostedBets } = require('../services/betService');
+const { getBetsReadyForPosting, markBetAsPosted, getActivePostedBets, getActiveBetsForRepost } = require('../services/betService');
 const { getSuccessRate } = require('../services/metricsService');
 
 // Message templates for variety (Story 3.6)
@@ -161,50 +161,24 @@ async function calculatePostingSlots() {
 }
 
 /**
- * Main job
+ * Repost active bets to public group (Story 7.1)
+ * Does NOT update telegram_posted_at - just sends messages again
+ * @param {Array} bets - Active bets to repost
+ * @param {number} successRate - Historical success rate
+ * @returns {Promise<{reposted: number, failed: number}>}
  */
-async function runPostBets() {
-  const period = getPeriod();
-  logger.info('Starting post bets job', { period });
+async function repostActiveBets(bets, successRate) {
+  let reposted = 0;
+  let failed = 0;
 
-  // Step 1: Calculate available slots
-  const availableSlots = await calculatePostingSlots();
-  
-  if (availableSlots === 0) {
-    logger.info('No posting slots available');
-    return { posted: 0, skipped: 0 };
-  }
+  logger.info('Starting repost of active bets', { count: bets.length });
 
-  // Step 2: Get bets ready for posting
-  const result = await getBetsReadyForPosting();
-  
-  if (!result.success || result.data.length === 0) {
-    logger.info('No bets ready for posting');
-    return { posted: 0, skipped: 0 };
-  }
-
-  // Step 3: Get success rate for messages
-  let successRate = null;
-  try {
-    const metricsResult = await getSuccessRate();
-    if (metricsResult.success) {
-      successRate = metricsResult.data.rate30Days;
-    }
-  } catch (err) {
-    logger.warn('Could not get success rate', { error: err.message });
-  }
-
-  // Step 4: Post bets (up to available slots)
-  const betsToPost = result.data.slice(0, availableSlots);
-  let posted = 0;
-  let skipped = 0;
-
-  for (const bet of betsToPost) {
-    // Validate before posting
+  for (const bet of bets) {
+    // Validate bet still valid for posting
     const validation = validateBetForPosting(bet);
     if (!validation.valid) {
-      logger.warn('Bet failed validation', { betId: bet.id, reason: validation.reason });
-      skipped++;
+      logger.warn('Active bet failed validation for repost', { betId: bet.id, reason: validation.reason });
+      failed++;
       continue;
     }
 
@@ -215,18 +189,118 @@ async function runPostBets() {
     const sendResult = await sendToPublic(message);
     
     if (sendResult.success) {
-      // Mark as posted
-      await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds);
-      posted++;
-      logger.info('Bet posted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+      reposted++;
+      logger.info('Bet reposted successfully', { 
+        betId: bet.id, 
+        messageId: sendResult.data.messageId,
+        match: `${bet.homeTeamName} x ${bet.awayTeamName}`
+      });
     } else {
-      logger.error('Failed to post bet', { betId: bet.id, error: sendResult.error?.message });
-      skipped++;
+      logger.error('Failed to repost bet', { betId: bet.id, error: sendResult.error?.message });
+      failed++;
     }
   }
 
-  logger.info('Post bets complete', { posted, skipped });
-  return { posted, skipped };
+  logger.info('Repost complete', { reposted, failed });
+  return { reposted, failed };
+}
+
+/**
+ * Main job (Story 7.1: Refactored to repost active bets)
+ */
+async function runPostBets() {
+  const period = getPeriod();
+  const now = new Date().toISOString();
+  logger.info('Starting post bets job', { period, timestamp: now });
+
+  // Step 1: Get success rate for messages (used in both repost and new posts)
+  let successRate = null;
+  try {
+    const metricsResult = await getSuccessRate();
+    if (metricsResult.success) {
+      successRate = metricsResult.data.rate30Days;
+    }
+  } catch (err) {
+    logger.warn('Could not get success rate', { error: err.message });
+  }
+
+  // Step 2: FIRST - Repost active bets (Story 7.1)
+  const activeResult = await getActiveBetsForRepost();
+  let reposted = 0;
+  let repostFailed = 0;
+  
+  if (activeResult.success && activeResult.data.length > 0) {
+    logger.info('Found active bets to repost', { 
+      count: activeResult.data.length,
+      bets: activeResult.data.map(b => ({ id: b.id, match: `${b.homeTeamName} x ${b.awayTeamName}` }))
+    });
+    const repostResult = await repostActiveBets(activeResult.data, successRate);
+    reposted = repostResult.reposted;
+    repostFailed = repostResult.failed;
+  } else {
+    logger.info('No active bets to repost');
+  }
+
+  // Step 3: Calculate available slots for NEW bets
+  const availableSlots = await calculatePostingSlots();
+  logger.info('Slots available for new bets', { availableSlots });
+  
+  // Step 4: If slots available, post NEW bets
+  let posted = 0;
+  let skipped = 0;
+
+  if (availableSlots > 0) {
+    const result = await getBetsReadyForPosting();
+    
+    if (result.success && result.data.length > 0) {
+      const betsToPost = result.data.slice(0, availableSlots);
+      logger.info('Posting new bets', { count: betsToPost.length });
+
+      for (const bet of betsToPost) {
+        // Validate before posting
+        const validation = validateBetForPosting(bet);
+        if (!validation.valid) {
+          logger.warn('Bet failed validation', { betId: bet.id, reason: validation.reason });
+          skipped++;
+          continue;
+        }
+
+        // Format and send message
+        const template = getRandomTemplate();
+        const message = formatBetMessage(bet, template, successRate);
+        
+        const sendResult = await sendToPublic(message);
+        
+        if (sendResult.success) {
+          // Mark as posted (updates status and timestamp)
+          await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds);
+          posted++;
+          logger.info('New bet posted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+        } else {
+          logger.error('Failed to post new bet', { betId: bet.id, error: sendResult.error?.message });
+          skipped++;
+        }
+      }
+    } else {
+      logger.info('No new bets ready for posting');
+    }
+  }
+
+  logger.info('Post bets job complete', { 
+    reposted, 
+    repostFailed,
+    newPosted: posted, 
+    newSkipped: skipped,
+    totalSent: reposted + posted
+  });
+
+  return { 
+    reposted, 
+    repostFailed,
+    posted, 
+    skipped,
+    totalSent: reposted + posted
+  };
 }
 
 // Run if called directly
@@ -242,4 +316,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, validateBetForPosting };
+module.exports = { runPostBets, formatBetMessage, validateBetForPosting, repostActiveBets };

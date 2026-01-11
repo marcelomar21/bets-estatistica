@@ -239,6 +239,59 @@ async function getActivePostedBets() {
 }
 
 /**
+ * Get active bets for reposting (status='posted', kickoff in future)
+ * Story 7.1: Returns bets that should be reposted to Telegram
+ * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
+ */
+async function getActiveBetsForRepost() {
+  try {
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        match_id,
+        bet_market,
+        bet_pick,
+        odds_at_post,
+        reasoning,
+        deep_link,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .eq('bet_status', 'posted')
+      .gte('league_matches.kickoff_time', new Date().toISOString())
+      .order('league_matches(kickoff_time)', { ascending: true });
+
+    if (error) {
+      logger.error('Failed to fetch active bets for repost', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const bets = (data || []).map(bet => ({
+      id: bet.id,
+      matchId: bet.match_id,
+      betMarket: bet.bet_market,
+      betPick: bet.bet_pick,
+      odds: bet.odds_at_post,
+      reasoning: bet.reasoning,
+      deepLink: bet.deep_link,
+      homeTeamName: bet.league_matches.home_team_name,
+      awayTeamName: bet.league_matches.away_team_name,
+      kickoffTime: bet.league_matches.kickoff_time,
+    }));
+
+    logger.debug('Fetched active bets for repost', { count: bets.length });
+    return { success: true, data: bets };
+  } catch (err) {
+    logger.error('Error fetching active bets for repost', { error: err.message });
+    return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Update bet status
  * @param {number} betId - Bet ID
  * @param {string} status - New status
@@ -516,6 +569,7 @@ module.exports = {
   getBetsReadyForPosting,
   getBetsPendingLinks,
   getActivePostedBets,
+  getActiveBetsForRepost,
   getBetById,
 
   // Update functions

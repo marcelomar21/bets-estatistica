@@ -1,9 +1,11 @@
 ---
-stepsCompleted: [1, 2, 3, 4]
-status: complete
+stepsCompleted: [1, 2, 3, 4, 5]
+status: updated
 completedAt: "2026-01-10"
+updatedAt: "2026-01-11"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
+  - _bmad-output/planning-artifacts/prd-addendum-v2.md
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
@@ -811,3 +813,456 @@ So that possa recuperar de erros.
 **Then** lista apostas pendentes ou com erro
 **And** permite selecionar para reprocessar
 **And** executa postagem manualmente
+
+---
+
+# ADDENDUM v2 - Novos Requisitos (2026-01-11)
+
+## Requirements Inventory - Addendum
+
+### Novos Functional Requirements (Admin Tools)
+
+**Visualização de Apostas**
+- FR-A1: Bot pode listar apostas com jogos de data futura quando solicitado
+- FR-A2: Cada aposta deve mostrar: jogo (times), mercado, odd, data/hora
+- FR-A3: Lista deve ser ordenada por data do jogo (mais próximo primeiro)
+- FR-A4: Cada item deve ter identificador único para referência
+
+**Correção de Odds e Links**
+- FR-A5: Operador pode responder com número + nova odd para atualizar
+- FR-A6: Operador pode responder com número + link para adicionar link
+- FR-A7: Bot confirma a alteração com ✅
+- FR-A8: Alterações são salvas no banco de dados
+- FR-A9: Histórico de alterações é mantido (quem alterou, quando)
+
+**Apostas Manuais**
+- FR-A10: Operador pode adicionar aposta via comando no grupo admin
+- FR-A11: Bot solicita informações: jogo, mercado, odd, link
+- FR-A12: Aposta manual é marcada como `source: manual` no BD
+- FR-A13: Aposta manual entra na fila de postagem normalmente
+
+**Comandos de Atualização**
+- FR-A14: Comando `/atualizar odds` força refresh de odds da API
+- FR-A15: Comando `/atualizar apostas` reprocessa ranking de apostas
+- FR-A16: Comando `/forcar postagem` envia postagem imediatamente
+- FR-A17: Bot confirma execução e reporta resultado
+
+**Monitoramento**
+- FR-M1: Bot monitora health check do sistema
+- FR-M2: Se falha detectada, envia alerta no grupo admin
+- FR-M3: Alerta menciona o operador (@username)
+- FR-M4: Alerta inclui: tipo de falha, timestamp, ação sugerida
+
+**Melhorias de Produto**
+- FR-P1: Cada postagem tem texto gerado por LLM
+- FR-P2: Copy deve ser conciso (máx 2-3 linhas por aposta)
+- FR-P3: Manter consistência de tom (profissional mas acessível)
+- FR-P4: Cache de copies para evitar custo excessivo
+
+### Bug Fixes Identificados
+
+- BUG-001: Postagens não repostam apostas ativas nos horários programados
+- BUG-002: Odds incorretas devido a matching errado de mercados
+
+### FR Coverage Map - Addendum
+
+| FR | Epic | Descrição |
+|----|------|-----------|
+| FR-A1-4 | Epic 8 | Visualização de apostas |
+| FR-A5-9 | Epic 8 | Correção de odds/links |
+| FR-A10-13 | Epic 8 | Apostas manuais |
+| FR-A14-17 | Epic 8 | Comandos de atualização |
+| FR-M1-4 | Epic 9 | Alertas e monitoramento |
+| FR-P1-4 | Epic 10 | Copy dinâmico |
+| BUG-001-002 | Epic 7 | Bug fixes críticos |
+
+## Epic List - Addendum
+
+### Epic 7: Bug Fixes Críticos
+Corrigir bugs identificados na operação do MVP.
+**Bugs cobertos:** BUG-001, BUG-002
+
+### Epic 8: Admin Tools - Gestão de Apostas
+Ferramentas para o operador gerenciar apostas no grupo admin.
+**FRs cobertos:** FR-A1 a FR-A17
+
+### Epic 9: Monitoramento e Alertas
+Sistema de alertas proativos para o operador.
+**FRs cobertos:** FR-M1 a FR-M4
+
+### Epic 10: Melhorias de Produto
+Melhorias de UX e expansão de conteúdo.
+**FRs cobertos:** FR-P1 a FR-P4, FEAT-007
+
+### Epic 11: Infraestrutura e DevOps
+Melhorias técnicas e de deploy.
+**Itens cobertos:** TECH-001, TECH-002, TECH-003
+
+## Ordem de Implementação - Addendum
+
+1. Epic 7 (Bug Fixes) → 2. Epic 8 (Admin Tools) → 3. Epic 9 (Alertas) → 4. Epic 10 (Melhorias) → 5. Epic 11 (DevOps)
+
+---
+
+## Epic 7: Bug Fixes Críticos
+
+Corrigir bugs identificados na operação do MVP que impedem o funcionamento autônomo do sistema.
+
+### Story 7.1: Implementar Repostagem de Apostas Ativas
+
+As a bot,
+I want repostar apostas ativas nos horários programados,
+So that membros do grupo recebam as apostas 3x ao dia até o jogo acontecer.
+
+**Acceptance Criteria:**
+
+**Given** apostas com `bet_status = 'posted'` e jogo ainda não iniciado
+**When** horário de postagem (10h, 15h, 22h) chega
+**Then** bot reposta essas apostas no grupo público
+**And** não busca novas apostas se já tem 3 ativas
+**And** só substitui uma aposta quando o jogo dela terminar
+
+**Technical Notes:**
+- Modificar `bot/jobs/postBets.js`
+- Remover lógica que sai quando `availableSlots === 0`
+- Adicionar busca de apostas `posted` com jogo futuro
+- Criar função `repostActiveBets()`
+
+### Story 7.2: Corrigir Matching de Odds
+
+As a sistema,
+I want buscar odds corretamente da API,
+So that as odds exibidas correspondam às odds reais.
+
+**Acceptance Criteria:**
+
+**Given** aposta com mercado específico (ex: Over 2.5)
+**When** buscar odds na The Odds API
+**Then** retorna a odd correta para a linha especificada
+**And** não confunde linhas (Over 0.5 vs Over 2.5)
+**And** não confunde tipos (Over vs Under)
+**And** margem de erro < ±0.05
+
+**Technical Notes:**
+- Revisar `bot/services/oddsService.js` função `findBestOdds()`
+- Verificar matching de `outcome.point` com linha da aposta
+- Adicionar logs de debug para comparar valores
+- Criar testes unitários para casos conhecidos
+
+### Story 7.3: Adicionar Logs de Debug no Matching de Odds
+
+As a desenvolvedor,
+I want ter logs detalhados do matching de odds,
+So that possa diagnosticar problemas futuros.
+
+**Acceptance Criteria:**
+
+**Given** processo de busca de odds
+**When** executar matching
+**Then** loga: mercado buscado, linha esperada, outcomes encontrados
+**And** loga qual outcome foi selecionado e por quê
+**And** loga quando não encontra match exato
+**And** logs em nível DEBUG (não poluem produção)
+
+---
+
+## Epic 8: Admin Tools - Gestão de Apostas
+
+Ferramentas para o operador gerenciar apostas no grupo admin do Telegram.
+
+### Story 8.1: Comando /apostas - Listar Apostas Disponíveis
+
+As a operador,
+I want listar todas as apostas disponíveis,
+So that possa ver o que está na fila.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/apostas` no grupo admin
+**When** bot processa comando
+**Then** lista apostas com jogos futuros
+**And** mostra: ID, times, data/hora, mercado, odd
+**And** ordena por data do jogo (mais próximo primeiro)
+**And** indica quais já têm link
+
+**Formato:**
+```
+📋 APOSTAS DISPONÍVEIS
+
+1️⃣ [ID:45] Liverpool vs Arsenal
+   📅 15/01 às 17:00
+   🎯 Over 2.5 gols
+   📊 Odd: 1.85 | 🔗 ✅
+
+2️⃣ [ID:46] Real Madrid vs Barcelona
+   📅 16/01 às 21:00
+   🎯 Ambas marcam
+   📊 Odd: 1.72 | 🔗 ❌
+```
+
+### Story 8.2: Comando para Ajustar Odd
+
+As a operador,
+I want corrigir a odd de uma aposta,
+So that o valor exibido seja o correto.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/odd 45 1.90` no grupo admin
+**When** bot processa comando
+**Then** atualiza odds da aposta ID 45 para 1.90
+**And** responde com ✅ confirmando alteração
+**And** mostra valor anterior e novo
+
+**Exemplo:**
+```
+Operador: /odd 45 1.90
+Bot: ✅ Odd atualizada
+     Liverpool vs Arsenal
+     📊 1.85 → 1.90
+```
+
+### Story 8.3: Comando para Adicionar Link
+
+As a operador,
+I want adicionar link a uma aposta,
+So that fique pronta para postagem.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/link 45 https://betano.com/...`
+**When** bot processa comando
+**Then** valida se link é de casa conhecida
+**And** salva link na aposta
+**And** muda status para 'ready'
+**And** confirma com ✅
+
+### Story 8.4: Comando /adicionar - Aposta Manual
+
+As a operador,
+I want adicionar uma aposta manualmente,
+So that possa incluir apostas que o sistema não gerou.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/adicionar` no grupo admin
+**When** bot inicia fluxo conversacional
+**Then** pergunta: jogo, mercado, odd, link
+**And** cria aposta com `source: 'manual'`
+**And** aposta entra na fila normalmente
+**And** confirma criação com detalhes
+
+### Story 8.5: Comando /atualizar - Forçar Refresh
+
+As a operador,
+I want forçar atualização de odds,
+So that não precise esperar o cron.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/atualizar odds`
+**When** bot processa comando
+**Then** executa job de enriquecimento de odds
+**And** reporta quantas odds foram atualizadas
+**And** reporta erros se houver
+
+### Story 8.6: Comando /postar - Forçar Postagem
+
+As a operador,
+I want forçar uma postagem imediata,
+So that possa testar ou recuperar de falhas.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/postar`
+**When** bot processa comando
+**Then** executa job de postagem imediatamente
+**And** reporta quantas apostas foram postadas
+**And** reporta se não havia apostas prontas
+
+---
+
+## Epic 9: Monitoramento e Alertas
+
+Sistema de alertas proativos para o operador.
+
+### Story 9.1: Monitorar Health Check
+
+As a sistema,
+I want verificar health do sistema periodicamente,
+So that detecte problemas proativamente.
+
+**Acceptance Criteria:**
+
+**Given** sistema rodando
+**When** a cada 5 minutos
+**Then** verifica: conexão BD, última postagem, jobs rodando
+**And** se falha detectada, dispara alerta
+**And** registra status em log
+
+### Story 9.2: Alertar Operador em Falha de Postagem
+
+As a operador,
+I want ser alertado se postagem não acontecer,
+So that possa intervir rapidamente.
+
+**Acceptance Criteria:**
+
+**Given** horário de postagem passou (ex: 10h)
+**When** verificação às 10:05 detecta que não postou
+**Then** envia alerta no grupo admin
+**And** menciona @operador
+**And** inclui: tipo de falha, timestamp, ação sugerida
+
+**Formato:**
+```
+🚨 ALERTA DE SISTEMA
+
+@marcelomendes Problema detectado!
+
+❌ Falha: Postagem das 10h não executada
+⏰ Detectado: 10:05
+💡 Ação: Use /postar para forçar
+
+[/status] para mais detalhes
+```
+
+### Story 9.3: Alertar em Erro de API
+
+As a operador,
+I want ser alertado se APIs externas falharem,
+So that saiba que odds podem estar desatualizadas.
+
+**Acceptance Criteria:**
+
+**Given** chamada a The Odds API falha 3x consecutivas
+**When** todas as tentativas falharem
+**Then** envia alerta no grupo admin
+**And** indica qual API falhou
+**And** sugere verificar manualmente
+
+---
+
+## Epic 10: Melhorias de Produto
+
+Melhorias de UX e expansão de conteúdo.
+
+### Story 10.1: Copy Dinâmico com LLM
+
+As a membro do grupo,
+I want receber mensagens com copy engajador,
+So that as postagens sejam mais interessantes.
+
+**Acceptance Criteria:**
+
+**Given** aposta pronta para postagem
+**When** formatar mensagem
+**Then** usa LLM para gerar copy único
+**And** copy é conciso (2-3 linhas)
+**And** mantém tom profissional mas acessível
+**And** inclui insight sobre o jogo/aposta
+
+**Exemplo Antes:**
+```
+⚽ Liverpool vs Arsenal
+🎯 Over 2.5 gols
+📊 Odd: 1.85
+```
+
+**Exemplo Depois:**
+```
+⚽ Liverpool vs Arsenal
+Os Reds em casa são máquina de gols. Nos últimos 5 jogos, média de 3.2 gols.
+🎯 Over 2.5 @ 1.85
+```
+
+### Story 10.2: Cache de Copies LLM
+
+As a sistema,
+I want cachear copies gerados,
+So that não gaste tokens demais.
+
+**Acceptance Criteria:**
+
+**Given** copy gerado para uma aposta
+**When** mesma aposta for postada novamente
+**Then** usa copy do cache
+**And** cache expira após 24h
+**And** novo copy é gerado na expiração
+
+### Story 10.3: Adicionar Novas Ligas
+
+As a operador,
+I want expandir para mais ligas,
+So that tenha mais apostas disponíveis.
+
+**Acceptance Criteria:**
+
+**Given** configuração de ligas
+**When** adicionar nova liga
+**Then** sistema busca jogos da liga
+**And** gera apostas normalmente
+**And** odds são enriquecidas se disponíveis na API
+
+---
+
+## Epic 11: Infraestrutura e DevOps
+
+Melhorias técnicas e de deploy.
+
+### Story 11.1: Simplificar Estrutura de Pastas
+
+As a desenvolvedor,
+I want estrutura de pastas mais organizada,
+So that seja mais fácil de navegar e manter.
+
+**Acceptance Criteria:**
+
+**Given** estrutura atual do projeto
+**When** reorganizar
+**Then** pastas seguem padrão claro
+**And** imports são atualizados
+**And** documentação reflete nova estrutura
+
+### Story 11.2: Configurar CI/CD com GitHub Actions
+
+As a desenvolvedor,
+I want pipeline de CI/CD,
+So that deploys sejam automatizados e seguros.
+
+**Acceptance Criteria:**
+
+**Given** push para branch main
+**When** GitHub Actions executa
+**Then** roda testes unitários
+**And** roda linting
+**And** se passar, faz deploy no Render
+**And** se falhar, bloqueia deploy
+
+### Story 11.3: Criar Testes Unitários Críticos
+
+As a desenvolvedor,
+I want testes para funções críticas,
+So that bugs não passem despercebidos.
+
+**Acceptance Criteria:**
+
+**Given** funções críticas do sistema
+**When** criar testes
+**Then** cobre: matching de odds, formatação de mensagens, cálculo de métricas
+**And** testes rodam em < 30s
+**And** coverage > 50% nas funções críticas
+
+### Story 11.4: Validar Cálculo de Métricas
+
+As a operador,
+I want ter certeza que métricas estão corretas,
+So that possa confiar nos dados.
+
+**Acceptance Criteria:**
+
+**Given** histórico de apostas
+**When** calcular métricas
+**Then** taxa de acerto é calculada corretamente
+**And** contagem por status está correta
+**And** validado contra cálculo manual

@@ -1,5 +1,6 @@
 # Sprint Status - bets-estatistica
 # generated: 2026-01-10
+# updated: 2026-01-11
 # project: bets-estatistica
 # tracking_system: yaml
 # story_location: _bmad-output/implementation-artifacts/stories
@@ -22,11 +23,16 @@
 #   - optional: Can be completed but not required
 #   - done: Retrospective has been completed
 #
-# IMPLEMENTATION ORDER:
-# ====================
+# IMPLEMENTATION ORDER (MVP - Completed):
+# =======================================
 # Epic 1 → Epic 6 → Epic 4 → Epic 2 → Epic 3 → Epic 5
+#
+# IMPLEMENTATION ORDER (Addendum v2 - Current):
+# =============================================
+# Epic 7 (Bug Fixes) → Epic 8 (Admin Tools) → Epic 9 (Alertas) → Epic 10 (Melhorias) → Epic 11 (DevOps)
 
 generated: "2026-01-10"
+updated: "2026-01-11"
 project: "bets-estatistica"
 tracking_system: "yaml"
 story_location: "_bmad-output/implementation-artifacts/stories"
@@ -108,3 +114,56 @@ development_status:
   5-8-comando-status-operador: done
   5-9-comando-retry-reprocessar: done
   epic-5-retrospective: optional
+
+  # ============================================
+  # ADDENDUM v2 - Novos Épicos (2026-01-11)
+  # ============================================
+
+  # ============================================
+  # Epic 7: Bug Fixes Críticos
+  # ============================================
+  epic-7: in-progress
+  7-1-implementar-repostagem-apostas-ativas: done
+  7-2-corrigir-matching-odds: backlog
+  7-3-adicionar-logs-debug-matching: backlog
+  epic-7-retrospective: optional
+
+  # ============================================
+  # Epic 8: Admin Tools - Gestão de Apostas
+  # ============================================
+  epic-8: backlog
+  8-1-comando-apostas-listar-disponiveis: backlog
+  8-2-comando-odd-ajustar: backlog
+  8-3-comando-link-adicionar: backlog
+  8-4-comando-adicionar-aposta-manual: backlog
+  8-5-comando-atualizar-forcar-refresh: backlog
+  8-6-comando-postar-forcar-postagem: backlog
+  epic-8-retrospective: optional
+
+  # ============================================
+  # Epic 9: Monitoramento e Alertas
+  # ============================================
+  epic-9: backlog
+  9-1-monitorar-health-check: backlog
+  9-2-alertar-falha-postagem: backlog
+  9-3-alertar-erro-api: backlog
+  epic-9-retrospective: optional
+
+  # ============================================
+  # Epic 10: Melhorias de Produto
+  # ============================================
+  epic-10: backlog
+  10-1-copy-dinamico-llm: backlog
+  10-2-cache-copies-llm: backlog
+  10-3-adicionar-novas-ligas: backlog
+  epic-10-retrospective: optional
+
+  # ============================================
+  # Epic 11: Infraestrutura e DevOps
+  # ============================================
+  epic-11: backlog
+  11-1-simplificar-estrutura-pastas: backlog
+  11-2-configurar-cicd-github-actions: backlog
+  11-3-criar-testes-unitarios-criticos: backlog
+  11-4-validar-calculo-metricas: backlog
+  epic-11-retrospective: optional
