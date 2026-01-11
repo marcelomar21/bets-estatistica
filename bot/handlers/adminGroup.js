@@ -10,8 +10,8 @@ const { confirmLinkReceived } = require('../services/alertService');
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
 
-// Regex to match "/odds ID valor" command
-const ODDS_PATTERN = /^\/odds\s+(\d+)\s+([\d.,]+)/i;
+// Regex to match "/odds ID valor" or "/odd ID valor" command (Story 8.2)
+const ODDS_PATTERN = /^\/odds?\s+(\d+)\s+([\d.,]+)/i;
 
 // Regex to match "/apostas" command (Story 8.1)
 const APOSTAS_PATTERN = /^\/apostas$/i;
@@ -60,6 +60,7 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
   }
 
   const bet = betResult.data;
+  const previousOdds = bet.odds;
 
   // Update bet with manual odds using betService
   const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`);
@@ -74,18 +75,22 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
     return;
   }
 
-  // Confirm
+  // Confirm with previous value (Story 8.2)
   const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
+  const oddsChange = previousOdds 
+    ? `📊 ${previousOdds.toFixed(2)} → ${odds.toFixed(2)}`
+    : `📊 Odds: ${odds.toFixed(2)}`;
+  
   await bot.sendMessage(
     msg.chat.id,
-    `✅ Odds atualizada!\n\n🏟️ ${match}\n📊 ${bet.betMarket}\n💰 Odds: ${odds}\n\n_Agora envie o link: \`${betId}: URL\`_`,
+    `✅ *Odd atualizada!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${oddsChange}\n\n_Agora envie o link: \`${betId}: URL\`_`,
     {
       reply_to_message_id: msg.message_id,
       parse_mode: 'Markdown',
     }
   );
 
-  logger.info('Manual odds saved', { betId, odds });
+  logger.info('Manual odds saved', { betId, previousOdds, newOdds: odds });
 }
 
 /**

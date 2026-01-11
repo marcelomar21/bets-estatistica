@@ -133,7 +133,7 @@ development_status:
   # ============================================
   epic-8: in-progress
   8-1-comando-apostas-listar-disponiveis: done
-  8-2-comando-odd-ajustar: backlog
+  8-2-comando-odd-ajustar: done
   8-3-comando-link-adicionar: backlog
   8-4-comando-adicionar-aposta-manual: backlog
   8-5-comando-atualizar-forcar-refresh: backlog
