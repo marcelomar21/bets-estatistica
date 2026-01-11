@@ -28,7 +28,8 @@ const ADICIONAR_PATTERN = /^\/adicionar\s+"([^"]+)"\s+"([^"]+)"\s+([\d.,]+)(?:\s
 const ADICIONAR_HELP_PATTERN = /^\/adicionar$/i;
 
 // Regex to match "/atualizar odds" command (Story 8.5)
-const ATUALIZAR_ODDS_PATTERN = /^\/atualizar\s+odds$/i;
+// Accept both "/atualizar odds" and just "/atualizar"
+const ATUALIZAR_ODDS_PATTERN = /^\/atualizar(\s+odds)?$/i;
 
 // Regex to match "/postar" command (Story 8.6)
 const POSTAR_PATTERN = /^\/postar$/i;
@@ -141,32 +142,38 @@ async function handleApostasCommand(bot, msg) {
     return;
   }
 
-  // Format message
-  const lines = [`📋 *APOSTAS DISPONÍVEIS* (${bets.length})\n`];
+  // Limit to first 15 bets to avoid "message too long" error
+  const MAX_BETS = 15;
+  const displayBets = bets.slice(0, MAX_BETS);
+  const hasMore = bets.length > MAX_BETS;
 
-  bets.forEach((bet, index) => {
+  // Format message - compact format
+  const lines = [`📋 *APOSTAS* (${displayBets.length}/${bets.length})\n`];
+
+  displayBets.forEach((bet) => {
     const kickoff = new Date(bet.kickoffTime);
-    const dateStr = kickoff.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo',
     });
+    const dateStr = kickoff.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
 
-    const linkIcon = bet.hasLink ? '✅' : '❌';
-    const statusEmoji = getStatusEmoji(bet.betStatus);
-    const num = getNumberEmoji(index + 1);
+    const linkIcon = bet.hasLink ? '🔗' : '⚠️';
+    const statusIcon = bet.betStatus === 'posted' ? '📤' : bet.betStatus === 'ready' ? '✅' : '⏳';
 
-    lines.push(`${num} *[ID:${bet.id}]* ${bet.homeTeamName} vs ${bet.awayTeamName}`);
-    lines.push(`   📅 ${dateStr} às ${timeStr}`);
-    lines.push(`   🎯 ${bet.betMarket}`);
-    lines.push(`   📊 Odd: ${bet.odds?.toFixed(2) || 'N/A'} | 🔗 ${linkIcon} ${statusEmoji}`);
-    lines.push('');
+    // Compact single line per bet
+    lines.push(`${statusIcon} *${bet.id}* | ${bet.homeTeamName} x ${bet.awayTeamName}`);
+    lines.push(`   ${dateStr} ${timeStr} | ${bet.betMarket} | ${bet.odds?.toFixed(2) || '-'} ${linkIcon}`);
   });
+
+  if (hasMore) {
+    lines.push(`\n_...e mais ${bets.length - MAX_BETS} apostas_`);
+  }
 
   lines.push('💡 *Comandos:*');
   lines.push('• Adicionar link: `ID: URL`');
@@ -175,28 +182,6 @@ async function handleApostasCommand(bot, msg) {
   await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
 
   logger.info('Listed available bets', { count: bets.length });
-}
-
-/**
- * Get emoji for bet status
- */
-function getStatusEmoji(status) {
-  const statusMap = {
-    generated: '🆕',
-    pending_link: '⏳',
-    ready: '✅',
-    posted: '📤',
-  };
-  return statusMap[status] || '';
-}
-
-/**
- * Get number emoji
- */
-function getNumberEmoji(num) {
-  const emojis = ['0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-  if (num <= 10) return emojis[num];
-  return `${num}.`;
 }
 
 /**
