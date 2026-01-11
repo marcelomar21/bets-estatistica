@@ -143,10 +143,10 @@ development_status:
   # ============================================
   # Epic 9: Monitoramento e Alertas
   # ============================================
-  epic-9: backlog
-  9-1-monitorar-health-check: backlog
-  9-2-alertar-falha-postagem: backlog
-  9-3-alertar-erro-api: backlog
+  epic-9: done
+  9-1-monitorar-health-check: done
+  9-2-alertar-falha-postagem: done
+  9-3-alertar-erro-api: done
   epic-9-retrospective: optional
 
   # ============================================
