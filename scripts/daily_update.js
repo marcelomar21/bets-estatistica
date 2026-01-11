@@ -4,16 +4,15 @@ const path = require('path');
 const { spawn } = require('child_process');
 const axios = require('axios');
 const https = require('https');
-const { Pool } = require('pg');
 const {
   fetchQueueMatches,
   markAnalysisStatus,
   MATCH_COMPLETION_GRACE_HOURS,
 } = require('./lib/matchScreening');
 
-const API_KEY = process.env.api_key || process.env.API_KEY;
+const API_KEY = process.env.FOOTYSTATS_API_KEY || process.env.api_key || process.env.API_KEY;
 if (!API_KEY) {
-  console.error('api_key/API_KEY não encontrado no .env');
+  console.error('FOOTYSTATS_API_KEY/api_key/API_KEY não encontrado no .env');
   process.exit(1);
 }
 
@@ -40,14 +39,8 @@ const FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const { getPool, closePool: closeDbPool } = require('./lib/db');
+const pool = getPool();
 
 const MATCH_API = 'https://api.football-data-api.com/match';
 const LASTX_API = 'https://api.football-data-api.com/lastx';
@@ -1042,13 +1035,13 @@ async function main() {
     saveAnalysisFile(range, analysisRecords);
     logSummary(summary);
   } finally {
-    await pool.end();
+    await closeDbPool();
   }
 }
 
 main().catch((err) => {
   console.error('daily_update falhou:', err.response?.data || err.message);
-  pool.end().catch(() => {});
+  closeDbPool().catch(() => {});
   process.exit(1);
 });
 

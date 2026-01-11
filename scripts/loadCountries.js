@@ -1,27 +1,21 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const { getPool, closePool } = require('./lib/db');
 
 const DATA_PATH = path.join(__dirname, '..', 'data', 'json', 'country-list.json');
 const ACTIVE_COUNTRIES = new Set(['brazil']);
 
 if (!fs.existsSync(DATA_PATH)) {
-  console.error(`Arquivo ${DATA_PATH} não encontrado. Rode o download antes de carregar os dados.`);
+  console.error(`Arquivo ${DATA_PATH} não encontrado.`);
+  console.log('Dica: Baixe primeiro a lista de países da API FootyStats.');
   process.exit(1);
 }
 
 const payload = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
 const countries = Array.isArray(payload.data) ? payload.data : [];
 
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const pool = getPool();
 
 const TRANSLATION_KEYS = [
   'name_jp',
@@ -97,9 +91,13 @@ async function main() {
     throw error;
   } finally {
     client.release();
-    await pool.end();
+    await closePool();
   }
 }
 
-main().catch(() => process.exit(1));
+main().catch((err) => {
+  console.error('Falha ao carregar países:', err.message || err);
+  closePool().catch(() => {});
+  process.exit(1);
+});
 

@@ -2,7 +2,6 @@
 
 require('dotenv').config();
 
-const { Pool } = require('pg');
 const {
   listNextMatchesRequiringAnalysis,
   markAnalysisStatus,
@@ -59,17 +58,7 @@ const parseArgs = () => {
   return options;
 };
 
-const buildPool = () =>
-  new Pool({
-    host: process.env.PGHOST || 'localhost',
-    port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-    database: process.env.PGDATABASE || 'bets_stats',
-    user: process.env.PGUSER || 'bets',
-    password: process.env.PGPASSWORD || 'bets_pass_123',
-    ssl: process.env.PGSSL === 'true'
-      ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
-      : false,
-  });
+const { getPool: buildPool, closePool } = require('./lib/db');
 
 const formatMatchLabel = (row) =>
   `${row.matchId} – ${row.homeTeamName || row.homeTeamId} x ${row.awayTeamName || row.awayTeamId}`;
@@ -173,12 +162,13 @@ async function main() {
       );
     }
   } finally {
-    await pool.end();
+    await closePool();
   }
 }
 
 main().catch((err) => {
-  console.error('[check_analysis_queue] Falha:', err.message);
+  console.error('[check_analysis_queue] Falha:', err.message || err);
+  closePool().catch(() => {});
   process.exitCode = 1;
 });
 

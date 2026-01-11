@@ -1,23 +1,15 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const { getPool, closePool } = require('./lib/db');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'json', 'league-teams');
 
 if (!fs.existsSync(DATA_DIR)) {
-  console.error(`Diretório ${DATA_DIR} não encontrado. Rode o fetch antes de carregar os dados.`);
-  process.exit(1);
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const pool = getPool();
 
 const parseSeasonIdsArg = () => {
   const args = process.argv.slice(2);
@@ -185,11 +177,12 @@ async function main() {
   }
 
   console.log(`Importação concluída. ${total} times processados.`);
-  await pool.end();
+  await closePool();
 }
 
 main().catch((err) => {
-  console.error('Falha ao carregar league team stats:', err.message);
+  console.error('Falha ao carregar league team stats:', err.message || err);
+  closePool().catch(() => {});
   process.exit(1);
 });
 

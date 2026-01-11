@@ -3,14 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const https = require('https');
-const { Pool } = require('pg');
+const { getPool, closePool } = require('./lib/db');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'data', 'json', 'league-players');
 const BASE_URL = 'https://api.football-data-api.com/league-players';
-const API_KEY = process.env.api_key;
+const API_KEY = process.env.FOOTYSTATS_API_KEY || process.env.api_key || process.env.API_KEY;
 
 if (!API_KEY) {
-  console.error('api_key não encontrado no .env');
+  console.error('FOOTYSTATS_API_KEY não encontrado no .env');
   process.exit(1);
 }
 
@@ -19,15 +19,7 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 }
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
-
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const pool = getPool();
 
 async function fetchSeasonIds() {
   const query = `
@@ -101,11 +93,12 @@ async function main() {
     await fetchSeasonPlayers(season.season_id, season.display_name);
   }
 
-  await pool.end();
+  await closePool();
 }
 
 main().catch((err) => {
-  console.error('Falha ao baixar league-players:', err.response?.data || err.message);
+  console.error('Falha ao baixar league-players:', err.response?.data || err.message || err);
+  closePool().catch(() => {});
   process.exit(1);
 });
 

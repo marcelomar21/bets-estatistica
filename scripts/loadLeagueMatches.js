@@ -1,24 +1,16 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
+const { getPool, closePool } = require('./lib/db');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'json', 'league-matches');
 const SEASON_IDS_ARG = '--season-ids';
 
 if (!fs.existsSync(DATA_DIR)) {
-  console.error(`Diretório ${DATA_DIR} não encontrado. Rode o fetch antes de carregar os dados.`);
-  process.exit(1);
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const pool = getPool();
 
 const parseSeasonIdsArg = () => {
   const arg = process.argv.find((token) => token.startsWith(`${SEASON_IDS_ARG}=`));
@@ -156,7 +148,8 @@ async function main() {
       ? `season-{${seasonIdsFilter.join(',')}}.json`
       : 'season-*.json';
     console.log(`Nenhum arquivo ${label} encontrado em league-matches.`);
-    await pool.end();
+    console.log('Dica: Rode primeiro: node scripts/fetchLeagueMatches.js --season-ids=7883');
+    await closePool();
     return;
   }
 
@@ -170,11 +163,12 @@ async function main() {
     ? `filtrado (${seasonIdsFilter.join(', ')})`
     : 'completos';
   console.log(`Importação de partidas ${scopeLabel} concluída. ${total} registros processados.`);
-  await pool.end();
+  await closePool();
 }
 
 main().catch((err) => {
-  console.error('Falha ao carregar league matches:', err.message);
+  console.error('Falha ao carregar league matches:', err.message || err);
+  closePool().catch(() => {});
   process.exit(1);
 });
 

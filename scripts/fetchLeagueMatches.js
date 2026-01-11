@@ -3,15 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const https = require('https');
-const { Pool } = require('pg');
+const { getPool, closePool } = require('./lib/db');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'data', 'json', 'league-matches');
 const BASE_URL = 'https://api.football-data-api.com/league-matches';
-const API_KEY = process.env.api_key;
+const API_KEY = process.env.FOOTYSTATS_API_KEY || process.env.api_key || process.env.API_KEY;
 const SEASON_IDS_ARG = '--season-ids';
 
 if (!API_KEY) {
-  console.error('api_key não encontrado no .env');
+  console.error('FOOTYSTATS_API_KEY não encontrado no .env');
   process.exit(1);
 }
 
@@ -20,15 +20,7 @@ if (!fs.existsSync(OUTPUT_DIR)) {
 }
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
-
-const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl: false,
-});
+const pool = getPool();
 
 const parseSeasonIdsArg = () => {
   const arg = process.argv.find((token) => token.startsWith(`${SEASON_IDS_ARG}=`));
@@ -111,28 +103,41 @@ async function main() {
   const seasonIdsFilter = parseSeasonIdsArg();
   let seasons;
   if (seasonIdsFilter.length) {
-    const { rows } = await pool.query(
-      `
-        SELECT season_id, display_name
-          FROM league_seasons
-         WHERE season_id = ANY($1::int[])
-      `,
-      [seasonIdsFilter],
-    );
-    const missing = seasonIdsFilter.filter(
-      (id) => !rows.some((season) => season.season_id === id),
-    );
-    if (missing.length) {
-      console.warn(`Season IDs não encontrados na tabela league_seasons: ${missing.join(', ')}`);
+    // Try to get from DB first
+    try {
+      const { rows } = await pool.query(
+        `
+          SELECT season_id, display_name
+            FROM league_seasons
+           WHERE season_id = ANY($1::int[])
+        `,
+        [seasonIdsFilter],
+      );
+      const found = rows.map(r => r.season_id);
+      const missing = seasonIdsFilter.filter(id => !found.includes(id));
+      
+      // For missing ones, create placeholder entries to fetch anyway
+      seasons = [
+        ...rows,
+        ...missing.map(id => ({ season_id: id, display_name: `Season ${id}` }))
+      ];
+      
+      if (missing.length) {
+        console.log(`Season IDs não estão no BD, buscando direto da API: ${missing.join(', ')}`);
+      }
+    } catch (err) {
+      // If DB query fails, just use the IDs directly
+      console.log('Tabela league_seasons não disponível, buscando direto da API...');
+      seasons = seasonIdsFilter.map(id => ({ season_id: id, display_name: `Season ${id}` }));
     }
-    seasons = rows;
   } else {
     seasons = await fetchSeasonIds();
   }
 
   if (!seasons.length) {
     console.log('Nenhuma temporada disponível para download.');
-    await pool.end();
+    console.log('Dica: Use --season-ids=ID para buscar direto (ex: --season-ids=7883)');
+    await closePool();
     return;
   }
 
@@ -140,11 +145,12 @@ async function main() {
     await fetchSeasonMatches(season.season_id, season.display_name);
   }
 
-  await pool.end();
+  await closePool();
 }
 
 main().catch((err) => {
-  console.error('Falha ao baixar league-matches:', err.response?.data || err.message);
+  console.error('Falha ao baixar league-matches:', err.response?.data || err.message || err);
+  closePool().catch(() => {});
   process.exit(1);
 });
 

@@ -4,7 +4,7 @@ const path = require('path');
 const axios = require('axios');
 const https = require('https');
 
-const API_KEY = process.env.api_key;
+const API_KEY = process.env.FOOTYSTATS_API_KEY || process.env.api_key || process.env.API_KEY;
 const OUTPUT_DIR = path.join(__dirname, '..', 'data', 'json', 'lastx');
 const BASE_URL = 'https://api.football-data-api.com/lastx';
 

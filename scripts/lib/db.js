@@ -1,6 +1,6 @@
 /**
- * Database adapter - supports both local PostgreSQL and Supabase
- * Story 6.4: Migrar para Supabase quando SUPABASE_URL está definido
+ * Database connection for ETL scripts
+ * Uses the same connection logic as agent/db.js
  */
 require('dotenv').config();
 
@@ -32,8 +32,8 @@ const getSupabaseConnectionConfig = () => {
   const password = process.env.SUPABASE_DB_PASSWORD;
   
   if (!password) {
-    console.error('[agent][db] SUPABASE_DB_PASSWORD não configurada!');
-    console.error('[agent][db] Obtenha em: Supabase Dashboard → Settings → Database → Database Password');
+    console.error('[db] SUPABASE_DB_PASSWORD não configurada!');
+    console.error('[db] Obtenha em: Supabase Dashboard → Settings → Database → Database Password');
     return null;
   }
   
@@ -67,30 +67,13 @@ const getPool = () => {
   if (!pool) {
     pool = new Pool(connectionConfig);
     pool.on('error', (err) => {
-      console.error('[agent][db] Erro inesperado no pool PG:', err);
+      console.error('[db] Erro inesperado no pool PG:', err);
     });
     if (useSupabase) {
-      console.log('[agent][db] Usando Supabase como banco de dados');
+      console.log('[db] Usando Supabase como banco de dados');
     }
   }
   return pool;
-};
-
-const runQuery = async (queryText, params = []) => {
-  if (!queryText || typeof queryText !== 'string') {
-    throw new Error('SQL inválido para runQuery');
-  }
-
-  const client = await getPool().connect();
-  try {
-    const start = Date.now();
-    const result = await client.query(queryText, params);
-    const duration = Date.now() - start;
-    console.debug(`[agent][db] ${queryText.split('\n')[0]} (${duration}ms)`);
-    return result;
-  } finally {
-    client.release();
-  }
 };
 
 const closePool = async () => {
@@ -102,9 +85,6 @@ const closePool = async () => {
 
 module.exports = {
   getPool,
-  runQuery,
   closePool,
   useSupabase,
 };
-
-
