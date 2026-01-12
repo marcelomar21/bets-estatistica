@@ -174,8 +174,8 @@ development_status:
   epic-12: in-progress
   12-1-corrigir-bug-coluna-notes: done
   12-2-corrigir-overview-object-object: done
-  12-3-ajustar-health-check: backlog
-  12-4-restaurar-filtro-2-dias: backlog
+  12-3-ajustar-health-check: done
+  12-4-restaurar-filtro-2-dias: done
   12-5-implementar-comando-filtrar: backlog
   12-6-implementar-comando-simular: backlog
   12-7-aprimorar-comando-overview: backlog

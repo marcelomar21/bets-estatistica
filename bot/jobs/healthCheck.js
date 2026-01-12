@@ -21,14 +21,39 @@ const { healthCheckAlert, postingFailureAlert } = require('../services/alertServ
 // Thresholds for health checks
 const THRESHOLDS = {
   DB_TIMEOUT_MS: 5000,           // Database query should complete in < 5s
-  PENDING_LINK_MAX_HOURS: 4,     // Alert if bet pending_link for > 4 hours
-  READY_NOT_POSTED_HOURS: 2,     // Alert if bet ready but not posted for > 2 hours
+  PENDING_LINK_MAX_HOURS: 8,     // Alert if bet pending_link for > 8 hours (operador tem dia inteiro)
+  READY_NOT_POSTED_HOURS: 6,     // Alert if bet ready but not posted for > 6 hours (intervalo entre postagens)
   POSTED_NO_RESULT_HOURS: 6,     // Alert if posted bet has no result 6h after kickoff
-  POST_SCHEDULE_GRACE_MIN: 10,   // Minutes grace period after scheduled post time
+  POST_SCHEDULE_GRACE_MIN: 15,   // Minutes grace period after scheduled post time
+  ALERT_DEBOUNCE_MINUTES: 60,    // Don't repeat same alert type within this period
 };
 
 // Scheduled post times (São Paulo timezone)
 const POST_SCHEDULE = [10, 15, 22]; // 10:00, 15:00, 22:00
+
+// Alert debounce cache (in-memory, resets on restart)
+const alertCache = new Map();
+
+/**
+ * Check if alert can be sent (debounce logic)
+ * Prevents sending the same type of alert within ALERT_DEBOUNCE_MINUTES
+ * @param {string} alertType - Type of alert (e.g., 'stuck_pending_link', 'Database')
+ * @returns {boolean} - true if alert can be sent
+ */
+function canSendAlert(alertType) {
+  const lastSent = alertCache.get(alertType);
+  const now = Date.now();
+  const debounceMs = THRESHOLDS.ALERT_DEBOUNCE_MINUTES * 60 * 1000;
+
+  if (lastSent && (now - lastSent) < debounceMs) {
+    const minutesAgo = Math.round((now - lastSent) / 60000);
+    logger.debug('Alert debounced', { alertType, lastSentAgo: `${minutesAgo}min` });
+    return false;
+  }
+
+  alertCache.set(alertType, now);
+  return true;
+}
 
 /**
  * Check database connection health
@@ -361,12 +386,27 @@ async function runHealthCheck() {
     }
   }
 
-  // Send alerts if any issues found
+  // Send alerts if any issues found (with debounce)
   if (alerts.length > 0) {
-    try {
-      await healthCheckAlert(alerts, hasErrors);
-    } catch (err) {
-      logger.error('Failed to send health check alert', { error: err.message });
+    // Filter alerts that pass debounce check
+    const alertsToSend = alerts.filter(alert => {
+      const alertType = alert.check;
+      if (canSendAlert(alertType)) {
+        return true;
+      }
+      logger.info('Alert suppressed (debounce)', { check: alertType, message: alert.message });
+      return false;
+    });
+
+    if (alertsToSend.length > 0) {
+      try {
+        await healthCheckAlert(alertsToSend, hasErrors);
+        logger.info('Health check alerts sent', { count: alertsToSend.length });
+      } catch (err) {
+        logger.error('Failed to send health check alert', { error: err.message });
+      }
+    } else {
+      logger.debug('All alerts debounced, none sent');
     }
   }
 
@@ -407,5 +447,6 @@ module.exports = {
   checkDatabaseConnection,
   checkLastPosting,
   checkJobsHealth,
+  canSendAlert,
   THRESHOLDS,
 };
