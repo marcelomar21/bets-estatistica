@@ -54,6 +54,9 @@ const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|pr
 // Regex to match "/simular [novo|ID]" command (Story 12.6)
 const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
 
+// Regex to match "/promover ID" command (FEAT-011)
+const PROMOVER_PATTERN = /^\/promover\s+(\d+)$/i;
+
 /**
  * Validate if URL is from a valid bookmaker
  * @param {string} url - URL to validate
@@ -470,6 +473,9 @@ Filtra apostas por critério específico.
       return;
   }
 
+  // Ordenar por data do jogo (mais próximo primeiro) - FR-F7
+  filtered.sort((a, b) => new Date(a.kickoffTime) - new Date(b.kickoffTime));
+
   if (filtered.length === 0) {
     await bot.sendMessage(
       msg.chat.id,
@@ -658,6 +664,59 @@ async function handleSimularCommand(bot, msg, arg) {
 }
 
 /**
+ * Handle /promover command - Promote bet to ready for posting (FEAT-011)
+ */
+async function handlePromoverCommand(bot, msg, betId) {
+  logger.info('Received /promover command', { chatId: msg.chat.id, betId });
+
+  const betResult = await getBetById(betId);
+  if (!betResult.success) {
+    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} não encontrada.`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  const bet = betResult.data;
+
+  // Validações
+  if (bet.betStatus === 'posted') {
+    await bot.sendMessage(msg.chat.id, `⚠️ Aposta #${betId} já está postada.`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  if (bet.betStatus === 'ready') {
+    await bot.sendMessage(msg.chat.id, `✅ Aposta #${betId} já está pronta para postagem.`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  if (!bet.odds || bet.odds < 1.60) {
+    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} precisa de odds >= 1.60.\nUse: \`/odd ${betId} valor\``, { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (!bet.deepLink) {
+    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} precisa de link.\nUse: \`/link ${betId} URL\``, { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' });
+    return;
+  }
+
+  // Promover para ready
+  const { updateBetStatus } = require('../services/betService');
+  const updateResult = await updateBetStatus(betId, 'ready');
+
+  if (!updateResult.success) {
+    await bot.sendMessage(msg.chat.id, `❌ Erro ao promover: ${updateResult.error.message}`, { reply_to_message_id: msg.message_id });
+    return;
+  }
+
+  await bot.sendMessage(
+    msg.chat.id,
+    `✅ *Aposta promovida!*\n\n🆔 #${betId}\n⚽ ${bet.homeTeamName} x ${bet.awayTeamName}\n🎯 ${bet.betMarket}\n💰 Odd: ${bet.odds.toFixed(2)}\n\n_Use /postar para publicar._`,
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
+
+  logger.info('Bet promoted to ready', { betId });
+}
+
+/**
  * Handle /help command - Show all admin commands
  */
 async function handleHelpCommand(bot, msg) {
@@ -676,6 +735,7 @@ async function handleHelpCommand(bot, msg) {
 /odd ID valor - Ajustar odd de aposta
 /link ID URL - Adicionar link a aposta
 /trocar ID1 ID2 - Trocar aposta postada
+/promover ID - Marcar aposta como pronta
 \`ID: URL\` - Adicionar link (atalho)
 
 *➕ Criação:*
@@ -1008,6 +1068,14 @@ async function handleAdminMessage(bot, msg) {
   if (simularMatch) {
     const arg = simularMatch[1] || null;
     await handleSimularCommand(bot, msg, arg);
+    return;
+  }
+
+  // Check if message is /promover command (FEAT-011)
+  const promoverMatch = text.match(PROMOVER_PATTERN);
+  if (promoverMatch) {
+    const betId = parseInt(promoverMatch[1], 10);
+    await handlePromoverCommand(bot, msg, betId);
     return;
   }
 

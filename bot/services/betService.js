@@ -102,6 +102,7 @@ async function getBetsReadyForPosting() {
       .eq('eligible', true)
       .not('deep_link', 'is', null)
       .gte('league_matches.kickoff_time', new Date().toISOString())
+      .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString())
       .order('odds', { ascending: false })
       .limit(config.betting.maxActiveBets);
 
