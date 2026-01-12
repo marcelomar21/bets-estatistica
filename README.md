@@ -304,6 +304,46 @@ Mercados não suportados pela API são enviados ao grupo de admins para inserç�
 └── README.md
 ```
 
+## 🔄 CI/CD com GitHub Actions
+
+O projeto usa GitHub Actions para automação de CI/CD:
+
+### Pipeline
+
+```
+Push/PR → Lint → Test → Deploy (main only)
+                          ↓
+                    Render Webhook
+```
+
+### Jobs
+
+| Job | Trigger | Descrição |
+|-----|---------|-----------|
+| Lint | push, PR | ESLint verifica qualidade do código |
+| Test | push, PR | Roda testes (após lint) |
+| Deploy | push main | Trigger deploy no Render via webhook |
+
+### Configuração do Deploy Hook
+
+Para habilitar deploy automático:
+
+1. **Render Dashboard:** Settings → Deploy Hook → Copiar URL
+2. **GitHub Repository:** Settings → Secrets and variables → Actions
+3. Criar secret `RENDER_DEPLOY_HOOK` com a URL copiada
+
+### Scripts Locais
+
+```bash
+# Rodar lint
+npm run lint
+
+# Rodar testes
+npm test
+```
+
+---
+
 ## 🔍 Troubleshooting
 
 ### Bot não recebe links

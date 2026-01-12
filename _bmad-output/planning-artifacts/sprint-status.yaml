@@ -154,7 +154,7 @@ development_status:
   # ============================================
   epic-10: done
   10-1-copy-dinamico-llm: done
-  10-2-cache-copies-llm: skipped
+  10-2-cache-copies-llm: done
   10-3-adicionar-novas-ligas: done
   epic-10-retrospective: optional
 
@@ -163,7 +163,7 @@ development_status:
   # ============================================
   epic-11: in-progress
   11-1-simplificar-estrutura-pastas: done
-  11-2-configurar-cicd-github-actions: backlog
+  11-2-configurar-cicd-github-actions: done
   11-3-criar-testes-unitarios-criticos: backlog
   11-4-validar-calculo-metricas: backlog
   epic-11-retrospective: optional

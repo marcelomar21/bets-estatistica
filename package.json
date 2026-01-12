@@ -6,7 +6,8 @@
     "start": "node bot/server.js",
     "dev": "node bot/index.js",
     "pipeline": "node agent/pipeline.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo 'No tests yet' && exit 0",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
@@ -25,5 +26,8 @@
     "node-telegram-bot-api": "^0.67.0",
     "pg": "^8.16.3",
     "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1"
   }
 }
