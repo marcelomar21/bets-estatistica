@@ -1234,6 +1234,10 @@ const processMatch = async (matchId) => {
 
 async function main() {
   const matchIds = await resolveMatchTargets();
+  let successCount = 0;
+  let failCount = 0;
+  const failures = [];
+
   for (let index = 0; index < matchIds.length; index += 1) {
     const matchId = matchIds[index];
     infoLog(`Iniciando análise ${index + 1}/${matchIds.length} para match_id ${matchId}.`);
@@ -1243,11 +1247,23 @@ async function main() {
         analysisGeneratedAt: generatedAt,
         clearErrorReason: true,
       });
+      successCount += 1;
     } catch (err) {
       console.error(`[agent][analysis] Falha ao processar match ${matchId}: ${err.message}`);
       await setQueueStatus(matchId, 'pending', { errorReason: err.message });
-      process.exitCode = 1;
+      failCount += 1;
+      failures.push({ matchId, error: err.message });
     }
+  }
+
+  infoLog(`Resumo: ${successCount} sucesso(s), ${failCount} falha(s) de ${matchIds.length} total.`);
+  if (failures.length > 0) {
+    infoLog(`Matches com falha: ${failures.map((f) => f.matchId).join(', ')}`);
+  }
+
+  // Só falha o script se NENHUM match foi processado com sucesso
+  if (successCount === 0 && matchIds.length > 0) {
+    process.exitCode = 1;
   }
 }
 
