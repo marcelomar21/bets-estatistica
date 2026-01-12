@@ -138,7 +138,7 @@ development_status:
   8-4-comando-adicionar-aposta-manual: done
   8-5-comando-atualizar-forcar-refresh: done
   8-6-comando-postar-forcar-postagem: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # ============================================
   # Epic 9: Monitoramento e Alertas
