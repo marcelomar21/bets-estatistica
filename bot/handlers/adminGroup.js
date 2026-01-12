@@ -46,6 +46,9 @@ const OVERVIEW_PATTERN = /^\/overview$/i;
 // Regex to match "/trocar ID_ANTIGO ID_NOVO" command (Story 10.3)
 const TROCAR_PATTERN = /^\/trocar\s+(\d+)\s+(\d+)$/i;
 
+// Regex to match "/filtrar [tipo]" command (Story 12.5)
+const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|prontas))?$/i;
+
 /**
  * Validate if URL is from a valid bookmaker
  * @param {string} url - URL to validate
@@ -334,6 +337,134 @@ async function handleTrocarCommand(bot, msg, oldBetId, newBetId) {
 }
 
 /**
+ * Handle /filtrar command - Filter bets by criteria (Story 12.5)
+ */
+async function handleFiltrarCommand(bot, msg, filterType) {
+  logger.info('Received /filtrar command', { chatId: msg.chat.id, filterType });
+
+  // Se não passou filtro, mostrar ajuda
+  if (!filterType) {
+    const helpText = `
+📋 *Comando /filtrar*
+
+Filtra apostas por critério específico.
+
+*Filtros disponíveis:*
+\`/filtrar sem_odds\` - Apostas sem odd definida
+\`/filtrar sem_link\` - Apostas sem link
+\`/filtrar com_link\` - Apostas com link
+\`/filtrar com_odds\` - Apostas com odd definida
+\`/filtrar prontas\` - Apostas prontas (ready)
+
+*Exemplo:*
+\`/filtrar sem_odds\`
+    `.trim();
+
+    await bot.sendMessage(msg.chat.id, helpText, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // Buscar apostas disponíveis
+  const result = await getAvailableBets();
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao buscar apostas: ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const bets = result.data;
+
+  // Aplicar filtro
+  let filtered = [];
+  let filterLabel = '';
+  let hint = '';
+
+  switch (filterType.toLowerCase()) {
+    case 'sem_odds':
+      filtered = bets.filter(b => !b.odds || b.odds === 0);
+      filterLabel = 'SEM ODDS';
+      hint = '💡 Use `/odd ID valor` para definir odds';
+      break;
+    case 'sem_link':
+      filtered = bets.filter(b => !b.deepLink && !['posted', 'success', 'failure'].includes(b.betStatus));
+      filterLabel = 'SEM LINK';
+      hint = '💡 Use `/link ID url` para adicionar link';
+      break;
+    case 'com_link':
+      filtered = bets.filter(b => !!b.deepLink);
+      filterLabel = 'COM LINK';
+      hint = '';
+      break;
+    case 'com_odds':
+      filtered = bets.filter(b => b.odds && b.odds > 0);
+      filterLabel = 'COM ODDS';
+      hint = '';
+      break;
+    case 'prontas':
+      filtered = bets.filter(b => b.betStatus === 'ready');
+      filterLabel = 'PRONTAS';
+      hint = '💡 Use `/postar` para publicar';
+      break;
+    default:
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Filtro desconhecido: ${filterType}\n\nUse \`/filtrar\` para ver opções.`,
+        { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+      );
+      return;
+  }
+
+  if (filtered.length === 0) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `📋 *APOSTAS ${filterLabel}* (0)\n\n_Nenhuma aposta encontrada com este filtro._`,
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  // Formatar lista
+  const lines = [`📋 *APOSTAS ${filterLabel}* (${filtered.length})`, ''];
+
+  filtered.forEach((bet) => {
+    const kickoff = new Date(bet.kickoffTime);
+    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+    const dateStr = kickoff.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+
+    const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ SEM ODD';
+    const linkDisplay = bet.deepLink ? '🔗 Com link' : '❌ SEM LINK';
+
+    lines.push(`━━━━━━━━━━━━━━━━━━`);
+    lines.push(`🆔 *#${bet.id}* ${bet.homeTeamName} x ${bet.awayTeamName}`);
+    lines.push(`🎯 ${bet.betMarket}`);
+    lines.push(`📅 ${dateStr} às ${timeStr}`);
+    lines.push(`${oddsDisplay} │ ${linkDisplay}`);
+  });
+
+  lines.push(`━━━━━━━━━━━━━━━━━━`);
+
+  if (hint) {
+    lines.push('');
+    lines.push(hint);
+  }
+
+  await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
+  logger.info('Filter command executed', { filterType, count: filtered.length });
+}
+
+/**
  * Handle /help command - Show all admin commands
  */
 async function handleHelpCommand(bot, msg) {
@@ -342,6 +473,7 @@ async function handleHelpCommand(bot, msg) {
 
 *📋 Consultas:*
 /apostas - Listar apostas disponíveis
+/filtrar - Filtrar apostas por critério
 /overview - Resumo com estatísticas
 /status - Ver status do bot
 /help - Ver esta ajuda
@@ -361,6 +493,7 @@ async function handleHelpCommand(bot, msg) {
 
 *Exemplos:*
 \`/odd 45 1.90\`
+\`/filtrar sem_odds\`
 \`/trocar 45 67\` _(troca #45 por #67)_
   `.trim();
 
@@ -665,6 +798,14 @@ async function handleAdminMessage(bot, msg) {
     const oldBetId = parseInt(trocarMatch[1], 10);
     const newBetId = parseInt(trocarMatch[2], 10);
     await handleTrocarCommand(bot, msg, oldBetId, newBetId);
+    return;
+  }
+
+  // Check if message is /filtrar command (Story 12.5)
+  const filtrarMatch = text.match(FILTRAR_PATTERN);
+  if (filtrarMatch) {
+    const filterType = filtrarMatch[1] || null;
+    await handleFiltrarCommand(bot, msg, filterType);
     return;
   }
 
