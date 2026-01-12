@@ -152,6 +152,19 @@ function clearCache() {
 }
 
 /**
+ * Clear cache for specific bet (Story 12.6: /simular novo)
+ * @param {number} betId - Bet ID to clear from cache
+ */
+function clearBetCache(betId) {
+  const key = `copy_${betId}`;
+  const deleted = copyCache.delete(key);
+  if (deleted) {
+    logger.debug('Cleared cache for bet', { betId });
+  }
+  return deleted;
+}
+
+/**
  * Get cache stats
  */
 function getCacheStats() {
@@ -165,5 +178,6 @@ function getCacheStats() {
 module.exports = {
   generateBetCopy,
   clearCache,
+  clearBetCache,
   getCacheStats,
 };

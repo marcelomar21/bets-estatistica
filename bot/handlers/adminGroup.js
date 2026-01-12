@@ -4,10 +4,12 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
+const { generateBetCopy, clearBetCache } = require('../services/copyService');
+const { getSuccessRate } = require('../services/metricsService');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -48,6 +50,9 @@ const TROCAR_PATTERN = /^\/trocar\s+(\d+)\s+(\d+)$/i;
 
 // Regex to match "/filtrar [tipo]" command (Story 12.5)
 const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|prontas))?$/i;
+
+// Regex to match "/simular [novo|ID]" command (Story 12.6)
+const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -465,6 +470,138 @@ Filtra apostas por critério específico.
 }
 
 /**
+ * Handle /simular command - Preview next posting (Story 12.6)
+ */
+async function handleSimularCommand(bot, msg, arg) {
+  logger.info('Received /simular command', { chatId: msg.chat.id, arg });
+
+  // Send working message
+  const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Gerando preview... Aguarde.');
+
+  try {
+    // Check if "novo" - regenerate copy
+    const isNovo = arg?.toLowerCase() === 'novo';
+    const specificBetId = arg && !isNovo ? parseInt(arg, 10) : null;
+
+    // Get bets to preview
+    let betsToPreview = [];
+
+    if (specificBetId) {
+      // Preview specific bet
+      const betResult = await getBetById(specificBetId);
+      if (!betResult.success) {
+        await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+        await bot.sendMessage(msg.chat.id, `❌ Aposta #${specificBetId} não encontrada.`, { reply_to_message_id: msg.message_id });
+        return;
+      }
+      betsToPreview = [betResult.data];
+    } else {
+      // Get active posted bets first, then ready bets
+      const activeResult = await getActiveBetsForRepost();
+      const readyResult = await getBetsReadyForPosting();
+
+      if (activeResult.success && activeResult.data.length > 0) {
+        betsToPreview = activeResult.data.slice(0, 3);
+      } else if (readyResult.success && readyResult.data.length > 0) {
+        betsToPreview = readyResult.data.slice(0, 3);
+      }
+    }
+
+    if (betsToPreview.length === 0) {
+      await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+      await bot.sendMessage(
+        msg.chat.id,
+        `📭 *Nenhuma aposta para preview*\n\n_Não há apostas prontas ou ativas para simular._\n\n💡 Use \`/apostas\` para ver apostas disponíveis.`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+
+    // If "novo", clear cache for these bets
+    if (isNovo) {
+      betsToPreview.forEach(bet => clearBetCache(bet.id));
+      logger.info('Cleared cache for preview bets', { count: betsToPreview.length });
+    }
+
+    // Get success rate
+    let successRate = null;
+    try {
+      const rateResult = await getSuccessRate();
+      if (rateResult.success) {
+        successRate = rateResult.data.rate30d;
+      }
+    } catch (e) {
+      logger.debug('Could not get success rate for preview');
+    }
+
+    // Generate preview
+    const lines = ['📤 *PREVIEW - PRÓXIMA POSTAGEM*', '', '━━━━━━━━━━━━━━━━━━━━'];
+
+    for (const bet of betsToPreview) {
+      // Generate copy
+      let copyText = bet.reasoning || 'Aposta de alto valor estatístico';
+      try {
+        const copyResult = await generateBetCopy(bet);
+        if (copyResult.success && copyResult.data?.copy) {
+          copyText = copyResult.data.copy;
+        }
+      } catch (e) {
+        logger.debug('Failed to generate copy for preview', { betId: bet.id });
+      }
+
+      const kickoffDate = new Date(bet.kickoffTime);
+      const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      lines.push('');
+      lines.push(`⚽ *${bet.homeTeamName} x ${bet.awayTeamName}*`);
+      lines.push(`🗓 ${kickoffStr}`);
+      lines.push('');
+      lines.push(`📊 *${bet.betMarket}*: ${bet.betPick || ''}`);
+      lines.push(`💰 Odd: *${bet.odds?.toFixed(2) || bet.oddsAtPost?.toFixed(2) || 'N/A'}*`);
+      lines.push('');
+      lines.push(`📝 _${copyText}_`);
+
+      if (bet.deepLink) {
+        lines.push('');
+        lines.push(`🔗 [Apostar Agora](${bet.deepLink})`);
+      } else {
+        lines.push('');
+        lines.push(`⚠️ _Sem link cadastrado_`);
+      }
+
+      lines.push('');
+      lines.push('━━━━━━━━━━━━━━━━━━━━');
+    }
+
+    // Add success rate if available
+    if (successRate !== null && successRate >= 0) {
+      lines.push('');
+      lines.push(`📈 Taxa de acerto: *${successRate.toFixed(0)}%*`);
+    }
+
+    lines.push('');
+    lines.push('⚠️ Este é apenas um preview.');
+    lines.push('💡 `/postar` para publicar │ `/simular novo` para regenerar');
+
+    // Delete working message and send preview
+    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+    await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown', disable_web_page_preview: true });
+
+    logger.info('Preview generated', { betsCount: betsToPreview.length, isNovo });
+  } catch (err) {
+    logger.error('Failed to generate preview', { error: err.message });
+    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+    await bot.sendMessage(msg.chat.id, `❌ Erro ao gerar preview: ${err.message}`, { reply_to_message_id: msg.message_id });
+  }
+}
+
+/**
  * Handle /help command - Show all admin commands
  */
 async function handleHelpCommand(bot, msg) {
@@ -474,6 +611,7 @@ async function handleHelpCommand(bot, msg) {
 *📋 Consultas:*
 /apostas - Listar apostas disponíveis
 /filtrar - Filtrar apostas por critério
+/simular - Preview da próxima postagem
 /overview - Resumo com estatísticas
 /status - Ver status do bot
 /help - Ver esta ajuda
@@ -806,6 +944,14 @@ async function handleAdminMessage(bot, msg) {
   if (filtrarMatch) {
     const filterType = filtrarMatch[1] || null;
     await handleFiltrarCommand(bot, msg, filterType);
+    return;
+  }
+
+  // Check if message is /simular command (Story 12.6)
+  const simularMatch = text.match(SIMULAR_PATTERN);
+  if (simularMatch) {
+    const arg = simularMatch[1] || null;
+    await handleSimularCommand(bot, msg, arg);
     return;
   }
 
