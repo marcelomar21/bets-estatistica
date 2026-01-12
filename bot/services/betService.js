@@ -239,12 +239,16 @@ async function getActivePostedBets() {
 }
 
 /**
- * Get active bets for reposting (status='posted', kickoff in future)
+ * Get active bets for reposting (status='posted', kickoff in future, within 2 days)
  * Story 7.1: Returns bets that should be reposted to Telegram
+ * Bug fix: Added maxDaysAhead filter to prevent posting games > 2 days out
  * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
  */
 async function getActiveBetsForRepost() {
   try {
+    const now = new Date();
+    const maxKickoffTime = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
@@ -262,7 +266,8 @@ async function getActiveBetsForRepost() {
         )
       `)
       .eq('bet_status', 'posted')
-      .gte('league_matches.kickoff_time', new Date().toISOString())
+      .gte('league_matches.kickoff_time', now.toISOString())
+      .lte('league_matches.kickoff_time', maxKickoffTime.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true });
 
     if (error) {

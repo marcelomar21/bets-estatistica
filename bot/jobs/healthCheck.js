@@ -98,11 +98,33 @@ async function checkDatabaseConnection() {
 
 /**
  * Check if last posting occurred on schedule
+ * Bug fix: Now considers active posted bets (reposting) as evidence of working system
  * @returns {Promise<{success: boolean, lastPost?: Date, warning?: string, error?: string, failedPeriod?: string, isPostingFailure?: boolean}>}
  */
 async function checkLastPosting() {
   try {
-    // Get the most recent posted bet
+    // First, check if there are active posted bets with kickoff in future
+    // If yes, the system is working (reposting is happening)
+    const now = new Date();
+    const { data: activeBets, error: activeError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        telegram_posted_at,
+        league_matches!inner (kickoff_time)
+      `)
+      .eq('bet_status', 'posted')
+      .gte('league_matches.kickoff_time', now.toISOString())
+      .limit(1);
+
+    if (activeError) {
+      logger.error('Health check: Failed to query active bets', { error: activeError.message });
+    }
+
+    // If there are active posted bets, system is operational
+    const hasActiveBets = activeBets && activeBets.length > 0;
+
+    // Get the most recent posted bet timestamp
     const { data, error } = await supabase
       .from('suggested_bets')
       .select('telegram_posted_at')
@@ -122,7 +144,6 @@ async function checkLastPosting() {
     }
 
     const lastPostTime = new Date(data[0].telegram_posted_at);
-    const now = new Date();
 
     // Get current hour in São Paulo timezone
     const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
@@ -156,6 +177,16 @@ async function checkLastPosting() {
 
     // Check if last post is after expected time
     if (lastPostTime < expectedPost) {
+      // If there are active bets being reposted, the job is running fine
+      // The timestamp is old because reposting doesn't update telegram_posted_at
+      if (hasActiveBets) {
+        logger.debug('Health check: Last post timestamp old but active bets exist (reposting)', {
+          lastPost: lastPostTime.toISOString(),
+          activeBetsExist: true
+        });
+        return { success: true, lastPost: lastPostTime };
+      }
+
       const hoursSince = Math.round((now - lastPostTime) / (1000 * 60 * 60));
 
       // Determine if this is a recent failure (within last 2 hours of expected time)
@@ -163,7 +194,7 @@ async function checkLastPosting() {
       const timeSinceExpected = now - expectedPost;
       const isRecentFailure = timeSinceExpected < 2 * 60 * 60 * 1000; // Within 2 hours
 
-      logger.warn('Health check: Last post is old', {
+      logger.warn('Health check: Last post is old and no active bets', {
         lastPost: lastPostTime.toISOString(),
         expected: expectedPost.toISOString(),
         hoursSince,

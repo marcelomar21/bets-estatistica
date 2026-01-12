@@ -770,8 +770,8 @@ async function handleAtualizarOddsCommand(bot, msg) {
       msg.chat.id,
       `✅ *Odds atualizadas!*\n\n` +
       `📊 Enriquecidas: ${result.enriched || 0}\n` +
-      `⏭️ Puladas: ${result.skipped || 0}\n` +
-      `❌ Erros: ${result.errors || 0}`,
+      `📤 Ativas: ${result.active || 0}\n` +
+      `⚠️ Precisam odd manual: ${result.needsAdminOdds || 0}`,
       { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
     );
 
