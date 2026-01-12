@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 
 /**
- * Orquestrador completo do pipeline:
+ * Orquestrador completo do pipeline de análise:
  * 1. Recalcula a fila (check_analysis_queue)
  * 2. Atualiza dados brutos (daily_update)
  * 3. Executa o agente sobre os jogos elegíveis (runAnalysis today)
  * 4. Persiste resultados no banco (agent/persistence/main)
- * 5. Gera relatórios HTML/PDF (agent/persistence/generateReport)
+ * 5. Gera relatórios HTML (agent/persistence/generateReport)
  *
  * Inclui retentativas automáticas e verificações de status na tabela match_analysis_queue.
+ *
+ * Usage: node agent/pipeline.js
  */
 
 require('dotenv').config();
@@ -17,7 +19,8 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { Pool } = require('pg');
 
-const ROOT_DIR = __dirname;
+// ROOT_DIR is the project root (parent of agent/)
+const ROOT_DIR = path.join(__dirname, '..');
 const CHECK_QUEUE_SCRIPT = path.join(ROOT_DIR, 'scripts', 'check_analysis_queue.js');
 const DAILY_UPDATE_SCRIPT = path.join(ROOT_DIR, 'scripts', 'daily_update.js');
 const RUN_ANALYSIS_SCRIPT = path.join(ROOT_DIR, 'agent', 'analysis', 'runAnalysis.js');
@@ -54,19 +57,19 @@ async function runWithRetry(fn, { label = 'passo', retries = DEFAULT_COMMAND_RET
   while (attempt <= retries) {
     try {
       attempt += 1;
-      console.log(`[main] ${label} → tentativa ${attempt}/${retries + 1}`);
+      console.log(`[pipeline] ${label} → tentativa ${attempt}/${retries + 1}`);
       const result = await fn();
       if (attempt > 1) {
-        console.log(`[main] ${label} recuperado na tentativa ${attempt}.`);
+        console.log(`[pipeline] ${label} recuperado na tentativa ${attempt}.`);
       }
       return result;
     } catch (err) {
       if (attempt > retries) {
-        console.error(`[main] ${label} falhou após ${attempt} tentativa(s): ${err.message}`);
+        console.error(`[pipeline] ${label} falhou após ${attempt} tentativa(s): ${err.message}`);
         throw err;
       }
       console.warn(
-        `[main] ${label} falhou na tentativa ${attempt}: ${err.message}. Retentando em ${delayMs}ms...`,
+        `[pipeline] ${label} falhou na tentativa ${attempt}: ${err.message}. Retentando em ${delayMs}ms...`,
       );
       if (delayMs > 0) {
         await sleep(delayMs);
@@ -135,7 +138,7 @@ async function runDailyUpdate() {
 async function runAnalysesIfNeeded() {
   const ready = await fetchMatchesByStatus([MATCH_STATUS.IMPORTED]);
   if (!ready.length) {
-    console.log('[main] Nenhum jogo em dados_importados; pulando etapa de análises.');
+    console.log('[pipeline] Nenhum jogo em dados_importados; pulando etapa de análises.');
     return [];
   }
 
@@ -156,7 +159,7 @@ async function runAnalysesIfNeeded() {
 async function persistMatches() {
   const targets = await fetchMatchesByStatus([MATCH_STATUS.ANALYSIS_DONE]);
   if (!targets.length) {
-    console.log('[main] Nenhum jogo aguardando persistência.');
+    console.log('[pipeline] Nenhum jogo aguardando persistência.');
     return [];
   }
 
@@ -173,7 +176,7 @@ async function persistMatches() {
 
 async function generateReports(matchIds = []) {
   if (!matchIds.length) {
-    console.log('[main] Nenhum match para geração de relatório.');
+    console.log('[pipeline] Nenhum match para geração de relatório.');
     return;
   }
   for (const matchId of matchIds) {
@@ -193,23 +196,23 @@ async function verifyStatuses(finalMatchIds = []) {
 
   if (pending.length) {
     console.warn(
-      `[main] Atenção: os seguintes jogos não chegaram a relatorio_concluido: ${pending.join(', ')}`,
+      `[pipeline] Atenção: os seguintes jogos não chegaram a relatorio_concluido: ${pending.join(', ')}`,
     );
   } else {
-    console.log('[main] Todos os jogos processados alcançaram relatorio_concluido.');
+    console.log('[pipeline] Todos os jogos processados alcançaram relatorio_concluido.');
   }
 }
 
 async function main() {
   const startedAt = Date.now();
-  console.log('[main] Iniciando pipeline completo...');
+  console.log('[pipeline] Iniciando pipeline completo...');
   try {
     await runQueueMaintenance();
     await runDailyUpdate();
     await runAnalysesIfNeeded();
     const persistedMatches = await persistMatches();
     if (!persistedMatches.length) {
-      console.log('[main] Não há jogos para gerar relatórios.');
+      console.log('[pipeline] Não há jogos para gerar relatórios.');
       return;
     }
     await generateReports(persistedMatches);
@@ -217,16 +220,11 @@ async function main() {
   } finally {
     await pool.end().catch(() => {});
     const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-    console.log(`[main] Pipeline finalizado em ${elapsed}s.`);
+    console.log(`[pipeline] Pipeline finalizado em ${elapsed}s.`);
   }
 }
 
 main().catch((err) => {
-  console.error('[main] Falha geral no pipeline:', err);
+  console.error('[pipeline] Falha geral no pipeline:', err);
   process.exitCode = 1;
 });
-
-
-
-
-

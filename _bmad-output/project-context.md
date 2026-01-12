@@ -209,26 +209,61 @@ const MIN_ODDS = 1.60;
 ## File Structure Reference
 
 ```
-bot/
-├── index.js           # Entry point
-├── telegram.js        # Singleton client
-├── handlers/
-│   └── adminGroup.js  # Receber links
-├── jobs/
-│   ├── requestLinks.js   # 8h/13h/20h
-│   ├── postBets.js       # 10h/15h/22h
-│   ├── reminders.js      # */30min
-│   └── trackResults.js   # */5min
-└── services/
-    ├── oddsService.js    # The Odds API
-    ├── betService.js     # CRUD + estados
-    ├── metricsService.js # Taxa acerto
-    └── alertService.js   # Alertas admin
+agent/                     # Módulo de análise IA
+├── pipeline.js            # Orquestrador do pipeline completo
+├── db.js                  # Shim → lib/db.js
+├── tools.js               # Tools LangChain
+├── analysis/
+│   ├── runAnalysis.js     # Core da análise IA
+│   ├── prompt.js          # Prompts
+│   └── schema.js          # Schemas Zod
+├── persistence/
+│   ├── main.js            # Persistência
+│   ├── saveOutputs.js     # Salva no DB
+│   └── reportService.js   # Gera relatórios HTML
+└── shared/
+    └── naming.js          # Convenções de nomes
 
-lib/
-├── supabase.js        # Único acesso ao DB
-├── logger.js          # Logging centralizado
-└── config.js          # Configurações
+bot/                       # Módulo Telegram Bot
+├── index.js               # Entry point (polling/dev)
+├── server.js              # Entry point (webhook/prod)
+├── telegram.js            # Singleton client
+├── handlers/
+│   └── adminGroup.js      # Comandos admin
+├── jobs/
+│   ├── requestLinks.js    # 8h/13h/20h
+│   ├── postBets.js        # 10h/15h/22h
+│   ├── enrichOdds.js      # Enriquece com odds
+│   ├── healthCheck.js     # Health check
+│   ├── reminders.js       # Lembretes
+│   └── trackResults.js    # Tracking resultados
+└── services/
+    ├── betService.js      # CRUD + estados
+    ├── oddsService.js     # The Odds API
+    ├── alertService.js    # Alertas admin
+    ├── copyService.js     # Copy LLM
+    ├── matchService.js    # Queries partidas
+    ├── metricsService.js  # Taxa acerto
+    └── marketInterpreter.js # Interpreta mercados
+
+lib/                       # Bibliotecas compartilhadas
+├── db.js                  # PostgreSQL Pool (fonte única)
+├── supabase.js            # Cliente REST Supabase
+├── logger.js              # Logging centralizado
+└── config.js              # Configurações
+
+scripts/                   # ETL e manutenção
+├── pipeline.js            # Pipeline ETL unificado
+├── daily_update.js        # Atualização diária
+├── check_analysis_queue.js
+├── syncSeasons.js
+├── fetch*.js              # Busca dados da API
+├── load*.js               # Carrega no banco
+├── lib/
+│   ├── db.js              # Shim → lib/db.js
+│   └── matchScreening.js
+└── tests/                 # Scripts de teste
+    └── test-*.js
 ```
 
 ---
@@ -257,4 +292,4 @@ TZ=America/Sao_Paulo
 
 ---
 
-_Última atualização: 2026-01-10_
+_Última atualização: 2026-01-12_

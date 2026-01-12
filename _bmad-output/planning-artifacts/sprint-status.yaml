@@ -1,6 +1,6 @@
 # Sprint Status - bets-estatistica
 # generated: 2026-01-10
-# updated: 2026-01-11
+# updated: 2026-01-12 (story 11-1 done)
 # project: bets-estatistica
 # tracking_system: yaml
 # story_location: _bmad-output/implementation-artifacts/stories
@@ -32,7 +32,7 @@
 # Epic 7 (Bug Fixes) → Epic 8 (Admin Tools) → Epic 9 (Alertas) → Epic 10 (Melhorias) → Epic 11 (DevOps)
 
 generated: "2026-01-10"
-updated: "2026-01-11"
+updated: "2026-01-12"
 project: "bets-estatistica"
 tracking_system: "yaml"
 story_location: "_bmad-output/implementation-artifacts/stories"
@@ -152,17 +152,17 @@ development_status:
   # ============================================
   # Epic 10: Melhorias de Produto
   # ============================================
-  epic-10: in-progress
+  epic-10: done
   10-1-copy-dinamico-llm: done
-  10-2-cache-copies-llm: backlog
-  10-3-adicionar-novas-ligas: backlog
+  10-2-cache-copies-llm: skipped
+  10-3-adicionar-novas-ligas: done
   epic-10-retrospective: optional
 
   # ============================================
   # Epic 11: Infraestrutura e DevOps
   # ============================================
-  epic-11: backlog
-  11-1-simplificar-estrutura-pastas: backlog
+  epic-11: in-progress
+  11-1-simplificar-estrutura-pastas: done
   11-2-configurar-cicd-github-actions: backlog
   11-3-criar-testes-unitarios-criticos: backlog
   11-4-validar-calculo-metricas: backlog
