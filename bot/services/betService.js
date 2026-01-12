@@ -702,56 +702,105 @@ async function createManualBet(betData) {
  */
 async function getOverviewStats() {
   try {
-    // Get total analyzed bets (all with future matches)
+    // Get all bets with future matches (last 30 days)
     const { data: allBets, error: allError } = await supabase
       .from('suggested_bets')
-      .select('id, odds, deep_link, bet_status')
-      .eq('eligible', true)
-      .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
-
-    if (allError) throw allError;
-
-    // Get posted bets (actively being shown)
-    const { data: postedBets, error: postedError } = await supabase
-      .from('suggested_bets')
       .select(`
-        id,
-        odds_at_post,
+        id, 
+        odds, 
+        deep_link, 
+        bet_status,
+        telegram_posted_at,
         league_matches!inner (
           home_team_name,
           away_team_name,
           kickoff_time
         )
       `)
-      .eq('bet_status', 'posted')
-      .gte('league_matches.kickoff_time', new Date().toISOString());
+      .eq('eligible', true)
+      .gte('league_matches.kickoff_time', new Date().toISOString())
+      .order('league_matches(kickoff_time)', { ascending: true });
 
-    if (postedError) throw postedError;
+    if (allError) throw allError;
 
-    // Get bets without odds
-    const withoutOdds = (allBets || []).filter(b => !b.odds || b.odds === 0);
+    // Get posted bets (actively being shown)
+    const postedBets = (allBets || []).filter(b => b.bet_status === 'posted');
 
-    // Get bets without links
+    // Count by status
+    const statusCounts = {
+      generated: (allBets || []).filter(b => b.bet_status === 'generated').length,
+      pending_link: (allBets || []).filter(b => b.bet_status === 'pending_link').length,
+      ready: (allBets || []).filter(b => b.bet_status === 'ready').length,
+      posted: postedBets.length,
+    };
+
+    // Get bets without odds (IDs)
+    const withoutOdds = (allBets || []).filter(b => (!b.odds || b.odds === 0) && !['posted', 'success', 'failure'].includes(b.bet_status));
+
+    // Get bets without links (IDs)
     const withoutLinks = (allBets || []).filter(b => !b.deep_link && ['generated', 'pending_link', 'ready'].includes(b.bet_status));
 
-    // Get ready but not posted
-    const readyNotPosted = (allBets || []).filter(b => b.bet_status === 'ready');
+    // Next game (first in list since ordered by kickoff)
+    const nextGame = allBets && allBets.length > 0 ? {
+      id: allBets[0].id,
+      homeTeam: allBets[0].league_matches.home_team_name,
+      awayTeam: allBets[0].league_matches.away_team_name,
+      kickoff: allBets[0].league_matches.kickoff_time,
+    } : null;
+
+    // Last posting time
+    const lastPosting = postedBets.length > 0
+      ? postedBets.reduce((latest, bet) => {
+          const postedAt = bet.telegram_posted_at ? new Date(bet.telegram_posted_at) : null;
+          if (!postedAt) return latest;
+          if (!latest) return postedAt;
+          return postedAt > latest ? postedAt : latest;
+        }, null)
+      : null;
+
+    // Get success rate (last 30 days)
+    const { data: resultsBets, error: resultsError } = await supabase
+      .from('suggested_bets')
+      .select('id, bet_status')
+      .in('bet_status', ['success', 'failure'])
+      .gte('result_updated_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+    if (resultsError) {
+      logger.warn('Error fetching results for success rate', { error: resultsError.message });
+    }
+
+    const successCount = (resultsBets || []).filter(b => b.bet_status === 'success').length;
+    const totalResults = (resultsBets || []).length;
+    const successRate = totalResults > 0 ? {
+      wins: successCount,
+      total: totalResults,
+      percentage: Math.round((successCount / totalResults) * 100),
+    } : null;
 
     const stats = {
       totalAnalyzed: allBets?.length || 0,
-      postedActive: postedBets?.length || 0,
-      postedIds: (postedBets || []).map(b => ({
+      statusCounts,
+      postedActive: postedBets.length,
+      postedIds: postedBets.map(b => ({
         id: b.id,
         match: `${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}`,
         kickoff: b.league_matches.kickoff_time,
-        odds: b.odds_at_post,
       })),
+      withoutOddsIds: withoutOdds.map(b => b.id),
+      withoutLinksIds: withoutLinks.map(b => b.id),
       withoutOdds: withoutOdds.length,
       withoutLinks: withoutLinks.length,
-      readyNotPosted: readyNotPosted.length,
+      readyNotPosted: statusCounts.ready,
+      nextGame,
+      lastPosting,
+      successRate,
     };
 
-    logger.info('Overview stats fetched', stats);
+    logger.info('Overview stats fetched', { 
+      total: stats.totalAnalyzed, 
+      posted: stats.postedActive,
+      statusCounts 
+    });
     return { success: true, data: stats };
   } catch (err) {
     logger.error('Error fetching overview stats', { error: err.message });

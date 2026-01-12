@@ -286,26 +286,73 @@ async function handleOverviewCommand(bot, msg) {
     ? stats.postedIds.map(item => `#${item.id}`).join(', ')
     : 'Nenhuma';
 
+  // Format IDs without odds
+  const withoutOddsIds = stats.withoutOddsIds.length > 0
+    ? stats.withoutOddsIds.slice(0, 10).map(id => `#${id}`).join(', ') + (stats.withoutOddsIds.length > 10 ? '...' : '')
+    : 'Nenhuma';
+
+  // Format IDs without links
+  const withoutLinksIds = stats.withoutLinksIds.length > 0
+    ? stats.withoutLinksIds.slice(0, 10).map(id => `#${id}`).join(', ') + (stats.withoutLinksIds.length > 10 ? '...' : '')
+    : 'Nenhuma';
+
+  // Format next game
+  let nextGameText = 'Nenhum próximo';
+  if (stats.nextGame) {
+    const kickoff = new Date(stats.nextGame.kickoff);
+    const now = new Date();
+    const diffMs = kickoff - now;
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const timeUntil = diffHours > 0 ? `${diffHours}h ${diffMins}m` : `${diffMins}m`;
+    const dateStr = kickoff.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    const timeStr = kickoff.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    nextGameText = `#${stats.nextGame.id} ${stats.nextGame.homeTeam} x ${stats.nextGame.awayTeam}\n📅 ${dateStr} às ${timeStr} (em ${timeUntil})`;
+  }
+
+  // Format last posting
+  let lastPostingText = 'Nenhuma';
+  if (stats.lastPosting) {
+    const postDate = new Date(stats.lastPosting);
+    const now = new Date();
+    const isToday = postDate.toDateString() === now.toDateString();
+    const timeStr = postDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    lastPostingText = isToday ? `Hoje às ${timeStr}` : postDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ` às ${timeStr}`;
+  }
+
+  // Format success rate
+  let successRateText = 'Sem dados';
+  if (stats.successRate) {
+    successRateText = `${stats.successRate.percentage}% (${stats.successRate.wins}/${stats.successRate.total})`;
+  }
+
   const overviewText = `
 📊 *OVERVIEW - APOSTAS*
 
-*Visão Geral (30 dias):*
-📈 Total analisados: ${stats.totalAnalyzed}
-📤 Postadas ativas: ${stats.postedActive}
-✅ Prontas (não postadas): ${stats.readyNotPosted}
+*Status Atual:*
+🆕 Geradas: ${stats.statusCounts.generated}
+⏳ Aguardando link: ${stats.statusCounts.pending_link}
+✅ Prontas: ${stats.statusCounts.ready}
+📤 Postadas: ${stats.postedActive} (${postedIdsList})
 
-*IDs Postadas:*
-${postedIdsList}
+*Próximo Jogo:*
+⚽ ${nextGameText}
+
+*Última Postagem:*
+🕐 ${lastPostingText}
 
 *Pendências:*
-⚠️ Sem odds: ${stats.withoutOdds}
-❌ Sem link: ${stats.withoutLinks}
+⚠️ Sem odds: ${withoutOddsIds}
+❌ Sem link: ${withoutLinksIds}
 
-💡 Use \`/trocar ID_ATUAL ID_NOVO\` para trocar apostas
+*Métricas (30 dias):*
+📈 Taxa: ${successRateText}
+
+💡 /filtrar | /simular | /postar
   `.trim();
 
   await bot.sendMessage(msg.chat.id, overviewText, { parse_mode: 'Markdown' });
-  logger.info('Overview command executed', stats);
+  logger.info('Overview command executed', { total: stats.totalAnalyzed, posted: stats.postedActive });
 }
 
 /**
