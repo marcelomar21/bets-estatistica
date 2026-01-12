@@ -101,6 +101,7 @@ async function getBetsReadyForPosting() {
       .eq('bet_status', 'ready')
       .eq('eligible', true)
       .not('deep_link', 'is', null)
+      .gte('odds', config.betting.minOdds)
       .gte('league_matches.kickoff_time', new Date().toISOString())
       .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString())
       .order('odds', { ascending: false })
@@ -502,19 +503,74 @@ async function getBetById(betId) {
 }
 
 /**
- * Update bet with deep link and set status to 'ready'
+ * Try to auto-promote bet to 'ready' if it has odds >= minOdds and deep_link
+ * Called after updating odds or link
+ * @param {number} betId - Bet ID
+ * @returns {Promise<{promoted: boolean, reason?: string}>}
+ */
+async function tryAutoPromote(betId) {
+  try {
+    // Get current bet state
+    const { data: bet, error: fetchError } = await supabase
+      .from('suggested_bets')
+      .select('id, bet_status, odds, deep_link, eligible')
+      .eq('id', betId)
+      .single();
+
+    if (fetchError || !bet) {
+      return { promoted: false, reason: 'Bet not found' };
+    }
+
+    // Skip if already ready, posted, or terminal status
+    if (['ready', 'posted', 'success', 'failure'].includes(bet.bet_status)) {
+      return { promoted: false, reason: `Already ${bet.bet_status}` };
+    }
+
+    // Check if eligible
+    if (!bet.eligible) {
+      return { promoted: false, reason: 'Not eligible' };
+    }
+
+    // Check if has odds >= minOdds
+    if (!bet.odds || bet.odds < config.betting.minOdds) {
+      return { promoted: false, reason: `Odds ${bet.odds || 'null'} < ${config.betting.minOdds}` };
+    }
+
+    // Check if has deep_link
+    if (!bet.deep_link) {
+      return { promoted: false, reason: 'No deep_link' };
+    }
+
+    // All conditions met - promote to ready!
+    const { error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({ bet_status: 'ready' })
+      .eq('id', betId);
+
+    if (updateError) {
+      logger.error('Failed to auto-promote bet', { betId, error: updateError.message });
+      return { promoted: false, reason: updateError.message };
+    }
+
+    logger.info('Bet auto-promoted to ready', { betId, odds: bet.odds });
+    return { promoted: true };
+  } catch (err) {
+    logger.error('Error in auto-promote', { betId, error: err.message });
+    return { promoted: false, reason: err.message };
+  }
+}
+
+/**
+ * Update bet with deep link and auto-promote to 'ready' if conditions met
  * @param {number} betId - Bet ID
  * @param {string} deepLink - Deep link URL
- * @returns {Promise<{success: boolean, error?: object}>}
+ * @returns {Promise<{success: boolean, promoted?: boolean, error?: object}>}
  */
 async function updateBetLink(betId, deepLink) {
   try {
     const { error } = await supabase
       .from('suggested_bets')
-      .update({
-        deep_link: deepLink,
-        bet_status: 'ready',
-      })
+      .update({ deep_link: deepLink })
       .eq('id', betId);
 
     if (error) {
@@ -523,7 +579,11 @@ async function updateBetLink(betId, deepLink) {
     }
 
     logger.info('Bet link updated', { betId });
-    return { success: true };
+
+    // Try to auto-promote
+    const promoteResult = await tryAutoPromote(betId);
+
+    return { success: true, promoted: promoteResult.promoted };
   } catch (err) {
     logger.error('Error updating bet link', { betId, error: err.message });
     return { success: false, error: { code: 'UPDATE_ERROR', message: err.message } };
@@ -531,11 +591,11 @@ async function updateBetLink(betId, deepLink) {
 }
 
 /**
- * Update bet odds (manual or from API)
+ * Update bet odds (manual or from API) and auto-promote to 'ready' if conditions met
  * @param {number} betId - Bet ID
  * @param {number} odds - New odds value
  * @param {string} notes - Optional notes about the update
- * @returns {Promise<{success: boolean, error?: object}>}
+ * @returns {Promise<{success: boolean, promoted?: boolean, error?: object}>}
  */
 async function updateBetOdds(betId, odds, notes = null) {
   try {
@@ -555,7 +615,11 @@ async function updateBetOdds(betId, odds, notes = null) {
     }
 
     logger.info('Bet odds updated', { betId, odds });
-    return { success: true };
+
+    // Try to auto-promote
+    const promoteResult = await tryAutoPromote(betId);
+
+    return { success: true, promoted: promoteResult.promoted };
   } catch (err) {
     logger.error('Error updating bet odds', { betId, error: err.message });
     return { success: false, error: { code: 'UPDATE_ERROR', message: err.message } };
@@ -894,6 +958,7 @@ module.exports = {
   updateBetStatus,
   updateBetLink,
   updateBetOdds,
+  tryAutoPromote,
   setBetPendingWithNote,
   markBetAsPosted,
   markBetResult,

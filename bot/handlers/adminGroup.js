@@ -118,13 +118,18 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
 
   // Confirm with previous value (Story 8.2)
   const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
-  const oddsChange = previousOdds 
+  const oddsChange = previousOdds
     ? `📊 ${previousOdds.toFixed(2)} → ${odds.toFixed(2)}`
     : `📊 Odds: ${odds.toFixed(2)}`;
-  
+
+  // Check if auto-promoted
+  const promotedMsg = updateResult.promoted
+    ? `\n\n🚀 *Auto-promovida para PRONTA!*`
+    : `\n\n_Agora envie o link: \`${betId}: URL\`_`;
+
   await bot.sendMessage(
     msg.chat.id,
-    `✅ *Odd atualizada!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${oddsChange}\n\n_Agora envie o link: \`${betId}: URL\`_`,
+    `✅ *Odd atualizada!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${oddsChange}${promotedMsg}`,
     {
       reply_to_message_id: msg.message_id,
       parse_mode: 'Markdown',
@@ -460,7 +465,7 @@ Filtra apostas por critério específico.
       hint = '';
       break;
     case 'prontas':
-      filtered = bets.filter(b => b.betStatus === 'ready');
+      filtered = bets.filter(b => b.betStatus === 'ready' && b.odds >= 1.60 && b.deepLink);
       filterLabel = 'PRONTAS';
       hint = '💡 Use `/postar` para publicar';
       break;
@@ -1008,9 +1013,13 @@ async function handleLinkUpdate(bot, msg, betId, deepLink) {
 
   // Confirm receipt with match details
   const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
+  const statusMsg = updateResult.promoted
+    ? `🚀 *Auto-promovida para PRONTA!*`
+    : `⚠️ Aguardando odds >= 1.60 para ficar pronta`;
+
   await bot.sendMessage(
     msg.chat.id,
-    `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n🔗 Pronta para postagem`,
+    `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${statusMsg}`,
     { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
   );
 
