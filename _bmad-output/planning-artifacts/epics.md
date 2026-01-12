@@ -2,10 +2,11 @@
 stepsCompleted: [1, 2, 3, 4, 5]
 status: updated
 completedAt: "2026-01-10"
-updatedAt: "2026-01-11"
+updatedAt: "2026-01-12"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
+  - _bmad-output/planning-artifacts/prd-addendum-v3.md
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
@@ -1266,3 +1267,245 @@ So that possa confiar nos dados.
 **Then** taxa de acerto é calculada corretamente
 **And** contagem por status está correta
 **And** validado contra cálculo manual
+
+---
+
+# ADDENDUM v3 - Novos Requisitos (2026-01-12)
+
+## Requirements Inventory - Addendum v3
+
+### Bug Fixes Identificados
+
+- BUG-003: Comando /atualizar odds falha - coluna 'notes' não existe na tabela
+- BUG-004: Overview mostra "[object Object]" nos IDs postados
+- BUG-005: Health check alertando excessivamente
+- BUG-006: Limite de 2 dias de elegibilidade não está sendo aplicado (regressão)
+
+### Novos Functional Requirements (Admin Tools v2)
+
+**Filtragem de Apostas**
+- FR-F1: `/filtrar sem_odds` lista todas apostas sem odds
+- FR-F2: `/filtrar sem_link` lista apostas sem link
+- FR-F3: `/filtrar com_link` lista apostas com link
+- FR-F4: `/filtrar com_odds` lista apostas com odds
+- FR-F5: `/filtrar prontas` lista apostas com status 'ready'
+- FR-F6: Cada item mostra: ID, jogo, mercado, status, odds, link
+- FR-F7: Lista ordenada por data do jogo
+
+**Preview de Postagem**
+- FR-S1: `/simular` gera preview das próximas 3 apostas
+- FR-S2: Preview mostra mensagem completa com copy LLM
+- FR-S3: Preview mostra qual link seria incluído
+- FR-S4: `/simular novo` regenera copy se necessário
+- FR-S5: Preview não altera estado das apostas
+- FR-S6: `/simular ID` simula aposta específica
+
+**Overview Aprimorado**
+- FR-O1: Mostrar contagem por status
+- FR-O2: Mostrar lista de IDs por categoria
+- FR-O3: Mostrar próximo jogo
+- FR-O4: Mostrar última postagem
+- FR-O5: Mostrar taxa de acerto atual
+
+### Correções Técnicas
+
+- TECH-004: Adicionar coluna 'notes' na tabela suggested_bets
+- TECH-005: Ajustar thresholds do health check
+
+### FR Coverage Map - Addendum v3
+
+| FR | Epic | Descrição |
+|----|------|-----------|
+| BUG-003, TECH-004 | Epic 12 | Corrigir bug notes |
+| BUG-004 | Epic 12 | Corrigir overview object |
+| BUG-005, TECH-005 | Epic 12 | Ajustar health check |
+| BUG-006 | Epic 12 | Restaurar filtro 2 dias |
+| FR-F1-7 | Epic 12 | Comando /filtrar |
+| FR-S1-6 | Epic 12 | Comando /simular |
+| FR-O1-5 | Epic 12 | Overview aprimorado |
+
+---
+
+## Epic 12: Correções e Ferramentas Admin v2
+
+Corrigir bugs identificados e adicionar ferramentas de visibilidade para operação eficiente.
+
+### Story 12.1: Corrigir Bug Coluna Notes
+
+As a operador,
+I want que o comando /atualizar odds funcione,
+So that possa atualizar odds das apostas sem erros.
+
+**Acceptance Criteria:**
+
+**Given** comando `/atualizar odds` executado
+**When** sistema tenta salvar odds
+**Then** operação completa sem erro
+**And** coluna `notes` existe na tabela (se necessário)
+
+**Technical Notes:**
+- Criar migration: `ALTER TABLE suggested_bets ADD COLUMN IF NOT EXISTS notes TEXT;`
+- Ou remover lógica de notes do código se não necessária
+
+### Story 12.2: Corrigir Overview Object Object
+
+As a operador,
+I want ver IDs numéricos no /overview,
+So that saiba quais apostas estão postadas.
+
+**Acceptance Criteria:**
+
+**Given** comando `/overview` executado
+**When** sistema exibe IDs postadas
+**Then** mostra `#45, #47, #52` (IDs numéricos)
+**And** não mostra `#[object Object]`
+
+**Technical Notes:**
+- Corrigir em `bot/handlers/adminGroup.js` linha 277-279
+- Mudar `id` para `item.id` no map
+
+### Story 12.3: Ajustar Health Check
+
+As a operador,
+I want receber alertas apenas quando necessário,
+So that não seja bombardeado com falsos positivos.
+
+**Acceptance Criteria:**
+
+**Given** sistema rodando normalmente
+**When** health check executa
+**Then** não envia alertas desnecessários
+**And** thresholds são adequados para operação real:
+  - `PENDING_LINK_MAX_HOURS: 8` (antes 4)
+  - `READY_NOT_POSTED_HOURS: 4` (antes 2)
+  - `POST_SCHEDULE_GRACE_MIN: 15` (antes 10)
+
+**Technical Notes:**
+- Ajustar thresholds em `bot/jobs/healthCheck.js`
+- Investigar quais alertas estão sendo disparados
+
+### Story 12.4: Restaurar Filtro 2 Dias Elegibilidade
+
+As a sistema,
+I want considerar apenas jogos com menos de 2 dias,
+So that apostas sejam para jogos iminentes.
+
+**Acceptance Criteria:**
+
+**Given** lista de apostas elegíveis
+**When** selecionar para postagem
+**Then** apenas jogos com `kickoff_time >= NOW() AND kickoff_time <= NOW() + 2 days` são considerados
+**And** jogos muito próximos (< 2h) ou muito distantes (> 2 dias) são excluídos
+
+**Technical Notes:**
+- Verificar `betService.js` função `getEligibleBets()`
+- Verificar job de enriquecimento de odds
+
+### Story 12.5: Implementar Comando /filtrar
+
+As a operador,
+I want filtrar apostas por critérios específicos,
+So that tenha visibilidade rápida do status.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/filtrar sem_odds`
+**When** bot processa comando
+**Then** lista apenas apostas sem odds definida
+**And** mostra: ID, jogo, mercado, status
+
+**Filtros disponíveis:**
+- `/filtrar sem_odds` - apostas sem odds
+- `/filtrar sem_link` - apostas sem link
+- `/filtrar com_link` - apostas com link
+- `/filtrar com_odds` - apostas com odds
+- `/filtrar prontas` - apostas com status 'ready'
+
+**Formato:**
+```
+📋 *APOSTAS SEM ODDS* (5)
+
+#45 Liverpool vs Arsenal
+   🎯 Over 2.5 gols
+   📅 15/01 17:00
+   ⚠️ SEM ODD │ ❌ SEM LINK
+
+💡 Use `/odd ID valor` para definir
+```
+
+### Story 12.6: Implementar Comando /simular
+
+As a operador,
+I want ver preview da próxima postagem,
+So that possa verificar e ajustar antes de publicar.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/simular`
+**When** bot processa comando
+**Then** gera preview das próximas 3 apostas
+**And** mostra mensagem completa com copy LLM
+**And** mostra link que seria incluído
+**And** não altera estado das apostas
+
+**Given** operador envia `/simular novo`
+**When** copy atual tem problema
+**Then** regenera copy via LLM
+**And** mostra novo preview
+
+**Formato:**
+```
+📤 *PREVIEW - PRÓXIMA POSTAGEM*
+
+━━━━━━━━━━━━━━━━━━━━
+🔥 *APOSTAS DO DIA*
+
+⚽ *Liverpool vs Arsenal*
+Os Reds em casa são máquina de gols.
+🎯 Over 2.5 @ 1.85
+
+👉 [APOSTAR AGORA](https://betano.com/...)
+━━━━━━━━━━━━━━━━━━━━
+
+⚠️ Preview apenas. Use /postar para publicar.
+```
+
+### Story 12.7: Aprimorar Comando /overview
+
+As a operador,
+I want overview mais completo,
+So that tenha visão geral do sistema.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/overview`
+**When** bot processa comando
+**Then** mostra:
+  - Contagem por status (geradas, aguardando, prontas, postadas)
+  - IDs das apostas postadas ativas
+  - Próximo jogo (data/hora)
+  - Última postagem (quando)
+  - Pendências (sem odds, sem link)
+  - Taxa de acerto 30 dias
+
+**Formato:**
+```
+📊 *OVERVIEW - APOSTAS*
+
+*Status Atual:*
+🆕 Geradas: 8
+⏳ Aguardando link: 3
+✅ Prontas: 4
+📤 Postadas: 3 (#45, #47, #52)
+
+*Próximo Jogo:*
+⚽ Liverpool vs Arsenal
+📅 15/01 às 17:00 (em 6h)
+
+*Pendências:*
+⚠️ Sem odds: #48, #51
+❌ Sem link: #45, #48, #51
+
+*Métricas:*
+📈 Taxa 30d: 72% (18/25)
+```

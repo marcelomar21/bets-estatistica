@@ -275,7 +275,7 @@ async function handleOverviewCommand(bot, msg) {
 
   // Format posted IDs list
   const postedIdsList = stats.postedIds.length > 0
-    ? stats.postedIds.map(id => `#${id}`).join(', ')
+    ? stats.postedIds.map(item => `#${item.id}`).join(', ')
     : 'Nenhuma';
 
   const overviewText = `

@@ -1,6 +1,6 @@
 # Sprint Status - bets-estatistica
 # generated: 2026-01-10
-# updated: 2026-01-12 (story 11-1 done)
+# updated: 2026-01-12 (epic 12 added)
 # project: bets-estatistica
 # tracking_system: yaml
 # story_location: _bmad-output/implementation-artifacts/stories
@@ -167,3 +167,16 @@ development_status:
   11-3-criar-testes-unitarios-criticos: backlog
   11-4-validar-calculo-metricas: backlog
   epic-11-retrospective: optional
+
+  # ============================================
+  # Epic 12: Correções e Ferramentas Admin v2
+  # ============================================
+  epic-12: in-progress
+  12-1-corrigir-bug-coluna-notes: done
+  12-2-corrigir-overview-object-object: done
+  12-3-ajustar-health-check: backlog
+  12-4-restaurar-filtro-2-dias: backlog
+  12-5-implementar-comando-filtrar: backlog
+  12-6-implementar-comando-simular: backlog
+  12-7-aprimorar-comando-overview: backlog
+  epic-12-retrospective: optional
