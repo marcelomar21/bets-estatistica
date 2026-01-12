@@ -57,6 +57,10 @@ node agent/persistence/main.js <match_id>        # Persistir análise
 
 - [Guia de Desenvolvimento](./development-guide.md) - Setup, comandos e troubleshooting
 
+### Metricas e Estatisticas
+
+- [Sistema de Metricas](./metrics.md) - Formulas de calculo e validacao
+
 ## Documentação Existente
 
 - [README do Agente](../README_agent.md) - Documentação original do módulo de IA

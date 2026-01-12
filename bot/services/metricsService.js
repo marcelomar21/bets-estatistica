@@ -10,6 +10,14 @@ const logger = require('../../lib/logger');
 
 /**
  * Get success rate statistics
+ *
+ * FORMULA: rate = (success / total) * 100
+ * - Only counts bets with status 'success' or 'failure'
+ * - Does NOT count: 'posted', 'ready', 'pending_link', 'generated', 'cancelled'
+ *
+ * 30-day filter: Uses result_updated_at field (not created_at or telegram_posted_at)
+ * This ensures we measure when the result was known, not when the bet was created.
+ *
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getSuccessRate() {
@@ -78,6 +86,13 @@ async function getSuccessRate() {
 
 /**
  * Get detailed betting statistics
+ *
+ * METRICS:
+ * - totalPosted: Count of bets with telegram_posted_at (actually posted to group)
+ * - totalCompleted: Count of bets with status 'success' or 'failure'
+ * - byMarket: Breakdown by bet_market field, only counting completed bets
+ * - averageOdds: Mean of odds_at_post for completed bets
+ *
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getDetailedStats() {
@@ -133,9 +148,21 @@ async function getDetailedStats() {
 }
 
 /**
- * Format stats for display
+ * Format stats for display in Telegram messages
+ *
+ * OUTPUT FORMAT:
+ * - Header: "Estatísticas de Acerto"
+ * - 30 days section: "X/Y" format with percentage
+ * - All-time section: "X/Y" format with percentage
+ * - Edge cases: Shows "Ainda não há resultados" if no data
+ *
+ * EDGE CASE HANDLING:
+ * - null/undefined → returns "Estatísticas não disponíveis"
+ * - 0 total → shows "Ainda não há resultados registrados"
+ * - Rate uses toFixed(1) for 1 decimal place
+ *
  * @param {object} stats - Stats object from getSuccessRate
- * @returns {string} - Formatted string
+ * @returns {string} - Formatted Markdown string for Telegram
  */
 function formatStatsMessage(stats) {
   if (!stats) return 'Estatísticas não disponíveis';

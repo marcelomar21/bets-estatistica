@@ -6,8 +6,11 @@
     "start": "node bot/server.js",
     "dev": "node bot/index.js",
     "pipeline": "node agent/pipeline.js",
-    "test": "echo 'No tests yet' && exit 0",
-    "lint": "eslint ."
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint .",
+    "validate-metrics": "node scripts/validate-metrics.js"
   },
   "keywords": [],
   "author": "",
@@ -28,6 +31,8 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
-    "eslint": "^8.57.1"
+    "@types/jest": "^30.0.0",
+    "eslint": "^8.57.1",
+    "jest": "^29.7.0"
   }
 }

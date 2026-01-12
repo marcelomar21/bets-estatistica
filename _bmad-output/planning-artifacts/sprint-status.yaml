@@ -161,11 +161,11 @@ development_status:
   # ============================================
   # Epic 11: Infraestrutura e DevOps
   # ============================================
-  epic-11: in-progress
+  epic-11: done
   11-1-simplificar-estrutura-pastas: done
   11-2-configurar-cicd-github-actions: done
-  11-3-criar-testes-unitarios-criticos: backlog
-  11-4-validar-calculo-metricas: backlog
+  11-3-criar-testes-unitarios-criticos: done
+  11-4-validar-calculo-metricas: done
   epic-11-retrospective: optional
 
   # ============================================

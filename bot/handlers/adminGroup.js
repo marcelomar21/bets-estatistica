@@ -9,7 +9,7 @@ const { confirmLinkReceived } = require('../services/alertService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
-const { getSuccessRate } = require('../services/metricsService');
+const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -56,6 +56,12 @@ const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
 
 // Regex to match "/promover ID" command (FEAT-011)
 const PROMOVER_PATTERN = /^\/promover\s+(\d+)$/i;
+
+// Regex to match "/metricas" command (Story 11.4)
+const METRICAS_PATTERN = /^\/metricas$/i;
+
+// Constants for /metricas formatting
+const MAX_MARKET_NAME_LENGTH = 25;
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -669,6 +675,96 @@ async function handleSimularCommand(bot, msg, arg) {
 }
 
 /**
+ * Handle /metricas command - Show detailed metrics (Story 11.4)
+ */
+async function handleMetricasCommand(bot, msg) {
+  logger.info('Received /metricas command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  // Get both success rate and detailed stats
+  const [rateResult, detailsResult] = await Promise.all([
+    getSuccessRate(),
+    getDetailedStats(),
+  ]);
+
+  if (!rateResult.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao buscar métricas: ${rateResult.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const stats = rateResult.data;
+  const details = detailsResult.success ? detailsResult.data : null;
+
+  if (!detailsResult.success) {
+    logger.warn('Failed to get detailed stats for /metricas', {
+      error: detailsResult.error?.message,
+    });
+  }
+
+  // Format by-market breakdown
+  let byMarketText = '';
+  if (details?.byMarket && Object.keys(details.byMarket).length > 0) {
+    byMarketText = '\n*Por Mercado:*\n';
+    for (const [market, data] of Object.entries(details.byMarket)) {
+      const total = data.success + data.failure;
+      const rate = total > 0 ? ((data.success / total) * 100).toFixed(1) : '0.0';
+      // Truncate long market names
+      const marketName = market.length > MAX_MARKET_NAME_LENGTH
+        ? market.substring(0, MAX_MARKET_NAME_LENGTH - 3) + '...'
+        : market;
+      byMarketText += `• ${marketName}: ${data.success}/${total} (${rate}%)\n`;
+    }
+  }
+
+  // Build message (using different emoji than /overview for distinction)
+  const lines = ['📈 *MÉTRICAS DETALHADAS*', ''];
+
+  // Success rate section
+  lines.push('*Taxa de Acerto:*');
+  if (stats.last30Days?.total > 0) {
+    lines.push(`• 30 dias: ${stats.last30Days.success}/${stats.last30Days.total} (${stats.last30Days.rate?.toFixed(1)}%)`);
+  } else {
+    lines.push('• 30 dias: _Sem dados_');
+  }
+
+  if (stats.allTime?.total > 0) {
+    lines.push(`• All-time: ${stats.allTime.success}/${stats.allTime.total} (${stats.allTime.rate?.toFixed(1)}%)`);
+  } else {
+    lines.push('• All-time: _Sem dados_');
+  }
+
+  // By market section
+  if (byMarketText) {
+    lines.push('');
+    lines.push(byMarketText.trim());
+  }
+
+  // Posting stats
+  if (details) {
+    lines.push('');
+    lines.push('*Postagens:*');
+    lines.push(`• Total postadas: ${details.totalPosted}`);
+    lines.push(`• Concluídas: ${details.totalCompleted}`);
+    if (details.averageOdds) {
+      lines.push(`• Odds média: ${details.averageOdds.toFixed(2)}`);
+    }
+  }
+
+  // Footer hint
+  lines.push('');
+  lines.push('💡 `/overview` para resumo geral');
+
+  await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
+  logger.info('Metricas command executed', {
+    allTime: stats.allTime?.total,
+    last30Days: stats.last30Days?.total,
+  });
+}
+
+/**
  * Handle /promover command - Promote bet to ready for posting (FEAT-011)
  */
 async function handlePromoverCommand(bot, msg, betId) {
@@ -733,6 +829,7 @@ async function handleHelpCommand(bot, msg) {
 /filtrar - Filtrar apostas por critério
 /simular - Preview da próxima postagem
 /overview - Resumo com estatísticas
+/metricas - Métricas detalhadas de acerto
 /status - Ver status do bot
 /help - Ver esta ajuda
 
@@ -1046,6 +1143,12 @@ async function handleAdminMessage(bot, msg) {
   // Check if message is /status command
   if (STATUS_PATTERN.test(text)) {
     await handleStatusCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /metricas command (Story 11.4)
+  if (METRICAS_PATTERN.test(text)) {
+    await handleMetricasCommand(bot, msg);
     return;
   }
 
