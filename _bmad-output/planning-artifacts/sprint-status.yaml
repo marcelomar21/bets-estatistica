@@ -171,7 +171,7 @@ development_status:
   # ============================================
   # Epic 12: Correções e Ferramentas Admin v2
   # ============================================
-  epic-12: in-progress
+  epic-12: done
   12-1-corrigir-bug-coluna-notes: done
   12-2-corrigir-overview-object-object: done
   12-3-ajustar-health-check: done

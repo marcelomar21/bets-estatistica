@@ -479,10 +479,15 @@ Filtra apostas por critério específico.
     return;
   }
 
+  // Limitar a 15 para não estourar limite do Telegram (4096 chars)
+  const MAX_DISPLAY = 15;
+  const hasMore = filtered.length > MAX_DISPLAY;
+  const displayBets = filtered.slice(0, MAX_DISPLAY);
+
   // Formatar lista
   const lines = [`📋 *APOSTAS ${filterLabel}* (${filtered.length})`, ''];
 
-  filtered.forEach((bet) => {
+  displayBets.forEach((bet) => {
     const kickoff = new Date(bet.kickoffTime);
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
@@ -506,6 +511,10 @@ Filtra apostas por critério específico.
   });
 
   lines.push(`━━━━━━━━━━━━━━━━━━`);
+
+  if (hasMore) {
+    lines.push(`\n⚠️ _+${filtered.length - MAX_DISPLAY} apostas não exibidas_`);
+  }
 
   if (hint) {
     lines.push('');
