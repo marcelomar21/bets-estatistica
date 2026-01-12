@@ -34,6 +34,9 @@ const POST_SCHEDULE = [10, 15, 22]; // 10:00, 15:00, 22:00
 // Alert debounce cache (in-memory, resets on restart)
 const alertCache = new Map();
 
+// Lock to prevent concurrent health check runs
+let healthCheckRunning = false;
+
 /**
  * Check if alert can be sent (debounce logic)
  * Prevents sending the same type of alert within ALERT_DEBOUNCE_MINUTES
@@ -282,8 +285,23 @@ async function checkJobsHealth() {
  * @returns {Promise<{success: boolean, checks: object}>}
  */
 async function runHealthCheck() {
+  // Prevent concurrent runs
+  if (healthCheckRunning) {
+    logger.debug('Health check already running, skipping');
+    return { success: true, checks: {}, skipped: true };
+  }
+  healthCheckRunning = true;
+
+  try {
+    return await _runHealthCheckInternal();
+  } finally {
+    healthCheckRunning = false;
+  }
+}
+
+async function _runHealthCheckInternal() {
   const timestamp = new Date().toISOString();
-  logger.info('Starting health check job', { timestamp });
+  logger.info('Starting health check job');
 
   const results = {
     database: null,
@@ -339,18 +357,22 @@ async function runHealthCheck() {
   } else if (postResult.warning) {
     hasWarnings = true;
 
-    // If this is a recent posting failure, send the specific operator alert
+    // If this is a recent posting failure, send the specific operator alert (with debounce)
     if (postResult.isPostingFailure && postResult.failedPeriod) {
-      const detectedAt = new Date().toLocaleTimeString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      try {
-        await postingFailureAlert(postResult.failedPeriod, detectedAt);
-        logger.info('Posting failure alert sent', { failedPeriod: postResult.failedPeriod });
-      } catch (err) {
-        logger.error('Failed to send posting failure alert', { error: err.message });
+      if (canSendAlert('posting_failure')) {
+        const detectedAt = new Date().toLocaleTimeString('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        try {
+          await postingFailureAlert(postResult.failedPeriod, detectedAt);
+          logger.info('Posting failure alert sent', { failedPeriod: postResult.failedPeriod });
+        } catch (err) {
+          logger.error('Failed to send posting failure alert', { error: err.message });
+        }
+      } else {
+        logger.info('Posting failure alert suppressed (debounce)', { failedPeriod: postResult.failedPeriod });
       }
     } else {
       // For older issues, use regular health check alert
