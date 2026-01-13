@@ -896,6 +896,7 @@ async function handleRemoverCommand(bot, msg, betId) {
 
 /**
  * Handle /fila command - Show posting queue status (Story 13.4)
+ * Alinhado com getBetsReadyForPosting() para mostrar exatamente o que será postado
  */
 async function handleFilaCommand(bot, msg) {
   logger.info('Received /fila command', { chatId: msg.chat.id });
@@ -911,10 +912,10 @@ async function handleFilaCommand(bot, msg) {
     return;
   }
 
-  const { top3, counts, nextPost } = result.data;
+  const { top3, counts, slotsDisponiveis, nextPost } = result.data;
 
-  // AC6: Fila vazia
-  if (top3.length === 0) {
+  // AC6: Fila vazia e sem apostas ativas
+  if (top3.length === 0 && counts.ativas === 0) {
     await bot.sendMessage(
       msg.chat.id,
       `📋 *FILA DE POSTAGEM*\n\n` +
@@ -925,20 +926,26 @@ async function handleFilaCommand(bot, msg) {
     return;
   }
 
-  // AC2 + AC3: Formatar top 3 com indicador de promoção
-  const top3Lines = top3.map((bet, i) => {
-    const num = ['1️⃣', '2️⃣', '3️⃣'][i];
-    const promoFlag = bet.promovidaManual ? ' ⚡' : '';
-    const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
-    return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}${promoFlag}`;
-  }).join('\n\n');
+  // Formatar top 3 com indicador de promoção
+  let top3Lines = '_Nenhuma nova aposta na fila_';
+  if (top3.length > 0) {
+    top3Lines = top3.map((bet, i) => {
+      const num = ['1️⃣', '2️⃣', '3️⃣'][i];
+      const promoFlag = bet.promovidaManual ? ' ⚡' : '';
+      const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
+      return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}${promoFlag}`;
+    }).join('\n\n');
+  }
 
-  // AC4 + AC5: Montar resposta completa
+  // Montar resposta completa
   const response = `📋 *FILA DE POSTAGEM*
 
 *Próxima postagem:* ${nextPost.time} (em ${nextPost.diff})
 
-*Top 3 selecionadas:*
+*Apostas ativas:* ${counts.ativas} de ${counts.ativas + slotsDisponiveis} (serão repostadas)
+*Slots para novas:* ${slotsDisponiveis}
+
+*Próximas na fila:*
 ${top3Lines}
 
 *Resumo:*
@@ -948,7 +955,7 @@ ${top3Lines}
 ⏰ Expiradas: ${counts.expirada}`;
 
   await bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown' });
-  logger.info('Fila command executed', { top3Count: top3.length, counts });
+  logger.info('Fila command executed', { top3Count: top3.length, ativas: counts.ativas, slots: slotsDisponiveis, counts });
 }
 
 /**
