@@ -1,6 +1,6 @@
 # Sprint Status - bets-estatistica
 # generated: 2026-01-10
-# updated: 2026-01-12 (epic 12 added)
+# updated: 2026-01-12 (epic 13 added - Gestão de Elegibilidade)
 # project: bets-estatistica
 # tracking_system: yaml
 # story_location: _bmad-output/implementation-artifacts/stories
@@ -27,9 +27,13 @@
 # =======================================
 # Epic 1 → Epic 6 → Epic 4 → Epic 2 → Epic 3 → Epic 5
 #
-# IMPLEMENTATION ORDER (Addendum v2 - Current):
+# IMPLEMENTATION ORDER (Addendum v2 - Completed):
+# ================================================
+# Epic 7 (Bug Fixes) → Epic 8 (Admin Tools) → Epic 9 (Alertas) → Epic 10 (Melhorias) → Epic 11 (DevOps) → Epic 12 (Admin v2)
+#
+# IMPLEMENTATION ORDER (Addendum v4 - Current):
 # =============================================
-# Epic 7 (Bug Fixes) → Epic 8 (Admin Tools) → Epic 9 (Alertas) → Epic 10 (Melhorias) → Epic 11 (DevOps)
+# Epic 13 (Gestão de Elegibilidade)
 
 generated: "2026-01-10"
 updated: "2026-01-12"
@@ -180,3 +184,14 @@ development_status:
   12-6-implementar-comando-simular: done
   12-7-aprimorar-comando-overview: done
   epic-12-retrospective: optional
+
+  # ============================================
+  # Epic 13: Gestão de Elegibilidade de Apostas
+  # ============================================
+  epic-13: done
+  13-1-atualizar-modelo-dados-elegibilidade: done
+  13-2-implementar-comando-promover: done
+  13-3-implementar-comando-remover: done
+  13-4-implementar-comando-fila: done
+  13-5-atualizar-logica-selecao-job: done
+  epic-13-retrospective: optional

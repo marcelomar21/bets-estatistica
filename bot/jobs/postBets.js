@@ -15,7 +15,7 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { sendToPublic } = require('../telegram');
-const { getBetsReadyForPosting, markBetAsPosted, getActivePostedBets, getActiveBetsForRepost } = require('../services/betService');
+const { getBetsReadyForPosting, markBetAsPosted, getActivePostedBets, getActiveBetsForRepost, registrarPostagem } = require('../services/betService');
 const { getSuccessRate } = require('../services/metricsService');
 const { generateBetCopy } = require('../services/copyService');
 
@@ -133,7 +133,8 @@ async function formatBetMessage(bet, template, successRate) {
 }
 
 /**
- * Validate bet before posting (Story 3.4)
+ * Validate bet before posting (Story 3.4, Story 13.5: AC6)
+ * Story 13.5: Apostas com promovida_manual=true ignoram filtro de odds mínimas
  * @param {object} bet - Bet object
  * @returns {object} - { valid: boolean, reason?: string }
  */
@@ -143,8 +144,8 @@ function validateBetForPosting(bet) {
     return { valid: false, reason: 'No deep link' };
   }
 
-  // Must have valid odds
-  if (!bet.odds || bet.odds < config.betting.minOdds) {
+  // Must have valid odds (AC6: skip check if promovida_manual=true)
+  if (!bet.promovidaManual && (!bet.odds || bet.odds < config.betting.minOdds)) {
     return { valid: false, reason: `Odds below minimum (${bet.odds} < ${config.betting.minOdds})` };
   }
 
@@ -294,6 +295,8 @@ async function runPostBets() {
         if (sendResult.success) {
           // Mark as posted (updates status and timestamp)
           await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds);
+          // Story 13.5 AC5: Registrar postagem no histórico
+          await registrarPostagem(bet.id);
           posted++;
           logger.info('New bet posted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
         } else {

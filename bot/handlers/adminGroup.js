@@ -4,7 +4,7 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost, promoverAposta, removerAposta, getFilaStatus } = require('../services/betService');
 const { confirmLinkReceived } = require('../services/alertService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
@@ -54,8 +54,14 @@ const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|pr
 // Regex to match "/simular [novo|ID]" command (Story 12.6)
 const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
 
-// Regex to match "/promover ID" command (FEAT-011)
-const PROMOVER_PATTERN = /^\/promover\s+(\d+)$/i;
+// Regex to match "/promover ID" command (Story 13.2)
+const PROMOVER_PATTERN = /^\/promover(?:\s+(\d+))?$/i;
+
+// Regex to match "/remover ID" command (Story 13.3)
+const REMOVER_PATTERN = /^\/remover(?:\s+(\d+))?$/i;
+
+// Regex to match "/fila" command (Story 13.4)
+const FILA_PATTERN = /^\/fila$/i;
 
 // Regex to match "/metricas" command (Story 11.4)
 const METRICAS_PATTERN = /^\/metricas$/i;
@@ -765,56 +771,184 @@ async function handleMetricasCommand(bot, msg) {
 }
 
 /**
- * Handle /promover command - Promote bet to ready for posting (FEAT-011)
+ * Handle /promover command - Promote bet to posting queue (Story 13.2)
+ * Sets elegibilidade='elegivel' and promovida_manual=true
+ * Promoted bets bypass the minimum odds filter (>= 1.60)
  */
 async function handlePromoverCommand(bot, msg, betId) {
   logger.info('Received /promover command', { chatId: msg.chat.id, betId });
 
-  const betResult = await getBetById(betId);
-  if (!betResult.success) {
-    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} não encontrada.`, { reply_to_message_id: msg.message_id });
+  // AC5: Comando sem ID mostra ajuda
+  if (!betId) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Uso: /promover <id>\n\nExemplo: /promover 45`,
+      { reply_to_message_id: msg.message_id }
+    );
     return;
   }
 
-  const bet = betResult.data;
+  // Usar a nova função promoverAposta do betService
+  const result = await promoverAposta(betId);
 
-  // Validações
-  if (bet.betStatus === 'posted') {
-    await bot.sendMessage(msg.chat.id, `⚠️ Aposta #${betId} já está postada.`, { reply_to_message_id: msg.message_id });
+  // AC4: ID inválido
+  if (!result.success) {
+    if (result.error.code === 'ALREADY_PROMOTED') {
+      // AC3: Aposta já promovida
+      await bot.sendMessage(
+        msg.chat.id,
+        `⚠️ Aposta #${betId} já está promovida`,
+        { reply_to_message_id: msg.message_id }
+      );
+    } else {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ ${result.error.message}`,
+        { reply_to_message_id: msg.message_id }
+      );
+    }
     return;
   }
 
-  if (bet.betStatus === 'ready') {
-    await bot.sendMessage(msg.chat.id, `✅ Aposta #${betId} já está pronta para postagem.`, { reply_to_message_id: msg.message_id });
-    return;
-  }
+  // AC2 + AC6: Sucesso com feedback visual
+  const bet = result.data;
+  const oddsDisplay = bet.odds
+    ? `${bet.odds.toFixed(2)}${bet.odds < 1.60 ? ' (abaixo do mínimo)' : ''}`
+    : 'N/A';
 
-  if (!bet.odds || bet.odds < 1.60) {
-    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} precisa de odds >= 1.60.\nUse: \`/odd ${betId} valor\``, { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' });
-    return;
-  }
+  const response = `✅ *APOSTA PROMOVIDA*
 
-  if (!bet.deepLink) {
-    await bot.sendMessage(msg.chat.id, `❌ Aposta #${betId} precisa de link.\nUse: \`/link ${betId} URL\``, { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' });
-    return;
-  }
+#${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}
+🎯 ${bet.betMarket}
+📊 Odd: ${oddsDisplay}
 
-  // Promover para ready
-  const { updateBetStatus } = require('../services/betService');
-  const updateResult = await updateBetStatus(betId, 'ready');
-
-  if (!updateResult.success) {
-    await bot.sendMessage(msg.chat.id, `❌ Erro ao promover: ${updateResult.error.message}`, { reply_to_message_id: msg.message_id });
-    return;
-  }
+⚡ Promoção manual ativada
+📤 Será incluída na próxima postagem`;
 
   await bot.sendMessage(
     msg.chat.id,
-    `✅ *Aposta promovida!*\n\n🆔 #${betId}\n⚽ ${bet.homeTeamName} x ${bet.awayTeamName}\n🎯 ${bet.betMarket}\n💰 Odd: ${bet.odds.toFixed(2)}\n\n_Use /postar para publicar._`,
+    response,
     { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
   );
 
-  logger.info('Bet promoted to ready', { betId });
+  logger.info('Bet promoted', { betId, odds: bet.odds, promovidaManual: bet.promovidaManual });
+}
+
+/**
+ * Handle /remover command - Remove bet from posting queue (Story 13.3)
+ * Sets elegibilidade='removida'
+ * Can be reversed using /promover
+ */
+async function handleRemoverCommand(bot, msg, betId) {
+  logger.info('Received /remover command', { chatId: msg.chat.id, betId });
+
+  // AC5: Comando sem ID mostra ajuda
+  if (!betId) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Uso: /remover <id>\n\nExemplo: /remover 45`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  // Usar a função removerAposta do betService
+  const result = await removerAposta(betId);
+
+  // AC4: ID inválido
+  if (!result.success) {
+    if (result.error.code === 'ALREADY_REMOVED') {
+      // AC3: Aposta já removida
+      await bot.sendMessage(
+        msg.chat.id,
+        `⚠️ Aposta #${betId} já está removida da fila`,
+        { reply_to_message_id: msg.message_id }
+      );
+    } else {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ ${result.error.message}`,
+        { reply_to_message_id: msg.message_id }
+      );
+    }
+    return;
+  }
+
+  // AC2: Sucesso com feedback visual e dica de reversão
+  const bet = result.data;
+
+  const response = `✅ *APOSTA REMOVIDA DA FILA*
+
+#${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}
+🎯 ${bet.betMarket}
+
+⛔ Removida da fila de postagem
+💡 Use \`/promover ${bet.id}\` para reverter`;
+
+  await bot.sendMessage(
+    msg.chat.id,
+    response,
+    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+  );
+
+  logger.info('Bet removed from queue', { betId, elegibilidade: bet.elegibilidade });
+}
+
+/**
+ * Handle /fila command - Show posting queue status (Story 13.4)
+ */
+async function handleFilaCommand(bot, msg) {
+  logger.info('Received /fila command', { chatId: msg.chat.id });
+
+  const result = await getFilaStatus();
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const { top3, counts, nextPost } = result.data;
+
+  // AC6: Fila vazia
+  if (top3.length === 0) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `📋 *FILA DE POSTAGEM*\n\n` +
+      `Nenhuma aposta elegível para postagem.\n\n` +
+      `💡 Use /apostas para ver todas as apostas.`,
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  // AC2 + AC3: Formatar top 3 com indicador de promoção
+  const top3Lines = top3.map((bet, i) => {
+    const num = ['1️⃣', '2️⃣', '3️⃣'][i];
+    const promoFlag = bet.promovidaManual ? ' ⚡' : '';
+    const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
+    return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}${promoFlag}`;
+  }).join('\n\n');
+
+  // AC4 + AC5: Montar resposta completa
+  const response = `📋 *FILA DE POSTAGEM*
+
+*Próxima postagem:* ${nextPost.time} (em ${nextPost.diff})
+
+*Top 3 selecionadas:*
+${top3Lines}
+
+*Resumo:*
+✅ Elegíveis: ${counts.elegivel}
+⚡ Promovidas: ${counts.promovidas}
+⛔ Removidas: ${counts.removida}
+⏰ Expiradas: ${counts.expirada}`;
+
+  await bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown' });
+  logger.info('Fila command executed', { top3Count: top3.length, counts });
 }
 
 /**
@@ -826,6 +960,7 @@ async function handleHelpCommand(bot, msg) {
 
 *📋 Consultas:*
 /apostas - Listar apostas disponíveis
+/fila - Ver fila de postagem
 /filtrar - Filtrar apostas por critério
 /simular - Preview da próxima postagem
 /overview - Resumo com estatísticas
@@ -837,7 +972,8 @@ async function handleHelpCommand(bot, msg) {
 /odd ID valor - Ajustar odd de aposta
 /link ID URL - Adicionar link a aposta
 /trocar ID1 ID2 - Trocar aposta postada
-/promover ID - Marcar aposta como pronta
+/promover ID - Promover aposta (ignora odds mínimas)
+/remover ID - Remover aposta da fila
 \`ID: URL\` - Adicionar link (atalho)
 
 *➕ Criação:*
@@ -1183,11 +1319,25 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Check if message is /promover command (FEAT-011)
+  // Check if message is /promover command (Story 13.2)
   const promoverMatch = text.match(PROMOVER_PATTERN);
   if (promoverMatch) {
-    const betId = parseInt(promoverMatch[1], 10);
+    const betId = promoverMatch[1] ? parseInt(promoverMatch[1], 10) : null;
     await handlePromoverCommand(bot, msg, betId);
+    return;
+  }
+
+  // Check if message is /remover command (Story 13.3)
+  const removerMatch = text.match(REMOVER_PATTERN);
+  if (removerMatch) {
+    const betId = removerMatch[1] ? parseInt(removerMatch[1], 10) : null;
+    await handleRemoverCommand(bot, msg, betId);
+    return;
+  }
+
+  // Check if message is /fila command (Story 13.4)
+  if (FILA_PATTERN.test(text)) {
+    await handleFilaCommand(bot, msg);
     return;
   }
 

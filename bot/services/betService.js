@@ -77,11 +77,18 @@ async function getEligibleBets(limit = 10) {
 }
 
 /**
- * Get bets ready for posting (have deep_link and status='ready')
+ * Get bets ready for posting (Story 13.5: Updated selection logic)
+ * Considers: elegibilidade, promovida_manual, deep_link, kickoff_time
  * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
  */
 async function getBetsReadyForPosting() {
   try {
+    const now = new Date();
+    const maxDate = new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+
+    // Story 13.5: Query atualizada com novos critérios de elegibilidade
+    // AC1: elegibilidade='elegivel', deep_link NOT NULL, kickoff dentro de 2 dias
+    // AC2: Ordenar por promovida_manual DESC, depois odds DESC
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
@@ -92,6 +99,8 @@ async function getBetsReadyForPosting() {
         odds,
         reasoning,
         deep_link,
+        elegibilidade,
+        promovida_manual,
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -99,20 +108,26 @@ async function getBetsReadyForPosting() {
         )
       `)
       .eq('bet_status', 'ready')
-      .eq('eligible', true)
+      .eq('elegibilidade', 'elegivel')  // AC1, AC4: Apenas elegíveis
       .not('deep_link', 'is', null)
-      .gte('odds', config.betting.minOdds)
-      .gte('league_matches.kickoff_time', new Date().toISOString())
-      .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString())
-      .order('odds', { ascending: false })
-      .limit(config.betting.maxActiveBets);
+      .gte('league_matches.kickoff_time', now.toISOString())
+      .lte('league_matches.kickoff_time', maxDate.toISOString())
+      .order('promovida_manual', { ascending: false })  // AC2: Promovidas primeiro
+      .order('odds', { ascending: false })              // AC2: Depois por odds
+      .limit(10); // Buscar mais para depois filtrar
 
     if (error) {
       logger.error('Failed to fetch ready bets', { error: error.message });
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    const bets = (data || []).map(bet => ({
+    // AC3, AC6: Filtrar: odds >= minOdds OU promovida_manual = true
+    const filteredBets = (data || []).filter(bet =>
+      bet.promovida_manual === true || (bet.odds && bet.odds >= config.betting.minOdds)
+    );
+
+    // Limitar ao máximo de apostas ativas
+    const bets = filteredBets.slice(0, config.betting.maxActiveBets).map(bet => ({
       id: bet.id,
       matchId: bet.match_id,
       betMarket: bet.bet_market,
@@ -120,10 +135,18 @@ async function getBetsReadyForPosting() {
       odds: bet.odds,
       reasoning: bet.reasoning,
       deepLink: bet.deep_link,
+      promovidaManual: bet.promovida_manual,
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
     }));
+
+    logger.info('Ready bets found', {
+      total: data?.length || 0,
+      afterFilter: filteredBets.length,
+      returned: bets.length,
+      promovidas: bets.filter(b => b.promovidaManual).length
+    });
 
     return { success: true, data: bets };
   } catch (err) {
@@ -400,6 +423,53 @@ async function markBetAsPosted(betId, messageId, oddsAtPost) {
     telegram_message_id: messageId,
     odds_at_post: oddsAtPost,
   });
+}
+
+/**
+ * Registra uma postagem no histórico da aposta (Story 13.5)
+ * Adiciona timestamp ao array historico_postagens
+ * A aposta continua elegível para próximos jobs
+ * @param {number} betId - ID da aposta
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function registrarPostagem(betId) {
+  try {
+    const timestamp = new Date().toISOString();
+
+    // Buscar histórico atual
+    const { data: bet, error: fetchError } = await supabase
+      .from('suggested_bets')
+      .select('historico_postagens')
+      .eq('id', betId)
+      .single();
+
+    if (fetchError) {
+      logger.error('Erro ao buscar aposta para registro', { betId, error: fetchError.message });
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Aposta não encontrada' } };
+    }
+
+    // Adicionar novo timestamp ao array
+    const historico = bet.historico_postagens || [];
+    historico.push(timestamp);
+
+    // Atualizar histórico
+    const { error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({ historico_postagens: historico })
+      .eq('id', betId);
+
+    if (updateError) {
+      logger.error('Erro ao registrar postagem', { betId, error: updateError.message });
+      return { success: false, error: { code: 'UPDATE_ERROR', message: 'Erro ao atualizar' } };
+    }
+
+    logger.info('Postagem registrada no histórico', { betId, postCount: historico.length });
+    return { success: true };
+
+  } catch (err) {
+    logger.error('Erro inesperado em registrarPostagem', { betId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: 'Erro interno' } };
+  }
 }
 
 /**
@@ -879,6 +949,346 @@ async function getOverviewStats() {
 }
 
 /**
+ * Calcula próximo horário de postagem (10h, 15h, 22h)
+ * @returns {{time: string, diff: string}}
+ */
+function getNextPostTime() {
+  const now = new Date();
+  // Ajustar para timezone Brasil
+  const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const hours = brTime.getHours();
+  const minutes = brTime.getMinutes();
+  const postTimes = [10, 15, 22];
+
+  for (const time of postTimes) {
+    if (hours < time || (hours === time && minutes === 0)) {
+      const diffHours = time - hours;
+      const diffMins = 60 - minutes;
+      if (diffHours === 0) {
+        return { time: `${time}:00`, diff: `${diffMins}min` };
+      }
+      return { time: `${time}:00`, diff: `${diffHours}h` };
+    }
+  }
+
+  // Próximo é amanhã às 10h
+  const diff = 24 - hours + 10;
+  return { time: '10:00 (amanhã)', diff: `${diff}h` };
+}
+
+/**
+ * Obtém status da fila de postagem (Story 13.4)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getFilaStatus() {
+  try {
+    const now = new Date();
+    const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+
+    // Buscar top 3 apostas elegíveis para próxima postagem
+    // Critérios: elegibilidade='elegivel', tem link, jogo futuro dentro de 2 dias
+    // Ordenação: promovidas primeiro, depois por odds DESC
+    const { data: eligibleBets, error: eligibleError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        deep_link,
+        elegibilidade,
+        promovida_manual,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .eq('elegibilidade', 'elegivel')
+      .not('deep_link', 'is', null)
+      .in('bet_status', ['generated', 'pending_link', 'ready', 'posted'])
+      .gte('league_matches.kickoff_time', now.toISOString())
+      .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
+      .order('promovida_manual', { ascending: false })
+      .order('odds', { ascending: false })
+      .limit(10); // Buscar mais para depois filtrar
+
+    if (eligibleError) {
+      logger.error('Erro ao buscar fila', { error: eligibleError.message });
+      return { success: false, error: { code: 'DB_ERROR', message: 'Erro ao buscar fila' } };
+    }
+
+    // Filtrar: odds >= 1.60 OU promovida_manual = true
+    const filteredBets = (eligibleBets || []).filter(bet =>
+      bet.promovida_manual === true || (bet.odds && bet.odds >= config.betting.minOdds)
+    );
+
+    // Pegar top 3
+    const top3 = filteredBets.slice(0, 3).map(bet => ({
+      id: bet.id,
+      betMarket: bet.bet_market,
+      odds: bet.odds,
+      promovidaManual: bet.promovida_manual,
+      homeTeamName: bet.league_matches.home_team_name,
+      awayTeamName: bet.league_matches.away_team_name,
+      kickoffTime: bet.league_matches.kickoff_time,
+    }));
+
+    // Contar por elegibilidade (todas as apostas com jogos futuros)
+    const { data: allBets, error: countError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        elegibilidade,
+        promovida_manual,
+        league_matches!inner (
+          kickoff_time
+        )
+      `)
+      .gte('league_matches.kickoff_time', now.toISOString());
+
+    if (countError) {
+      logger.warn('Erro ao contar apostas', { error: countError.message });
+    }
+
+    const counts = {
+      elegivel: 0,
+      removida: 0,
+      expirada: 0,
+      promovidas: 0
+    };
+
+    (allBets || []).forEach(bet => {
+      if (bet.elegibilidade === 'elegivel') counts.elegivel++;
+      if (bet.elegibilidade === 'removida') counts.removida++;
+      if (bet.elegibilidade === 'expirada') counts.expirada++;
+      if (bet.promovida_manual === true) counts.promovidas++;
+    });
+
+    // Calcular próximo horário de postagem
+    const nextPost = getNextPostTime();
+
+    return {
+      success: true,
+      data: {
+        top3,
+        counts,
+        nextPost
+      }
+    };
+
+  } catch (err) {
+    logger.error('Erro ao obter status da fila', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: 'Erro interno' } };
+  }
+}
+
+/**
+ * Remove uma aposta da fila de postagem (Story 13.3)
+ * Atualiza elegibilidade='removida'
+ * Pode ser revertido usando promoverAposta
+ * @param {number} betId - ID da aposta
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function removerAposta(betId) {
+  try {
+    // Buscar aposta com dados do jogo
+    const { data: bet, error: fetchError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        elegibilidade,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .eq('id', betId)
+      .single();
+
+    if (fetchError || !bet) {
+      return {
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Aposta #${betId} não encontrada` }
+      };
+    }
+
+    // Verificar se já está removida
+    if (bet.elegibilidade === 'removida') {
+      return {
+        success: false,
+        error: { code: 'ALREADY_REMOVED', message: `Aposta #${betId} já está removida da fila` }
+      };
+    }
+
+    // Atualizar elegibilidade para removida
+    const { data: updated, error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({ elegibilidade: 'removida' })
+      .eq('id', betId)
+      .select(`
+        id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        elegibilidade,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .single();
+
+    if (updateError) {
+      logger.error('Erro ao remover aposta', { betId, error: updateError.message });
+      return {
+        success: false,
+        error: { code: 'UPDATE_ERROR', message: 'Erro ao atualizar aposta' }
+      };
+    }
+
+    logger.info('Aposta removida da fila', { betId });
+
+    // Flatten response
+    return {
+      success: true,
+      data: {
+        id: updated.id,
+        betMarket: updated.bet_market,
+        betPick: updated.bet_pick,
+        odds: updated.odds,
+        betStatus: updated.bet_status,
+        elegibilidade: updated.elegibilidade,
+        homeTeamName: updated.league_matches.home_team_name,
+        awayTeamName: updated.league_matches.away_team_name,
+        kickoffTime: updated.league_matches.kickoff_time,
+      }
+    };
+
+  } catch (err) {
+    logger.error('Erro inesperado ao remover aposta', { betId, error: err.message });
+    return {
+      success: false,
+      error: { code: 'UNEXPECTED_ERROR', message: 'Erro interno' }
+    };
+  }
+}
+
+/**
+ * Promove uma aposta para a fila de postagem (Story 13.2)
+ * Atualiza elegibilidade='elegivel' e promovida_manual=true
+ * Apostas promovidas ignoram o filtro de odds >= 1.60 na seleção
+ * @param {number} betId - ID da aposta
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function promoverAposta(betId) {
+  try {
+    // Buscar aposta com dados do jogo
+    const { data: bet, error: fetchError } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        deep_link,
+        elegibilidade,
+        promovida_manual,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .eq('id', betId)
+      .single();
+
+    if (fetchError || !bet) {
+      return {
+        success: false,
+        error: { code: 'NOT_FOUND', message: `Aposta #${betId} não encontrada` }
+      };
+    }
+
+    // Verificar se já está promovida
+    if (bet.promovida_manual === true) {
+      return {
+        success: false,
+        error: { code: 'ALREADY_PROMOTED', message: `Aposta #${betId} já está promovida` }
+      };
+    }
+
+    // Atualizar campos de elegibilidade
+    const { data: updated, error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({
+        elegibilidade: 'elegivel',
+        promovida_manual: true
+      })
+      .eq('id', betId)
+      .select(`
+        id,
+        bet_market,
+        bet_pick,
+        odds,
+        bet_status,
+        deep_link,
+        elegibilidade,
+        promovida_manual,
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
+      `)
+      .single();
+
+    if (updateError) {
+      logger.error('Erro ao promover aposta', { betId, error: updateError.message });
+      return {
+        success: false,
+        error: { code: 'UPDATE_ERROR', message: 'Erro ao atualizar aposta' }
+      };
+    }
+
+    logger.info('Aposta promovida', { betId });
+
+    // Flatten response
+    return {
+      success: true,
+      data: {
+        id: updated.id,
+        betMarket: updated.bet_market,
+        betPick: updated.bet_pick,
+        odds: updated.odds,
+        betStatus: updated.bet_status,
+        deepLink: updated.deep_link,
+        elegibilidade: updated.elegibilidade,
+        promovidaManual: updated.promovida_manual,
+        homeTeamName: updated.league_matches.home_team_name,
+        awayTeamName: updated.league_matches.away_team_name,
+        kickoffTime: updated.league_matches.kickoff_time,
+      }
+    };
+
+  } catch (err) {
+    logger.error('Erro inesperado ao promover aposta', { betId, error: err.message });
+    return {
+      success: false,
+      error: { code: 'UNEXPECTED_ERROR', message: 'Erro interno' }
+    };
+  }
+}
+
+/**
  * Swap a posted bet with another eligible bet (Story 10.3)
  * @param {number} oldBetId - ID of bet to remove from posting
  * @param {number} newBetId - ID of bet to start posting
@@ -961,10 +1371,14 @@ module.exports = {
   tryAutoPromote,
   setBetPendingWithNote,
   markBetAsPosted,
+  registrarPostagem,
   markBetResult,
   markLowOddsBetsIneligible,
   requestLinksForTopBets,
   swapPostedBet,
+  promoverAposta,
+  removerAposta,
+  getFilaStatus,
 
   // Create functions
   createManualBet,
