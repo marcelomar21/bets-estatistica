@@ -3,6 +3,7 @@ stepsCompleted: [1, 2, 3, 4, 5]
 status: updated
 completedAt: "2026-01-10"
 updatedAt: "2026-01-12"
+lastAddendum: "v4-gestao-elegibilidade"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
@@ -10,6 +11,7 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
+epicCount: 13
 ---
 
 # bets-estatistica - Epic Breakdown
@@ -31,9 +33,16 @@ Este documento contém a decomposição completa de épicos e stories para bets-
 **Integração de Odds**
 - FR5: Sistema pode consultar odds em tempo real de uma API externa
 - FR6: Sistema pode associar odds a cada aposta gerada
-- FR7: Sistema pode filtrar apostas com odds < 1.60
+- FR7: Sistema pode filtrar apostas com odds < 1.60, exceto quando `promovida_manual = true`
 - FR8: Sistema pode ordenar apostas por odds (maior primeiro)
 - FR9: Sistema pode selecionar as top 3 apostas com maiores odds
+
+**Gestão de Elegibilidade (Novo - Epic 13)**
+- FR47: Bot pode processar comando `/promover <id>` para marcar aposta como `elegivel` e `promovida_manual = true`, ignorando filtro de odds mínimas
+- FR48: Bot pode processar comando `/remover <id>` para marcar aposta como `elegibilidade = 'removida'`, excluindo-a da seleção de jobs futuros
+- FR49: Bot pode processar comando `/status` para listar apostas elegíveis, próximo horário de postagem e contagem de apostas na fila
+- FR50: Sistema pode incluir apostas com `promovida_manual = true` na seleção mesmo quando odds < 1.60
+- FR51: Bot pode confirmar execução de comandos admin com feedback visual (✅ ou ❌)
 
 **Publicação Telegram (Grupo Público)**
 - FR10: Bot pode enviar mensagens para o grupo público do Telegram
@@ -1509,3 +1518,253 @@ So that tenha visão geral do sistema.
 *Métricas:*
 📈 Taxa 30d: 72% (18/25)
 ```
+
+---
+
+# ADDENDUM v4 - Gestão de Elegibilidade (2026-01-12)
+
+## Requirements Inventory - Addendum v4
+
+### Novos Functional Requirements (Gestão de Elegibilidade)
+
+**Modelo de Elegibilidade**
+- FR7 (atualizado): Sistema pode filtrar apostas com odds < 1.60, exceto quando `promovida_manual = true`
+- FR47: Bot pode processar `/promover <id>` para marcar aposta como elegível ignorando odds mínimas
+- FR48: Bot pode processar `/remover <id>` para marcar aposta como removida da fila
+- FR49: Bot pode processar `/status` para listar apostas elegíveis e próximo horário
+- FR50: Sistema pode incluir apostas promovidas manualmente na seleção
+- FR51: Bot pode confirmar comandos com feedback visual
+
+### Modelo de Dados - Novos Campos
+
+**Campos a adicionar em `suggested_bets`:**
+- `elegibilidade` (ENUM: 'elegivel', 'removida', 'expirada')
+- `promovida_manual` (BOOLEAN, default false)
+- `historico_postagens` (JSONB, array de timestamps)
+
+### FR Coverage Map - Addendum v4
+
+| FR | Epic | Descrição |
+|----|------|-----------|
+| FR7 (atualizado) | Epic 13 | Filtro de odds considera promoção manual |
+| FR47 | Epic 13 | Comando /promover |
+| FR48 | Epic 13 | Comando /remover |
+| FR49 | Epic 13 | Comando /status elegibilidade |
+| FR50 | Epic 13 | Lógica de seleção com promoção |
+| FR51 | Epic 13 | Feedback visual comandos |
+
+---
+
+## Epic 13: Gestão de Elegibilidade de Apostas
+
+Operadores podem gerenciar manualmente quais apostas entram na fila de postagem, sobrepondo as regras automáticas de seleção.
+
+**Valor para o Usuário:**
+- Marcelo (operador) pode forçar a postagem de uma aposta específica mesmo sem odds mínimas
+- Marcelo pode remover uma aposta da fila se não quiser mais postá-la
+- Marcelo pode visualizar o status atual da fila antes de cada job
+
+**FRs cobertos:** FR7 (atualização), FR47, FR48, FR49, FR50, FR51
+
+### Story 13.1: Atualizar Modelo de Dados com Campos de Elegibilidade
+
+As a desenvolvedor,
+I want ter campos de elegibilidade na tabela suggested_bets,
+So that possa gerenciar o ciclo de vida de postagem das apostas.
+
+**Acceptance Criteria:**
+
+**Given** tabela `suggested_bets` existente
+**When** executar migration de alteração
+**Then** novos campos são adicionados:
+  - `elegibilidade` (TEXT, default 'elegivel', CHECK IN ('elegivel', 'removida', 'expirada'))
+  - `promovida_manual` (BOOLEAN, default false)
+  - `historico_postagens` (JSONB, default '[]')
+**And** índice em `elegibilidade` para performance
+**And** apostas existentes têm `elegibilidade = 'elegivel'`
+
+**Technical Notes:**
+```sql
+ALTER TABLE suggested_bets
+ADD COLUMN IF NOT EXISTS elegibilidade TEXT DEFAULT 'elegivel'
+CHECK (elegibilidade IN ('elegivel', 'removida', 'expirada'));
+
+ALTER TABLE suggested_bets
+ADD COLUMN IF NOT EXISTS promovida_manual BOOLEAN DEFAULT false;
+
+ALTER TABLE suggested_bets
+ADD COLUMN IF NOT EXISTS historico_postagens JSONB DEFAULT '[]'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_suggested_bets_elegibilidade
+ON suggested_bets(elegibilidade);
+```
+
+### Story 13.2: Implementar Comando /promover
+
+As a operador,
+I want promover uma aposta para a fila de postagem,
+So that ela seja postada mesmo sem atender aos critérios automáticos.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/promover 45` no grupo admin
+**When** bot processa comando
+**Then** aposta ID 45 é marcada com:
+  - `elegibilidade = 'elegivel'`
+  - `promovida_manual = true`
+**And** bot responde com ✅ e detalhes da aposta
+**And** aposta entra na próxima seleção de postagem
+
+**Given** aposta já está promovida
+**When** operador tenta promover novamente
+**Then** bot informa que já está promovida
+
+**Given** ID inválido ou inexistente
+**When** operador envia `/promover 999`
+**Then** bot responde com ❌ "Aposta não encontrada"
+
+**Formato de resposta:**
+```
+✅ APOSTA PROMOVIDA
+
+#45 Liverpool vs Arsenal
+🎯 Over 2.5 gols
+📊 Odd: 1.45 (abaixo do mínimo)
+
+⚡ Promoção manual ativada
+📤 Será incluída na próxima postagem
+```
+
+**Technical Notes:**
+- Criar handler em `bot/handlers/adminGroup.js`
+- Função `promoverAposta(id)` em `betService.js`
+
+### Story 13.3: Implementar Comando /remover
+
+As a operador,
+I want remover uma aposta da fila de postagem,
+So that ela não seja mais postada nos próximos jobs.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/remover 45` no grupo admin
+**When** bot processa comando
+**Then** aposta ID 45 é marcada com:
+  - `elegibilidade = 'removida'`
+**And** bot responde com ✅ e detalhes da aposta
+**And** aposta não aparece mais nas seleções de postagem
+
+**Given** operador quer reverter a remoção
+**When** operador envia `/promover 45`
+**Then** aposta volta a ser elegível
+
+**Given** ID inválido ou inexistente
+**When** operador envia `/remover 999`
+**Then** bot responde com ❌ "Aposta não encontrada"
+
+**Formato de resposta:**
+```
+✅ APOSTA REMOVIDA DA FILA
+
+#45 Liverpool vs Arsenal
+🎯 Over 2.5 gols
+
+⛔ Removida da fila de postagem
+💡 Use /promover 45 para reverter
+```
+
+**Technical Notes:**
+- Criar handler em `bot/handlers/adminGroup.js`
+- Função `removerAposta(id)` em `betService.js`
+
+### Story 13.4: Implementar Comando /status (Elegibilidade)
+
+As a operador,
+I want ver o status da fila de apostas elegíveis,
+So that saiba o que será postado no próximo job.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/fila` no grupo admin
+**When** bot processa comando
+**Then** mostra:
+  - Apostas elegíveis para próxima postagem (top 3)
+  - Apostas promovidas manualmente
+  - Próximo horário de postagem
+  - Contagem por elegibilidade
+
+**Formato de resposta:**
+```
+📋 FILA DE POSTAGEM
+
+*Próxima postagem:* 15:00 (em 2h)
+
+*Top 3 selecionadas:*
+1️⃣ #45 Liverpool vs Arsenal
+   🎯 Over 2.5 @ 1.85 ⚡ Promovida
+
+2️⃣ #47 Real Madrid vs Barcelona
+   🎯 BTTS @ 1.72
+
+3️⃣ #52 Man City vs Chelsea
+   🎯 Under 3.5 @ 1.68
+
+*Resumo:*
+✅ Elegíveis: 12
+⚡ Promovidas: 2
+⛔ Removidas: 3
+⏰ Expiradas: 5
+```
+
+**Technical Notes:**
+- Usar lógica de seleção existente para preview
+- Ordenar por odds DESC, promovidas primeiro
+
+### Story 13.5: Atualizar Lógica de Seleção por Job
+
+As a sistema,
+I want considerar `promovida_manual` e `elegibilidade` na seleção,
+So that as regras de override funcionem corretamente.
+
+**Acceptance Criteria:**
+
+**Given** job de postagem executa (10h, 15h, 22h)
+**When** selecionar apostas para postar
+**Then** query considera:
+  - `elegibilidade = 'elegivel'`
+  - `odds_preenchidas = true`
+  - `data_jogo BETWEEN NOW() AND NOW() + 2 days`
+  - `(odds >= 1.60 OR promovida_manual = true)`
+**And** ordena por odds DESC
+**And** seleciona top 3
+
+**Given** aposta é postada
+**When** registrar postagem
+**Then** adiciona timestamp ao array `historico_postagens`
+**And** aposta continua elegível para próximos jobs
+
+**Query de seleção:**
+```sql
+SELECT * FROM suggested_bets
+WHERE elegibilidade = 'elegivel'
+  AND (odds IS NOT NULL OR promovida_manual = true)
+  AND kickoff_time >= NOW()
+  AND kickoff_time <= NOW() + INTERVAL '2 days'
+  AND (odds >= 1.60 OR promovida_manual = true)
+  AND deep_link IS NOT NULL
+ORDER BY
+  promovida_manual DESC,
+  odds DESC
+LIMIT 3;
+```
+
+**Technical Notes:**
+- Modificar `betService.js` função `getEligibleBets()`
+- Adicionar função `registrarPostagem(id)` para atualizar histórico
+- Atualizar job `postBets.js`
+
+---
+
+## Ordem de Implementação - Epic 13
+
+1. Story 13.1 (Modelo de dados) → 2. Story 13.5 (Lógica de seleção) → 3. Story 13.2 (/promover) → 4. Story 13.3 (/remover) → 5. Story 13.4 (/fila)

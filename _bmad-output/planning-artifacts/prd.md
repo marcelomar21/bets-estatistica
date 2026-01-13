@@ -19,6 +19,10 @@ projectClassification:
   type: 'api_backend + automation_bot'
   domain: 'betting/gambling'
   complexity: 'medium-high'
+lastEdited: '2026-01-12'
+editHistory:
+  - date: '2026-01-12'
+    changes: 'Revisão do ciclo de vida da aposta: novo modelo de elegibilidade (elegivel/removida/expirada), suporte a promoção manual (/promover), remoção da fila (/remover), comando de status (/status), lógica de seleção por job com histórico de múltiplas postagens'
 ---
 
 # Product Requirements Document - bets-estatistica
@@ -290,21 +294,33 @@ Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana 
 │  [The Odds API] ──────────────────► [Enriquecer com odds]      │
 │                                              │                  │
 │                                              ▼                  │
-│                                [Filtrar odds ≥ 1.60]           │
+│                            [elegibilidade = 'elegivel']         │
+│                                              │                  │
+│  ┌───────────────────────────────────────────┼─────────────────┐│
+│  │         OVERRIDE DE ADMIN (a qualquer momento)              ││
+│  │  /promover <id> → adiciona à fila (ignora odds min)         ││
+│  │  /remover <id>  → remove da fila                            ││
+│  │  /status        → lista fila atual                          ││
+│  └───────────────────────────────────────────┼─────────────────┘│
 │                                              │                  │
 │                                              ▼                  │
-│                                [Rankear por odds → Top 3]       │
-│                                              │                  │
-│                              ┌───────────────┴───────────────┐  │
-│                              ▼                               ▼  │
-│                    [08h/13h/20h]                    [10h/15h/22h]│
-│                    GRUPO ADMIN                     GRUPO PÚBLICO│
-│                         │                               ▲       │
-│                         ▼                               │       │
-│               [Operador gera link]                      │       │
-│                         │                               │       │
-│                         ▼                               │       │
-│               [Bot valida + salva] ─────────────────────┘       │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  SELEÇÃO POR JOB (10h, 15h, 22h)                          │  │
+│  │  WHERE elegibilidade = 'elegivel'                         │  │
+│  │    AND odds_preenchidas = true                            │  │
+│  │    AND data_jogo entre agora e +2 dias                    │  │
+│  │    AND (odds >= 1.60 OR promovida_manual = true)          │  │
+│  │  ORDER BY odds DESC LIMIT 3                               │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                              │                                  │
+│                              ▼                                  │
+│                    [Postar no GRUPO PÚBLICO]                    │
+│                              │                                  │
+│                              ▼                                  │
+│                    [Registrar em historico_postagens]           │
+│                              │                                  │
+│                              ▼                                  │
+│                    [Jogo termina → atualizar resultado]         │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -338,24 +354,93 @@ Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana 
 📈 Taxa de acerto: XX% (últimos 30 dias)
 ```
 
+### Ciclo de Vida da Aposta
+
+O ciclo de vida da aposta tem **três dimensões independentes**:
+
+| Dimensão | Campo | Valores | Descrição |
+|----------|-------|---------|-----------|
+| **Elegibilidade** | `elegibilidade` | `elegivel`, `removida`, `expirada` | Define se a aposta pode entrar na seleção dos jobs |
+| **Promoção Manual** | `promovida_manual` | `true`, `false` | Se true, ignora filtro de odds mínimas |
+| **Resultado** | `resultado` | `pendente`, `sucesso`, `falha`, `cancelado` | Resultado após o jogo terminar |
+
+**Fluxo de elegibilidade:**
+
+```
+[GERADA] → [odds_preenchidas=true] → [elegibilidade='elegivel']
+                                           │
+                    ┌──────────────────────┼──────────────────────┐
+                    │                      │                      │
+                    ▼                      ▼                      ▼
+            Admin /promover         Seleção automática      Admin /remover
+            (promovida_manual=true)    (top 3 odds)        (elegibilidade='removida')
+                    │                      │                      │
+                    └──────────────────────┼──────────────────────┘
+                                           │
+                                           ▼
+                                    [Job posta no grupo]
+                                           │
+                                           ▼
+                               [Registra em historico_postagens]
+                                           │
+                                           ▼
+                                    [Jogo termina]
+                                           │
+                                           ▼
+                               [resultado = sucesso/falha/cancelado]
+```
+
+**Regras de elegibilidade:**
+- Uma aposta `elegivel` pode ser selecionada por múltiplos jobs até o jogo acontecer
+- Uma aposta `removida` não será selecionada, mas pode voltar a ser `elegivel` via `/promover`
+- Uma aposta `expirada` tem data do jogo no passado (atualização automática)
+
+### Modelo de Dados - Tabela `suggested_bets`
+
+**Campos de Elegibilidade e Publicação:**
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `elegibilidade` | enum | `elegivel`, `removida`, `expirada` |
+| `promovida_manual` | boolean | Se true, ignora filtro de odds ≥ 1.60 |
+| `odds_preenchidas` | boolean | Se true, odds foram obtidas da API |
+| `historico_postagens` | jsonb | Array de timestamps de cada postagem |
+| `odds_at_post` | decimal | Odd no momento da última postagem |
+
+**Campos de Resultado:**
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `resultado` | enum | `pendente`, `sucesso`, `falha`, `cancelado` |
+| `result_updated_at` | timestamp | Quando o resultado foi registrado |
+
+### Lógica de Seleção por Job
+
+Cada job (10h, 15h, 22h) executa a seguinte lógica:
+
+```sql
+SELECT * FROM suggested_bets
+WHERE elegibilidade = 'elegivel'
+  AND odds_preenchidas = true
+  AND data_jogo BETWEEN now() AND now() + interval '2 days'
+  AND (odds >= 1.60 OR promovida_manual = true)
+ORDER BY odds DESC
+LIMIT 3;
+```
+
+**Após postagem:**
+1. Adiciona timestamp atual ao array `historico_postagens`
+2. Atualiza `odds_at_post` com odd atual
+3. Aposta continua `elegivel` para próximos jobs (até jogo acontecer)
+
 ### Tracking de Resultados
 
 **Fluxo de atualização:**
 
-1. Aposta é publicada → status = `pending`
-2. Jogo termina → sistema verifica resultado
-3. Resultado comparado com aposta → status = `success` ou `failure`
+1. Jogo termina → sistema verifica resultado
+2. Resultado comparado com aposta → `resultado` = `sucesso` ou `falha`
+3. Se jogo cancelado/adiado → `resultado` = `cancelado`
 4. Métricas agregadas atualizadas
-
-**Campos a adicionar na tabela `suggested_bets`:**
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `telegram_posted_at` | timestamp | Quando foi postado |
-| `telegram_message_id` | bigint | ID da mensagem (para edição futura) |
-| `bet_status` | enum | pending, success, failure, cancelled |
-| `result_updated_at` | timestamp | Quando o resultado foi registrado |
-| `odds_at_post` | decimal | Odd no momento da postagem |
 
 ### Requisitos de Disponibilidade
 
@@ -487,7 +572,7 @@ O MVP está pronto quando:
 
 - FR5: Sistema pode consultar odds em tempo real de uma API externa
 - FR6: Sistema pode associar odds a cada aposta gerada
-- FR7: Sistema pode filtrar apostas com odds < 1.60
+- FR7: Sistema pode filtrar apostas com odds < 1.60, exceto quando `promovida_manual = true`
 - FR8: Sistema pode ordenar apostas por odds (maior primeiro)
 - FR9: Sistema pode selecionar as top 3 apostas com maiores odds
 
@@ -548,6 +633,14 @@ O MVP está pronto quando:
 - FR44: Sistema pode armazenar jogos, times e estatísticas no PostgreSQL (Supabase)
 - FR45: Sistema pode gerenciar fila de análise de partidas
 - FR46: Sistema pode sincronizar dados com Supabase
+
+### Gestão de Elegibilidade (Grupo Admin)
+
+- FR47: Bot pode processar comando `/promover <id>` para marcar aposta como `elegivel` e `promovida_manual = true`, ignorando filtro de odds mínimas
+- FR48: Bot pode processar comando `/remover <id>` para marcar aposta como `elegibilidade = 'removida'`, excluindo-a da seleção de jobs futuros
+- FR49: Bot pode processar comando `/status` para listar apostas elegíveis, próximo horário de postagem e contagem de apostas na fila
+- FR50: Sistema pode incluir apostas com `promovida_manual = true` na seleção mesmo quando odds < 1.60
+- FR51: Bot pode confirmar execução de comandos admin com feedback visual (✅ ou ❌)
 
 ## Non-Functional Requirements
 
