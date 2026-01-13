@@ -1000,6 +1000,7 @@ async function getFilaStatus() {
     const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
 
     // 1. Buscar apostas ATIVAS (posted) - serão repostadas
+    // IMPORTANTE: Também filtra por elegibilidade - apostas removidas não aparecem
     const { data: activeBets, error: activeError } = await supabase
       .from('suggested_bets')
       .select(`
@@ -1019,6 +1020,7 @@ async function getFilaStatus() {
         )
       `)
       .eq('bet_status', 'posted')
+      .eq('elegibilidade', 'elegivel')  // Respeita /remover - apostas removidas não aparecem
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true })
