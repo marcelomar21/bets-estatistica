@@ -477,18 +477,17 @@ Filtra apostas por critério específico.
       hint = '';
       break;
     case 'prontas':
-      // Mesma lógica do /fila: apostas posted (ativas) + novas elegíveis
+      // TODAS apostas com odds + link (universo maior que /fila)
+      // Inclui: posted (ativas) + qualquer aposta com link e odds válidas
       filtered = bets.filter(b => {
-        // Apostas ativas (posted) sempre aparecem
-        if (b.betStatus === 'posted') return true;
-        // Novas: elegibilidade + link + (odds válidas OU promovida)
-        const isElegivel = b.elegibilidade === 'elegivel';
         const temLink = !!b.deepLink;
-        const oddsValidas = b.promovidaManual || (b.odds && b.odds >= config.betting.minOdds);
-        return isElegivel && temLink && oddsValidas;
+        const temOdds = b.odds && b.odds > 0;
+        // Exclui estados terminais
+        if (['success', 'failure', 'cancelled'].includes(b.betStatus)) return false;
+        return temLink && temOdds;
       });
-      filterLabel = 'PRONTAS (na fila)';
-      hint = '💡 Use `/postar` para publicar';
+      filterLabel = 'PRONTAS';
+      hint = '💡 Use `/fila` para ver o que será postado';
       break;
     default:
       await bot.sendMessage(
