@@ -477,8 +477,17 @@ Filtra apostas por critério específico.
       hint = '';
       break;
     case 'prontas':
-      filtered = bets.filter(b => b.betStatus === 'ready' && b.odds >= 1.60 && b.deepLink);
-      filterLabel = 'PRONTAS';
+      // Mesma lógica do /fila: apostas posted (ativas) + novas elegíveis
+      filtered = bets.filter(b => {
+        // Apostas ativas (posted) sempre aparecem
+        if (b.betStatus === 'posted') return true;
+        // Novas: elegibilidade + link + (odds válidas OU promovida)
+        const isElegivel = b.elegibilidade === 'elegivel';
+        const temLink = !!b.deepLink;
+        const oddsValidas = b.promovidaManual || (b.odds && b.odds >= config.betting.minOdds);
+        return isElegivel && temLink && oddsValidas;
+      });
+      filterLabel = 'PRONTAS (na fila)';
       hint = '💡 Use `/postar` para publicar';
       break;
     default:
@@ -896,7 +905,7 @@ async function handleRemoverCommand(bot, msg, betId) {
 
 /**
  * Handle /fila command - Show posting queue status (Story 13.4)
- * Alinhado com getBetsReadyForPosting() para mostrar exatamente o que será postado
+ * Mostra apostas ativas (posted) + novas que serão postadas
  */
 async function handleFilaCommand(bot, msg) {
   logger.info('Received /fila command', { chatId: msg.chat.id });
@@ -912,50 +921,54 @@ async function handleFilaCommand(bot, msg) {
     return;
   }
 
-  const { top3, counts, slotsDisponiveis, nextPost } = result.data;
+  const { filaCompleta, ativas, novas, counts, slotsDisponiveis, nextPost } = result.data;
 
-  // AC6: Fila vazia e sem apostas ativas
-  if (top3.length === 0 && counts.ativas === 0) {
+  // Fila vazia
+  if (filaCompleta.length === 0) {
     await bot.sendMessage(
       msg.chat.id,
       `📋 *FILA DE POSTAGEM*\n\n` +
-      `Nenhuma aposta elegível para postagem.\n\n` +
+      `Nenhuma aposta na fila de postagem.\n\n` +
       `💡 Use /apostas para ver todas as apostas.`,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  // Formatar top 3 com indicador de promoção
-  let top3Lines = '_Nenhuma nova aposta na fila_';
-  if (top3.length > 0) {
-    top3Lines = top3.map((bet, i) => {
-      const num = ['1️⃣', '2️⃣', '3️⃣'][i];
-      const promoFlag = bet.promovidaManual ? ' ⚡' : '';
-      const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
-      return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}${promoFlag}`;
-    }).join('\n\n');
-  }
+  // Formatar fila completa com indicadores visuais
+  const filaLines = filaCompleta.map((bet, i) => {
+    const num = ['1️⃣', '2️⃣', '3️⃣'][i] || `${i + 1}.`;
+    const statusFlag = bet.betStatus === 'posted' ? ' 📤' : ' 🆕';
+    const promoFlag = bet.promovidaManual ? ' ⚡' : '';
+    const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
+    return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}${statusFlag}${promoFlag}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}`;
+  }).join('\n\n');
 
   // Montar resposta completa
   const response = `📋 *FILA DE POSTAGEM*
 
 *Próxima postagem:* ${nextPost.time} (em ${nextPost.diff})
 
-*Apostas ativas:* ${counts.ativas} de ${counts.ativas + slotsDisponiveis} (serão repostadas)
-*Slots para novas:* ${slotsDisponiveis}
+*Na fila:* (📤 = ativa, 🆕 = nova, ⚡ = promovida)
+${filaLines}
 
-*Próximas na fila:*
-${top3Lines}
+*Status:*
+📤 Ativas: ${ativas.length}/${ativas.length + slotsDisponiveis}
+🆕 Novas: ${novas.length}
+📊 Slots livres: ${slotsDisponiveis}
 
-*Resumo:*
+*Resumo geral:*
 ✅ Elegíveis: ${counts.elegivel}
 ⚡ Promovidas: ${counts.promovidas}
-⛔ Removidas: ${counts.removida}
-⏰ Expiradas: ${counts.expirada}`;
+⛔ Removidas: ${counts.removida}`;
 
   await bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown' });
-  logger.info('Fila command executed', { top3Count: top3.length, ativas: counts.ativas, slots: slotsDisponiveis, counts });
+  logger.info('Fila command executed', {
+    total: filaCompleta.length,
+    ativas: ativas.length,
+    novas: novas.length,
+    slots: slotsDisponiveis
+  });
 }
 
 /**

@@ -333,6 +333,9 @@ async function getActiveBetsForRepost() {
  */
 async function getAvailableBets() {
   try {
+    const now = new Date();
+    const maxDate = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
@@ -341,9 +344,12 @@ async function getAvailableBets() {
         bet_market,
         bet_pick,
         odds,
+        odds_at_post,
         bet_status,
         deep_link,
         eligible,
+        elegibilidade,
+        promovida_manual,
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -351,8 +357,7 @@ async function getAvailableBets() {
         )
       `)
       .in('bet_status', ['generated', 'pending_link', 'ready', 'posted'])
-      .eq('eligible', true)
-      .gte('league_matches.kickoff_time', new Date().toISOString())
+      .gte('league_matches.kickoff_time', now.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true });
 
     if (error) {
@@ -366,9 +371,12 @@ async function getAvailableBets() {
       betMarket: bet.bet_market,
       betPick: bet.bet_pick,
       odds: bet.odds,
+      oddsAtPost: bet.odds_at_post,
       betStatus: bet.bet_status,
       deepLink: bet.deep_link,
       eligible: bet.eligible,
+      elegibilidade: bet.elegibilidade,
+      promovidaManual: bet.promovida_manual,
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
@@ -983,7 +991,7 @@ function getNextPostTime() {
 
 /**
  * Obtém status da fila de postagem (Story 13.4)
- * Alinhado com getBetsReadyForPosting() para consistência
+ * Mostra apostas ativas (posted) + novas que serão postadas
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getFilaStatus() {
@@ -991,20 +999,15 @@ async function getFilaStatus() {
     const now = new Date();
     const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
 
-    // Buscar top 3 apostas elegíveis para próxima postagem
-    // Critérios alinhados com getBetsReadyForPosting():
-    // - elegibilidade='elegivel'
-    // - tem link (deep_link NOT NULL)
-    // - jogo futuro dentro de 2 dias
-    // - NÃO está posted (apostas posted são repostadas, não são novas)
-    // Ordenação: promovidas primeiro, depois por odds DESC
-    const { data: eligibleBets, error: eligibleError } = await supabase
+    // 1. Buscar apostas ATIVAS (posted) - serão repostadas
+    const { data: activeBets, error: activeError } = await supabase
       .from('suggested_bets')
       .select(`
         id,
         bet_market,
         bet_pick,
         odds,
+        odds_at_post,
         bet_status,
         deep_link,
         elegibilidade,
@@ -1015,38 +1018,85 @@ async function getFilaStatus() {
           kickoff_time
         )
       `)
-      .eq('elegibilidade', 'elegivel')
-      .not('deep_link', 'is', null)
-      .in('bet_status', ['generated', 'pending_link', 'ready'])  // Exclui 'posted' - apostas posted são repostadas separadamente
+      .eq('bet_status', 'posted')
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
-      .order('promovida_manual', { ascending: false })
-      .order('odds', { ascending: false })
-      .limit(10); // Buscar mais para depois filtrar
+      .order('league_matches(kickoff_time)', { ascending: true })
+      .limit(config.betting.maxActiveBets);
 
-    if (eligibleError) {
-      logger.error('Erro ao buscar fila', { error: eligibleError.message });
+    if (activeError) {
+      logger.error('Erro ao buscar apostas ativas', { error: activeError.message });
       return { success: false, error: { code: 'DB_ERROR', message: 'Erro ao buscar fila' } };
     }
 
-    // Filtrar: odds >= 1.60 OU promovida_manual = true
-    const filteredBets = (eligibleBets || []).filter(bet =>
-      bet.promovida_manual === true || (bet.odds && bet.odds >= config.betting.minOdds)
-    );
-
-    // Pegar top 3 (alinhado com maxActiveBets do config)
-    const top3 = filteredBets.slice(0, config.betting.maxActiveBets).map(bet => ({
+    const ativas = (activeBets || []).map(bet => ({
       id: bet.id,
       betMarket: bet.bet_market,
-      odds: bet.odds,
-      betStatus: bet.bet_status,
+      odds: bet.odds_at_post || bet.odds,
+      betStatus: 'posted',
       promovidaManual: bet.promovida_manual,
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
     }));
 
-    // Contar por elegibilidade (todas as apostas com jogos futuros)
+    // 2. Calcular slots disponíveis
+    const slotsDisponiveis = Math.max(0, config.betting.maxActiveBets - ativas.length);
+
+    // 3. Buscar NOVAS apostas elegíveis para preencher slots
+    let novas = [];
+    if (slotsDisponiveis > 0) {
+      const { data: eligibleBets, error: eligibleError } = await supabase
+        .from('suggested_bets')
+        .select(`
+          id,
+          bet_market,
+          bet_pick,
+          odds,
+          bet_status,
+          deep_link,
+          elegibilidade,
+          promovida_manual,
+          league_matches!inner (
+            home_team_name,
+            away_team_name,
+            kickoff_time
+          )
+        `)
+        .eq('elegibilidade', 'elegivel')
+        .not('deep_link', 'is', null)
+        .in('bet_status', ['generated', 'pending_link', 'ready'])
+        .gte('league_matches.kickoff_time', now.toISOString())
+        .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
+        .order('promovida_manual', { ascending: false })
+        .order('odds', { ascending: false })
+        .limit(10);
+
+      if (eligibleError) {
+        logger.warn('Erro ao buscar novas elegíveis', { error: eligibleError.message });
+      } else {
+        // Filtrar: odds >= minOdds OU promovida_manual = true
+        const filteredNew = (eligibleBets || []).filter(bet =>
+          bet.promovida_manual === true || (bet.odds && bet.odds >= config.betting.minOdds)
+        );
+
+        novas = filteredNew.slice(0, slotsDisponiveis).map(bet => ({
+          id: bet.id,
+          betMarket: bet.bet_market,
+          odds: bet.odds,
+          betStatus: bet.bet_status,
+          promovidaManual: bet.promovida_manual,
+          homeTeamName: bet.league_matches.home_team_name,
+          awayTeamName: bet.league_matches.away_team_name,
+          kickoffTime: bet.league_matches.kickoff_time,
+        }));
+      }
+    }
+
+    // 4. Montar fila completa: ativas primeiro, depois novas
+    const filaCompleta = [...ativas, ...novas];
+
+    // 5. Contar por elegibilidade (todas as apostas com jogos futuros)
     const { data: allBets, error: countError } = await supabase
       .from('suggested_bets')
       .select(`
@@ -1068,7 +1118,7 @@ async function getFilaStatus() {
       removida: 0,
       expirada: 0,
       promovidas: 0,
-      ativas: 0  // Apostas já postadas (serão repostadas)
+      ativas: ativas.length
     };
 
     (allBets || []).forEach(bet => {
@@ -1076,11 +1126,7 @@ async function getFilaStatus() {
       if (bet.elegibilidade === 'removida') counts.removida++;
       if (bet.elegibilidade === 'expirada') counts.expirada++;
       if (bet.promovida_manual === true) counts.promovidas++;
-      if (bet.bet_status === 'posted') counts.ativas++;
     });
-
-    // Calcular slots disponíveis para novas apostas
-    const slotsDisponiveis = Math.max(0, config.betting.maxActiveBets - counts.ativas);
 
     // Calcular próximo horário de postagem
     const nextPost = getNextPostTime();
@@ -1088,7 +1134,9 @@ async function getFilaStatus() {
     return {
       success: true,
       data: {
-        top3,
+        filaCompleta,
+        ativas,
+        novas,
         counts,
         slotsDisponiveis,
         nextPost
