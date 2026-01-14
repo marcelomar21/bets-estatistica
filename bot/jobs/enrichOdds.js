@@ -218,10 +218,14 @@ async function runEnrichment() {
     const enrichedBets = await enrichBetsWithOdds(betsToEnrich);
 
     let updated = 0;
+    // Story 14.8: Determinar nome do job baseado no horario
+    const hour = new Date().getHours().toString().padStart(2, '0');
+    const jobName = `enrichOdds_${hour}h`;
+
     for (const bet of enrichedBets) {
       if (bet.odds && bet.odds !== bet.currentOdds) {
-        // Use betService.updateBetOdds
-        const result = await updateBetOdds(bet.id, bet.odds);
+        // Use betService.updateBetOdds with jobName
+        const result = await updateBetOdds(bet.id, bet.odds, null, jobName);
         if (result.success) {
           updated++;
           logger.debug('Updated active bet odds', {
@@ -310,10 +314,14 @@ async function runEnrichment() {
   const enrichedBets = await enrichBetsWithOdds(supportedBets);
 
   // Step 5: Update odds in database using betService
+  // Story 14.8: Determinar nome do job baseado no horario
+  const hour = new Date().getHours().toString().padStart(2, '0');
+  const jobName = `enrichOdds_${hour}h`;
+
   let updated = 0;
   for (const bet of enrichedBets) {
     if (bet.odds && bet.odds !== bet.currentOdds) {
-      const result = await updateBetOdds(bet.id, bet.odds);
+      const result = await updateBetOdds(bet.id, bet.odds, null, jobName);
       if (result.success) {
         updated++;
         logger.debug('Updated bet odds', {

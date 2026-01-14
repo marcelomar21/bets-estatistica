@@ -80,11 +80,11 @@ node bot/jobs/enrichOdds.js      # Atualiza odds
 
 ### Em produção (Render)
 
-O scheduler roda automaticamente:
+O server inclui webhook + scheduler interno:
 
 ```bash
-# Inicia bot + scheduler (jobs automáticos)
-node bot/scheduler.js
+# Inicia bot com webhook + scheduler (jobs automáticos)
+node bot/server.js
 ```
 
 ## 📅 Horários dos Jobs (São Paulo)
@@ -292,8 +292,9 @@ Mercados não suportados pela API são enviados ao grupo de admins para inserç�
 │   ├── handlers/        # Handlers de mensagens
 │   ├── jobs/            # Jobs agendados
 │   ├── services/        # Serviços (odds, bets, etc)
-│   ├── index.js         # Entry point do bot
-│   └── scheduler.js     # Scheduler de jobs
+│   ├── index.js         # Entry point (polling/dev)
+│   ├── server.js        # Entry point (webhook/prod) + scheduler
+│   └── telegram.js      # Cliente singleton
 ├── lib/                 # Bibliotecas compartilhadas
 ├── scripts/             # Scripts de ETL e utilitários
 │   ├── pipeline.js      # Pipeline unificado

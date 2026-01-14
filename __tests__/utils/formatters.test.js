@@ -1,9 +1,10 @@
 /**
  * Tests for formatters utility module
  * Story: 14.5 - Implementar agrupamento por dia
+ * Story: 14.6 - Adicionar paginacao em todos os comandos
  */
 
-const { getDayLabel, groupBetsByDay, formatBetListWithDays } = require('../../bot/utils/formatters');
+const { getDayLabel, groupBetsByDay, formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../../bot/utils/formatters');
 
 describe('formatters', () => {
   describe('getDayLabel', () => {
@@ -141,6 +142,85 @@ describe('formatters', () => {
       const idx1 = result.indexOf('#1');
       const idx2 = result.indexOf('#2');
       expect(idx1).toBeLessThan(idx2);
+    });
+  });
+
+  // Story 14.6: Pagination tests
+  describe('paginateResults', () => {
+    it('retorna primeira pagina corretamente', () => {
+      const items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const result = paginateResults(items, 1, 10);
+
+      expect(result.items).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      expect(result.currentPage).toBe(1);
+      expect(result.totalPages).toBe(2);
+      expect(result.totalItems).toBe(12);
+    });
+
+    it('retorna segunda pagina corretamente', () => {
+      const items = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+      const result = paginateResults(items, 2, 10);
+
+      expect(result.items).toEqual([11, 12]);
+      expect(result.currentPage).toBe(2);
+      expect(result.totalPages).toBe(2);
+    });
+
+    it('limita pagina ao maximo quando excede (AC6)', () => {
+      const items = [1, 2, 3, 4, 5];
+      const result = paginateResults(items, 999, 10);
+
+      expect(result.currentPage).toBe(1);
+      expect(result.items).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('limita pagina ao minimo quando menor que 1 (AC6)', () => {
+      const items = [1, 2, 3, 4, 5];
+      const result = paginateResults(items, 0, 10);
+
+      expect(result.currentPage).toBe(1);
+    });
+
+    it('retorna array vazio para lista vazia', () => {
+      const result = paginateResults([], 1, 10);
+
+      expect(result.items).toEqual([]);
+      expect(result.totalPages).toBe(1);
+      expect(result.totalItems).toBe(0);
+    });
+
+    it('usa pageSize padrao de 10', () => {
+      const items = Array.from({ length: 25 }, (_, i) => i + 1);
+      const result = paginateResults(items, 1);
+
+      expect(result.items.length).toBe(10);
+      expect(result.totalPages).toBe(3);
+    });
+  });
+
+  describe('formatPaginationFooter', () => {
+    it('retorna total simples quando apenas 1 pagina', () => {
+      const pagination = { currentPage: 1, totalPages: 1, totalItems: 5 };
+      const result = formatPaginationFooter(pagination, '/filtrar');
+
+      expect(result).toBe('📊 Total: 5 apostas');
+    });
+
+    it('retorna footer completo com navegacao', () => {
+      const pagination = { currentPage: 1, totalPages: 3, totalItems: 25 };
+      const result = formatPaginationFooter(pagination, '/filtrar sem_link');
+
+      expect(result).toContain('Pagina 1 de 3');
+      expect(result).toContain('Total: 25');
+      expect(result).toContain('/filtrar sem_link 2');
+    });
+
+    it('nao mostra proxima pagina na ultima pagina', () => {
+      const pagination = { currentPage: 3, totalPages: 3, totalItems: 25 };
+      const result = formatPaginationFooter(pagination, '/fila');
+
+      expect(result).toContain('Pagina 3 de 3');
+      expect(result).not.toContain('proxima pagina');
     });
   });
 });

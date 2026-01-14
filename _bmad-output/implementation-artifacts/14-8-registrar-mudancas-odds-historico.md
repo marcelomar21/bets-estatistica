@@ -1,6 +1,6 @@
 # Story 14.8: Registrar Mudancas de Odds no Historico
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -40,28 +40,28 @@ so that tenha rastreabilidade completa.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar funcao registrarOddsHistory em betService.js (AC: #1, #5)
-  - [ ] 1.1: Definir interface da funcao
-  - [ ] 1.2: Implementar insercao no Supabase
-  - [ ] 1.3: Adicionar tratamento de erros (nao bloquear operacao principal)
-  - [ ] 1.4: Exportar funcao no modulo
+- [x] Task 1: Criar funcao registrarOddsHistory em betService.js (AC: #1, #5)
+  - [x] 1.1: Definir interface da funcao
+  - [x] 1.2: Implementar insercao no Supabase
+  - [x] 1.3: Adicionar tratamento de erros (nao bloquear operacao principal)
+  - [x] 1.4: Exportar funcao no modulo
 
-- [ ] Task 2: Modificar updateBetOdds para registrar historico (AC: #1, #3)
-  - [ ] 2.1: Buscar valor anterior antes de atualizar
-  - [ ] 2.2: Comparar old_value com new_value
-  - [ ] 2.3: Se diferentes, chamar registrarOddsHistory
-  - [ ] 2.4: Adicionar parametro jobName (default 'manual_update')
+- [x] Task 2: Modificar updateBetOdds para registrar historico (AC: #1, #3)
+  - [x] 2.1: Buscar valor anterior antes de atualizar
+  - [x] 2.2: Comparar old_value com new_value
+  - [x] 2.3: Se diferentes, chamar registrarOddsHistory
+  - [x] 2.4: Adicionar parametro jobName (default 'manual_update')
 
-- [ ] Task 3: Atualizar chamadas de updateBetOdds com jobName (AC: #1, #2)
-  - [ ] 3.1: enrichOdds.js: passar 'enrichOdds_HHh' como jobName
-  - [ ] 3.2: adminGroup.js handleOddsCommand: passar 'manual_admin_/odds'
-  - [ ] 3.3: Verificar outras chamadas de updateBetOdds
+- [x] Task 3: Atualizar chamadas de updateBetOdds com jobName (AC: #1, #2)
+  - [x] 3.1: enrichOdds.js: passar 'enrichOdds_HHh' como jobName
+  - [x] 3.2: adminGroup.js handleOddsCommand: passar 'manual_admin_/odds'
+  - [x] 3.3: Verificar outras chamadas de updateBetOdds
 
-- [ ] Task 4: Testar integracao (AC: #1-4)
-  - [ ] 4.1: Testar atualizacao via enrichOdds - deve registrar
-  - [ ] 4.2: Testar atualizacao via /odds - deve registrar
-  - [ ] 4.3: Testar atualizacao com mesmo valor - NAO deve registrar
-  - [ ] 4.4: Verificar registros no banco
+- [x] Task 4: Testar integracao (AC: #1-4)
+  - [x] 4.1: Testar atualizacao via enrichOdds - deve registrar
+  - [x] 4.2: Testar atualizacao via /odds - deve registrar
+  - [x] 4.3: Testar atualizacao com mesmo valor - NAO deve registrar
+  - [x] 4.4: Verificar registros no banco
 
 ## Dev Notes
 
@@ -246,14 +246,43 @@ const updateResult = await updateBetOdds(
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- Todos os 139 testes passando
+
 ### Completion Notes List
+
+1. ✅ Criada funcao `registrarOddsHistory()` em betService.js (linhas 690-718)
+   - Insere em `odds_update_history` com best-effort pattern
+   - Usa logger.warn para falhas (nao bloqueia operacao principal)
+   - Determina update_type automaticamente (odds_change ou new_analysis)
+
+2. ✅ Modificada funcao `updateBetOdds()` (linhas 730-775)
+   - Busca valor anterior antes de atualizar
+   - Compara valores com tolerancia 0.001 para evitar duplicatas
+   - Aceita parametro `jobName` (default: 'manual_update')
+   - Chama `registrarOddsHistory()` apos UPDATE com sucesso
+
+3. ✅ Atualizado enrichOdds.js
+   - Duas chamadas atualizadas (linhas 221-228 e 317-324)
+   - jobName dinamico: `enrichOdds_${hour}h` (ex: enrichOdds_08h)
+
+4. ✅ Atualizado adminGroup.js (linha 120)
+   - Passa `'manual_admin_/odds'` como jobName
+
+5. ✅ Adicionado teste para AC3 (nao duplicar quando odds nao muda)
+   - Novo teste: "nao atualiza quando odds nao mudou (Story 14.8 AC3)"
+   - Testes existentes atualizados para nova assinatura da funcao
+
+### Change Log
+
+- 2026-01-14: Implementado registro de historico de odds
 
 ### File List
 
-- bot/services/betService.js (modificar)
-- bot/jobs/enrichOdds.js (modificar)
-- bot/handlers/adminGroup.js (modificar)
+- bot/services/betService.js (modificado)
+- bot/jobs/enrichOdds.js (modificado)
+- bot/handlers/adminGroup.js (modificado)
+- __tests__/services/betService.test.js (modificado)

@@ -1,6 +1,6 @@
 # Story 14.6: Adicionar Paginação em Todos os Comandos
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -37,39 +37,39 @@ so that não receba mensagens muito longas.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar helper de paginação (AC: #1, #2)
-  - [ ] 1.1: Criar função `paginateResults(items, page, pageSize = 10)`
-  - [ ] 1.2: Retornar { items, currentPage, totalPages, totalItems }
-  - [ ] 1.3: Criar função `formatPaginationFooter(pagination, commandName)`
+- [x] Task 1: Criar helper de paginação (AC: #1, #2)
+  - [x] 1.1: Criar função `paginateResults(items, page, pageSize = 10)`
+  - [x] 1.2: Retornar { items, currentPage, totalPages, totalItems }
+  - [x] 1.3: Criar função `formatPaginationFooter(pagination, commandName)`
 
-- [ ] Task 2: Atualizar regex FILTRAR_PATTERN (AC: #4)
-  - [ ] 2.1: Alterar de `/^\/filtrar\s*(\w+)?$/i`
-  - [ ] 2.2: Para `/^\/filtrar\s*(\w+)?\s*(\d+)?$/i`
-  - [ ] 2.3: Capturar grupo 2 como página
+- [x] Task 2: Atualizar regex FILTRAR_PATTERN (AC: #4)
+  - [x] 2.1: Alterar de `/^\/filtrar\s*(\w+)?$/i`
+  - [x] 2.2: Para `/^\/filtrar\s*(\w+)?\s*(\d+)?$/i`
+  - [x] 2.3: Capturar grupo 2 como página
 
-- [ ] Task 3: Atualizar handleFiltrarCommand (AC: #4)
-  - [ ] 3.1: Aceitar parâmetro page
-  - [ ] 3.2: Aplicar paginação
-  - [ ] 3.3: Adicionar footer com instrução de navegação
+- [x] Task 3: Atualizar handleFiltrarCommand (AC: #4)
+  - [x] 3.1: Aceitar parâmetro page
+  - [x] 3.2: Aplicar paginação
+  - [x] 3.3: Adicionar footer com instrução de navegação
 
-- [ ] Task 4: Atualizar regex FILA_PATTERN (AC: #5)
-  - [ ] 4.1: Alterar de `/^\/fila$/i`
-  - [ ] 4.2: Para `/^\/fila\s*(\d+)?$/i`
-  - [ ] 4.3: Capturar grupo 1 como página
+- [x] Task 4: Atualizar regex FILA_PATTERN (AC: #5)
+  - [x] 4.1: Alterar de `/^\/fila$/i`
+  - [x] 4.2: Para `/^\/fila\s*(\d+)?$/i`
+  - [x] 4.3: Capturar grupo 1 como página
 
-- [ ] Task 5: Atualizar handleFilaCommand (AC: #5)
-  - [ ] 5.1: Aceitar parâmetro page
-  - [ ] 5.2: Aplicar paginação em ativas e novas
-  - [ ] 5.3: Adicionar footer com instrução de navegação
+- [x] Task 5: Atualizar handleFilaCommand (AC: #5)
+  - [x] 5.1: Aceitar parâmetro page
+  - [x] 5.2: Aplicar paginação em ativas e novas
+  - [x] 5.3: Adicionar footer com instrução de navegação
 
-- [ ] Task 6: Validar página existente (AC: #6)
-  - [ ] 6.1: Se página > totalPages, usar totalPages
-  - [ ] 6.2: Se página < 1, usar 1
+- [x] Task 6: Validar página existente (AC: #6)
+  - [x] 6.1: Se página > totalPages, usar totalPages
+  - [x] 6.2: Se página < 1, usar 1
 
-- [ ] Task 7: Testar paginação (AC: #1-6)
-  - [ ] 7.1: /filtrar semlink 2 - verificar página 2
-  - [ ] 7.2: /fila 2 - verificar página 2
-  - [ ] 7.3: /apostas 999 - verificar última página
+- [x] Task 7: Testar paginação (AC: #1-6)
+  - [x] 7.1: /filtrar semlink 2 - verificar página 2
+  - [x] 7.2: /fila 2 - verificar página 2
+  - [x] 7.3: /apostas 999 - verificar última página
 
 ## Dev Notes
 
@@ -209,13 +209,34 @@ if (filaMatch) {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- Verificação de sintaxe: `node --check bot/utils/formatters.js` - OK
+- Verificação de sintaxe: `node --check bot/handlers/adminGroup.js` - OK
+- Testes unitários: `npm test` - 138 testes passaram (6 suites, 9 novos testes para paginação)
+
 ### Completion Notes List
+
+1. ✅ Criados helpers de paginação em formatters.js:
+   - `paginateResults(items, page, pageSize)` - retorna { items, currentPage, totalPages, totalItems }
+   - `formatPaginationFooter(pagination, commandName)` - formata footer com navegação
+2. ✅ Atualizado FILTRAR_PATTERN para aceitar página: `/^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|prontas))?(?:\s+(\d+))?$/i`
+3. ✅ Atualizado handleFiltrarCommand para usar paginação (10 itens por página)
+4. ✅ Atualizado FILA_PATTERN para aceitar página: `/^\/fila(?:\s+(\d+))?$/i`
+5. ✅ Atualizado handleFilaCommand para usar paginação (10 itens por página)
+6. ✅ Implementada validação de página (AC6): página inválida redireciona para última página válida
+7. ✅ Footer de paginação mostra "Pagina X de Y | Total: N" e instrução de navegação
+8. ✅ Comando /apostas já tinha paginação (mantido)
+9. ✅ Adicionados 9 novos testes unitários para paginateResults e formatPaginationFooter
+
+### Change Log
+
+- 2026-01-14: Implementada paginação em /filtrar e /fila (10 por página)
 
 ### File List
 
-- bot/utils/formatters.js (modificar)
-- bot/handlers/adminGroup.js (modificar)
+- bot/utils/formatters.js (modificado) - adicionados paginateResults e formatPaginationFooter
+- bot/handlers/adminGroup.js (modificado) - paginação em /filtrar e /fila
+- __tests__/utils/formatters.test.js (modificado) - 9 novos testes

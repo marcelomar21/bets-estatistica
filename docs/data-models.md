@@ -244,6 +244,23 @@ Fila de controle do pipeline de análise.
 }
 ```
 
+### odds_update_history (Story 14.7)
+Historico de atualizacoes de odds nas apostas.
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| id | SERIAL | PK interna |
+| bet_id | BIGINT | FK para suggested_bets |
+| update_type | TEXT | 'odds_change', 'new_analysis', 'manual_update' |
+| old_value | NUMERIC(10,2) | Valor anterior (NULL para new_analysis) |
+| new_value | NUMERIC(10,2) | Novo valor |
+| job_name | TEXT | Nome do job/fonte (enrichOdds_08h, manual_admin) |
+| created_at | TIMESTAMPTZ | Data da atualizacao |
+
+**Constraint:** `update_type IN ('odds_change', 'new_analysis', 'manual_update')`
+
+**Foreign Key:** `bet_id REFERENCES suggested_bets(id) ON DELETE CASCADE`
+
 ## Índices
 
 | Tabela | Índice | Colunas |
@@ -255,6 +272,9 @@ Fila de controle do pipeline de análise.
 | stats_match_details | idx_stats_match_details_season | season_id |
 | team_lastx_stats | idx_team_lastx_team | team_id |
 | match_analysis_queue | idx_match_analysis_queue_status | status |
+| odds_update_history | idx_odds_history_bet_id | bet_id |
+| odds_update_history | idx_odds_history_created | created_at DESC |
+| odds_update_history | idx_odds_history_bet_created | bet_id, created_at DESC |
 
 ---
-*Documentação gerada em 2026-01-10 via BMM document-project workflow*
+*Documentação atualizada em 2026-01-14 - Story 14.7*

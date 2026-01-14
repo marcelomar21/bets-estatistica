@@ -3,6 +3,7 @@
  *
  * Stories covered:
  * - 14.5: Implementar agrupamento por dia
+ * - 14.6: Adicionar paginacao em todos os comandos
  *
  * Provides consistent bet list formatting with day grouping for:
  * - /apostas command
@@ -103,8 +104,62 @@ function formatBetListWithDays(bets, formatBetFn) {
   return lines.join('\n').trim();
 }
 
+// ============================================
+// Pagination Helpers (Story 14.6)
+// ============================================
+
+/**
+ * Paginate array of results
+ * @param {Array} items - Full array of items
+ * @param {number} page - Requested page (1-indexed)
+ * @param {number} pageSize - Items per page (default 10)
+ * @returns {object} { items, currentPage, totalPages, totalItems }
+ */
+function paginateResults(items, page = 1, pageSize = 10) {
+  const totalItems = items.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  // AC6: If page > totalPages, use totalPages. If page < 1, use 1
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const startIdx = (currentPage - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
+
+  return {
+    items: items.slice(startIdx, endIdx),
+    currentPage,
+    totalPages,
+    totalItems,
+  };
+}
+
+/**
+ * Format pagination footer for Telegram message
+ * @param {object} pagination - From paginateResults
+ * @param {string} commandName - Command for navigation hint (e.g., '/filtrar sem_link')
+ * @returns {string}
+ */
+function formatPaginationFooter(pagination, commandName) {
+  const { currentPage, totalPages, totalItems } = pagination;
+
+  if (totalPages <= 1) {
+    return `📊 Total: ${totalItems} apostas`;
+  }
+
+  const lines = [
+    '━━━━━━━━━━━━━━━━━━━━',
+    `📄 Pagina ${currentPage} de ${totalPages} | Total: ${totalItems}`,
+  ];
+
+  if (currentPage < totalPages) {
+    lines.push(`💡 Use \`${commandName} ${currentPage + 1}\` para proxima pagina`);
+  }
+
+  return lines.join('\n');
+}
+
 module.exports = {
   getDayLabel,
   groupBetsByDay,
   formatBetListWithDays,
+  paginateResults,
+  formatPaginationFooter,
 };

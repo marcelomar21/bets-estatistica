@@ -337,20 +337,26 @@ describe('betService', () => {
 
   describe('updateBetOdds', () => {
     test('atualiza odds e tenta auto-promoção', async () => {
+      // Story 14.8: updateBetOdds agora faz SELECT antes de UPDATE para registrar historico
+      // Ordem das chamadas: 1) SELECT odds atual, 2) UPDATE, 3) INSERT historico, 4) SELECT tryAutoPromote
+
       // Mock for update
       const updateEqMock = jest.fn().mockResolvedValue({ error: null });
       const updateMock = jest.fn().mockReturnValue({
         eq: updateEqMock,
       });
 
-      // Mock for tryAutoPromote (bet ready but no link)
+      // Mock for insert (odds_update_history) - best effort
+      const insertMock = jest.fn().mockResolvedValue({ error: null });
+
+      // Mock for SELECT (get current odds, then tryAutoPromote)
       const selectMock = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
           single: jest.fn().mockResolvedValue({
             data: {
               id: 123,
               bet_status: 'pending_link',
-              odds: 2.00,
+              odds: 1.50, // OLD value - must be different from new (2.00)
               deep_link: null,
               eligible: true,
             },
@@ -360,11 +366,19 @@ describe('betService', () => {
       });
 
       let callCount = 0;
-      supabase.from.mockImplementation(() => {
+      supabase.from.mockImplementation((table) => {
         callCount++;
+        if (table === 'odds_update_history') {
+          return { insert: insertMock };
+        }
         if (callCount === 1) {
+          // First call: SELECT to get current odds
+          return { select: selectMock };
+        } else if (callCount === 2) {
+          // Second call: UPDATE
           return { update: updateMock };
         } else {
+          // Third+ calls: SELECT for tryAutoPromote
           return { select: selectMock };
         }
       });
@@ -381,19 +395,26 @@ describe('betService', () => {
         eq: updateEqMock,
       });
 
+      const insertMock = jest.fn().mockResolvedValue({ error: null });
+
       const selectMock = jest.fn().mockReturnValue({
         eq: jest.fn().mockReturnValue({
           single: jest.fn().mockResolvedValue({
-            data: { id: 123, bet_status: 'ready', odds: 2.00, deep_link: null, eligible: true },
+            data: { id: 123, bet_status: 'ready', odds: 1.50, deep_link: null, eligible: true },
             error: null,
           }),
         }),
       });
 
       let callCount = 0;
-      supabase.from.mockImplementation(() => {
+      supabase.from.mockImplementation((table) => {
         callCount++;
+        if (table === 'odds_update_history') {
+          return { insert: insertMock };
+        }
         if (callCount === 1) {
+          return { select: selectMock };
+        } else if (callCount === 2) {
           return { update: updateMock };
         } else {
           return { select: selectMock };
@@ -407,6 +428,27 @@ describe('betService', () => {
         odds: 2.00,
         notes: 'Odds manual via /odd',
       });
+    });
+
+    test('nao atualiza quando odds nao mudou (Story 14.8 AC3)', async () => {
+      // Story 14.8: Nao duplica registros quando odds nao muda
+      const selectMock = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: jest.fn().mockResolvedValue({
+            data: { odds: 2.00 }, // Same as new value
+            error: null,
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => {
+        return { select: selectMock };
+      });
+
+      const result = await updateBetOdds(123, 2.00);
+
+      expect(result.success).toBe(true);
+      expect(result.promoted).toBe(false);
     });
   });
 

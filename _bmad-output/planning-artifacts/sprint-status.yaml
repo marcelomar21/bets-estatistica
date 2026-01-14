@@ -209,9 +209,9 @@ development_status:
   14-3-integrar-warns-postagem: review
   14-4-padronizar-ordenacao: review
   14-5-implementar-agrupamento-por-dia: review
-  14-6-adicionar-paginacao-comandos: ready-for-dev
-  14-7-criar-tabela-odds-update-history: ready-for-dev
-  14-8-registrar-mudancas-odds-historico: ready-for-dev
+  14-6-adicionar-paginacao-comandos: review
+  14-7-criar-tabela-odds-update-history: review
+  14-8-registrar-mudancas-odds-historico: review
   14-9-implementar-comando-atualizados: ready-for-dev
   epic-14-retrospective: optional
 

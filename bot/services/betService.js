@@ -679,14 +679,71 @@ async function updateBetLink(betId, deepLink) {
 }
 
 /**
+ * Registra atualizacao de odds no historico (Story 14.8)
+ * Funcao best-effort - nao bloqueia operacao principal se falhar
+ * @param {number} betId - ID da aposta
+ * @param {number|null} oldValue - Valor anterior (null para nova aposta)
+ * @param {number} newValue - Novo valor
+ * @param {string} jobName - Nome do job que fez a atualizacao
+ * @returns {Promise<{success: boolean}>}
+ */
+async function registrarOddsHistory(betId, oldValue, newValue, jobName) {
+  try {
+    const { error } = await supabase
+      .from('odds_update_history')
+      .insert({
+        bet_id: betId,
+        update_type: oldValue === null ? 'new_analysis' : 'odds_change',
+        old_value: oldValue,
+        new_value: newValue,
+        job_name: jobName,
+      });
+
+    if (error) {
+      logger.warn('Falha ao registrar historico de odds (best-effort)', {
+        betId,
+        error: error.message,
+      });
+      return { success: false };
+    }
+
+    logger.debug('Historico de odds registrado', { betId, oldValue, newValue, jobName });
+    return { success: true };
+  } catch (err) {
+    logger.warn('Erro inesperado ao registrar historico (best-effort)', {
+      betId,
+      error: err.message,
+    });
+    return { success: false };
+  }
+}
+
+/**
  * Update bet odds (manual or from API) and auto-promote to 'ready' if conditions met
+ * Story 14.8: Agora registra mudancas no historico
  * @param {number} betId - Bet ID
  * @param {number} odds - New odds value
  * @param {string} notes - Optional notes about the update
+ * @param {string} jobName - Nome do job que esta atualizando (default: 'manual_update')
  * @returns {Promise<{success: boolean, promoted?: boolean, error?: object}>}
  */
-async function updateBetOdds(betId, odds, notes = null) {
+async function updateBetOdds(betId, odds, notes = null, jobName = 'manual_update') {
   try {
+    // Story 14.8: Buscar valor anterior para historico
+    const { data: currentBet } = await supabase
+      .from('suggested_bets')
+      .select('odds')
+      .eq('id', betId)
+      .single();
+
+    const oldOdds = currentBet?.odds || null;
+
+    // Story 14.8: So atualiza se valor mudou (evita duplicatas no historico)
+    if (oldOdds !== null && Math.abs(oldOdds - odds) < 0.001) {
+      logger.debug('Odds nao mudou, pulando atualizacao', { betId, odds });
+      return { success: true, promoted: false };
+    }
+
     const updateData = { odds };
     if (notes) {
       updateData.notes = notes;
@@ -702,7 +759,10 @@ async function updateBetOdds(betId, odds, notes = null) {
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    logger.info('Bet odds updated', { betId, odds });
+    logger.info('Bet odds updated', { betId, oldOdds, newOdds: odds });
+
+    // Story 14.8: Registrar no historico (best-effort)
+    await registrarOddsHistory(betId, oldOdds, odds, jobName);
 
     // Try to auto-promote
     const promoteResult = await tryAutoPromote(betId);

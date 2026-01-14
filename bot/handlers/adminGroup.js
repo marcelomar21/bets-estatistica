@@ -9,7 +9,7 @@ const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
-const { formatBetListWithDays, groupBetsByDay, getDayLabel } = require('../utils/formatters');
+const { formatBetListWithDays, groupBetsByDay, getDayLabel, paginateResults, formatPaginationFooter } = require('../utils/formatters');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -48,8 +48,8 @@ const OVERVIEW_PATTERN = /^\/overview$/i;
 // Regex to match "/trocar ID_ANTIGO ID_NOVO" command (Story 10.3)
 const TROCAR_PATTERN = /^\/trocar\s+(\d+)\s+(\d+)$/i;
 
-// Regex to match "/filtrar [tipo]" command (Story 12.5)
-const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|prontas))?$/i;
+// Regex to match "/filtrar [tipo] [pagina]" command (Story 12.5, 14.6)
+const FILTRAR_PATTERN = /^\/filtrar(?:\s+(sem_odds|sem_link|com_link|com_odds|prontas))?(?:\s+(\d+))?$/i;
 
 // Regex to match "/simular [novo|ID]" command (Story 12.6)
 const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
@@ -60,8 +60,8 @@ const PROMOVER_PATTERN = /^\/promover(?:\s+(\d+))?$/i;
 // Regex to match "/remover ID" command (Story 13.3)
 const REMOVER_PATTERN = /^\/remover(?:\s+(\d+))?$/i;
 
-// Regex to match "/fila" command (Story 13.4)
-const FILA_PATTERN = /^\/fila$/i;
+// Regex to match "/fila [pagina]" command (Story 13.4, 14.6)
+const FILA_PATTERN = /^\/fila(?:\s+(\d+))?$/i;
 
 // Regex to match "/metricas" command (Story 11.4)
 const METRICAS_PATTERN = /^\/metricas$/i;
@@ -116,7 +116,8 @@ async function handleOddsCommand(bot, msg, betId, oddsValue) {
   const previousOdds = bet.odds;
 
   // Update bet with manual odds using betService
-  const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`);
+  // Story 14.8: Passar jobName para registro no historico
+  const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`, 'manual_admin_/odds');
 
   if (!updateResult.success) {
     logger.error('Failed to save manual odds', { betId, error: updateResult.error.message });
@@ -406,10 +407,11 @@ async function handleTrocarCommand(bot, msg, oldBetId, newBetId) {
 }
 
 /**
- * Handle /filtrar command - Filter bets by criteria (Story 12.5)
+ * Handle /filtrar command - Filter bets by criteria (Story 12.5, 14.6)
+ * Usage: /filtrar [tipo] [pagina]
  */
-async function handleFiltrarCommand(bot, msg, filterType) {
-  logger.info('Received /filtrar command', { chatId: msg.chat.id, filterType });
+async function handleFiltrarCommand(bot, msg, filterType, page = 1) {
+  logger.info('Received /filtrar command', { chatId: msg.chat.id, filterType, page });
 
   // Se não passou filtro, mostrar ajuda
   if (!filterType) {
@@ -507,10 +509,10 @@ Filtra apostas por critério específico.
     return;
   }
 
-  // Limitar a 15 para não estourar limite do Telegram (4096 chars)
-  const MAX_DISPLAY = 15;
-  const hasMore = filtered.length > MAX_DISPLAY;
-  const displayBets = filtered.slice(0, MAX_DISPLAY);
+  // Story 14.6: Paginacao (10 por pagina)
+  const PAGE_SIZE = 10;
+  const pagination = paginateResults(filtered, page, PAGE_SIZE);
+  const displayBets = pagination.items;
 
   // Story 14.5: Format single bet for day grouping
   const formatBetForFilter = (bet) => {
@@ -533,12 +535,15 @@ Filtra apostas por critério específico.
   };
 
   // Formatar lista com agrupamento por dia (Story 14.5)
-  const lines = [`📋 *APOSTAS ${filterLabel}* (${filtered.length})`, ''];
+  const lines = [`📋 *APOSTAS ${filterLabel}*`, `Pagina ${pagination.currentPage} de ${pagination.totalPages} • Total: ${pagination.totalItems}`, ''];
   const groupedContent = formatBetListWithDays(displayBets, formatBetForFilter);
   lines.push(groupedContent);
 
-  if (hasMore) {
-    lines.push(`\n⚠️ _+${filtered.length - MAX_DISPLAY} apostas não exibidas_`);
+  // Story 14.6: Footer com paginacao
+  if (pagination.totalPages > 1) {
+    lines.push('');
+    const commandBase = filterType ? `/filtrar ${filterType}` : '/filtrar';
+    lines.push(formatPaginationFooter(pagination, commandBase));
   }
 
   if (hint) {
@@ -547,7 +552,7 @@ Filtra apostas por critério específico.
   }
 
   await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown' });
-  logger.info('Filter command executed', { filterType, count: filtered.length });
+  logger.info('Filter command executed', { filterType, page: pagination.currentPage, totalPages: pagination.totalPages, count: filtered.length });
 }
 
 /**
@@ -897,11 +902,12 @@ async function handleRemoverCommand(bot, msg, betId) {
 }
 
 /**
- * Handle /fila command - Show posting queue status (Story 13.4)
+ * Handle /fila command - Show posting queue status (Story 13.4, 14.6)
  * Mostra apostas ativas (posted) + novas que serão postadas
+ * Usage: /fila [pagina]
  */
-async function handleFilaCommand(bot, msg) {
-  logger.info('Received /fila command', { chatId: msg.chat.id });
+async function handleFilaCommand(bot, msg, page = 1) {
+  logger.info('Received /fila command', { chatId: msg.chat.id, page });
 
   const result = await getFilaStatus();
 
@@ -928,6 +934,11 @@ async function handleFilaCommand(bot, msg) {
     return;
   }
 
+  // Story 14.6: Paginacao (10 por pagina)
+  const PAGE_SIZE = 10;
+  const pagination = paginateResults(filaCompleta, page, PAGE_SIZE);
+  const displayBets = pagination.items;
+
   // Story 14.5: Format single bet for queue with day grouping
   const formatBetForQueue = (bet) => {
     const kickoff = new Date(bet.kickoffTime);
@@ -947,12 +958,13 @@ async function handleFilaCommand(bot, msg) {
   };
 
   // Formatar fila com agrupamento por dia (Story 14.5)
-  const filaLines = formatBetListWithDays(filaCompleta, formatBetForQueue);
+  const filaLines = formatBetListWithDays(displayBets, formatBetForQueue);
 
   // Montar resposta completa
-  const response = `📋 *FILA DE POSTAGEM*
+  let response = `📋 *FILA DE POSTAGEM*
+Pagina ${pagination.currentPage} de ${pagination.totalPages} • Total: ${pagination.totalItems}
 
-*Próxima postagem:* ${nextPost.time} (em ${nextPost.diff})
+*Proxima postagem:* ${nextPost.time} (em ${nextPost.diff})
 
 *Na fila:* (📤 = ativa, 🆕 = nova, ⚡ = promovida)
 ${filaLines}
@@ -963,13 +975,20 @@ ${filaLines}
 📊 Slots livres: ${slotsDisponiveis}
 
 *Resumo geral:*
-✅ Elegíveis: ${counts.elegivel}
+✅ Elegiveis: ${counts.elegivel}
 ⚡ Promovidas: ${counts.promovidas}
 ⛔ Removidas: ${counts.removida}`;
+
+  // Story 14.6: Footer com paginacao
+  if (pagination.totalPages > 1) {
+    response += `\n\n${formatPaginationFooter(pagination, '/fila')}`;
+  }
 
   await bot.sendMessage(msg.chat.id, response, { parse_mode: 'Markdown' });
   logger.info('Fila command executed', {
     total: filaCompleta.length,
+    page: pagination.currentPage,
+    totalPages: pagination.totalPages,
     ativas: ativas.length,
     novas: novas.length,
     slots: slotsDisponiveis
@@ -1320,11 +1339,12 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Check if message is /filtrar command (Story 12.5)
+  // Check if message is /filtrar command (Story 12.5, 14.6)
   const filtrarMatch = text.match(FILTRAR_PATTERN);
   if (filtrarMatch) {
     const filterType = filtrarMatch[1] || null;
-    await handleFiltrarCommand(bot, msg, filterType);
+    const page = filtrarMatch[2] ? parseInt(filtrarMatch[2], 10) : 1;
+    await handleFiltrarCommand(bot, msg, filterType, page);
     return;
   }
 
@@ -1352,9 +1372,11 @@ async function handleAdminMessage(bot, msg) {
     return;
   }
 
-  // Check if message is /fila command (Story 13.4)
-  if (FILA_PATTERN.test(text)) {
-    await handleFilaCommand(bot, msg);
+  // Check if message is /fila command (Story 13.4, 14.6)
+  const filaMatch = text.match(FILA_PATTERN);
+  if (filaMatch) {
+    const page = filaMatch[1] ? parseInt(filaMatch[1], 10) : 1;
+    await handleFilaCommand(bot, msg, page);
     return;
   }
 
