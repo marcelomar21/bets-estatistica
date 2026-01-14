@@ -5,7 +5,6 @@
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
 const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost, promoverAposta, removerAposta, getFilaStatus } = require('../services/betService');
-const { confirmLinkReceived } = require('../services/alertService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
@@ -1274,14 +1273,6 @@ async function handleLinkUpdate(bot, msg, betId, deepLink) {
     `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${statusMsg}`,
     { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
   );
-
-  // Also trigger alertService confirmation
-  await confirmLinkReceived({
-    homeTeamName: bet.homeTeamName,
-    awayTeamName: bet.awayTeamName,
-    betMarket: bet.betMarket,
-    betPick: bet.betPick,
-  });
 
   logger.info('Link saved successfully', { betId });
 }

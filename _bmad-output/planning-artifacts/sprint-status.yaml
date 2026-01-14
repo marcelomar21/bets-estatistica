@@ -204,7 +204,7 @@ development_status:
   # Epic 14: UX Admin e Visibilidade
   # ============================================
   epic-14: in-progress
-  14-1-corrigir-bug-link-duplicado: ready-for-dev
+  14-1-corrigir-bug-link-duplicado: review
   14-2-criar-modulo-warns: ready-for-dev
   14-3-integrar-warns-postagem: ready-for-dev
   14-4-padronizar-ordenacao: ready-for-dev

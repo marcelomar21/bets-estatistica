@@ -1,6 +1,6 @@
 # Story 14.1: Corrigir Bug /link Duplicado
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,19 +26,19 @@ so that não seja confundido com mensagens duplicadas.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Remover chamada duplicada de confirmLinkReceived (AC: #1)
-  - [ ] 1.1: Localizar função handleLinkUpdate em bot/handlers/adminGroup.js
-  - [ ] 1.2: Remover linhas 1279-1284 (chamada confirmLinkReceived)
-  - [ ] 1.3: Manter apenas bot.sendMessage das linhas 1272-1276
+- [x] Task 1: Remover chamada duplicada de confirmLinkReceived (AC: #1)
+  - [x] 1.1: Localizar função handleLinkUpdate em bot/handlers/adminGroup.js
+  - [x] 1.2: Remover linhas 1279-1284 (chamada confirmLinkReceived)
+  - [x] 1.3: Manter apenas bot.sendMessage das linhas 1272-1276
 
-- [ ] Task 2: Verificar outros usos de confirmLinkReceived (AC: #1)
-  - [ ] 2.1: Buscar outras chamadas de confirmLinkReceived no código
-  - [ ] 2.2: Avaliar se devem ser mantidas ou removidas
+- [x] Task 2: Verificar outros usos de confirmLinkReceived (AC: #1)
+  - [x] 2.1: Buscar outras chamadas de confirmLinkReceived no código
+  - [x] 2.2: Avaliar se devem ser mantidas ou removidas
 
-- [ ] Task 3: Testar correção (AC: #1, #2, #3)
-  - [ ] 3.1: Testar /link ID URL - deve enviar 1 mensagem
-  - [ ] 3.2: Testar ID: URL (formato legado) - deve enviar 1 mensagem
-  - [ ] 3.3: Testar atualização de link existente - deve enviar mensagem de aviso + confirmação (2 mensagens OK)
+- [x] Task 3: Testar correção (AC: #1, #2, #3)
+  - [x] 3.1: Testar /link ID URL - deve enviar 1 mensagem
+  - [x] 3.2: Testar ID: URL (formato legado) - deve enviar 1 mensagem
+  - [x] 3.3: Testar atualização de link existente - deve enviar mensagem de aviso + confirmação (2 mensagens OK)
 
 ## Dev Notes
 
@@ -104,12 +104,26 @@ Remover a chamada `confirmLinkReceived()` nas linhas 1279-1284. A mensagem das l
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- Verificação de sintaxe: `node --check bot/handlers/adminGroup.js` - OK
+- Testes unitários: `npm test` - 90 testes passaram (4 suites)
+
 ### Completion Notes List
+
+1. ✅ Removida chamada duplicada `confirmLinkReceived()` das linhas 1278-1284
+2. ✅ Removido import não utilizado de `confirmLinkReceived` do arquivo
+3. ✅ Mantida mensagem principal `bot.sendMessage()` nas linhas 1271-1275 com todas as informações necessárias
+4. ✅ Verificado que não há outros usos de `confirmLinkReceived` no codebase (apenas definição e export no alertService.js)
+5. ✅ Função `confirmLinkReceived` mantida no alertService.js para possível uso futuro
+6. ✅ Todos os 90 testes existentes continuam passando
+
+### Change Log
+
+- 2026-01-14: Bug fix - Removida chamada duplicada de confirmLinkReceived em handleLinkUpdate() que causava mensagens duplicadas ao operador
 
 ### File List
 
-- bot/handlers/adminGroup.js (modificar)
+- bot/handlers/adminGroup.js (modificado) - removida chamada confirmLinkReceived e import não utilizado
