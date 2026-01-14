@@ -1,6 +1,6 @@
 # Sprint Status - bets-estatistica
 # generated: 2026-01-10
-# updated: 2026-01-12 (epic 13 added - Gestão de Elegibilidade)
+# updated: 2026-01-14 (epics 14-15 added - UX Admin e Scraping)
 # project: bets-estatistica
 # tracking_system: yaml
 # story_location: _bmad-output/implementation-artifacts/stories
@@ -31,12 +31,16 @@
 # ================================================
 # Epic 7 (Bug Fixes) → Epic 8 (Admin Tools) → Epic 9 (Alertas) → Epic 10 (Melhorias) → Epic 11 (DevOps) → Epic 12 (Admin v2)
 #
-# IMPLEMENTATION ORDER (Addendum v4 - Current):
-# =============================================
+# IMPLEMENTATION ORDER (Addendum v4 - Completed):
+# ===============================================
 # Epic 13 (Gestão de Elegibilidade)
+#
+# IMPLEMENTATION ORDER (Addendum v4.1 - Current):
+# ===============================================
+# Epic 14 (UX Admin) → Epic 15 (Scraping Odds)
 
 generated: "2026-01-10"
-updated: "2026-01-12"
+updated: "2026-01-14"
 project: "bets-estatistica"
 tracking_system: "yaml"
 story_location: "_bmad-output/implementation-artifacts/stories"
@@ -195,3 +199,32 @@ development_status:
   13-4-implementar-comando-fila: done
   13-5-atualizar-logica-selecao-job: done
   epic-13-retrospective: optional
+
+  # ============================================
+  # Epic 14: UX Admin e Visibilidade
+  # ============================================
+  epic-14: in-progress
+  14-1-corrigir-bug-link-duplicado: ready-for-dev
+  14-2-criar-modulo-warns: ready-for-dev
+  14-3-integrar-warns-postagem: ready-for-dev
+  14-4-padronizar-ordenacao: ready-for-dev
+  14-5-implementar-agrupamento-por-dia: ready-for-dev
+  14-6-adicionar-paginacao-comandos: ready-for-dev
+  14-7-criar-tabela-odds-update-history: ready-for-dev
+  14-8-registrar-mudancas-odds-historico: ready-for-dev
+  14-9-implementar-comando-atualizados: ready-for-dev
+  epic-14-retrospective: optional
+
+  # ============================================
+  # Epic 15: Agente de Scraping para Odds
+  # ============================================
+  epic-15: in-progress
+  15-1-criar-servico-scraping: ready-for-dev
+  15-2-implementar-cache-por-aposta: ready-for-dev
+  15-3-criar-job-scraping: ready-for-dev
+  15-4-implementar-fallback-api: ready-for-dev
+  15-5-integrar-warn-pos-scraping: ready-for-dev
+  15-6-adicionar-metricas-custo-llm: ready-for-dev
+  15-7-configurar-limite-diario-custo: ready-for-dev
+  15-8-atualizar-schedule-server: ready-for-dev
+  epic-15-retrospective: optional

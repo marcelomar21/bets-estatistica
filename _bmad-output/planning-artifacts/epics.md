@@ -2,16 +2,17 @@
 stepsCompleted: [1, 2, 3, 4, 5]
 status: updated
 completedAt: "2026-01-10"
-updatedAt: "2026-01-12"
-lastAddendum: "v4-gestao-elegibilidade"
+updatedAt: "2026-01-13"
+lastAddendum: "v4.1-ux-admin-scraping"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
   - _bmad-output/planning-artifacts/prd-addendum-v3.md
+  - _bmad-output/planning-artifacts/prd-addendum-v4.md
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
-epicCount: 13
+epicCount: 15
 ---
 
 # bets-estatistica - Epic Breakdown
@@ -1768,3 +1769,528 @@ LIMIT 3;
 ## Ordem de Implementação - Epic 13
 
 1. Story 13.1 (Modelo de dados) → 2. Story 13.5 (Lógica de seleção) → 3. Story 13.2 (/promover) → 4. Story 13.3 (/remover) → 5. Story 13.4 (/fila)
+
+---
+
+# ADDENDUM v4.1 - UX Admin e Scraping (2026-01-13)
+
+## Requirements Inventory - Addendum v4.1
+
+### Bug Fixes Identificados
+
+- BUG-007: Comando /link envia 2 mensagens ao invés de 1
+
+### Novos Functional Requirements (Warns por Job)
+
+**Sistema de Warns**
+- FR-W1: Sistema envia warn APOS CADA job de postagem (10h, 15h, 22h)
+- FR-W2: Sistema envia warn APOS CADA job de atualizacao (odds, analises)
+- FR-W3: Warn mostra jogos dos proximos 2 dias com status atualizado
+- FR-W4: Warn mostra resultado do job que acabou de rodar
+- FR-W5: Warn mostra o que mudou (odds atualizadas, novas apostas)
+- FR-W6: Warn usa linguagem simples, sem termos tecnicos
+- FR-W7: Warn inclui acoes pendentes claras para o admin
+
+### Novos Functional Requirements (Ordenação)
+
+**Ordenação Padronizada**
+- FR-O1: TODOS os comandos de listagem ordenam por: data ASC, odds DESC
+- FR-O2: Listagens agrupam visualmente por dia (separador entre dias)
+- FR-O3: TODOS os comandos de listagem tem paginacao
+- FR-O4: Paginacao padrao: 10 itens por pagina
+- FR-O5: Navegacao: `/comando pagina N` ou botoes inline
+
+### Novos Functional Requirements (Alertas de Atualização)
+
+**Alertas e Histórico**
+- FR-A1: Apos job de enrichOdds, enviar alerta com IDs atualizados
+- FR-A2: Apos job de geracao de analises, enviar alerta com novos IDs
+- FR-A3: Alerta mostra: ID, jogo, valor anterior → novo (para odds)
+- FR-A4: Comando `/atualizados` lista todas atualizacoes recentes
+- FR-A5: Comando `/atualizados` tem paginacao
+- FR-A6: Historico mantem ultimas 48 horas de atualizacoes
+- FR-A7: Analises NUNCA rodam para jogos que ja tem apostas geradas
+
+### Novos Functional Requirements (Scraping de Odds)
+
+**Agente de Scraping**
+- FR-S1: Agente acessa site da Betano e extrai odds de jogos
+- FR-S2: Agente busca APENAS a odd do mercado especifico da aposta gerada (economia de tokens)
+- FR-S3: Agente usa mesma interface de retorno que `getEventOdds()`
+- FR-S4: Scraping roda 30 min ANTES de cada postagem (09:30, 14:30, 21:30)
+- FR-S5: Sistema tenta scraping primeiro, fallback para The Odds API se falhar
+- FR-S6: Cache de 25 minutos por aposta (expira antes da proxima postagem)
+- FR-S7: Limite de custo: maximo X chamadas LLM por dia (configuravel)
+- FR-S8: Log detalhado de custo (tokens usados, chamadas feitas)
+- FR-S9: Warn enviado apos scraping com odds atualizadas
+
+### FR Coverage Map - Addendum v4.1
+
+| FR | Epic | Descrição |
+|----|------|-----------|
+| BUG-007 | Epic 14 | /link 2 mensagens |
+| FR-W1-7 | Epic 14 | Sistema de warns por job |
+| FR-O1-5 | Epic 14 | Ordenação padronizada |
+| FR-A1-7 | Epic 14 | Alertas de atualização |
+| FR-S1-9 | Epic 15 | Agente de scraping |
+
+---
+
+## Epic 14: UX Admin e Visibilidade
+
+Melhorar experiência do admin não-técnico com informações claras, warns após cada job, e ordenação consistente.
+
+**Valor para o Usuário:**
+- Marcelo (operador) sabe o resultado de cada job em tempo real
+- Marcelo vê as apostas sempre ordenadas por data e odds de forma consistente
+- Marcelo recebe alertas quando odds ou análises são atualizadas
+- Marcelo pode consultar histórico de atualizações
+
+**FRs cobertos:** BUG-007, FR-W1-7, FR-O1-5, FR-A1-7
+
+### Story 14.1: Corrigir Bug /link Duplicado
+
+As a operador,
+I want receber apenas 1 mensagem quando cadastro um link,
+So that não seja confundido com mensagens duplicadas.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/link 45 https://betano.com/...`
+**When** bot processa e salva o link
+**Then** envia APENAS 1 mensagem de confirmação
+**And** não chama `confirmLinkReceived()` separadamente
+
+**Technical Notes:**
+- Arquivo: `bot/handlers/adminGroup.js`
+- Função: `handleLinkUpdate()` (linhas 1272-1284)
+- Remover chamada `confirmLinkReceived()` na linha 1279-1284
+- Manter apenas o `bot.sendMessage()` das linhas 1272-1276
+
+### Story 14.2: Criar Módulo de Warns (jobWarn.js)
+
+As a sistema,
+I want ter funções centralizadas para enviar warns,
+So that todos os jobs possam reportar seus resultados de forma consistente.
+
+**Acceptance Criteria:**
+
+**Given** módulo `bot/jobs/jobWarn.js` criado
+**When** importado por outros jobs
+**Then** expõe funções:
+  - `sendPostWarn(period, postedBets, upcomingBets, pendingActions)`
+  - `sendScrapingWarn(updatedBets, failedBets, statusForNextPost)`
+  - `sendAnalysisWarn(newBets)`
+**And** cada função formata mensagem seguindo padrão definido
+**And** envia para grupo admin via `sendToAdmin()`
+
+**Formato Warn Pós-Postagem:**
+```
+📤 *POSTAGEM [PERIODO] CONCLUIDA* ✅
+
+━━━━━━━━━━━━━━━━━━━━
+
+*APOSTAS POSTADAS:*
+✅ #ID Jogo - Mercado @ Odd
+...
+
+━━━━━━━━━━━━━━━━━━━━
+
+📊 *PROXIMOS 2 DIAS*
+
+*HOJE:*
+⚽ #ID Jogo - HH:MM
+   🎯 Mercado │ 📈 Odd │ Status
+
+*AMANHA:*
+...
+
+━━━━━━━━━━━━━━━━━━━━
+
+⚠️ *ACOES PENDENTES:*
+1. [Ação]
+2. [Ação]
+
+💡 Proxima postagem: HH:MM
+```
+
+### Story 14.3: Integrar Warns no Job de Postagem
+
+As a operador,
+I want receber warn após cada postagem,
+So that saiba o que foi postado e o que está pendente.
+
+**Acceptance Criteria:**
+
+**Given** job de postagem executa (10h, 15h, 22h)
+**When** postagem conclui (sucesso ou falha)
+**Then** chama `sendPostWarn()` com:
+  - Lista de apostas postadas
+  - Lista de jogos próximos 2 dias
+  - Ações pendentes (sem link, sem odds)
+**And** warn é enviado para grupo admin
+
+**Technical Notes:**
+- Modificar `bot/jobs/postBets.js`
+- Adicionar chamada `sendPostWarn()` ao final do job
+- Passar dados coletados durante execução
+
+### Story 14.4: Padronizar Ordenação (Data → Odds)
+
+As a operador,
+I want ver apostas sempre ordenadas por data e depois por odds,
+So that tenha consistência em todos os comandos.
+
+**Acceptance Criteria:**
+
+**Given** qualquer comando de listagem (/apostas, /filtrar, /fila)
+**When** bot retorna lista de apostas
+**Then** ordenação é: `kickoff_time ASC, odds DESC`
+**And** jogos mais próximos aparecem primeiro
+**And** dentro do mesmo dia, maior odd primeiro
+
+**Technical Notes:**
+- Modificar queries em `bot/services/betService.js`:
+  - `getAvailableBets()`
+  - `getEligibleBets()`
+  - `getFilaStatus()`
+- Padronizar ORDER BY clause
+
+### Story 14.5: Implementar Agrupamento por Dia
+
+As a operador,
+I want ver apostas agrupadas visualmente por dia,
+So that seja fácil identificar jogos de hoje vs amanhã.
+
+**Acceptance Criteria:**
+
+**Given** lista de apostas retornada
+**When** formatar para exibição
+**Then** agrupa apostas por dia com separador visual
+**And** mostra header "HOJE - DD/MM" ou "AMANHA - DD/MM"
+**And** usa separador `━━━━` entre dias
+
+**Technical Notes:**
+- Criar helper `formatBetListWithDays(bets, page, pageSize)` em `bot/utils/formatters.js`
+- Aplicar em handlers de `/apostas`, `/filtrar`, `/fila`
+
+### Story 14.6: Adicionar Paginação em Todos os Comandos
+
+As a operador,
+I want navegar por páginas de resultados,
+So that não receba mensagens muito longas.
+
+**Acceptance Criteria:**
+
+**Given** comando de listagem com mais de 10 resultados
+**When** bot formata resposta
+**Then** mostra apenas 10 itens por página
+**And** indica "Página X de Y | Total: N apostas"
+**And** instrui como navegar: `/comando 2` para página 2
+
+**Comandos afetados:**
+- `/apostas [página]` - já tem, manter
+- `/filtrar [tipo] [página]` - adicionar
+- `/fila [página]` - adicionar
+- `/atualizados [página]` - criar com paginação
+
+### Story 14.7: Criar Tabela odds_update_history
+
+As a sistema,
+I want registrar histórico de atualizações de odds,
+So that operador possa consultar o que mudou.
+
+**Acceptance Criteria:**
+
+**Given** migration executada
+**When** tabela criada
+**Then** estrutura é:
+```sql
+CREATE TABLE odds_update_history (
+  id SERIAL PRIMARY KEY,
+  bet_id BIGINT REFERENCES suggested_bets(id),
+  update_type TEXT, -- 'odds_change', 'new_analysis'
+  old_value NUMERIC,
+  new_value NUMERIC,
+  job_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_odds_history_bet_id ON odds_update_history(bet_id);
+CREATE INDEX idx_odds_history_created ON odds_update_history(created_at);
+```
+
+### Story 14.8: Registrar Mudanças de Odds no Histórico
+
+As a sistema,
+I want registrar toda mudança de odds no histórico,
+So that tenha rastreabilidade completa.
+
+**Acceptance Criteria:**
+
+**Given** job de enriquecimento atualiza odds de uma aposta
+**When** `updateBetOdds(betId, newOdds)` é chamado
+**Then** registra em `odds_update_history`:
+  - bet_id
+  - update_type = 'odds_change'
+  - old_value = odds anterior
+  - new_value = odds nova
+  - job_name = nome do job (ex: 'enrichOdds_13h')
+**And** só registra se valor realmente mudou
+
+**Technical Notes:**
+- Modificar `betService.js` função `updateBetOdds()`
+- Buscar valor anterior antes de atualizar
+- Inserir em `odds_update_history` se diferente
+
+### Story 14.9: Implementar Comando /atualizados
+
+As a operador,
+I want consultar histórico de atualizações,
+So that saiba o que mudou nas últimas horas.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/atualizados` no grupo admin
+**When** bot processa comando
+**Then** lista atualizações das últimas 48 horas
+**And** agrupa por dia e hora
+**And** mostra tipo (odds ou análise) e IDs afetados
+**And** tem paginação (10 por página)
+
+**Formato:**
+```
+📜 *HISTORICO DE ATUALIZACOES* (Pag 1/2)
+
+━━━━ *HOJE - 13/01* ━━━━
+
+🕐 13:00 - Scraping Odds
+   #45, #52, #58 atualizadas
+
+🕐 08:00 - Novas Analises
+   #61, #62, #63, #64 criadas
+
+━━━━ *ONTEM - 12/01* ━━━━
+
+🕐 20:00 - Scraping Odds
+   #41, #42, #45 atualizadas
+
+━━━━━━━━━━━━━━━━━━━━
+
+📄 Pagina 1 de 2
+💡 Use /atualizados 2 para mais
+```
+
+---
+
+## Epic 15: Agente de Scraping para Odds (Betano)
+
+Garantir odds atualizadas buscando diretamente na Betano 30 minutos antes de cada postagem, usando agente LLM.
+
+**Valor para o Usuário:**
+- Odds sempre atualizadas no momento da postagem
+- Maior cobertura de odds (mercados que API não cobre)
+- Transparência sobre custo de tokens
+
+**FRs cobertos:** FR-S1-9
+
+### Story 15.1: Criar Serviço de Scraping (scrapingOddsService.js)
+
+As a sistema,
+I want ter um serviço de scraping de odds via LLM,
+So that possa buscar odds diretamente da Betano.
+
+**Acceptance Criteria:**
+
+**Given** módulo `bot/services/scrapingOddsService.js` criado
+**When** chamado com dados de uma aposta
+**Then** usa agente LLM para:
+  1. Acessar site da Betano
+  2. Encontrar o jogo pelos times
+  3. Extrair APENAS a odd do mercado específico
+  4. Retornar valor numérico
+
+**Interface:**
+```javascript
+async function scrapeBetOdds(homeTeam, awayTeam, betMarket, betPick) {
+  // Input: "Liverpool", "Arsenal", "Over 2.5 gols", "over"
+  // Output: { bookmaker: 'betano', odds: 1.85, market: 'totals', type: 'over', line: 2.5 }
+}
+```
+
+**Regras de Economia:**
+- Buscar APENAS o mercado específico da aposta
+- NÃO buscar todos os mercados do jogo
+- Prompt focado: "Qual a odd de Over 2.5 no jogo X vs Y?"
+
+### Story 15.2: Implementar Cache por Aposta
+
+As a sistema,
+I want cachear odds buscadas por aposta,
+So that não faça scraping repetido.
+
+**Acceptance Criteria:**
+
+**Given** scraping de odds executado para uma aposta
+**When** mesma aposta consultada novamente
+**Then** retorna do cache se < 25 minutos
+**And** faz novo scraping se cache expirado
+
+**Cache key:** `${homeTeam}_${awayTeam}_${betMarket}`
+**TTL:** 25 minutos (expira antes da próxima postagem)
+
+### Story 15.3: Criar Job de Scraping (scrapingOdds.js)
+
+As a sistema,
+I want ter um job de scraping que roda antes das postagens,
+So that odds estejam sempre atualizadas.
+
+**Acceptance Criteria:**
+
+**Given** cron configurado para 09:30, 14:30, 21:30
+**When** job executa
+**Then** busca apostas elegíveis para próxima postagem
+**And** para cada aposta:
+  1. Verifica cache
+  2. Se cache miss, chama `scrapeBetOdds()`
+  3. Se scraping falhar, tenta fallback API
+  4. Atualiza odds no BD
+  5. Registra em histórico
+**And** ao final, envia warn com resumo
+
+**Technical Notes:**
+- Criar `bot/jobs/scrapingOdds.js`
+- Função principal: `runScrapingOdds()`
+- Chamar `sendScrapingWarn()` ao final
+
+### Story 15.4: Implementar Fallback para The Odds API
+
+As a sistema,
+I want ter fallback para API se scraping falhar,
+So that não fique sem odds.
+
+**Acceptance Criteria:**
+
+**Given** scraping de uma aposta falha
+**When** sistema detecta erro
+**Then** tenta buscar via The Odds API (comportamento atual)
+**And** se ambos falharem, marca aposta como "sem odds"
+**And** loga qual método foi usado
+
+**Hierarquia:**
+1. Cache (se disponível e < 25 min)
+2. Scraping Betano
+3. The Odds API (fallback)
+4. Sem odds (último recurso)
+
+### Story 15.5: Integrar Warn Pós-Scraping
+
+As a operador,
+I want receber warn após cada scraping,
+So that saiba quais odds foram atualizadas.
+
+**Acceptance Criteria:**
+
+**Given** job de scraping conclui
+**When** resultados processados
+**Then** chama `sendScrapingWarn()` com:
+  - Apostas atualizadas (old → new)
+  - Apostas que falharam
+  - Status para próxima postagem
+
+**Technical Notes:**
+- Chamar `sendScrapingWarn()` ao final de `scrapingOdds.js`
+- Passar lista de atualizações coletadas durante execução
+
+### Story 15.6: Adicionar Métricas de Custo LLM
+
+As a operador,
+I want ver quanto estou gastando em tokens,
+So that possa controlar custos.
+
+**Acceptance Criteria:**
+
+**Given** scraping via LLM executado
+**When** job conclui
+**Then** loga métricas:
+  - Total de scrapes feitos
+  - Tokens usados (estimativa)
+  - Cache hits vs misses
+  - Tempo de execução
+**And** inclui resumo no warn:
+  - "📊 Custo: ~X tokens | Cache: Y hits"
+
+**Technical Notes:**
+- Criar contador em `scrapingOddsService.js`
+- Estimar tokens por chamada (~500-1000)
+- Incluir no warn via parâmetro adicional
+
+### Story 15.7: Configurar Limite Diário de Custo
+
+As a sistema,
+I want ter limite configurável de chamadas LLM,
+So that custos não fujam do controle.
+
+**Acceptance Criteria:**
+
+**Given** configuração em `lib/config.js`
+**When** limite de scrapes diários atingido
+**Then** usa apenas fallback API
+**And** alerta operador que limite foi atingido
+
+**Configuração:**
+```javascript
+scraping: {
+  maxDailyScapes: 100,      // Máximo por dia
+  cacheTtlMinutes: 25,       // TTL do cache
+  fallbackToApi: true,       // Usar API se falhar
+  alertOnLimitReached: true  // Alertar ao atingir limite
+}
+```
+
+### Story 15.8: Atualizar Schedule em bot/server.js
+
+As a sistema,
+I want ter o novo schedule de jobs configurado,
+So that scraping rode antes das postagens.
+
+**Acceptance Criteria:**
+
+**Given** `bot/server.js` atualizado
+**When** cron jobs configurados
+**Then** schedule é:
+  - 09:30 → `runScrapingOdds()` + warn
+  - 10:00 → `runPostBets('morning')` + warn
+  - 14:30 → `runScrapingOdds()` + warn
+  - 15:00 → `runPostBets('afternoon')` + warn
+  - 21:30 → `runScrapingOdds()` + warn
+  - 22:00 → `runPostBets('night')` + warn
+
+**Technical Notes:**
+- Adicionar novos crons para 09:30, 14:30, 21:30
+- Manter health check a cada 5 min
+- Remover ou ajustar enrichOdds antigos (08:00, 13:00, 20:00)
+
+---
+
+## Ordem de Implementação - Epics 14 e 15
+
+### Epic 14 (UX Admin)
+1. Story 14.1 (Bug /link) → Quick win
+2. Story 14.7 (Tabela histórico) → Pré-requisito
+3. Story 14.2 (Módulo warns) → Base
+4. Story 14.4 + 14.5 (Ordenação + Agrupamento) → UX
+5. Story 14.6 (Paginação) → UX
+6. Story 14.8 (Registrar mudanças) → Histórico
+7. Story 14.9 (Comando /atualizados) → Histórico
+8. Story 14.3 (Integrar warns postagem) → Finalização
+
+### Epic 15 (Scraping)
+1. Story 15.1 (Serviço scraping) → Core
+2. Story 15.2 (Cache) → Otimização
+3. Story 15.4 (Fallback API) → Resiliência
+4. Story 15.3 (Job scraping) → Integração
+5. Story 15.5 (Warn pós-scraping) → UX
+6. Story 15.6 (Métricas custo) → Monitoramento
+7. Story 15.7 (Limite diário) → Controle
+8. Story 15.8 (Novo schedule) → Finalização
