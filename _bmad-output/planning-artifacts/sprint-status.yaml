@@ -205,10 +205,10 @@ development_status:
   # ============================================
   epic-14: in-progress
   14-1-corrigir-bug-link-duplicado: review
-  14-2-criar-modulo-warns: ready-for-dev
-  14-3-integrar-warns-postagem: ready-for-dev
-  14-4-padronizar-ordenacao: ready-for-dev
-  14-5-implementar-agrupamento-por-dia: ready-for-dev
+  14-2-criar-modulo-warns: review
+  14-3-integrar-warns-postagem: review
+  14-4-padronizar-ordenacao: review
+  14-5-implementar-agrupamento-por-dia: review
   14-6-adicionar-paginacao-comandos: ready-for-dev
   14-7-criar-tabela-odds-update-history: ready-for-dev
   14-8-registrar-mudancas-odds-historico: ready-for-dev

@@ -9,6 +9,7 @@ const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
+const { formatBetListWithDays, groupBetsByDay, getDayLabel } = require('../utils/formatters');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -215,37 +216,34 @@ async function handleApostasCommand(bot, msg, page = 1) {
     }
   };
 
-  // Format message with clear visual separation
-  const lines = [`📋 *APOSTAS DISPONÍVEIS*`, `Página ${currentPage} de ${totalPages} • Total: ${bets.length}\n`];
-
-  displayBets.forEach((bet) => {
+  // Story 14.5: Format single bet for day grouping
+  const formatBetForList = (bet) => {
     const kickoff = new Date(bet.kickoffTime);
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo',
     });
-    const dateStr = kickoff.toLocaleDateString('pt-BR', {
-      weekday: 'short',
-      day: '2-digit',
-      month: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
 
-    // Clear indicators for missing data
     const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ *SEM ODD*';
-    const linkDisplay = bet.hasLink ? '🔗 Com link' : '❌ *SEM LINK*';
+    const linkDisplay = bet.hasLink ? '🔗' : '❌';
     const statusLabel = getStatusLabel(bet.betStatus);
 
-    lines.push(`━━━━━━━━━━━━━━━━━━`);
-    lines.push(`🆔 *#${bet.id}* │ ${statusLabel}`);
-    lines.push(`⚽ ${bet.homeTeamName} x ${bet.awayTeamName}`);
-    lines.push(`📅 ${dateStr} às ${timeStr}`);
-    lines.push(`🎯 ${bet.betMarket}`);
-    lines.push(`${oddsDisplay} │ ${linkDisplay}`);
-  });
+    return [
+      `🆔 *#${bet.id}* │ ${statusLabel}`,
+      `⚽ ${bet.homeTeamName} x ${bet.awayTeamName}`,
+      `🕐 ${timeStr} │ 🎯 ${bet.betMarket}`,
+      `${oddsDisplay} │ ${linkDisplay}`,
+      '', // Empty line between bets
+    ].join('\n');
+  };
 
-  lines.push(`━━━━━━━━━━━━━━━━━━`);
+  // Format message with day grouping (Story 14.5)
+  const lines = [`📋 *APOSTAS DISPONÍVEIS*`, `Página ${currentPage} de ${totalPages} • Total: ${bets.length}`, ''];
+
+  // Add day-grouped bets
+  const groupedContent = formatBetListWithDays(displayBets, formatBetForList);
+  lines.push(groupedContent);
 
   // Navigation hints
   if (totalPages > 1) {
@@ -514,33 +512,30 @@ Filtra apostas por critério específico.
   const hasMore = filtered.length > MAX_DISPLAY;
   const displayBets = filtered.slice(0, MAX_DISPLAY);
 
-  // Formatar lista
-  const lines = [`📋 *APOSTAS ${filterLabel}* (${filtered.length})`, ''];
-
-  displayBets.forEach((bet) => {
+  // Story 14.5: Format single bet for day grouping
+  const formatBetForFilter = (bet) => {
     const kickoff = new Date(bet.kickoffTime);
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
       timeZone: 'America/Sao_Paulo',
     });
-    const dateStr = kickoff.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
 
     const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ SEM ODD';
-    const linkDisplay = bet.deepLink ? '🔗 Com link' : '❌ SEM LINK';
+    const linkDisplay = bet.deepLink ? '🔗' : '❌';
 
-    lines.push(`━━━━━━━━━━━━━━━━━━`);
-    lines.push(`🆔 *#${bet.id}* ${bet.homeTeamName} x ${bet.awayTeamName}`);
-    lines.push(`🎯 ${bet.betMarket}`);
-    lines.push(`📅 ${dateStr} às ${timeStr}`);
-    lines.push(`${oddsDisplay} │ ${linkDisplay}`);
-  });
+    return [
+      `🆔 *#${bet.id}* ${bet.homeTeamName} x ${bet.awayTeamName}`,
+      `🎯 ${bet.betMarket} │ 🕐 ${timeStr}`,
+      `${oddsDisplay} │ ${linkDisplay}`,
+      '', // Empty line between bets
+    ].join('\n');
+  };
 
-  lines.push(`━━━━━━━━━━━━━━━━━━`);
+  // Formatar lista com agrupamento por dia (Story 14.5)
+  const lines = [`📋 *APOSTAS ${filterLabel}* (${filtered.length})`, ''];
+  const groupedContent = formatBetListWithDays(displayBets, formatBetForFilter);
+  lines.push(groupedContent);
 
   if (hasMore) {
     lines.push(`\n⚠️ _+${filtered.length - MAX_DISPLAY} apostas não exibidas_`);
@@ -933,14 +928,26 @@ async function handleFilaCommand(bot, msg) {
     return;
   }
 
-  // Formatar fila completa com indicadores visuais
-  const filaLines = filaCompleta.map((bet, i) => {
-    const num = ['1️⃣', '2️⃣', '3️⃣'][i] || `${i + 1}.`;
-    const statusFlag = bet.betStatus === 'posted' ? ' 📤' : ' 🆕';
+  // Story 14.5: Format single bet for queue with day grouping
+  const formatBetForQueue = (bet) => {
+    const kickoff = new Date(bet.kickoffTime);
+    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+    const statusFlag = bet.betStatus === 'posted' ? '📤' : '🆕';
     const promoFlag = bet.promovidaManual ? ' ⚡' : '';
     const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
-    return `${num} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}${statusFlag}${promoFlag}\n   🎯 ${bet.betMarket} @ ${oddsDisplay}`;
-  }).join('\n\n');
+
+    return [
+      `${statusFlag} #${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}${promoFlag}`,
+      `   🕐 ${timeStr} │ 🎯 ${bet.betMarket} @ ${oddsDisplay}`,
+    ].join('\n');
+  };
+
+  // Formatar fila com agrupamento por dia (Story 14.5)
+  const filaLines = formatBetListWithDays(filaCompleta, formatBetForQueue);
 
   // Montar resposta completa
   const response = `📋 *FILA DE POSTAGEM*

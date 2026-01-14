@@ -1,6 +1,6 @@
 # Story 14.2: Criar Módulo de Warns (jobWarn.js)
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -46,38 +46,38 @@ so that todos os jobs possam reportar seus resultados de forma consistente.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar arquivo bot/jobs/jobWarn.js (AC: #1)
-  - [ ] 1.1: Importar dependências (telegram.js, logger, config)
-  - [ ] 1.2: Criar estrutura base do módulo
-  - [ ] 1.3: Exportar funções sendPostWarn, sendScrapingWarn, sendAnalysisWarn
+- [x] Task 1: Criar arquivo bot/jobs/jobWarn.js (AC: #1)
+  - [x] 1.1: Importar dependências (telegram.js, logger, config)
+  - [x] 1.2: Criar estrutura base do módulo
+  - [x] 1.3: Exportar funções sendPostWarn, sendScrapingWarn, sendAnalysisWarn
 
-- [ ] Task 2: Implementar sendPostWarn (AC: #2)
-  - [ ] 2.1: Definir parâmetros (period, postedBets, upcomingBets, pendingActions)
-  - [ ] 2.2: Formatar header com período (MANHÃ/TARDE/NOITE)
-  - [ ] 2.3: Listar apostas postadas com ID, jogo, mercado, odd
-  - [ ] 2.4: Agrupar jogos próximos por dia (HOJE/AMANHÃ)
-  - [ ] 2.5: Listar ações pendentes (sem link, sem odds)
-  - [ ] 2.6: Calcular e mostrar próximo horário de postagem
-  - [ ] 2.7: Chamar sendToAdmin() e logar
+- [x] Task 2: Implementar sendPostWarn (AC: #2)
+  - [x] 2.1: Definir parâmetros (period, postedBets, upcomingBets, pendingActions)
+  - [x] 2.2: Formatar header com período (MANHÃ/TARDE/NOITE)
+  - [x] 2.3: Listar apostas postadas com ID, jogo, mercado, odd
+  - [x] 2.4: Agrupar jogos próximos por dia (HOJE/AMANHÃ)
+  - [x] 2.5: Listar ações pendentes (sem link, sem odds)
+  - [x] 2.6: Calcular e mostrar próximo horário de postagem
+  - [x] 2.7: Chamar sendToAdmin() e logar
 
-- [ ] Task 3: Implementar sendScrapingWarn (AC: #3)
-  - [ ] 3.1: Definir parâmetros (updatedBets, failedBets, statusForNextPost)
-  - [ ] 3.2: Formatar lista de odds atualizadas (old → new)
-  - [ ] 3.3: Listar apostas que falharam
-  - [ ] 3.4: Mostrar resumo para próxima postagem
-  - [ ] 3.5: Chamar sendToAdmin() e logar
+- [x] Task 3: Implementar sendScrapingWarn (AC: #3)
+  - [x] 3.1: Definir parâmetros (updatedBets, failedBets, statusForNextPost)
+  - [x] 3.2: Formatar lista de odds atualizadas (old → new)
+  - [x] 3.3: Listar apostas que falharam
+  - [x] 3.4: Mostrar resumo para próxima postagem
+  - [x] 3.5: Chamar sendToAdmin() e logar
 
-- [ ] Task 4: Implementar sendAnalysisWarn (AC: #4)
-  - [ ] 4.1: Definir parâmetro (newBets)
-  - [ ] 4.2: Formatar lista de IDs criados
-  - [ ] 4.3: Mostrar total de apostas
-  - [ ] 4.4: Chamar sendToAdmin() e logar
+- [x] Task 4: Implementar sendAnalysisWarn (AC: #4)
+  - [x] 4.1: Definir parâmetro (newBets)
+  - [x] 4.2: Formatar lista de IDs criados
+  - [x] 4.3: Mostrar total de apostas
+  - [x] 4.4: Chamar sendToAdmin() e logar
 
-- [ ] Task 5: Criar helpers internos (AC: #2, #5)
-  - [ ] 5.1: Helper formatBetListForWarn(bets) - formata lista de apostas
-  - [ ] 5.2: Helper groupBetsByDay(bets) - agrupa por HOJE/AMANHÃ
-  - [ ] 5.3: Helper getNextPostTime() - calcula próximo horário
-  - [ ] 5.4: Helper getPeriodName(period) - retorna nome em português
+- [x] Task 5: Criar helpers internos (AC: #2, #5)
+  - [x] 5.1: Helper formatBetListForWarn(bets) - formata lista de apostas
+  - [x] 5.2: Helper groupBetsByDay(bets) - agrupa por HOJE/AMANHÃ
+  - [x] 5.3: Helper getNextPostTime() - calcula próximo horário
+  - [x] 5.4: Helper getPeriodName(period) - retorna nome em português
 
 ## Dev Notes
 
@@ -192,12 +192,44 @@ function getNextPostTime() {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.5 (claude-opus-4-5-20251101)
 
 ### Debug Log References
 
+- Verificação de sintaxe: `node --check bot/jobs/jobWarn.js` - OK
+- Testes unitários: `npm test` - 118 testes passaram (5 suites, 28 novos testes para jobWarn)
+
 ### Completion Notes List
+
+1. ✅ Criado módulo `bot/jobs/jobWarn.js` com todas as funções de warn
+2. ✅ Implementado `sendPostWarn()` com formatação completa:
+   - Header com período (MANHA/TARDE/NOITE)
+   - Lista de apostas postadas
+   - Jogos agrupados por dia (HOJE/AMANHÃ)
+   - Ações pendentes
+   - Próximo horário de postagem
+3. ✅ Implementado `sendScrapingWarn()` com:
+   - Odds atualizadas (old → new)
+   - Lista de falhas
+   - Status para próxima postagem
+4. ✅ Implementado `sendAnalysisWarn()` com:
+   - IDs das novas apostas
+   - Total gerado
+5. ✅ Criados helpers internos:
+   - `getPeriodName()` - traduz período
+   - `getNextPostTime()` - calcula próximo horário
+   - `groupBetsByDay()` - agrupa por HOJE/AMANHÃ
+   - `formatBetLine()` - formata linha de aposta
+   - `formatPostedBetsList()` - formata lista postada
+   - `getBetStatusDisplay()` - status com emoji
+6. ✅ Suporte a camelCase e snake_case para campos de bet
+7. ✅ Criados 28 testes unitários cobrindo todas as funções
+
+### Change Log
+
+- 2026-01-14: Criado módulo jobWarn.js com funções sendPostWarn, sendScrapingWarn, sendAnalysisWarn e helpers
 
 ### File List
 
-- bot/jobs/jobWarn.js (criar)
+- bot/jobs/jobWarn.js (criado) - módulo de warns centralizado
+- __tests__/jobs/jobWarn.test.js (criado) - 28 testes unitários

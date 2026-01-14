@@ -1,0 +1,146 @@
+/**
+ * Tests for formatters utility module
+ * Story: 14.5 - Implementar agrupamento por dia
+ */
+
+const { getDayLabel, groupBetsByDay, formatBetListWithDays } = require('../../bot/utils/formatters');
+
+describe('formatters', () => {
+  describe('getDayLabel', () => {
+    it('retorna HOJE para data de hoje', () => {
+      const today = new Date();
+      const dateKey = today.toISOString().split('T')[0];
+      const label = getDayLabel(dateKey);
+      expect(label).toMatch(/^HOJE - \d{2}\/\d{2}$/);
+    });
+
+    it('retorna AMANHA para data de amanha', () => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const dateKey = tomorrow.toISOString().split('T')[0];
+      const label = getDayLabel(dateKey);
+      expect(label).toMatch(/^AMANHA - \d{2}\/\d{2}$/);
+    });
+
+    it('retorna data com dia da semana para outras datas', () => {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 5);
+      const dateKey = futureDate.toISOString().split('T')[0];
+      const label = getDayLabel(dateKey);
+      // Should be DD/MM (weekday)
+      expect(label).toMatch(/^\d{2}\/\d{2} \(.+\)$/);
+    });
+  });
+
+  describe('groupBetsByDay', () => {
+    it('agrupa apostas por dia corretamente', () => {
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const bets = [
+        { id: 1, kickoffTime: today.toISOString() },
+        { id: 2, kickoffTime: today.toISOString() },
+        { id: 3, kickoffTime: tomorrow.toISOString() },
+      ];
+
+      const grouped = groupBetsByDay(bets);
+      const keys = Object.keys(grouped);
+
+      expect(keys.length).toBe(2);
+      expect(grouped[keys[0]].length).toBe(2);
+      expect(grouped[keys[1]].length).toBe(1);
+    });
+
+    it('retorna grupos ordenados por data', () => {
+      const date1 = new Date('2026-01-15T10:00:00Z');
+      const date2 = new Date('2026-01-14T10:00:00Z');
+      const date3 = new Date('2026-01-16T10:00:00Z');
+
+      const bets = [
+        { id: 1, kickoffTime: date1.toISOString() },
+        { id: 2, kickoffTime: date2.toISOString() },
+        { id: 3, kickoffTime: date3.toISOString() },
+      ];
+
+      const grouped = groupBetsByDay(bets);
+      const keys = Object.keys(grouped);
+
+      expect(keys[0]).toBe('2026-01-14');
+      expect(keys[1]).toBe('2026-01-15');
+      expect(keys[2]).toBe('2026-01-16');
+    });
+
+    it('retorna objeto vazio para array vazio', () => {
+      const grouped = groupBetsByDay([]);
+      expect(Object.keys(grouped).length).toBe(0);
+    });
+  });
+
+  describe('formatBetListWithDays', () => {
+    it('retorna mensagem padrao para lista vazia', () => {
+      const result = formatBetListWithDays([], () => '');
+      expect(result).toBe('Nenhuma aposta encontrada.');
+    });
+
+    it('retorna mensagem padrao para lista null', () => {
+      const result = formatBetListWithDays(null, () => '');
+      expect(result).toBe('Nenhuma aposta encontrada.');
+    });
+
+    it('formata apostas com headers de dia', () => {
+      const today = new Date();
+      const bets = [
+        {
+          id: 45,
+          kickoffTime: today.toISOString(),
+          homeTeamName: 'Liverpool',
+          awayTeamName: 'Arsenal',
+        },
+      ];
+
+      const formatFn = (bet) => `#${bet.id} ${bet.homeTeamName} vs ${bet.awayTeamName}`;
+      const result = formatBetListWithDays(bets, formatFn);
+
+      expect(result).toContain('━━━━ *HOJE');
+      expect(result).toContain('#45 Liverpool vs Arsenal');
+    });
+
+    it('agrupa multiplos dias com separadores', () => {
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const bets = [
+        { id: 1, kickoffTime: today.toISOString() },
+        { id: 2, kickoffTime: tomorrow.toISOString() },
+      ];
+
+      const formatFn = (bet) => `#${bet.id}`;
+      const result = formatBetListWithDays(bets, formatFn);
+
+      expect(result).toContain('HOJE');
+      expect(result).toContain('AMANHA');
+      expect(result).toContain('#1');
+      expect(result).toContain('#2');
+    });
+
+    it('preserva ordem dos grupos por data', () => {
+      const date1 = new Date('2026-01-14T10:00:00Z');
+      const date2 = new Date('2026-01-15T10:00:00Z');
+
+      const bets = [
+        { id: 2, kickoffTime: date2.toISOString() },
+        { id: 1, kickoffTime: date1.toISOString() },
+      ];
+
+      const formatFn = (bet) => `#${bet.id}`;
+      const result = formatBetListWithDays(bets, formatFn);
+
+      // 14/01 should appear before 15/01
+      const idx1 = result.indexOf('#1');
+      const idx2 = result.indexOf('#2');
+      expect(idx1).toBeLessThan(idx2);
+    });
+  });
+});

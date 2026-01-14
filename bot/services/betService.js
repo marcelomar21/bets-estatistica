@@ -40,7 +40,8 @@ async function getEligibleBets(limit = 10) {
       .gte('odds', config.betting.minOdds)
       .gte('league_matches.kickoff_time', new Date().toISOString())
       .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString())
-      .order('odds', { ascending: false })
+      .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
+      .order('odds', { ascending: false }) // Story 14.4: Depois odds
       .limit(limit);
 
     if (error) {
@@ -116,6 +117,7 @@ async function getBetsReadyForPosting() {
       .in('bet_status', ['generated', 'pending_link', 'ready'])  // Exclui posted, success, failure
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', maxDate.toISOString())
+      .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
       .order('promovida_manual', { ascending: false })  // Promovidas primeiro
       .order('odds', { ascending: false })              // Depois por odds
       .limit(10); // Buscar mais para depois filtrar
@@ -185,7 +187,8 @@ async function getBetsPendingLinks() {
       .eq('bet_status', 'pending_link')
       .eq('eligible', true)
       .gte('league_matches.kickoff_time', new Date().toISOString())
-      .order('odds', { ascending: false });
+      .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
+      .order('odds', { ascending: false }); // Story 14.4: Depois odds
 
     if (error) {
       logger.error('Failed to fetch pending bets', { error: error.message });
@@ -298,7 +301,8 @@ async function getActiveBetsForRepost() {
       .eq('bet_status', 'posted')
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', maxKickoffTime.toISOString())
-      .order('league_matches(kickoff_time)', { ascending: true });
+      .order('league_matches(kickoff_time)', { ascending: true })
+      .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
 
     if (error) {
       logger.error('Failed to fetch active bets for repost', { error: error.message });
@@ -358,7 +362,8 @@ async function getAvailableBets() {
       `)
       .in('bet_status', ['generated', 'pending_link', 'ready', 'posted'])
       .gte('league_matches.kickoff_time', now.toISOString())
-      .order('league_matches(kickoff_time)', { ascending: true });
+      .order('league_matches(kickoff_time)', { ascending: true })
+      .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
 
     if (error) {
       logger.error('Failed to fetch available bets', { error: error.message });
@@ -872,7 +877,8 @@ async function getOverviewStats() {
       `)
       .eq('eligible', true)
       .gte('league_matches.kickoff_time', new Date().toISOString())
-      .order('league_matches(kickoff_time)', { ascending: true });
+      .order('league_matches(kickoff_time)', { ascending: true })
+      .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
 
     if (allError) throw allError;
 
@@ -1024,6 +1030,7 @@ async function getFilaStatus() {
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true })
+      .order('odds', { ascending: false }) // Story 14.4: Padronizar ordenação
       .limit(config.betting.maxActiveBets);
 
     if (activeError) {
@@ -1071,6 +1078,7 @@ async function getFilaStatus() {
         .in('bet_status', ['generated', 'pending_link', 'ready'])
         .gte('league_matches.kickoff_time', now.toISOString())
         .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
+        .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
         .order('promovida_manual', { ascending: false })
         .order('odds', { ascending: false })
         .limit(10);

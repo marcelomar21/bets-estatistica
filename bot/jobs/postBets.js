@@ -7,6 +7,7 @@
  * - 3.3: Incluir deep link na mensagem
  * - 3.4: Validar requisitos antes de postar
  * - 10.1: Copy dinâmico com LLM
+ * - 14.3: Integrar warns no job de postagem
  *
  * Run: node bot/jobs/postBets.js [morning|afternoon|night]
  */
@@ -15,9 +16,10 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { sendToPublic } = require('../telegram');
-const { getFilaStatus, markBetAsPosted, registrarPostagem } = require('../services/betService');
+const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { getSuccessRate } = require('../services/metricsService');
 const { generateBetCopy } = require('../services/copyService');
+const { sendPostWarn } = require('./jobWarn');
 
 // Message templates for variety (Story 3.6)
 const MESSAGE_TEMPLATES = [
@@ -198,6 +200,9 @@ async function runPostBets() {
   let posted = 0;
   let skipped = 0;
 
+  // Story 14.3: Array para coletar apostas postadas para o warn
+  const postedBetsArray = [];
+
   // Step 3: Repostar apostas ATIVAS (já postadas, continuam na fila)
   if (ativas.length > 0) {
     logger.info('Reposting active bets', {
@@ -225,6 +230,16 @@ async function runPostBets() {
         await registrarPostagem(bet.id);
         reposted++;
         logger.info('Bet reposted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+
+        // Story 14.3: Coletar dados para warn
+        postedBetsArray.push({
+          id: bet.id,
+          homeTeamName: bet.homeTeamName,
+          awayTeamName: bet.awayTeamName,
+          betMarket: bet.betMarket,
+          odds: bet.odds,
+          type: 'repost',
+        });
       } else {
         logger.error('Failed to repost bet', { betId: bet.id, error: sendResult.error?.message });
         repostFailed++;
@@ -261,6 +276,16 @@ async function runPostBets() {
         await registrarPostagem(bet.id);
         posted++;
         logger.info('New bet posted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+
+        // Story 14.3: Coletar dados para warn
+        postedBetsArray.push({
+          id: bet.id,
+          homeTeamName: bet.homeTeamName,
+          awayTeamName: bet.awayTeamName,
+          betMarket: bet.betMarket,
+          odds: bet.odds,
+          type: 'new',
+        });
       } else {
         logger.error('Failed to post new bet', { betId: bet.id, error: sendResult.error?.message });
         skipped++;
@@ -275,6 +300,30 @@ async function runPostBets() {
     newSkipped: skipped,
     totalSent: reposted + posted
   });
+
+  // Step 5: Enviar warn para grupo admin (Story 14.3)
+  try {
+    // Buscar apostas dos próximos 2 dias
+    const upcomingResult = await getAvailableBets();
+    const upcomingBets = upcomingResult.success ? upcomingResult.data : [];
+
+    // Identificar pendências
+    const pendingActions = [];
+    for (const bet of upcomingBets) {
+      if (!bet.deepLink) {
+        pendingActions.push(`#${bet.id} precisa de link → /link ${bet.id} URL`);
+      }
+      if (!bet.odds || bet.odds < config.betting.minOdds) {
+        pendingActions.push(`#${bet.id} sem odds adequadas → /atualizar`);
+      }
+    }
+
+    await sendPostWarn(period, postedBetsArray, upcomingBets, pendingActions);
+    logger.info('Post warn sent successfully');
+  } catch (warnErr) {
+    // Warn failure should not fail the job
+    logger.warn('Failed to send post warn', { error: warnErr.message });
+  }
 
   return {
     reposted,
