@@ -1,6 +1,6 @@
 # Story 14.1: Corrigir Bug /link Duplicado
 
-Status: review
+Status: done
 
 ## Story
 
@@ -123,6 +123,7 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 ### Change Log
 
 - 2026-01-14: Bug fix - Removida chamada duplicada de confirmLinkReceived em handleLinkUpdate() que causava mensagens duplicadas ao operador
+- 2026-01-14: Code Review Approved (0 issues found)
 
 ### File List
 

@@ -32,7 +32,7 @@ function getDayLabel(dateKey) {
   });
 
   if (isToday) return `HOJE - ${formatted}`;
-  if (isTomorrow) return `AMANHA - ${formatted}`;
+  if (isTomorrow) return `AMANHÃ - ${formatted}`;
 
   const weekday = date.toLocaleDateString('pt-BR', {
     weekday: 'short',
@@ -51,7 +51,10 @@ function groupBetsByDay(bets) {
 
   for (const bet of bets) {
     const kickoff = new Date(bet.kickoffTime);
-    const dateKey = kickoff.toISOString().split('T')[0]; // YYYY-MM-DD
+    // Fix: Use America/Sao_Paulo timezone for grouping, not UTC
+    const dateKey = kickoff.toLocaleDateString('sv-SE', {
+      timeZone: 'America/Sao_Paulo'
+    });
 
     if (!grouped[dateKey]) {
       grouped[dateKey] = [];

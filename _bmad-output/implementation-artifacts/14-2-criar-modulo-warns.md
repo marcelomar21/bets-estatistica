@@ -1,6 +1,6 @@
 # Story 14.2: Criar Módulo de Warns (jobWarn.js)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -228,6 +228,10 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 ### Change Log
 
 - 2026-01-14: Criado módulo jobWarn.js com funções sendPostWarn, sendScrapingWarn, sendAnalysisWarn e helpers
+- 2026-01-14: Code Review fixes applied:
+  - Corrigido problema de timezone (agora usa explicitamente America/Sao_Paulo)
+  - Melhorada lógica de segurança em `getBetStatusDisplay` (evita falsos positivos de "Pronta")
+  - Atualizados testes unitários para refletir nova lógica segura
 
 ### File List
 

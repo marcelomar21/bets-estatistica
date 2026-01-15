@@ -32,12 +32,13 @@ function getPeriodName(period) {
 }
 
 /**
- * Get next posting time based on current hour
+ * Get next posting time based on current hour (BRT)
  * @returns {string}
  */
 function getNextPostTime() {
   const now = new Date();
-  const hour = now.getHours();
+  const brtString = now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false });
+  const hour = parseInt(brtString, 10);
 
   if (hour < 10) return '10:00';
   if (hour < 15) return '15:00';
@@ -68,21 +69,24 @@ function formatTime(date) {
 }
 
 /**
- * Get day label (HOJE/AMANHA/date)
+ * Get day label (HOJE/AMANHA/date) based on BRT
  * @param {Date} matchDate
  * @returns {string}
  */
 function getDayLabel(matchDate) {
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const now = new Date();
+  // Get efficient date strings YYYY-MM-DD in BRT
+  const todayStr = now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowStr = tomorrowDate.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
-  const matchDay = matchDate.toDateString();
+  // matchDate is usually UTC from DB, convert to BRT day string
+  const matchDayStr = matchDate.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
 
-  if (matchDay === today.toDateString()) {
+  if (matchDayStr === todayStr) {
     return `HOJE - ${formatDate(matchDate)}`;
   }
-  if (matchDay === tomorrow.toDateString()) {
+  if (matchDayStr === tomorrowStr) {
     return `AMANHA - ${formatDate(matchDate)}`;
   }
   return formatDate(matchDate);
@@ -115,16 +119,21 @@ function groupBetsByDay(bets) {
  * @returns {string}
  */
 function getBetStatusDisplay(bet) {
-  if (bet.betStatus === 'ready' || bet.bet_status === 'ready') {
-    return '\u2705 Pronta';
-  }
+  // Explicit status check first
+  const status = bet.betStatus || bet.bet_status;
+  if (status === 'ready') return '\u2705 Pronta';
+  if (status === 'posted') return '\u2705 Postada';
+
+  // Issue checks
   if (!bet.deepLink && !bet.deep_link) {
     return '\u26a0\ufe0f Sem link';
   }
   if (!bet.odds || bet.odds < 1.6) {
     return '\u26a0\ufe0f Odds baixa';
   }
-  return '\u2705 Pronta';
+
+  // Fallback safe instead of "Pronta"
+  return status ? `\u2139\ufe0f ${status}` : '\u2753 Pendente';
 }
 
 /**

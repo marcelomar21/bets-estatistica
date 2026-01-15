@@ -1,6 +1,6 @@
 # Story 14.6: Adicionar Paginação em Todos os Comandos
 
-Status: review
+Status: done
 
 ## Story
 
@@ -205,7 +205,22 @@ if (filaMatch) {
 - [Source: bot/handlers/adminGroup.js:20] - APOSTAS_PATTERN com página
 - [Source: _bmad-output/planning-artifacts/epics.md#story-14.6] - Definição original
 
-## Dev Agent Record
+
+## Senior Developer Review (AI)
+
+### Findings
+- **High**: None.
+- **Medium**: None.
+- **Low**: None.
+
+### Outcome
+- ✅ **Approved**
+- Tests passed (20/20) covering helpers `paginateResults` and `formatPaginationFooter`.
+- Handlers updated correctly for `/filtrar` and `/fila` to use pagination.
+- Edge cases (invalid page numbers) handled as per AC #6.
+
+_Reviewer: Code Review Agent on 2026-01-14T23:59:30-03:00_
+
 
 ### Agent Model Used
 

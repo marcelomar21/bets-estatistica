@@ -15,7 +15,7 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
-const { sendToPublic } = require('../telegram');
+const { sendToPublic, sendToAdmin } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { getSuccessRate } = require('../services/metricsService');
 const { generateBetCopy } = require('../services/copyService');
@@ -61,8 +61,12 @@ function getPeriod() {
   if (arg && ['morning', 'afternoon', 'night'].includes(arg)) {
     return arg;
   }
-  
-  const hour = new Date().getHours();
+
+  // Use BRT timezone
+  const now = new Date();
+  const brtString = now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false });
+  const hour = parseInt(brtString, 10);
+
   if (hour >= 6 && hour < 12) return 'morning';
   if (hour >= 12 && hour < 18) return 'afternoon';
   return 'night';
@@ -184,6 +188,10 @@ async function runPostBets() {
 
   if (!filaResult.success) {
     logger.error('Failed to get fila status', { error: filaResult.error?.message });
+
+    // Warn failure (Story 14.3 AC5)
+    await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`);
+
     return { reposted: 0, posted: 0, skipped: 0, totalSent: 0 };
   }
 

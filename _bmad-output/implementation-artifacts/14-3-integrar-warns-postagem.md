@@ -1,6 +1,6 @@
 # Story 14.3: Integrar Warns no Job de Postagem
 
-Status: review
+Status: done
 
 ## Story
 
@@ -224,6 +224,9 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 ### Change Log
 
 - 2026-01-14: Integrado sendPostWarn no job postBets.js para enviar warn após cada postagem
+- 2026-01-14: Code Review fixes applied:
+  - Corrigido timezone em getPeriod (agora usa BRT)
+  - Adicionado warn de erro crítico para adm caso getFilaStatus falhe (AC #5)
 
 ### File List
 

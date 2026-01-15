@@ -10,7 +10,7 @@ describe('formatters', () => {
   describe('getDayLabel', () => {
     it('retorna HOJE para data de hoje', () => {
       const today = new Date();
-      const dateKey = today.toISOString().split('T')[0];
+      const dateKey = today.toLocaleDateString('sv-SE');
       const label = getDayLabel(dateKey);
       expect(label).toMatch(/^HOJE - \d{2}\/\d{2}$/);
     });
@@ -18,15 +18,15 @@ describe('formatters', () => {
     it('retorna AMANHA para data de amanha', () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateKey = tomorrow.toISOString().split('T')[0];
+      const dateKey = tomorrow.toLocaleDateString('sv-SE');
       const label = getDayLabel(dateKey);
-      expect(label).toMatch(/^AMANHA - \d{2}\/\d{2}$/);
+      expect(label).toMatch(/^AMANHÃ - \d{2}\/\d{2}$/);
     });
 
     it('retorna data com dia da semana para outras datas', () => {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + 5);
-      const dateKey = futureDate.toISOString().split('T')[0];
+      const dateKey = futureDate.toLocaleDateString('sv-SE');
       const label = getDayLabel(dateKey);
       // Should be DD/MM (weekday)
       expect(label).toMatch(/^\d{2}\/\d{2} \(.+\)$/);
@@ -121,7 +121,7 @@ describe('formatters', () => {
       const result = formatBetListWithDays(bets, formatFn);
 
       expect(result).toContain('HOJE');
-      expect(result).toContain('AMANHA');
+      expect(result).toContain('AMANHÃ');
       expect(result).toContain('#1');
       expect(result).toContain('#2');
     });

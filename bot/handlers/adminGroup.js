@@ -4,7 +4,7 @@
  */
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
-const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost, promoverAposta, removerAposta, getFilaStatus } = require('../services/betService');
+const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost, promoverAposta, removerAposta, getFilaStatus, getOddsHistory } = require('../services/betService');
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
@@ -65,6 +65,9 @@ const FILA_PATTERN = /^\/fila(?:\s+(\d+))?$/i;
 
 // Regex to match "/metricas" command (Story 11.4)
 const METRICAS_PATTERN = /^\/metricas$/i;
+
+// Regex to match "/atualizados [pagina]" command (Story 14.9)
+const ATUALIZADOS_PATTERN = /^\/atualizados(?:\s+(\d+))?$/i;
 
 // Constants for /metricas formatting
 const MAX_MARKET_NAME_LENGTH = 25;
@@ -576,7 +579,7 @@ async function handleSimularCommand(bot, msg, arg) {
       // Preview specific bet
       const betResult = await getBetById(specificBetId);
       if (!betResult.success) {
-        await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+        await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => { });
         await bot.sendMessage(msg.chat.id, `❌ Aposta #${specificBetId} não encontrada.`, { reply_to_message_id: msg.message_id });
         return;
       }
@@ -594,7 +597,7 @@ async function handleSimularCommand(bot, msg, arg) {
     }
 
     if (betsToPreview.length === 0) {
-      await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+      await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => { });
       await bot.sendMessage(
         msg.chat.id,
         `📭 *Nenhuma aposta para preview*\n\n_Não há apostas prontas ou ativas para simular._\n\n💡 Use \`/apostas\` para ver apostas disponíveis.`,
@@ -676,13 +679,13 @@ async function handleSimularCommand(bot, msg, arg) {
     lines.push('💡 `/postar` para publicar │ `/simular novo` para regenerar');
 
     // Delete working message and send preview
-    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => { });
     await bot.sendMessage(msg.chat.id, lines.join('\n'), { parse_mode: 'Markdown', disable_web_page_preview: true });
 
     logger.info('Preview generated', { betsCount: betsToPreview.length, isNovo });
   } catch (err) {
     logger.error('Failed to generate preview', { error: err.message });
-    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => {});
+    await bot.deleteMessage(msg.chat.id, workingMsg.message_id).catch(() => { });
     await bot.sendMessage(msg.chat.id, `❌ Erro ao gerar preview: ${err.message}`, { reply_to_message_id: msg.message_id });
   }
 }
@@ -996,6 +999,188 @@ ${filaLines}
 }
 
 /**
+ * Handle /atualizados command - Lista historico de atualizacoes (Story 14.9)
+ * Usage: /atualizados or /atualizados 2 (for page 2)
+ * @param {TelegramBot} bot - Bot instance
+ * @param {object} msg - Telegram message object
+ * @param {number} page - Page number (default: 1)
+ */
+async function handleAtualizadosCommand(bot, msg, page = 1) {
+  logger.info('Received /atualizados command', { chatId: msg.chat.id, page });
+
+  const PAGE_SIZE = 10;
+  const MAX_HISTORY_RECORDS = 500; // Limite seguro para evitar timeout
+
+  // Validar página e logar se inválida
+  if (page < 1 || !Number.isInteger(page)) {
+    logger.warn('Invalid page requested for /atualizados, defaulting to 1', { requestedPage: page });
+    page = 1;
+  }
+
+  // Buscar registros com limite maior para cobrir histórico completo
+  const result = await getOddsHistory(48, MAX_HISTORY_RECORDS, 0);
+
+  if (!result.success) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro ao buscar histórico: ${result.error.message}`,
+      { reply_to_message_id: msg.message_id }
+    );
+    return;
+  }
+
+  const { history, total } = result.data;
+
+  // AC4: Caso sem atualizacoes
+  if (history.length === 0) {
+    await bot.sendMessage(
+      msg.chat.id,
+      `📜 *HISTÓRICO DE ATUALIZAÇÕES*\n\nNenhuma atualização nas últimas 48 horas.\n\n_Atualizações aparecem após jobs de enrichOdds ou comandos /odds_`,
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  // Avisar se há mais registros que o limite buscado
+  const isDataTruncated = total > MAX_HISTORY_RECORDS;
+  if (isDataTruncated) {
+    logger.warn('History data truncated due to limit', { total, limit: MAX_HISTORY_RECORDS });
+  }
+
+  // Agrupar por dia e hora (usando timezone Brasil)
+  const grouped = groupHistoryByDayAndHour(history);
+
+  // Flatten para paginacao
+  const flatItems = [];
+  const days = Object.keys(grouped).sort().reverse();
+  for (const day of days) {
+    const hours = Object.keys(grouped[day]).sort().reverse();
+    for (const hour of hours) {
+      for (const item of grouped[day][hour]) {
+        flatItems.push({ ...item, day, hour });
+      }
+    }
+  }
+
+  // Paginar
+  const totalPages = Math.ceil(flatItems.length / PAGE_SIZE);
+  const validPage = Math.max(1, Math.min(page, totalPages));
+  if (page !== validPage) {
+    logger.debug('Page adjusted to valid range', { requested: page, adjusted: validPage, totalPages });
+  }
+  const startIndex = (validPage - 1) * PAGE_SIZE;
+  const endIndex = startIndex + PAGE_SIZE;
+  const pageItems = flatItems.slice(startIndex, endIndex);
+
+  // Formatar mensagem
+  let message = `📜 *HISTÓRICO DE ATUALIZAÇÕES*\nPágina ${validPage} de ${totalPages} • Total: ${flatItems.length}`;
+  if (isDataTruncated) {
+    message += ` _(mostrando últimos ${MAX_HISTORY_RECORDS})_`;
+  }
+  message += `\n\n`;
+
+  let currentDay = null;
+  for (const item of pageItems) {
+    // Adicionar header do dia se mudou
+    if (item.day !== currentDay) {
+      currentDay = item.day;
+      const dayLabel = formatDayLabelForHistory(item.day);
+      message += `━━━━ *${dayLabel}* ━━━━\n\n`;
+    }
+
+    message += formatHistoryItem(item);
+  }
+
+  // Footer com paginação (AC2, AC5)
+  message += `\n━━━━━━━━━━━━━━━━━━━━\n`;
+  if (totalPages > 1) {
+    message += `Página ${validPage} de ${totalPages}\n`;
+    if (validPage < totalPages) {
+      message += `Use \`/atualizados ${validPage + 1}\` para mais`;
+    } else if (validPage > 1) {
+      message += `Use \`/atualizados 1\` para o início`;
+    }
+  }
+
+  await bot.sendMessage(msg.chat.id, message, { parse_mode: 'Markdown' });
+  logger.info('Atualizados command executed', { page: validPage, totalPages, totalItems: flatItems.length, dataTruncated: isDataTruncated });
+}
+
+/**
+ * Agrupa historico por dia e hora usando timezone Brasil (Story 14.9)
+ * @param {Array} history - Array de itens do historico
+ * @returns {Object} Objeto agrupado por dia (YYYY-MM-DD) e hora (HH:00)
+ */
+function groupHistoryByDayAndHour(history) {
+  const grouped = {};
+  for (const item of history) {
+    const date = new Date(item.createdAt);
+    // Usar timezone Brasil para consistência com display
+    const brDateStr = date.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    const [datePart, timePart] = brDateStr.split(' ');
+    const day = datePart; // YYYY-MM-DD
+    const hour = `${timePart.substring(0, 2)}:00`;
+
+    if (!grouped[day]) grouped[day] = {};
+    if (!grouped[day][hour]) grouped[day][hour] = [];
+    grouped[day][hour].push(item);
+  }
+  return grouped;
+}
+
+/**
+ * Formata label do dia para historico (Story 14.9)
+ * @param {string} day - Data no formato YYYY-MM-DD
+ * @returns {string} Label formatado (HOJE, ONTEM, ou DD/MM)
+ */
+function formatDayLabelForHistory(day) {
+  // Usar timezone Brasil para comparação de datas
+  const now = new Date();
+  const todayStr = now.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
+  const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayStr = yesterdayDate.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
+
+  const [year, month, dayNum] = day.split('-');
+  const formattedDate = `${dayNum}/${month}`;
+
+  if (day === todayStr) {
+    return `HOJE - ${formattedDate}`;
+  }
+  if (day === yesterdayStr) {
+    return `ONTEM - ${formattedDate}`;
+  }
+  return formattedDate;
+}
+
+/**
+ * Formata item do historico (Story 14.9, AC3)
+ */
+function formatHistoryItem(item) {
+  const time = new Date(item.createdAt).toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo'
+  });
+
+  const match = item.homeTeamName && item.awayTeamName
+    ? `${item.homeTeamName} x ${item.awayTeamName}`
+    : `#${item.betId}`;
+
+  // AC3: Mostrar old -> new para mudancas de odds
+  if (item.updateType === 'odds_change') {
+    const oldVal = item.oldValue != null ? item.oldValue.toFixed(2) : '?';
+    const newVal = item.newValue != null ? item.newValue.toFixed(2) : '?';
+    return `${time} #${item.betId}\n   ${match}\n   📊 ${oldVal} → ${newVal}\n\n`;
+  }
+  if (item.updateType === 'new_analysis') {
+    const newVal = item.newValue != null ? item.newValue.toFixed(2) : '?';
+    return `${time} #${item.betId} _(nova)_\n   ${match}\n   📊 Odd: ${newVal}\n\n`;
+  }
+  // Fallback para outros tipos
+  return `${time} #${item.betId}\n   ${item.updateType}: ${item.newValue}\n\n`;
+}
+
+/**
  * Handle /help command - Show all admin commands
  */
 async function handleHelpCommand(bot, msg) {
@@ -1006,6 +1191,7 @@ async function handleHelpCommand(bot, msg) {
 /apostas - Listar apostas disponíveis
 /fila - Ver fila de postagem
 /filtrar - Filtrar apostas por critério
+/atualizados - Histórico de atualizações (48h)
 /simular - Preview da próxima postagem
 /overview - Resumo com estatísticas
 /metricas - Métricas detalhadas de acerto
@@ -1321,6 +1507,14 @@ async function handleAdminMessage(bot, msg) {
   // Check if message is /metricas command (Story 11.4)
   if (METRICAS_PATTERN.test(text)) {
     await handleMetricasCommand(bot, msg);
+    return;
+  }
+
+  // Check if message is /atualizados command (Story 14.9)
+  const atualizadosMatch = text.match(ATUALIZADOS_PATTERN);
+  if (atualizadosMatch) {
+    const page = atualizadosMatch[1] ? parseInt(atualizadosMatch[1], 10) : 1;
+    await handleAtualizadosCommand(bot, msg, page);
     return;
   }
 

@@ -1,6 +1,6 @@
 # Story 14.4: Padronizar Ordenação (Data → Odds)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -143,6 +143,7 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 ### Change Log
 
 - 2026-01-14: Padronizado ordenação para `kickoff_time ASC, odds DESC` em 7 queries de betService.js
+- 2026-01-14: Code Review Approved (0 issues found)
 
 ### File List
 

@@ -72,8 +72,12 @@ describe('jobWarn', () => {
       expect(getBetStatusDisplay({ betStatus: 'pending_link' })).toContain('Sem link');
     });
 
-    test('retorna Pronta quando tem link e odds ok', () => {
-      expect(getBetStatusDisplay({ deepLink: 'http://bet.com', odds: 1.8 })).toContain('Pronta');
+    test('retorna Pronta quando tem status ready', () => {
+      expect(getBetStatusDisplay({ betStatus: 'ready', deepLink: 'http://bet.com', odds: 1.8 })).toContain('Pronta');
+    });
+
+    test('retorna Pendente quando tem link e odds mas sem status', () => {
+      expect(getBetStatusDisplay({ deepLink: 'http://bet.com', odds: 1.8 })).toContain('Pendente');
     });
   });
 

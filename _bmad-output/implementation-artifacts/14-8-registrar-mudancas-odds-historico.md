@@ -1,6 +1,6 @@
 # Story 14.8: Registrar Mudancas de Odds no Historico
 
-Status: review
+Status: done
 
 ## Story
 
@@ -285,4 +285,20 @@ Claude Opus 4.5 (claude-opus-4-5-20251101)
 - bot/services/betService.js (modificado)
 - bot/jobs/enrichOdds.js (modificado)
 - bot/handlers/adminGroup.js (modificado)
-- __tests__/services/betService.test.js (modificado)
+
+## Senior Developer Review (AI)
+
+### Findings
+- **High**: None.
+- **Medium**: None.
+- **Low**: None.
+
+### Outcome
+- ✅ **Approved**
+- Correctly implemented `registrarOddsHistory` as best-effort.
+- Updated `enrichOdds.js` and `adminGroup.js` to pass `jobName`.
+- Logic to prevent duplicates (AC #3) implemented with proper tolerance.
+- Tests passed.
+
+_Reviewer: Code Review Agent on 2026-01-15T00:07:00-03:00_
+

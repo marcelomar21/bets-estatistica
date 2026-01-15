@@ -203,16 +203,16 @@ development_status:
   # ============================================
   # Epic 14: UX Admin e Visibilidade
   # ============================================
-  epic-14: in-progress
-  14-1-corrigir-bug-link-duplicado: review
-  14-2-criar-modulo-warns: review
-  14-3-integrar-warns-postagem: review
-  14-4-padronizar-ordenacao: review
-  14-5-implementar-agrupamento-por-dia: review
-  14-6-adicionar-paginacao-comandos: review
-  14-7-criar-tabela-odds-update-history: review
-  14-8-registrar-mudancas-odds-historico: review
-  14-9-implementar-comando-atualizados: ready-for-dev
+  epic-14: done
+  14-1-corrigir-bug-link-duplicado: done
+  14-2-criar-modulo-warns: done
+  14-3-integrar-warns-postagem: done
+  14-4-padronizar-ordenacao: done
+  14-5-implementar-agrupamento-por-dia: done
+  14-6-adicionar-paginacao-comandos: done
+  14-7-criar-tabela-odds-update-history: done
+  14-8-registrar-mudancas-odds-historico: done
+  14-9-implementar-comando-atualizados: done
   epic-14-retrospective: optional
 
   # ============================================

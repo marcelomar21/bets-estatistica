@@ -719,6 +719,73 @@ async function registrarOddsHistory(betId, oldValue, newValue, jobName) {
 }
 
 /**
+ * Busca historico de atualizacoes de odds (Story 14.9)
+ * @param {number} hoursBack - Quantas horas atras buscar (default: 48)
+ * @param {number} limit - Limite de registros (default: 100)
+ * @param {number} offset - Offset para paginacao (default: 0)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getOddsHistory(hoursBack = 48, limit = 100, offset = 0) {
+  try {
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+
+    const { data, error, count } = await supabase
+      .from('odds_update_history')
+      .select(`
+        id,
+        bet_id,
+        update_type,
+        old_value,
+        new_value,
+        job_name,
+        created_at,
+        suggested_bets!inner (
+          bet_market,
+          league_matches!inner (
+            home_team_name,
+            away_team_name
+          )
+        )
+      `, { count: 'exact' })
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      logger.error('Erro ao buscar historico de odds', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const history = (data || []).map(h => ({
+      id: h.id,
+      betId: h.bet_id,
+      updateType: h.update_type,
+      oldValue: h.old_value,
+      newValue: h.new_value,
+      jobName: h.job_name,
+      createdAt: h.created_at,
+      betMarket: h.suggested_bets?.bet_market,
+      homeTeamName: h.suggested_bets?.league_matches?.home_team_name,
+      awayTeamName: h.suggested_bets?.league_matches?.away_team_name,
+    }));
+
+    return {
+      success: true,
+      data: {
+        history,
+        total: count || 0,
+        limit,
+        offset
+      }
+    };
+
+  } catch (err) {
+    logger.error('Erro inesperado ao buscar historico', { error: err.message });
+    return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Update bet odds (manual or from API) and auto-promote to 'ready' if conditions met
  * Story 14.8: Agora registra mudancas no historico
  * @param {number} betId - Bet ID
@@ -814,7 +881,7 @@ async function requestLinksForTopBets(count = config.betting.maxActiveBets) {
   if (!result.success) return result;
 
   const betsToRequest = result.data.filter(bet => bet.betStatus === 'generated');
-  
+
   if (betsToRequest.length === 0) {
     logger.info('No new bets need link requests');
     return { success: true, data: [] };
@@ -888,17 +955,17 @@ async function createManualBet(betData) {
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    logger.info('Manual bet created', { 
-      betId: data.id, 
+    logger.info('Manual bet created', {
+      betId: data.id,
       match: `${homeTeamName} vs ${awayTeamName}`,
       market: betMarket,
       odds,
       status: betStatus
     });
 
-    return { 
-      success: true, 
-      data: { 
+    return {
+      success: true,
+      data: {
         id: data.id,
         homeTeamName,
         awayTeamName,
@@ -906,7 +973,7 @@ async function createManualBet(betData) {
         odds,
         betStatus,
         deepLink: deepLink || null,
-      } 
+      }
     };
   } catch (err) {
     logger.error('Error creating manual bet', { error: err.message });
@@ -970,11 +1037,11 @@ async function getOverviewStats() {
     // Last posting time
     const lastPosting = postedBets.length > 0
       ? postedBets.reduce((latest, bet) => {
-          const postedAt = bet.telegram_posted_at ? new Date(bet.telegram_posted_at) : null;
-          if (!postedAt) return latest;
-          if (!latest) return postedAt;
-          return postedAt > latest ? postedAt : latest;
-        }, null)
+        const postedAt = bet.telegram_posted_at ? new Date(bet.telegram_posted_at) : null;
+        if (!postedAt) return latest;
+        if (!latest) return postedAt;
+        return postedAt > latest ? postedAt : latest;
+      }, null)
       : null;
 
     // Get success rate (last 30 days)
@@ -1015,10 +1082,10 @@ async function getOverviewStats() {
       successRate,
     };
 
-    logger.info('Overview stats fetched', { 
-      total: stats.totalAnalyzed, 
+    logger.info('Overview stats fetched', {
+      total: stats.totalAnalyzed,
       posted: stats.postedActive,
-      statusCounts 
+      statusCounts
     });
     return { success: true, data: stats };
   } catch (err) {
@@ -1501,6 +1568,7 @@ module.exports = {
   getAvailableBets,
   getBetById,
   getOverviewStats,
+  getOddsHistory,
 
   // Update functions
   updateBetStatus,

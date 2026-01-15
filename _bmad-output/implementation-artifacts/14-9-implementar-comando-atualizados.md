@@ -1,6 +1,6 @@
 # Story 14.9: Implementar Comando /atualizados
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -39,34 +39,34 @@ so that saiba o que mudou nas ultimas horas.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Adicionar regex para comando /atualizados (AC: #1, #5)
-  - [ ] 1.1: Definir ATUALIZADOS_PATTERN em adminGroup.js
-  - [ ] 1.2: Aceitar formato `/atualizados` e `/atualizados N`
+- [x] Task 1: Adicionar regex para comando /atualizados (AC: #1, #5)
+  - [x] 1.1: Definir ATUALIZADOS_PATTERN em adminGroup.js
+  - [x] 1.2: Aceitar formato `/atualizados` e `/atualizados N`
 
-- [ ] Task 2: Criar funcao getOddsHistory em betService.js (AC: #1)
-  - [ ] 2.1: Definir interface (periodo em horas, limit, offset)
-  - [ ] 2.2: Query tabela odds_update_history
-  - [ ] 2.3: Ordenar por created_at DESC
-  - [ ] 2.4: Retornar com join em suggested_bets para dados do jogo
+- [x] Task 2: Criar funcao getOddsHistory em betService.js (AC: #1)
+  - [x] 2.1: Definir interface (periodo em horas, limit, offset)
+  - [x] 2.2: Query tabela odds_update_history
+  - [x] 2.3: Ordenar por created_at DESC
+  - [x] 2.4: Retornar com join em suggested_bets para dados do jogo
 
-- [ ] Task 3: Implementar handleAtualizadosCommand (AC: #1, #2, #3)
-  - [ ] 3.1: Buscar historico das ultimas 48h
-  - [ ] 3.2: Agrupar por dia (HOJE/ONTEM)
-  - [ ] 3.3: Dentro de cada dia, agrupar por hora/job
-  - [ ] 3.4: Formatar mensagem com emojis e markdown
+- [x] Task 3: Implementar handleAtualizadosCommand (AC: #1, #2, #3)
+  - [x] 3.1: Buscar historico das ultimas 48h
+  - [x] 3.2: Agrupar por dia (HOJE/ONTEM)
+  - [x] 3.3: Dentro de cada dia, agrupar por hora/job
+  - [x] 3.4: Formatar mensagem com emojis e markdown
 
-- [ ] Task 4: Implementar paginacao (AC: #2, #5)
-  - [ ] 4.1: Definir PAGE_SIZE = 10
-  - [ ] 4.2: Calcular total de paginas
-  - [ ] 4.3: Adicionar footer com navegacao
+- [x] Task 4: Implementar paginacao (AC: #2, #5)
+  - [x] 4.1: Definir PAGE_SIZE = 10
+  - [x] 4.2: Calcular total de paginas
+  - [x] 4.3: Adicionar footer com navegacao
 
-- [ ] Task 5: Tratar caso sem atualizacoes (AC: #4)
-  - [ ] 5.1: Verificar se resultado vazio
-  - [ ] 5.2: Mostrar mensagem amigavel
+- [x] Task 5: Tratar caso sem atualizacoes (AC: #4)
+  - [x] 5.1: Verificar se resultado vazio
+  - [x] 5.2: Mostrar mensagem amigavel
 
-- [ ] Task 6: Registrar handler no processamento de mensagens (AC: #1)
-  - [ ] 6.1: Adicionar match para ATUALIZADOS_PATTERN
-  - [ ] 6.2: Chamar handleAtualizadosCommand
+- [x] Task 6: Registrar handler no processamento de mensagens (AC: #1)
+  - [x] 6.1: Adicionar match para ATUALIZADOS_PATTERN
+  - [x] 6.2: Chamar handleAtualizadosCommand
 
 ## Dev Notes
 
@@ -349,13 +349,39 @@ if (atualizadosMatch) {
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude 3.5 Sonnet (Antigravity)
 
 ### Debug Log References
 
+- Test file: scripts/tests/test_story_14_9.js (15/15 testes passando)
+
 ### Completion Notes List
+
+- Implemented ATUALIZADOS_PATTERN regex in adminGroup.js to match /atualizados and /atualizados N
+- Created getOddsHistory function in betService.js with Supabase query joining odds_update_history with suggested_bets and league_matches
+- Implemented handleAtualizadosCommand with grouping by day/hour and pagination (PAGE_SIZE=10)
+- Added helper functions: groupHistoryByDayAndHour, formatDayLabelForHistory, formatHistoryItem
+- Registered handler in handleAdminMessage
+- Added /atualizados to help command
+- All acceptance criteria satisfied:
+  - AC1: Lists updates from last 48 hours grouped by day and hour
+  - AC2: Pagination with 10 items per page and navigation footer
+  - AC3: Shows old->new values for odds changes
+  - AC4: Friendly message when no updates found
+  - AC5: Supports /atualizados N for page navigation
 
 ### File List
 
-- bot/handlers/adminGroup.js (modificar)
-- bot/services/betService.js (modificar)
+- bot/handlers/adminGroup.js (modificado - adicionado ATUALIZADOS_PATTERN, handleAtualizadosCommand, helpers)
+- bot/services/betService.js (modificado - adicionado getOddsHistory)
+- scripts/tests/test_story_14_9.js (novo - testes unitários)
+
+### Change Log
+
+- 2026-01-14: Implementação completa do comando /atualizados (Story 14.9)
+- 2026-01-14: Code Review fixes applied:
+  - Corrigido problema de timezone no agrupamento por hora (agora usa America/Sao_Paulo)
+  - Adicionado limite seguro (MAX_HISTORY_RECORDS) e aviso de truncamento
+  - Adicionado log e correção automática para números de página inválidos
+  - Melhorado JSDoc de funções helpers
+  - Adicionados testes de integração para edge cases e timezone

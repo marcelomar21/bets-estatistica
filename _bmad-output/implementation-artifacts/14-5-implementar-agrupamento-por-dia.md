@@ -1,6 +1,6 @@
 # Story 14.5: Implementar Agrupamento por Dia
 
-Status: review
+Status: done
 
 ## Story
 
