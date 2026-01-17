@@ -19,8 +19,10 @@ projectClassification:
   type: 'api_backend + automation_bot'
   domain: 'betting/gambling'
   complexity: 'medium-high'
-lastEdited: '2026-01-12'
+lastEdited: '2026-01-17'
 editHistory:
+  - date: '2026-01-17'
+    changes: 'Adição de sistema de gestão de membros e pagamentos: modelo de monetização (R$50/mês, trial 7 dias), integração Cakto via webhooks, 27 novos FRs (FR-MB1-MB27) para entrada/trial/notificações/remoção/comandos admin, 4 novos NFRs (NFR21-24), 3 novas User Journeys (Lucas trial, Lucas não pagou, Marcelo membros), modelo de dados members/member_notifications, métricas de MRR/conversão/churn'
   - date: '2026-01-12'
     changes: 'Revisão do ciclo de vida da aposta: novo modelo de elegibilidade (elegivel/removida/expirada), suporte a promoção manual (/promover), remoção da fila (/remover), comando de status (/status), lógica de seleção por job com histórico de múltiplas postagens'
 ---
@@ -52,9 +54,19 @@ A proposta de valor é simples: membros do grupo recebem 3x ao dia as melhores o
 - **Credibilidade via Dados:** Tracking de resultados constrói confiança ao longo do tempo
 - **Escala:** Sistema automatizado permite crescer sem esforço manual proporcional
 
+### Modelo de Monetização
+
+**Assinatura mensal de R$ 50,00** com trial gratuito de 7 dias:
+
+- **Entrada gratuita:** Qualquer pessoa pode entrar no grupo via link de campanha
+- **Trial automático:** 7 dias para experimentar as dicas gratuitamente
+- **Conversão:** Após o trial, usuário deve pagar para continuar no grupo
+- **Cobrança via Cakto:** Integração com webhooks para gestão automática de assinaturas
+- **Remoção automática:** Inadimplentes são removidos automaticamente do grupo
+
 ### Meta Principal
 
-**10.000 membros no grupo Telegram até o fim de 2026**
+**10.000 membros pagantes no grupo Telegram até o fim de 2026**
 
 ## Project Classification
 
@@ -72,6 +84,7 @@ A proposta de valor é simples: membros do grupo recebem 3x ao dia as melhores o
 | **Deep Links** | ✅ Manual | Operador gera manualmente via grupo admin |
 | **Supabase** | ✅ Definido | PostgreSQL gerenciado, free tier para MVP |
 | **Render** | ✅ Definido | Hosting, free tier para MVP |
+| **Cakto** | ✅ Definido | Webhooks para gestão de pagamentos e assinaturas |
 
 ### Fluxo de Links (Decisão de Arquitetura)
 
@@ -111,13 +124,18 @@ Bot posta no GRUPO ADMIN (8h, 13h, 20h)
 
 ### Business Success
 
-| Período | Meta de Membros | Status |
-|---------|-----------------|--------|
-| 3 meses | 150 | 🎯 Validação inicial |
-| 6 meses | 1.000 | 📈 Tração comprovada |
-| 12 meses | 10.000 | 🚀 Escala |
+| Período | Meta de Membros Pagantes | MRR Estimado | Status |
+|---------|--------------------------|--------------|--------|
+| 3 meses | 150 | R$ 7.500 | 🎯 Validação inicial |
+| 6 meses | 1.000 | R$ 50.000 | 📈 Tração comprovada |
+| 12 meses | 10.000 | R$ 500.000 | 🚀 Escala |
 
-**Métrica principal de sucesso:** Crescimento de membros no grupo Telegram
+**Métrica principal de sucesso:** MRR (Monthly Recurring Revenue) e membros pagantes
+
+**Métricas de monetização:**
+- Taxa de conversão trial → pago: meta > 30%
+- Churn mensal: meta < 10%
+- LTV (Lifetime Value): meta > R$ 300 (6 meses de retenção média)
 
 **Indicadores secundários:**
 - Taxa de engajamento (cliques nos links)
@@ -137,17 +155,20 @@ Bot posta no GRUPO ADMIN (8h, 13h, 20h)
 
 **Para declarar o projeto um sucesso em 12 meses:**
 
-1. ✅ 10.000 membros ativos no grupo Telegram
-2. ✅ Taxa de acerto histórica > 70%
-3. ✅ Todas as apostas com odds ≥ 1.60
-4. ✅ Zero dias sem postagem (disponibilidade 100%)
-5. ✅ 100% dos resultados trackeados no BD
+1. ✅ 10.000 membros pagantes no grupo Telegram
+2. ✅ MRR de R$ 500.000
+3. ✅ Taxa de conversão trial → pago > 30%
+4. ✅ Churn mensal < 10%
+5. ✅ Taxa de acerto histórica > 70%
+6. ✅ Todas as apostas com odds ≥ 1.60
+7. ✅ Zero dias sem postagem (disponibilidade 100%)
+8. ✅ 100% dos resultados trackeados no BD
 
 ## Product Scope
 
 ### MVP - Minimum Viable Product
 
-**Objetivo:** Validar que o sistema funciona e atrai os primeiros 150 membros
+**Objetivo:** Validar que o sistema funciona e converte os primeiros 150 membros pagantes
 
 | Componente | Descrição |
 |------------|-----------|
@@ -157,28 +178,35 @@ Bot posta no GRUPO ADMIN (8h, 13h, 20h)
 | **Bot Telegram** | Postar 3x/dia com top 3 apostas |
 | **Deep Links** | Links Bet365 com aposta pré-configurada |
 | **Tracking Básico** | Registrar sucesso/fracasso no BD |
+| **Gestão de Membros** | Trial 7 dias, detecção de entrada, tracking de status |
+| **Integração Cakto** | Webhooks para pagamento e assinatura |
+| **Notificações de Cobrança** | Lembretes automáticos (dia 5, 6, 7 do trial) |
+| **Remoção Automática** | Kick de inadimplentes no dia 8 ou falha de renovação |
 
 **Fora do MVP:**
 - PDF/relatórios (removido)
 - Value bets (apenas safe_bets)
 - Múltiplas casas de apostas (apenas Bet365)
+- Bloqueio de re-entrada de inadimplentes (P2)
 
 ### Growth Features (Post-MVP)
 
 | Feature | Gatilho | Descrição |
 |---------|---------|-----------|
+| **Comandos Admin Membros** | Logo após MVP | /membros, /membro, /estender, /add_trial |
+| **Bloqueio Re-entrada** | 500 membros | Impedir inadimplentes de voltarem sem pagar |
 | **Expansão de Ligas** | 1.000 membros | Adicionar mais ligas/campeonatos |
 | **Múltiplas Casas** | Demanda | Suporte a outras casas além de Bet365 |
-| **Dashboard Público** | 500 membros | Página com histórico de acertos |
+| **Dashboard Público** | 500 membros | Página com histórico de acertos + métricas |
 | **Notificações Personalizadas** | 2.000 membros | Filtro por liga/tipo de aposta |
 
 ### Vision (Future)
 
-- **Monetização:** Grupo premium com apostas exclusivas
 - **Afiliados:** Programa de afiliados Bet365
 - **App Mobile:** App próprio com push notifications
 - **Comunidade:** Fórum/discussão entre membros
 - **IA Avançada:** Modelo próprio treinado no histórico de acertos
+- **Planos Premium:** Diferentes tiers de assinatura com benefícios exclusivos
 
 ## User Journeys
 
@@ -220,6 +248,49 @@ Ana está no grupo há 3 meses. Ela é mais experiente - entende de odds, sabe o
 
 Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana entende que qualidade é mais importante que quantidade e continua no grupo.
 
+### Journey 5: Lucas - O Membro que Entra pelo Trial
+
+Lucas viu uma campanha no Instagram sobre o grupo de tips de apostas. Clicou no link e entrou no grupo do Telegram. Imediatamente recebeu uma mensagem de boas-vindas explicando que tem 7 dias grátis para testar.
+
+No dia 5, Lucas recebeu uma mensagem privada: "Seu trial termina em 2 dias! Clique aqui para continuar recebendo as melhores apostas: [link do checkout]". No dia 6, outro lembrete. No dia 7, o último aviso.
+
+Lucas clicou no link, pagou R$ 50,00 via PIX. Em segundos, recebeu confirmação: "Pagamento confirmado! Você agora é membro ativo até DD/MM/AAAA."
+
+Um mês depois, 5 dias antes da renovação, Lucas começou a receber lembretes diários (porque pagou com PIX, não cartão). Dessa vez pagou antes do vencimento.
+
+### Journey 6: Lucas - Quando Não Paga
+
+Lucas 2 (outro usuário) entrou no grupo pelo mesmo link de campanha. Gostou das dicas nos primeiros dias, mas no dia 5 ignorou o lembrete. No dia 6, outro lembrete. No dia 7, o aviso final com tom de urgência.
+
+No dia 8, Lucas 2 tentou acessar o grupo e viu: "Você foi removido por não completar o pagamento." Junto veio o link do checkout caso queira voltar.
+
+O sistema registrou automaticamente: `status = 'removido'`, `motivo = 'trial_expirado'`.
+
+### Journey 7: Marcelo - Gerenciando Membros
+
+Marcelo digita `/membros` no grupo admin. O bot responde:
+
+```
+📊 MEMBROS DO GRUPO
+
+✅ Ativos: 847
+🆓 Trial: 23
+⚠️ Inadimplentes: 5
+❌ Removidos (30d): 12
+
+MRR: R$ 42.350
+Conversão trial: 34%
+```
+
+Ele quer ver detalhes de um membro específico. Digita `/membro @lucas` e vê:
+- Data de entrada: 10/01/2026
+- Status: Ativo
+- Tipo pagamento: PIX
+- Próxima renovação: 10/02/2026 (em 8 dias)
+- Histórico: 2 pagamentos realizados
+
+Um amigo pede cortesia. Marcelo digita `/estender @amigo 30` e o bot confirma: "✅ Assinatura de @amigo estendida por 30 dias."
+
 ### Journey Requirements Summary
 
 | Jornada | Requisitos Revelados |
@@ -228,6 +299,9 @@ Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana 
 | **Ricardo - Falha** | Tracking automático de resultados, Transparência sobre taxa esperada |
 | **Marcelo - Operador** | Logs de execução, Painel de métricas, Retry manual, Alertas de falha |
 | **Ana - Expansão** | Roadmap público, Comunicação com membros, Sistema extensível |
+| **Lucas - Trial Sucesso** | Detecção de entrada, trial automático, lembretes dia 5-7, integração Cakto, confirmação de pagamento |
+| **Lucas - Não Pagou** | Kick automático dia 8, mensagem de remoção com link para voltar, registro de motivo |
+| **Marcelo - Membros** | Comandos /membros, /membro, /estender, visualização de MRR e conversão |
 
 ## Backend + Bot Specific Requirements
 
@@ -239,6 +313,7 @@ Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana 
 | **The Odds API** | REST | API Key | 500/mês (free), 20k ($30) | ✅ Definido |
 | **Telegram Bot API** | REST | Bot Token | 30 msg/s | ✅ Conhecida |
 | **Supabase** | REST/SDK | API Key | Generous | ✅ Definido |
+| **Cakto API** | Webhooks | Secret + Bearer | Resposta < 5s | ✅ Definido |
 
 ### Infraestrutura
 
@@ -280,6 +355,109 @@ Marcelo responde que está no roadmap para quando chegarem a 1.000 membros. Ana 
 |---------|------|-----------|
 | Jogo termina | Update BD | Registrar resultado (sucesso/fracasso) da aposta |
 | Operador responde | Salvar link | Validar e associar link à aposta |
+| Novo membro entra | Registrar trial | Iniciar contagem de 7 dias |
+| Webhook Cakto | Processar pagamento | Atualizar status do membro |
+| Trial dia 5-7 | Enviar lembrete | Notificação de cobrança |
+| Trial expirado | Kick membro | Remover do grupo automaticamente |
+
+### Integração Cakto (Pagamentos)
+
+**Endpoint Webhook:** `POST /api/webhooks/cakto`
+
+**Eventos Processados:**
+
+| Evento | Ação no Sistema |
+|--------|-----------------|
+| `purchase_approved` | Marcar membro como `ativo`, registrar pagamento |
+| `subscription_created` | Registrar tipo de assinatura (cartão/pix) |
+| `subscription_renewed` | Atualizar `data_proxima_renovacao` |
+| `subscription_renewal_refused` | Marcar para kick imediato |
+| `subscription_canceled` | Marcar para kick imediato |
+
+**Fluxo de Processamento:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              CICLO DE VIDA DO MEMBRO                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  [Link Campanha] → [Entra no Grupo] → [Trial Inicia (7 dias)]  │
+│                                              │                  │
+│                    ┌─────────────────────────┼─────────────────┐│
+│                    │                         │                 ││
+│                    ▼                         ▼                 ▼│
+│               Dia 5: Aviso 1          Dia 6: Aviso 2      Dia 7│
+│               (se não pagou)          (se não pagou)         │ │
+│                                                              │ │
+│                    ┌─────────────────────────────────────────┤ │
+│                    │                                         │ │
+│                    ▼                                         ▼ │
+│               [PAGOU] ─────────────────────────────► [NÃO PAGOU]
+│                    │                                         │ │
+│                    ▼                                         ▼ │
+│          [Membro Ativo]                                  [KICK]│
+│                    │                                           │
+│     ┌──────────────┼──────────────┐                           │
+│     │              │              │                           │
+│     ▼              ▼              ▼                           │
+│  [Cartão]     [PIX/Boleto]   [Renovação]                      │
+│  Recorrente    Avulso         Falhou                          │
+│     │              │              │                           │
+│     ▼              ▼              ▼                           │
+│  Sem avisos    Avisos 5d       [KICK]                         │
+│  (auto-renew)  antes           Imediato                       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Jobs de Gestão de Membros:**
+
+| Job | Horário | Descrição |
+|-----|---------|-----------|
+| `check_trial_reminders` | 09:00 | Envia lembretes para membros no dia 5, 6, 7 do trial |
+| `check_renewal_reminders` | 09:00 | Envia lembretes para membros com renovação em 5 dias (só PIX/Boleto) |
+| `kick_expired_trials` | 00:01 | Remove membros que completaram 8 dias sem pagar |
+| `process_failed_renewals` | Contínuo | Remove membros com renovação recusada (via webhook) |
+
+### Modelo de Dados - Tabela `members`
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `id` | uuid | PK |
+| `telegram_id` | bigint | ID único do Telegram |
+| `telegram_username` | varchar | @username |
+| `telegram_name` | varchar | Nome de exibição |
+| `email` | varchar | Email do pagamento (via Cakto) |
+| `status` | enum | `trial`, `ativo`, `inadimplente`, `removido` |
+| `data_entrada` | timestamp | Quando entrou no grupo |
+| `data_pagamento` | timestamp | Último pagamento |
+| `data_proxima_renovacao` | timestamp | Próxima cobrança |
+| `tipo_pagamento` | enum | `cartao_recorrente`, `pix`, `boleto`, `manual` |
+| `cakto_subscription_id` | varchar | ID da assinatura no Cakto |
+| `trial_dias` | int | Dias de trial (override individual) |
+| `cortesia_dias` | int | Dias extras por cortesia |
+| `motivo_remocao` | varchar | trial_expirado, inadimplente, cancelado, manual |
+| `created_at` | timestamp | Criação do registro |
+| `updated_at` | timestamp | Última atualização |
+
+### Modelo de Dados - Tabela `member_notifications`
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `id` | uuid | PK |
+| `member_id` | uuid | FK → members |
+| `tipo` | enum | `trial_reminder`, `renewal_reminder`, `kick_warning`, `welcome`, `payment_confirmed` |
+| `enviado_em` | timestamp | Quando foi enviado |
+| `mensagem` | text | Conteúdo enviado |
+
+### Modelo de Dados - Tabela `config` (campos adicionais)
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `trial_dias_padrao` | int | Default: 7 |
+| `cakto_checkout_url` | varchar | Link do checkout para mensagens |
+| `cakto_webhook_secret` | varchar | Para validar webhooks |
+| `preco_assinatura` | decimal | R$ 50,00 |
 
 ### Pipeline de Dados
 
@@ -642,6 +820,48 @@ O MVP está pronto quando:
 - FR50: Sistema pode incluir apostas com `promovida_manual = true` na seleção mesmo quando odds < 1.60
 - FR51: Bot pode confirmar execução de comandos admin com feedback visual (✅ ou ❌)
 
+### Gestão de Membros - Entrada e Trial (FR-MB1-MB6)
+
+- FR-MB1: Bot pode detectar quando um novo usuário entra no grupo público via Telegram API
+- FR-MB2: Sistema pode registrar novo membro no BD com `telegram_id`, `username`, `data_entrada`, `status = 'trial'`
+- FR-MB3: Sistema pode calcular dias restantes de trial para cada membro
+- FR-MB4: Sistema pode identificar método de pagamento do membro (cartão recorrente vs avulso)
+- FR-MB5: Bot pode enviar mensagem de boas-vindas ao novo membro explicando o trial de 7 dias
+- FR-MB6: Sistema pode armazenar configuração global de dias de trial (default: 7)
+
+### Gestão de Membros - Integração Cakto Webhooks (FR-MB7-MB12)
+
+- FR-MB7: Sistema pode receber webhooks do Cakto via endpoint HTTPS com validação de secret
+- FR-MB8: Sistema pode processar evento `purchase_approved` e marcar membro como `status = 'ativo'`
+- FR-MB9: Sistema pode processar evento `subscription_created` e registrar tipo de assinatura
+- FR-MB10: Sistema pode processar evento `subscription_renewed` e atualizar `data_proxima_renovacao`
+- FR-MB11: Sistema pode processar evento `subscription_renewal_refused` e marcar membro para remoção imediata
+- FR-MB12: Sistema pode processar evento `subscription_canceled` e marcar membro para remoção imediata
+
+### Gestão de Membros - Notificações (FR-MB13-MB17)
+
+- FR-MB13: Sistema pode enviar mensagem privada no Telegram para membros em trial
+- FR-MB14: Sistema pode enviar lembrete diário a partir do dia 5 do trial para membros que não pagaram
+- FR-MB15: Sistema pode enviar lembrete diário a partir de 5 dias antes da renovação para membros com pagamento avulso (PIX/Boleto)
+- FR-MB16: Sistema não envia lembretes de renovação para membros com cartão de crédito recorrente
+- FR-MB17: Sistema pode incluir link de checkout do Cakto nas mensagens de cobrança
+
+### Gestão de Membros - Remoção Automática (FR-MB18-MB21)
+
+- FR-MB18: Sistema pode remover (kick) membro do grupo Telegram via API
+- FR-MB19: Sistema pode executar kick automático no dia 8 (trial expirado) se membro não pagou
+- FR-MB20: Sistema pode executar kick imediato quando renovação falha ou assinatura é cancelada
+- FR-MB21: Sistema pode enviar mensagem ao membro removido com motivo e link para voltar
+
+### Gestão de Membros - Comandos Admin (FR-MB22-MB27) [P1]
+
+- FR-MB22: Bot pode processar comando `/membros` e listar membros ativos, em trial, e inadimplentes com MRR e taxa de conversão
+- FR-MB23: Bot pode processar comando `/membro @user` e exibir status detalhado (data entrada, status, dias restantes, histórico de pagamentos)
+- FR-MB24: Bot pode processar comando `/trial <dias>` e configurar duração padrão do trial
+- FR-MB25: Bot pode processar comando `/add_trial @user` e adicionar usuário manualmente ao trial
+- FR-MB26: Bot pode processar comando `/remover_membro @user` e remover membro manualmente do grupo
+- FR-MB27: Bot pode processar comando `/estender @user <dias>` e estender assinatura por cortesia
+
 ## Non-Functional Requirements
 
 ### Performance
@@ -693,3 +913,12 @@ O MVP está pronto quando:
 | NFR18: Sistema deve ter logs estruturados | JSON logs com timestamp, level, context | Média |
 | NFR19: Deploy deve ser simples | 1 comando para deploy | Média |
 | NFR20: Rollback deve ser possível | Voltar versão anterior em < 5 minutos | Média |
+
+### Gestão de Membros
+
+| Requisito | Métrica | Prioridade |
+|-----------|---------|------------|
+| NFR21: Webhook do Cakto deve ser processado rapidamente | < 5 segundos (requisito do Cakto) | Alta |
+| NFR22: Remoção de membro inadimplente deve ocorrer no horário correto | ± 1 hora do momento programado | Alta |
+| NFR23: Mensagens de cobrança devem ser entregues | 99% de entrega via Telegram API | Alta |
+| NFR24: Dados de membros devem ser protegidos | Criptografia em trânsito, acesso restrito | Alta |
