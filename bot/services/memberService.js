@@ -1316,6 +1316,37 @@ async function setTrialDays(days, operatorUsername) {
 }
 
 /**
+ * Get members that need reconciliation with Cakto
+ * Story 16.8: Members with active status and subscription that need status verification
+ * Returns only active members with cakto_subscription_id (trial members are ignored)
+ * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
+ */
+async function getMembersForReconciliation() {
+  try {
+    // H1 FIX: Query only 'ativo' status directly - don't fetch trial members just to filter them out
+    const { data, error } = await supabase
+      .from('members')
+      .select('id, telegram_id, telegram_username, email, status, cakto_subscription_id')
+      .eq('status', 'ativo')
+      .not('cakto_subscription_id', 'is', null);
+
+    if (error) {
+      logger.error('[memberService] getMembersForReconciliation: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] getMembersForReconciliation: found members', {
+      count: data?.length || 0
+    });
+
+    return { success: true, data: data || [] };
+  } catch (err) {
+    logger.error('[memberService] getMembersForReconciliation: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Get remaining trial days for a member
  * @param {number} memberId - Internal member ID
  * @returns {Promise<{success: boolean, data?: {daysRemaining: number}, error?: object}>}
@@ -1402,4 +1433,7 @@ module.exports = {
   // Story 16.7: System config functions (Task 5)
   getTrialDays,
   setTrialDays,
+
+  // Story 16.8: Reconciliation helpers
+  getMembersForReconciliation,
 };

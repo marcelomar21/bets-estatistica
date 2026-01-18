@@ -139,6 +139,7 @@ function setupScheduler() {
   const { runTrialReminders } = require('./jobs/membership/trial-reminders');
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
+  const { runReconciliation } = require('./jobs/membership/reconciliation');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -258,9 +259,21 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
+  // Cakto reconciliation - 03:00 São Paulo (Story 16.8)
+  cron.schedule('0 3 * * *', async () => {
+    logger.info('[scheduler] Running reconciliation job');
+    try {
+      const result = await runReconciliation();
+      logger.info('[scheduler] reconciliation complete', result);
+    } catch (err) {
+      logger.error('[scheduler] reconciliation failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   00:01 - Kick expired members (membership)');
+  console.log('   03:00 - Cakto reconciliation (membership)');
   console.log('   08:00 - Enrich + Request links');
   console.log('   09:00 - Trial reminders (membership)');
   console.log('   10:00 - Renewal reminders + Post bets (morning)');

@@ -40,6 +40,8 @@ const {
   addManualTrialMember,
   extendMembership,
   appendToNotes,
+  // Story 16.8: Reconciliation
+  getMembersForReconciliation,
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -1246,6 +1248,68 @@ describe('memberService', () => {
       expect(result.success).toBe(true);
       // The update mock should have been called with notes that include the old note
       expect(updateMock).toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // getMembersForReconciliation (Story 16.8, AC: #2)
+  // ============================================
+  describe('getMembersForReconciliation', () => {
+    test('retorna apenas membros ativos com cakto_subscription_id', async () => {
+      // H1 FIX: Query now uses .eq('status', 'ativo') directly - only 'ativo' members returned
+      const mockMembers = [
+        { id: 'uuid-1', telegram_id: 111, status: 'ativo', cakto_subscription_id: 'sub_1' },
+        { id: 'uuid-2', telegram_id: 222, status: 'ativo', cakto_subscription_id: 'sub_2' },
+      ];
+
+      const notMock = jest.fn().mockResolvedValue({ data: mockMembers, error: null });
+      const eqMock = jest.fn().mockReturnValue({ not: notMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMembersForReconciliation();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toHaveLength(2);
+      expect(result.data.every(m => m.status === 'ativo')).toBe(true);
+      // H1 FIX: Verify .eq() is called with 'ativo' status
+      expect(eqMock).toHaveBeenCalledWith('status', 'ativo');
+    });
+
+    test('retorna array vazio quando não há membros para reconciliar', async () => {
+      const notMock = jest.fn().mockResolvedValue({ data: [], error: null });
+      const eqMock = jest.fn().mockReturnValue({ not: notMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMembersForReconciliation();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      const notMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'Connection error' } });
+      const eqMock = jest.fn().mockReturnValue({ not: notMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMembersForReconciliation();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+
+    test('seleciona campos necessarios para reconciliacao', async () => {
+      const notMock = jest.fn().mockResolvedValue({ data: [], error: null });
+      const eqMock = jest.fn().mockReturnValue({ not: notMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      await getMembersForReconciliation();
+
+      // Verify select was called with correct fields
+      expect(selectMock).toHaveBeenCalledWith('id, telegram_id, telegram_username, email, status, cakto_subscription_id');
     });
   });
 });
