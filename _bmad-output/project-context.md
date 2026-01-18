@@ -1,10 +1,10 @@
 ---
 project_name: 'bets-estatistica'
 user_name: 'Marcelomendes'
-date: '2026-01-10'
-sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules']
+date: '2026-01-17'
+sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules', 'membership_rules']
 status: 'complete'
-rule_count: 28
+rule_count: 42
 optimized_for_llm: true
 ---
 
@@ -24,9 +24,12 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 | OpenAI | GPT-5.1 | Via LangChain |
 | Zod | 4.x | Validação de schemas |
 | axios | 1.x | HTTP client |
-| @supabase/supabase-js | latest | Nova dependência |
-| node-telegram-bot-api | latest | Nova dependência |
-| node-cron | latest | Dev scheduling |
+| @supabase/supabase-js | latest | Database client |
+| node-telegram-bot-api | latest | Bot framework |
+| node-cron | latest | Job scheduling |
+| express | ^4.18 | Webhook server (Cakto) |
+| express-rate-limit | ^7.x | Rate limiting |
+| helmet | ^7.x | Security headers |
 
 **Remover:**
 - ❌ puppeteer - não mais necessário
@@ -122,6 +125,125 @@ generated → pending_link → ready → posted → success
 - `success` - Jogo terminou, aposta ganhou
 - `failure` - Jogo terminou, aposta perdeu
 - `cancelled` - Cancelada (sem link a tempo, etc.)
+
+---
+
+## Member State Machine
+
+```
+trial ──────► ativo ──────► inadimplente
+  │             │                │
+  │             │                ▼
+  └─────────────┴──────────► removido
+```
+
+**Estados válidos:**
+- `trial` - Período de teste (7 dias)
+- `ativo` - Pagamento confirmado, acesso liberado
+- `inadimplente` - Pagamento falhou, em cobrança
+- `removido` - Removido do grupo (estado final)
+
+**Transições válidas:**
+| De | Para | Trigger |
+|----|------|---------|
+| `trial` | `ativo` | `purchase_approved` webhook |
+| `trial` | `removido` | Trial expirado (dia 8) |
+| `ativo` | `inadimplente` | `subscription_renewal_refused` webhook |
+| `ativo` | `removido` | `subscription_canceled` webhook |
+| `inadimplente` | `ativo` | `subscription_renewed` webhook |
+| `inadimplente` | `removido` | Após período de cobrança |
+
+**Validação obrigatória:**
+```javascript
+const VALID_TRANSITIONS = {
+  trial: ['ativo', 'removido'],
+  ativo: ['inadimplente', 'removido'],
+  inadimplente: ['ativo', 'removido'],
+  removido: []  // Estado final
+};
+
+// ✅ SEMPRE validar antes de transicionar
+function canTransition(currentStatus, newStatus) {
+  return VALID_TRANSITIONS[currentStatus]?.includes(newStatus) ?? false;
+}
+```
+
+---
+
+## Membership Error Codes
+
+| Code | Quando usar |
+|------|-------------|
+| `MEMBER_NOT_FOUND` | Membro não existe no banco |
+| `MEMBER_ALREADY_EXISTS` | Telegram ID já cadastrado |
+| `INVALID_MEMBER_STATUS` | Transição de estado inválida |
+| `CAKTO_API_ERROR` | Erro na API do Cakto |
+| `WEBHOOK_INVALID_SIGNATURE` | HMAC do webhook inválido |
+| `WEBHOOK_DUPLICATE` | Evento já processado (idempotency) |
+
+---
+
+## Webhook Processing Pattern
+
+```javascript
+// ✅ SEMPRE processar webhooks de forma assíncrona
+// 1. Validar HMAC
+// 2. Salvar evento raw
+// 3. Responder 200 IMEDIATAMENTE
+// 4. Processar via job async
+
+app.post('/webhooks/cakto', validateSignature, async (req, res) => {
+  const { event_id, event_type, data } = req.body;
+
+  // Salvar imediatamente (idempotente)
+  await supabase.from('webhook_events').insert({
+    idempotency_key: event_id,
+    event_type,
+    payload: data,
+    status: 'pending'
+  });
+
+  // Responder rápido
+  res.status(200).json({ received: true });
+});
+
+// ❌ NUNCA processar síncrono
+app.post('/webhook', async (req, res) => {
+  await processPayment(req.body);  // ERRADO - bloqueia
+  res.send('ok');
+});
+```
+
+---
+
+## Job Execution Pattern
+
+```javascript
+// ✅ SEMPRE usar wrapper com lock para jobs de membership
+async function runJob(jobName, fn) {
+  const startTime = Date.now();
+  logger.info(`[${jobName}] Iniciando`);
+
+  try {
+    const result = await withLock(jobName, 300, fn);
+    if (result === null) {
+      logger.warn(`[${jobName}] Lock não adquirido, pulando`);
+      return;
+    }
+    logger.info(`[${jobName}] Concluído`, {
+      duration: Date.now() - startTime,
+      ...result
+    });
+  } catch (err) {
+    logger.error(`[${jobName}] Erro`, { error: err.message });
+    await alertAdmin(`Job ${jobName} falhou: ${err.message}`);
+  }
+}
+
+// ✅ Logs SEMPRE com prefixo [module:job-name]
+logger.info('[membership:trial-reminders] Verificando trials');
+logger.info('[membership:kick-expired] Membro removido', { memberId });
+```
 
 ---
 
@@ -285,6 +407,14 @@ THE_ODDS_API_KEY=
 OPENAI_API_KEY=
 FOOTYSTATS_API_KEY=
 
+# Cakto Integration
+CAKTO_API_URL=https://api.cakto.com.br
+CAKTO_CLIENT_ID=
+CAKTO_CLIENT_SECRET=
+CAKTO_WEBHOOK_SECRET=
+CAKTO_WEBHOOK_PORT=3001
+CAKTO_PRODUCT_ID=
+
 # Config
 NODE_ENV=production
 TZ=America/Sao_Paulo
@@ -292,4 +422,33 @@ TZ=America/Sao_Paulo
 
 ---
 
-_Última atualização: 2026-01-12_
+## New Membership Files
+
+```
+bot/
+├── webhook-server.js           # Express server :3001 (Cakto)
+├── handlers/
+│   └── caktoWebhook.js         # Valida HMAC, salva evento
+├── jobs/
+│   └── membership/
+│       ├── index.js            # Registra jobs
+│       ├── trial-reminders.js  # 09:00 BRT
+│       ├── kick-expired.js     # 00:01 BRT
+│       ├── renewal-reminders.js # 10:00 BRT
+│       ├── process-webhooks.js # */30s
+│       └── reconciliation.js   # 03:00 BRT
+└── services/
+    ├── memberService.js        # CRUD + state machine
+    └── caktoService.js         # OAuth + API
+
+lib/
+└── lock.js                     # Distributed lock via Supabase
+
+sql/migrations/
+├── 002_membership_tables.sql   # members, member_notifications
+└── 003_webhook_events.sql      # webhook_events
+```
+
+---
+
+_Última atualização: 2026-01-17_
