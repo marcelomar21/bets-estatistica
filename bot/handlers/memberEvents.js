@@ -49,6 +49,7 @@ async function handleNewChatMembers(msg) {
 /**
  * Process a new member with duplicate detection logic
  * AC2: Prevenção de Duplicatas
+ * Story 16.9: Updated to support Gate Entry system
  * @param {object} user - Telegram user object
  * @returns {Promise<{processed: boolean, action?: string}>}
  */
@@ -63,6 +64,27 @@ async function processNewMember(user) {
   if (existingResult.success) {
     const member = existingResult.data;
 
+    // Story 16.9: Gate Entry - Member entered via invite link
+    // Mark joined_group_at to confirm they're in the group
+    if (member.status === 'trial' || member.status === 'ativo') {
+      await confirmMemberJoinedGroup(member.id, telegramId, username);
+
+      // Register join event
+      await registerMemberEvent(member.id, 'join', {
+        telegram_id: telegramId,
+        telegram_username: username,
+        source: 'group_entry',
+        action: 'gate_entry_confirmed'
+      });
+
+      logger.info('[membership:member-events] Gate entry confirmed', {
+        memberId: member.id,
+        telegramId,
+        status: member.status
+      });
+      return { processed: true, action: 'gate_entry_confirmed' };
+    }
+
     // Handle based on current status
     if (member.status === 'removido') {
       // Check if can rejoin (< 24h since kick)
@@ -72,6 +94,9 @@ async function processNewMember(user) {
         // Reactivate as trial (1.6)
         const reactivateResult = await reactivateMember(member.id);
         if (reactivateResult.success) {
+          // Confirm group entry
+          await confirmMemberJoinedGroup(member.id, telegramId, username);
+
           // AC3: Register rejoin event in member_events table
           await registerMemberEvent(member.id, 'join', {
             telegram_id: telegramId,
@@ -81,7 +106,7 @@ async function processNewMember(user) {
             hours_since_kick: rejoinResult.data.hoursSinceKick
           });
 
-          await sendWelcomeMessage(telegramId, firstName, reactivateResult.data.id);
+          // Note: Welcome message already sent via /start command in Gate Entry flow
           logger.info('[membership:member-events] Member reactivated', {
             memberId: member.id,
             telegramId,
@@ -96,22 +121,29 @@ async function processNewMember(user) {
         return { processed: false, action: 'reactivation_failed' };
       } else {
         // Kicked > 24h ago, require payment (1.7)
-        await sendPaymentRequiredMessage(telegramId, member.id);
-        logger.info('[membership:member-events] Payment required for rejoin', {
+        // Note: In Gate Entry flow, they shouldn't reach here without paying
+        logger.warn('[membership:member-events] Removed member entered without payment', {
           memberId: member.id,
           hoursSinceKick: rejoinResult.data?.hoursSinceKick?.toFixed(2)
         });
         return { processed: true, action: 'payment_required' };
       }
-    } else {
-      // trial, ativo, or inadimplente - ignore silently (1.8)
-      logger.debug('[membership:member-events] Member already exists, skipping', {
+    } else if (member.status === 'inadimplente') {
+      // Inadimplente shouldn't have invite link, log warning
+      logger.warn('[membership:member-events] Inadimplente member entered group', {
         memberId: member.id,
-        status: member.status,
         telegramId
       });
-      return { processed: false, action: 'already_exists' };
+      return { processed: false, action: 'inadimplente_entry' };
     }
+
+    // Default: already exists
+    logger.debug('[membership:member-events] Member already exists, skipping', {
+      memberId: member.id,
+      status: member.status,
+      telegramId
+    });
+    return { processed: false, action: 'already_exists' };
   }
 
   // Member not found - check if error was something other than NOT_FOUND
@@ -123,29 +155,40 @@ async function processNewMember(user) {
     return { processed: false, action: 'error' };
   }
 
-  // New member - create trial (1.5)
+  // Story 16.9: With Gate Entry, new members should come via /start first
+  // If they somehow enter directly, create trial but log warning
+  logger.warn('[membership:member-events] Member entered without /start (bypassed gate)', {
+    telegramId,
+    username
+  });
+
   const trialDays = config.membership?.trialDays || 7;
   const createResult = await createTrialMember({ telegramId, telegramUsername: username }, trialDays);
 
   if (createResult.success) {
     const memberId = createResult.data.id;
 
+    // Mark as joined since they're already in the group
+    await confirmMemberJoinedGroup(memberId, telegramId, username);
+
     // AC3: Register join event in member_events table
     await registerMemberEvent(memberId, 'join', {
       telegram_id: telegramId,
       telegram_username: username,
-      source: 'telegram_webhook',
-      action: 'new_trial'
+      source: 'direct_entry',
+      action: 'bypassed_gate'
     });
 
+    // Try to send welcome message (may fail if user hasn't started bot)
     await sendWelcomeMessage(telegramId, firstName, memberId);
-    logger.info('[membership:member-events] New trial member created', {
+
+    logger.info('[membership:member-events] New trial member created (bypassed gate)', {
       memberId,
       telegramId,
       username,
       trialDays
     });
-    return { processed: true, action: 'created' };
+    return { processed: true, action: 'created_bypassed_gate' };
   }
 
   // Handle creation errors
@@ -244,6 +287,48 @@ Boas apostas! 🍀
       statusCode: err.response?.statusCode
     });
     return { success: false, error: { code: 'TELEGRAM_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Confirm member has joined the group (Story 16.9: Gate Entry)
+ * Updates joined_group_at timestamp and clears invite link
+ * @param {number} memberId - Internal member ID
+ * @param {number} telegramId - Telegram user ID
+ * @param {string} username - Telegram username
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function confirmMemberJoinedGroup(memberId, telegramId, username) {
+  try {
+    const { error } = await supabase
+      .from('members')
+      .update({
+        joined_group_at: new Date().toISOString(),
+        telegram_username: username || null // Update username in case it changed
+      })
+      .eq('id', memberId);
+
+    if (error) {
+      logger.warn('[membership:member-events] Failed to confirm group join', {
+        memberId,
+        telegramId,
+        error: error.message
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[membership:member-events] Group join confirmed', {
+      memberId,
+      telegramId
+    });
+    return { success: true };
+  } catch (err) {
+    logger.error('[membership:member-events] Error confirming group join', {
+      memberId,
+      telegramId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
   }
 }
 
@@ -359,5 +444,6 @@ module.exports = {
   processNewMember,
   sendWelcomeMessage,
   sendPaymentRequiredMessage,
-  registerMemberEvent
+  registerMemberEvent,
+  confirmMemberJoinedGroup
 };

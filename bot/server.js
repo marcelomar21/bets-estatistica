@@ -21,6 +21,7 @@ const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
+const { handleStartCommand, handleStatusCommand } = require('./handlers/startCommand');
 
 // Validate config
 validateConfig();
@@ -109,6 +110,15 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
       // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
       if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
         await handleNewChatMembers(msg);
+      }
+
+      // Story 16.9: Handle /start command in private chats (Gate Entry)
+      if (msg.chat.type === 'private' && msg.text) {
+        if (msg.text.startsWith('/start')) {
+          await handleStartCommand(msg);
+        } else if (msg.text === '/status') {
+          await handleStatusCommand(msg);
+        }
       }
 
       // All admin group messages handled by adminGroup.js (includes /help, /status, etc)

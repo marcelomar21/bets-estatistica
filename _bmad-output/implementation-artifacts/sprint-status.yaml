@@ -220,9 +220,12 @@ development_status:
   epic-15-retrospective: optional
 
   # ========================================
-  # Epic 16: Gestão de Membros e Pagamentos Cakto (PRIORIDADE)
+  # Epic 16: Gestão de Membros e Pagamentos Cakto (COMPLETO v2)
+  # Reaberto em 2026-01-18: Migration faltante + Portão de Entrada
+  # Fechado em 2026-01-18: Story 16.9 implementada
+  # Ver: sprint-change-proposal-2026-01-18.md
   # ========================================
-  epic-16: in-progress
+  epic-16: done
   16-1-criar-infraestrutura-membros-state-machine: done
   16-2-criar-webhook-server-event-sourcing: done
   16-3-implementar-processamento-assincrono-webhooks: done
@@ -231,4 +234,16 @@ development_status:
   16-6-implementar-remocao-automatica-inadimplentes: done
   16-7-implementar-comandos-admin-gestao-membros: done
   16-8-implementar-reconciliacao-cakto: done
-  epic-16-retrospective: optional
+  16-9-implementar-portao-entrada-bot: done
+  epic-16-retrospective: done
+
+  # ========================================
+  # Epic 17: Refatoracao e Debito Tecnico (PRIORIDADE)
+  # ========================================
+  epic-17: backlog
+  17-1-refatorar-admingroup-em-modulos: backlog
+  17-2-adicionar-testes-integracao-membership: backlog
+  17-3-documentar-environment-variables: backlog
+  17-4-implementar-validacao-padronizada-input: backlog
+  17-5-consolidar-utilitarios-compartilhados: backlog
+  epic-17-retrospective: optional
