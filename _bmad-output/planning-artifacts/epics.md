@@ -1,8 +1,8 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
 status: active
-updatedAt: "2026-01-17"
-lastAddendum: "v5-membership-payments"
+updatedAt: "2026-01-18"
+lastAddendum: "v6-refactoring"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
@@ -11,10 +11,11 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
-epicCount: 2
-activeEpics: [15, 16]
+  - _bmad-output/implementation-artifacts/epic-16-retrospective-2026-01-18.md
+epicCount: 3
+activeEpics: [15, 17]
 pendingEpic: 15
-priorityEpic: 16
+priorityEpic: 17
 completedEpicsFile: epics-completed.md
 ---
 
@@ -22,9 +23,9 @@ completedEpicsFile: epics-completed.md
 
 ## Overview
 
-Este documento contém os épicos ativos (15-16) do projeto bets-estatistica.
+Este documento contém os épicos ativos (15, 17) do projeto bets-estatistica.
 
-Para épicos completados (1-14), veja `epics-completed.md`.
+Para épicos completados (1-14, 16), veja `epics-completed.md`.
 
 ## Requirements Inventory
 
@@ -248,6 +249,11 @@ Garantir odds atualizadas buscando diretamente na Betano 30 minutos antes de cad
 ### Epic 16: Gestao de Membros e Pagamentos Cakto
 Permitir que o sistema monetize através de assinaturas, gerenciando membros do grupo público com trial de 7 dias, processando pagamentos via Cakto, e automatizando remoçao de inadimplentes.
 **FRs cobertos:** FR-MB1-27, NFR21-24, ADR-001-004
+**Status:** COMPLETO (8/8 stories)
+
+### Epic 17: Refatoracao e Debito Tecnico (Pós-Epic 16)
+Reduzir debito tecnico identificado na retrospectiva do Epic 16, com foco na refatoracao do adminGroup.js (2000+ linhas) e melhorias de testabilidade.
+**Origem:** Retrospectiva Epic 16 (Action Items T1, T4)
 **Status:** Prioridade Alta (Sprint atual)
 
 ---
@@ -986,3 +992,284 @@ Açao: Verificaçao manual necessária
 6. Story 16.6 (Remoçao Automática) -> Enforcement
 7. Story 16.7 (Comandos Admin) -> Operaçao
 8. Story 16.8 (Reconciliaçao Cakto) -> Resiliencia
+
+---
+
+# ADDENDUM v6 - Refatoracao e Debito Tecnico (2026-01-18)
+
+## Origem
+
+Este epic foi criado a partir da **Retrospectiva do Epic 16** (2026-01-18), que identificou os seguintes problemas:
+
+1. **adminGroup.js com 2000+ linhas** - Arquivo monolítico difícil de manter e testar
+2. **Falta de testes de integraçao** - Apenas testes unitários existem
+3. **Funçoes duplicadas** (sleep, formatters) - Código repetido entre módulos
+4. **Validaçao de input inconsistente** - Issues C1/H1 encontrados em code review
+
+## Requirements Inventory - Addendum v6
+
+### Novos Non-Functional Requirements (Refatoraçao)
+
+- NFR-R1: Nenhum arquivo de handler deve exceder 500 linhas
+- NFR-R2: Cobertura de testes de integraçao para fluxos críticos (webhook -> kick)
+- NFR-R3: Utilitários compartilhados devem estar em lib/utils.js
+- NFR-R4: Toda funçao que recebe ID externo deve validar antes de usar
+
+### Technical Debt Items (da Retrospectiva)
+
+| ID | Severidade | Item | Origem |
+|----|------------|------|--------|
+| T4 | Alta | Refatorar adminGroup.js em módulos | Retro Epic 16 |
+| T1 | Alta | Adicionar testes de integraçao | Retro Epic 16 |
+| T2 | Media | Documentar env vars em .env.example | Retro Epic 16 |
+| A2 | Media | Padrao de validaçao de input | Retro Epic 16 |
+
+---
+
+## Epic 17: Refatoracao e Debito Tecnico
+
+Reduzir debito tecnico identificado na retrospectiva do Epic 16, melhorando a manutentibilidade e testabilidade do código.
+
+**Valor para o Desenvolvedor:**
+- Arquivos menores e mais focados facilitam navegaçao
+- Testes de integraçao aumentam confiança em mudanças
+- Padroes consistentes reduzem bugs de validaçao
+- Código mais fácil de entender para novos contribuidores
+
+**Origem:** Retrospectiva Epic 16 (Action Items T1, T2, T4, A2)
+
+**Prioridade:** ALTA (Antes de adicionar novas features)
+
+---
+
+### Story 17.1: Refatorar adminGroup.js em Módulos por Domínio
+
+As a desenvolvedor,
+I want ter handlers de admin separados por domínio,
+So that seja mais fácil manter e testar cada funcionalidade.
+
+**Acceptance Criteria:**
+
+**Given** arquivo adminGroup.js atual com 2000+ linhas
+**When** refatorado em módulos
+**Then** estrutura final é:
+```
+bot/handlers/
+├── adminGroup.js              # Router principal (~200 linhas)
+├── admin/
+│   ├── index.js               # Exports consolidados
+│   ├── betCommands.js         # /apostas, /odd, /link, /filtrar, /fila, /promover, /remover (~400 linhas)
+│   ├── memberCommands.js      # /membros, /membro, /trial, /add_trial, /remover_membro, /estender (~350 linhas)
+│   ├── actionCommands.js      # /postar, /atualizar, /trocar (~150 linhas)
+│   ├── queryCommands.js       # /overview, /metricas, /status, /simular, /atualizados (~300 linhas)
+│   └── callbackHandlers.js    # Inline keyboard callbacks (~100 linhas)
+```
+
+**Given** módulos separados criados
+**When** testes existentes executados
+**Then** todos os 416 testes continuam passando (zero regressoes)
+
+**Given** adminGroup.js refatorado
+**When** novo comando precisa ser adicionado
+**Then** desenvolvedor sabe exatamente qual arquivo editar baseado no domínio
+
+**Technical Notes:**
+- Manter backward compatibility total
+- Usar re-exports em index.js para facilitar imports
+- Cada módulo exporta suas funçoes handler
+- adminGroup.js apenas faz routing para handlers
+- Manter pendingRemovals em callbackHandlers.js
+- Logar com prefixo consistente [admin:bet], [admin:member], etc.
+
+### Story 17.2: Adicionar Testes de Integraçao para Fluxo de Membership
+
+As a desenvolvedor,
+I want ter testes de integraçao para o fluxo webhook -> processamento -> kick,
+So that tenha confiança que o sistema funciona end-to-end.
+
+**Acceptance Criteria:**
+
+**Given** fluxo de webhook até kick implementado
+**When** testes de integraçao criados
+**Then** cobre os seguintes cenários:
+  1. Webhook `purchase_approved` -> membro ativo -> pode acessar grupo
+  2. Webhook `subscription_canceled` -> membro inadimplente -> kickado
+  3. Trial expirado (dia 8) -> kick automático
+  4. Membro kickado -> tenta reentrar < 24h -> permitido
+  5. Membro kickado -> tenta reentrar > 24h -> bloqueado
+
+**Given** testes de integraçao
+**When** executados
+**Then** usam mocks para Telegram API e Cakto API
+**And** usam banco de dados de teste (transaçao com rollback)
+**And** tempo de execuçao < 30 segundos total
+
+**Technical Notes:**
+- Criar pasta `__tests__/integration/membership/`
+- Usar supertest para testar webhook-server.js
+- Mock Telegram bot com jest.fn()
+- Usar transaçao Supabase com rollback para isolamento
+- Considerar usar testcontainers se necessário
+
+### Story 17.3: Documentar Environment Variables
+
+As a desenvolvedor,
+I want ter um .env.example atualizado e documentado,
+So that saiba todas as variáveis necessárias para rodar o projeto.
+
+**Acceptance Criteria:**
+
+**Given** projeto tem variáveis de ambiente espalhadas
+**When** .env.example atualizado
+**Then** contém TODAS as variáveis usadas no projeto com:
+  - Nome da variável
+  - Descriçao breve
+  - Valor de exemplo (nao sensível)
+  - Indicaçao se é obrigatória ou opcional
+
+**Formato:**
+```bash
+# ===========================================
+# TELEGRAM
+# ===========================================
+TELEGRAM_BOT_TOKEN=         # Bot token do @BotFather (obrigatório)
+TELEGRAM_ADMIN_GROUP_ID=    # ID do grupo admin, ex: -100123456789 (obrigatório)
+TELEGRAM_PUBLIC_GROUP_ID=   # ID do grupo público (obrigatório)
+
+# ===========================================
+# SUPABASE
+# ===========================================
+SUPABASE_URL=               # URL do projeto Supabase (obrigatório)
+SUPABASE_ANON_KEY=          # Anon key do Supabase (obrigatório)
+
+# ===========================================
+# CAKTO (Membership)
+# ===========================================
+CAKTO_API_URL=              # URL da API Cakto, ex: https://api.cakto.com.br (obrigatório se Epic 16)
+CAKTO_CLIENT_ID=            # Client ID OAuth do Cakto (obrigatório se Epic 16)
+CAKTO_CLIENT_SECRET=        # Client Secret OAuth do Cakto (obrigatório se Epic 16)
+CAKTO_WEBHOOK_SECRET=       # Secret para validaçao HMAC (obrigatório se Epic 16)
+CAKTO_CHECKOUT_URL=         # URL de checkout para links (obrigatório se Epic 16)
+
+# ===========================================
+# MEMBERSHIP CONFIG
+# ===========================================
+MEMBERSHIP_TRIAL_DAYS=7     # Dias de trial para novos membros (opcional, default: 7)
+MEMBERSHIP_SUBSCRIPTION_PRICE=R$50/mes  # Preço exibido nas mensagens (opcional)
+MEMBERSHIP_OPERATOR_USERNAME=operador   # Username do operador (opcional)
+```
+
+**Given** .env.example criado
+**When** desenvolvedor clona o projeto
+**Then** consegue configurar ambiente copiando .env.example para .env
+**And** sabe quais variáveis sao obrigatórias
+
+**Technical Notes:**
+- Revisar todos os arquivos que usam process.env
+- Agrupar por funcionalidade
+- Indicar quais sao necessários para cada Epic
+
+### Story 17.4: Implementar Validaçao Padronizada de Input
+
+As a desenvolvedor,
+I want ter um padrão de validaçao de input para IDs externos,
+So that evite bugs de validaçao como o C1 encontrado no code review.
+
+**Acceptance Criteria:**
+
+**Given** funçoes que recebem IDs externos (subscription_id, telegram_id, member_id)
+**When** padrão de validaçao aplicado
+**Then** toda funçao que recebe ID externo:
+  1. Valida que nao é null/undefined
+  2. Valida tipo esperado (string ou number)
+  3. Valida formato se aplicável (UUID, numeric)
+  4. Retorna erro estruturado se inválido
+
+**Criar funçoes de validaçao em lib/validators.js:**
+```javascript
+function validateSubscriptionId(id) {
+  if (!id || typeof id !== 'string' || id.trim() === '') {
+    return { valid: false, error: { code: 'INVALID_SUBSCRIPTION_ID', message: 'Subscription ID is required' } };
+  }
+  return { valid: true };
+}
+
+function validateTelegramId(id) {
+  const numId = typeof id === 'string' ? parseInt(id, 10) : id;
+  if (!numId || isNaN(numId) || numId <= 0) {
+    return { valid: false, error: { code: 'INVALID_TELEGRAM_ID', message: 'Telegram ID must be positive number' } };
+  }
+  return { valid: true, value: numId };
+}
+
+function validateUUID(id) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!id || !uuidRegex.test(id)) {
+    return { valid: false, error: { code: 'INVALID_UUID', message: 'Invalid UUID format' } };
+  }
+  return { valid: true };
+}
+```
+
+**Given** validators criados
+**When** aplicados em funçoes existentes
+**Then** funçoes afetadas incluem:
+  - caktoService.getSubscription(subscriptionId)
+  - memberService.getMemberById(memberId)
+  - memberService.getMemberByTelegramId(telegramId)
+  - memberService.getMemberDetails(identifier)
+
+**Technical Notes:**
+- Criar lib/validators.js
+- Aplicar em services existentes sem quebrar testes
+- Adicionar testes para validators
+
+### Story 17.5: Consolidar Utilitários Compartilhados
+
+As a desenvolvedor,
+I want ter utilitários comuns em um único lugar,
+So that nao tenha código duplicado entre módulos.
+
+**Acceptance Criteria:**
+
+**Given** funçoes duplicadas identificadas
+**When** consolidadas em lib/utils.js
+**Then** inclui:
+  - `sleep(ms)` - já existe (criado no Epic 16.8)
+  - `formatDate(date, format)` - formataçao de datas
+  - `truncate(str, maxLength)` - truncar strings longas
+  - `parseNumericId(id)` - converter string para number com validaçao
+
+**Given** utilitários consolidados
+**When** módulos que usavam funçoes duplicadas
+**Then** importam de lib/utils.js
+**And** testes continuam passando
+
+**Technical Notes:**
+- lib/utils.js já existe (criado no code review 16.8)
+- Adicionar funçoes comuns encontradas nos handlers
+- Remover duplicatas dos módulos originais
+- Manter backward compatibility
+
+---
+
+## Ordem de Implementaçao - Epic 17
+
+1. Story 17.3 (Documentar env vars) -> Quick win, independente
+2. Story 17.5 (Consolidar utilitários) -> Base para refatoraçao
+3. Story 17.4 (Validaçao de input) -> Padrão para novos módulos
+4. Story 17.1 (Refatorar adminGroup.js) -> Principal débito técnico
+5. Story 17.2 (Testes de integraçao) -> Validaçao final
+
+**Estimativa total:** 3-5 dias de desenvolvimento
+
+---
+
+## Critérios de Aceite do Epic
+
+- [ ] Nenhum arquivo de handler excede 500 linhas
+- [ ] Todos os 416+ testes continuam passando
+- [ ] Pelo menos 5 testes de integraçao para membership flow
+- [ ] .env.example documentado e completo
+- [ ] Validators aplicados em funçoes críticas
+- [ ] Zero duplicaçao de funçoes utilitárias
