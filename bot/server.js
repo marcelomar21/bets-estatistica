@@ -127,6 +127,8 @@ function setupScheduler() {
   const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
+  const { runTrialReminders } = require('./jobs/membership/trial-reminders');
+  const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -141,8 +143,29 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
-  // Morning post - 10:00 São Paulo
+  // Trial reminders - 09:00 São Paulo (Story 16.5)
+  cron.schedule('0 9 * * *', async () => {
+    logger.info('[scheduler] Running trial-reminders job');
+    try {
+      const result = await runTrialReminders();
+      logger.info('[scheduler] trial-reminders complete', result);
+    } catch (err) {
+      logger.error('[scheduler] trial-reminders failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Morning post + Renewal reminders - 10:00 São Paulo
   cron.schedule('0 10 * * *', async () => {
+    // Story 16.5: Renewal reminders first
+    logger.info('[scheduler] Running renewal-reminders job');
+    try {
+      const result = await runRenewalReminders();
+      logger.info('[scheduler] renewal-reminders complete', result);
+    } catch (err) {
+      logger.error('[scheduler] renewal-reminders failed', { error: err.message });
+    }
+
+    // Then post bets
     logger.info('Running morning-post job');
     try {
       await runPostBets('morning');
@@ -217,7 +240,8 @@ function setupScheduler() {
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   08:00 - Enrich + Request links');
-  console.log('   10:00 - Post bets (morning)');
+  console.log('   09:00 - Trial reminders (membership)');
+  console.log('   10:00 - Renewal reminders + Post bets (morning)');
   console.log('   13:00 - Enrich + Request links');
   console.log('   15:00 - Post bets (afternoon)');
   console.log('   20:00 - Enrich + Request links');
