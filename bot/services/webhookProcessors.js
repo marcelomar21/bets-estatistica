@@ -13,6 +13,7 @@ const {
   markMemberAsDefaulted,
   createActiveMember,
 } = require('./memberService');
+const { sendPaymentConfirmation } = require('../handlers/memberEvents');
 
 /**
  * Normalize payment method from Cakto format to our format
@@ -131,6 +132,24 @@ async function handlePurchaseApproved(payload) {
       });
 
       const activateResult = await activateMember(member.id, subscriptionData);
+
+      // Send payment confirmation if activation succeeded and member has telegram_id
+      if (activateResult.success && activateResult.data?.telegram_id) {
+        try {
+          await sendPaymentConfirmation(
+            activateResult.data.telegram_id,
+            activateResult.data.id,
+            activateResult.data.subscription_ends_at
+          );
+        } catch (notifErr) {
+          // Don't fail the webhook processing if notification fails
+          logger.warn('[webhookProcessors] handlePurchaseApproved: payment confirmation failed', {
+            memberId: activateResult.data.id,
+            error: notifErr.message
+          });
+        }
+      }
+
       return activateResult;
     }
 
@@ -142,6 +161,23 @@ async function handlePurchaseApproved(payload) {
         email,
         subscriptionData
       });
+
+      // Send payment confirmation if creation succeeded and member has telegram_id
+      if (createResult.success && createResult.data?.telegram_id) {
+        try {
+          await sendPaymentConfirmation(
+            createResult.data.telegram_id,
+            createResult.data.id,
+            createResult.data.subscription_ends_at
+          );
+        } catch (notifErr) {
+          logger.warn('[webhookProcessors] handlePurchaseApproved: payment confirmation failed (new member)', {
+            memberId: createResult.data.id,
+            error: notifErr.message
+          });
+        }
+      }
+
       return createResult;
     }
 
@@ -205,6 +241,23 @@ async function handleSubscriptionRenewed(payload) {
 
     // Renew subscription
     const renewResult = await renewMemberSubscription(member.id);
+
+    // Send payment confirmation if renewal succeeded and member has telegram_id
+    if (renewResult.success && renewResult.data?.telegram_id) {
+      try {
+        await sendPaymentConfirmation(
+          renewResult.data.telegram_id,
+          renewResult.data.id,
+          renewResult.data.subscription_ends_at
+        );
+      } catch (notifErr) {
+        logger.warn('[webhookProcessors] handleSubscriptionRenewed: payment confirmation failed', {
+          memberId: renewResult.data.id,
+          error: notifErr.message
+        });
+      }
+    }
+
     return renewResult;
 
   } catch (err) {

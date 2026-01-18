@@ -439,11 +439,86 @@ Para continuar recebendo nossas apostas, entre em contato com @${operatorUsernam
   }
 }
 
+/**
+ * Send payment confirmation message to member after successful payment
+ * PRD Journey 5: "Pagamento confirmado! Você agora é membro ativo até DD/MM/AAAA."
+ * @param {number} telegramId - Telegram user ID
+ * @param {number} memberId - Internal member ID for notification tracking
+ * @param {string} subscriptionEndsAt - ISO date string of subscription end date
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function sendPaymentConfirmation(telegramId, memberId, subscriptionEndsAt) {
+  const bot = getBot();
+  const operatorUsername = config.membership?.operatorUsername || 'operador';
+
+  // Format date in Brazilian format (DD/MM/AAAA)
+  const endDate = new Date(subscriptionEndsAt);
+  const formattedDate = endDate.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+
+  const message = `
+✅ *Pagamento confirmado!*
+
+Você agora é membro ativo do *GuruBet* até *${formattedDate}*.
+
+📊 Continue recebendo:
+• 3 apostas diárias com análise estatística
+• Horários: 10h, 15h e 22h
+
+❓ Dúvidas? Fale com @${operatorUsername}
+
+Boas apostas! 🍀
+  `.trim();
+
+  try {
+    const sentMessage = await bot.sendMessage(telegramId, message, { parse_mode: 'Markdown' });
+
+    // Record notification in member_notifications
+    if (memberId) {
+      const { error: notifError } = await supabase.from('member_notifications').insert({
+        member_id: memberId,
+        type: 'payment_received',
+        channel: 'telegram',
+        message_id: sentMessage.message_id.toString()
+      });
+
+      if (notifError) {
+        logger.warn('[membership:member-events] Failed to record payment confirmation notification', {
+          memberId,
+          error: notifError.message
+        });
+      }
+    }
+
+    logger.info('[membership:member-events] Payment confirmation sent', {
+      telegramId,
+      memberId,
+      subscriptionEndsAt: formattedDate
+    });
+
+    return { success: true, data: { messageId: sentMessage.message_id } };
+  } catch (err) {
+    if (err.response?.statusCode === 403 || err.response?.body?.error_code === 403) {
+      logger.warn('[membership:member-events] User has not started chat with bot (payment confirmation)', { telegramId });
+      return { success: false, error: { code: 'USER_BLOCKED_BOT', message: 'User has not started chat' } };
+    }
+    logger.error('[membership:member-events] Failed to send payment confirmation', {
+      telegramId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'TELEGRAM_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   handleNewChatMembers,
   processNewMember,
   sendWelcomeMessage,
   sendPaymentRequiredMessage,
+  sendPaymentConfirmation,
   registerMemberEvent,
   confirmMemberJoinedGroup
 };
