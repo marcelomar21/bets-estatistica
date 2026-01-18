@@ -338,7 +338,7 @@ async function getActiveBetsForRepost() {
 async function getAvailableBets() {
   try {
     const now = new Date();
-    const maxDate = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+    const _maxDate = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
 
     const { data, error } = await supabase
       .from('suggested_bets')

@@ -37,9 +37,9 @@ try {
   }
 
   // Análise Odds
-  const homeWinOdd = odds.full_time?.["1"] ?? odds.full_time?.home ?? 1.32; // Fallback se a chave mudar
-  const over25Odd = odds.full_time?.over_25 ?? 1.44;
-  const bttsYesOdd = odds.btts_yes ?? 1.92;
+  const _homeWinOdd = odds.full_time?.["1"] ?? odds.full_time?.home ?? 1.32; // Fallback se a chave mudar
+  const _over25Odd = odds.full_time?.over_25 ?? 1.44;
+  const _bttsYesOdd = odds.btts_yes ?? 1.92;
 
   // Análise Santos (Home)
   // seasonWinsNum_home, seasonScoredAVG_home, seasonConcededAVG_home, seasonBTTSPercentage_home

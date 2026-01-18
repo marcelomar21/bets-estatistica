@@ -16,7 +16,7 @@ require('dotenv').config();
 const { supabase } = require('../lib/supabase');
 const { runEnrichment } = require('../bot/jobs/enrichOdds');
 const { alertAdmin, sendToPublic } = require('../bot/telegram');
-const { config } = require('../lib/config');
+const { config: _config } = require('../lib/config');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 

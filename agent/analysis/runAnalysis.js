@@ -969,12 +969,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
 
   for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
     infoLog(`Passo ${step + 1}: solicitando resposta do modelo (mensagens=${conversation.length}).`);
-    let response;
-    try {
-      response = await llmWithTools.invoke(conversation);
-    } catch (err) {
-      throw err;
-    }
+    const response = await llmWithTools.invoke(conversation);
     conversation.push(response);
     const finishReason = response.response_metadata?.finish_reason || 'n/d';
     infoLog(
@@ -1087,7 +1082,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       const dumpPath = path.join(dumpDir, `step${step + 1}_call${dumpIndex}.json`);
       try {
         await fs.ensureDir(path.dirname(dumpPath));
-      } catch {}
+      } catch { /* ignore directory creation errors */ }
       try {
         const parsed = JSON.parse(output);
         await fs.writeJson(

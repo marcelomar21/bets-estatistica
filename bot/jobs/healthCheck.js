@@ -347,7 +347,6 @@ async function runHealthCheck() {
 }
 
 async function _runHealthCheckInternal() {
-  const timestamp = new Date().toISOString();
   logger.info('Starting health check job');
 
   const results = {

@@ -77,7 +77,7 @@ async function handleStartCommand(msg) {
 /**
  * Handle existing member based on their status
  */
-async function handleExistingMember(bot, chatId, telegramId, firstName, member, payload) {
+async function handleExistingMember(bot, chatId, telegramId, firstName, member, _payload) {
   const { status } = member;
 
   logger.info('[membership:start-command] Existing member', {
@@ -505,14 +505,15 @@ Envie /start para começar seu trial gratuito!
   let statusEmoji, statusText, extraInfo;
 
   switch (member.status) {
-    case 'trial':
+    case 'trial': {
       const daysResult = await getTrialDaysRemaining(member.id);
       const daysRemaining = daysResult.success ? daysResult.data.daysRemaining : '?';
       statusEmoji = '🎁';
       statusText = 'Trial';
       extraInfo = `⏳ Dias restantes: ${daysRemaining}`;
       break;
-    case 'ativo':
+    }
+    case 'ativo': {
       const subscriptionEnds = member.subscription_ends_at
         ? new Date(member.subscription_ends_at).toLocaleDateString('pt-BR')
         : 'N/A';
@@ -520,6 +521,7 @@ Envie /start para começar seu trial gratuito!
       statusText = 'Assinante ativo';
       extraInfo = `📅 Válido até: ${subscriptionEnds}`;
       break;
+    }
     case 'inadimplente':
       statusEmoji = '⚠️';
       statusText = 'Pagamento pendente';

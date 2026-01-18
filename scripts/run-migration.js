@@ -22,7 +22,7 @@ async function runMigration(filePath) {
   try {
     // Split by semicolons but preserve those inside functions/triggers
     // For simplicity, we'll run the entire script at once
-    const { data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
+    const { data: _data, error } = await supabase.rpc('exec_sql', { sql_query: sql });
 
     if (error) {
       // If RPC doesn't exist, provide instructions

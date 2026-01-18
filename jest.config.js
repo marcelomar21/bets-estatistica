@@ -1,6 +1,17 @@
+// Load .env for local development (CI doesn't have .env file)
+require('dotenv').config({ quiet: true });
+
+// Skip integration tests when no database available (CI environment)
+const testPathIgnorePatterns = ['/node_modules/'];
+if (!process.env.SUPABASE_URL) {
+  testPathIgnorePatterns.push('schema-validation.test.js');
+}
+
 module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.js'],
+  testPathIgnorePatterns,
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   collectCoverageFrom: [
     'bot/services/metricsService.js',
     'bot/services/marketInterpreter.js',

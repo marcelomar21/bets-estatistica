@@ -10,7 +10,7 @@ async function main() {
   console.log('🔍 Debugging bets and matches...\n');
 
   // 1. Count bets by status
-  const { data: statusCounts, error: statusError } = await supabase
+  const { data: statusCounts, error: _statusError } = await supabase
     .from('suggested_bets')
     .select('bet_status, eligible')
     .then(({ data }) => {

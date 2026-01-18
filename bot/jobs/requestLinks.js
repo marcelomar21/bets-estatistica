@@ -17,7 +17,6 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
-const { supabase } = require('../../lib/supabase');
 const { 
   requestLinksForTopBets, 
   getActivePostedBets, 
@@ -158,7 +157,7 @@ async function runRequestLinks(periodOverride = null) {
   await runEnrichment();
 
   // Step 2: Get current bet status
-  const { readyBets, pendingBets, activeBets, needed } = await getBetStatus();
+  const { readyBets, pendingBets, needed } = await getBetStatus();
 
   // Step 3: If we have ready bets, show preview
   if (readyBets.length > 0) {

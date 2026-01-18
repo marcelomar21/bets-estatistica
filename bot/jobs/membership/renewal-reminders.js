@@ -38,7 +38,7 @@ let renewalRemindersRunning = false;
 async function getMembersNeedingRenewalReminder() {
   try {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const _today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     // Get all active members with PIX/Boleto
     const { data: allMembers, error } = await supabase

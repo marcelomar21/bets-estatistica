@@ -88,7 +88,7 @@ app.use((req, res) => {
 /**
  * Global error handler
  */
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   logger.error('[cakto:webhook] Unhandled error', { error: err.message, stack: err.stack });
   res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Internal server error' });
 });

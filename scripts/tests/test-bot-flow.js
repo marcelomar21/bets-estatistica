@@ -5,7 +5,7 @@
 require('dotenv').config();
 
 const { testConnection: testSupabase } = require('../lib/supabase');
-const { testConnection: testTelegram, sendToAdmin } = require('../bot/telegram');
+const { testConnection: testTelegram } = require('../bot/telegram');
 const { getSports } = require('../bot/services/oddsService');
 const { getSuccessRate } = require('../bot/services/metricsService');
 const { getEligibleBets } = require('../bot/services/betService');

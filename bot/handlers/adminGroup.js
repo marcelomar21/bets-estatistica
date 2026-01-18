@@ -9,8 +9,8 @@ const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
-const { formatBetListWithDays, groupBetsByDay, getDayLabel, paginateResults, formatPaginationFooter } = require('../utils/formatters');
-const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, getTrialDaysRemaining, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
+const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
+const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -1817,7 +1817,7 @@ function formatDayLabelForHistory(day) {
   const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayStr = yesterdayDate.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
 
-  const [year, month, dayNum] = day.split('-');
+  const [_year, month, dayNum] = day.split('-');
   const formattedDate = `${dayNum}/${month}`;
 
   if (day === todayStr) {

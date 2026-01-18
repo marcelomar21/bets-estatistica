@@ -20,7 +20,7 @@ const formatDateTime = (value) => {
   }).format(date);
 };
 
-const formatOdds = (value) => {
+const _formatOdds = (value) => {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value.toFixed(2);
@@ -32,7 +32,7 @@ const formatOdds = (value) => {
   return String(value);
 };
 
-const formatConfidence = (value) => {
+const _formatConfidence = (value) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return null;
   }

@@ -7,7 +7,7 @@
  * 3. handleAtualizadosCommand - all ACs
  */
 
-const assert = require('assert');
+const _assert = require('assert');
 
 // Test 1: Regex pattern matching (inline test since pattern is not exported)
 console.log('\n=== Test 1: ATUALIZADOS_PATTERN ===');

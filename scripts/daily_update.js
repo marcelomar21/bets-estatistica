@@ -29,7 +29,7 @@ const FETCH_LEAGUE_TEAMS_SCRIPT = path.join(__dirname, 'fetchLeagueTeams.js');
 const LOAD_LEAGUE_TEAMS_SCRIPT = path.join(__dirname, 'loadLeagueTeamStats.js');
 
 const FRESHNESS_WINDOW_HOURS = 48;
-const FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
+const _FRESHNESS_INTERVAL_SQL = `${FRESHNESS_WINDOW_HOURS} hours`;
 
 [MATCH_DETAILS_DIR, LASTX_DIR, UPCOMING_DIR, ANALYZED_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
