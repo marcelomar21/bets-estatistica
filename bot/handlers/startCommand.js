@@ -234,6 +234,24 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
     const reactivateResult = await reactivateMember(member.id);
 
     if (reactivateResult.success) {
+      // Unban user from group before sending invite (they were banned when kicked)
+      const groupId = config.telegram.publicGroupId;
+      try {
+        await bot.unbanChatMember(groupId, telegramId, { only_if_banned: true });
+        logger.info('[membership:start-command] User unbanned for reactivation', {
+          memberId: member.id,
+          telegramId,
+          groupId
+        });
+      } catch (unbanErr) {
+        logger.warn('[membership:start-command] Failed to unban user (may not be banned)', {
+          memberId: member.id,
+          telegramId,
+          error: unbanErr.message
+        });
+        // Continue anyway - user might not be banned
+      }
+
       // Register event
       await registerMemberEvent(member.id, 'reactivate', {
         telegram_id: telegramId,
