@@ -10,68 +10,49 @@ const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 
 /**
- * Middleware to validate HMAC-SHA256 signature from Cakto
+ * Middleware to validate webhook secret from Cakto
+ * Cakto sends the secret in the body payload (not header)
  * Uses crypto.timingSafeEqual to prevent timing attacks
  */
 function validateHmacSignature(req, res, next) {
-  const signature = req.headers['x-cakto-signature'];
-  const secret = process.env.CAKTO_WEBHOOK_SECRET;
+  const configuredSecret = process.env.CAKTO_WEBHOOK_SECRET;
 
-  // Check for missing signature or secret
-  if (!signature) {
-    logger.warn('[cakto:webhook] Missing signature header');
-    return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Missing signature' });
-  }
-
-  if (!secret) {
+  if (!configuredSecret) {
     logger.error('[cakto:webhook] CAKTO_WEBHOOK_SECRET not configured');
     return res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Webhook secret not configured' });
   }
 
+  // Cakto sends secret in the body, not in header
+  const receivedSecret = req.body?.secret;
+
+  if (!receivedSecret) {
+    logger.warn('[cakto:webhook] Missing secret in payload');
+    return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Missing secret' });
+  }
+
   try {
-    // Calculate expected signature
-    // Use rawBody if available, otherwise stringify body
-    // Handle case where body parsing failed (non-JSON content type)
-    const payload = req.rawBody || (req.body ? JSON.stringify(req.body) : '');
-
-    if (!payload) {
-      logger.warn('[cakto:webhook] Empty payload for signature validation');
-      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Empty or invalid payload' });
-    }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(payload)
-      .digest('hex');
-
-    // Ensure both buffers have same length for timingSafeEqual
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-
-    if (signatureBuffer.length !== expectedBuffer.length) {
-      logger.warn('[cakto:webhook] Signature length mismatch', {
-        receivedLength: signatureBuffer.length,
-        expectedLength: expectedBuffer.length
-      });
-      return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Invalid signature' });
-    }
-
     // Use timing-safe comparison to prevent timing attacks
-    const isValid = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+    const receivedBuffer = Buffer.from(String(receivedSecret));
+    const expectedBuffer = Buffer.from(String(configuredSecret));
+
+    // If lengths differ, secrets don't match
+    if (receivedBuffer.length !== expectedBuffer.length) {
+      logger.warn('[cakto:webhook] Secret length mismatch');
+      return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Invalid secret' });
+    }
+
+    const isValid = crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 
     if (!isValid) {
-      logger.warn('[cakto:webhook] Invalid signature', {
-        received: signature.substring(0, 10) + '...',
-        expected: expectedSignature.substring(0, 10) + '...'
-      });
-      return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Invalid signature' });
+      logger.warn('[cakto:webhook] Invalid secret');
+      return res.status(401).json({ error: 'WEBHOOK_INVALID_SIGNATURE', message: 'Invalid secret' });
     }
 
-    logger.debug('[cakto:webhook] Signature validated successfully');
+    logger.debug('[cakto:webhook] Secret validated successfully');
     next();
   } catch (err) {
-    logger.error('[cakto:webhook] Signature validation error', { error: err.message });
-    return res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Signature validation failed' });
+    logger.error('[cakto:webhook] Secret validation error', { error: err.message });
+    return res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Secret validation failed' });
   }
 }
 

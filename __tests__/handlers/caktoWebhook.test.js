@@ -25,20 +25,12 @@ const { app } = require('../../bot/webhook-server');
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 
-// Helper to generate valid HMAC signature
-function generateSignature(payload, secret) {
-  return crypto
-    .createHmac('sha256', secret)
-    .update(typeof payload === 'string' ? payload : JSON.stringify(payload))
-    .digest('hex');
-}
-
 // Helper to create Cakto payload structure
 // Cakto sends: { event: "...", secret: "...", data: { id: "...", customer: {...}, ... } }
-function createCaktoPayload(eventType, dataId, additionalData = {}) {
+function createCaktoPayload(eventType, dataId, additionalData = {}, secret = 'test-webhook-secret-123') {
   return {
     event: eventType,
-    secret: 'webhook-secret-token',
+    secret: secret,
     data: {
       id: dataId,
       customer: { email: 'test@example.com', name: 'Test User' },
@@ -73,11 +65,12 @@ describe('Cakto Webhook Server', () => {
   });
 
   // ============================================
-  // AC1: HMAC Signature Validation
+  // AC1: Secret Validation (Cakto sends secret in body)
   // ============================================
-  describe('HMAC Signature Validation (AC: #1)', () => {
-    test('rejeita request sem header x-cakto-signature com 401', async () => {
-      const payload = createCaktoPayload('purchase_approved', 'evt_123');
+  describe('Secret Validation (AC: #1)', () => {
+    test('rejeita request sem secret no payload com 401', async () => {
+      // Payload without secret field
+      const payload = { event: 'purchase_approved', data: { id: 'evt_123' } };
 
       const response = await request(app)
         .post('/webhooks/cakto')
@@ -85,29 +78,26 @@ describe('Cakto Webhook Server', () => {
         .expect(401);
 
       expect(response.body.error).toBe('WEBHOOK_INVALID_SIGNATURE');
-      expect(response.body.message).toBe('Missing signature');
+      expect(response.body.message).toBe('Missing secret');
       expect(logger.warn).toHaveBeenCalledWith(
-        '[cakto:webhook] Missing signature header'
+        '[cakto:webhook] Missing secret in payload'
       );
     });
 
-    test('rejeita request com assinatura inválida com 401', async () => {
-      const payload = createCaktoPayload('purchase_approved', 'evt_123');
+    test('rejeita request com secret inválido com 401', async () => {
+      const payload = createCaktoPayload('purchase_approved', 'evt_123', {}, 'wrong-secret');
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', 'invalid-signature')
         .send(payload)
         .expect(401);
 
       expect(response.body.error).toBe('WEBHOOK_INVALID_SIGNATURE');
-      expect(response.body.message).toBe('Invalid signature');
+      expect(response.body.message).toBe('Invalid secret');
     });
 
-    test('aceita request com assinatura HMAC-SHA256 válida', async () => {
+    test('aceita request com secret válido', async () => {
       const payload = createCaktoPayload('purchase_approved', 'evt_valid_123', { customer_id: 'cust_1' });
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
 
       // Mock successful save
       const singleMock = jest.fn().mockResolvedValue({
@@ -120,32 +110,25 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(response.body.received).toBe(true);
       expect(logger.debug).toHaveBeenCalledWith(
-        '[cakto:webhook] Signature validated successfully'
+        '[cakto:webhook] Secret validated successfully'
       );
     });
 
-    test('rejeita assinatura com tamanho diferente', async () => {
-      const payload = createCaktoPayload('test', 'evt_123');
+    test('rejeita secret com tamanho diferente', async () => {
+      const payload = createCaktoPayload('test', 'evt_123', {}, 'short');
 
-      // Short signature (different length than expected hex)
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', 'abc123')
         .send(payload)
         .expect(401);
 
       expect(response.body.error).toBe('WEBHOOK_INVALID_SIGNATURE');
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('[cakto:webhook] Signature length mismatch'),
-        expect.any(Object)
-      );
+      expect(logger.warn).toHaveBeenCalledWith('[cakto:webhook] Secret length mismatch');
     });
   });
 
@@ -154,16 +137,12 @@ describe('Cakto Webhook Server', () => {
   // ============================================
   describe('Payload Validation (AC: #1, #2)', () => {
     test('rejeita payload sem data.id com 400', async () => {
-      // Cakto structure: { event, data: { id, ... } } - missing data.id
-      const payload = { event: 'purchase_approved', data: {} };
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
+      // Cakto structure: { event, secret, data: { id, ... } } - missing data.id
+      const payload = { event: 'purchase_approved', secret: WEBHOOK_SECRET, data: {} };
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(400);
 
       expect(response.body.error).toBe('INVALID_PAYLOAD');
@@ -171,16 +150,12 @@ describe('Cakto Webhook Server', () => {
     });
 
     test('rejeita payload sem event com 400', async () => {
-      // Cakto structure: { event, data: { id, ... } } - missing event
-      const payload = { data: { id: 'evt_123' } };
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
+      // Cakto structure: { event, secret, data: { id, ... } } - missing event
+      const payload = { secret: WEBHOOK_SECRET, data: { id: 'evt_123' } };
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(400);
 
       expect(response.body.error).toBe('INVALID_PAYLOAD');
@@ -195,8 +170,6 @@ describe('Cakto Webhook Server', () => {
     test('salva evento em webhook_events com status pending', async () => {
       const transactionId = 'evt_save_test_123';
       const payload = createCaktoPayload('purchase_approved', transactionId, { amount: 99.90 });
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
 
       // Idempotency key is now: event_type + transaction_id
       const expectedIdempotencyKey = `purchase_approved_${transactionId}`;
@@ -216,9 +189,7 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(response.body.received).toBe(true);
@@ -247,8 +218,6 @@ describe('Cakto Webhook Server', () => {
     test('loga informações do webhook recebido', async () => {
       const transactionId = 'evt_log_test';
       const payload = createCaktoPayload('subscription_renewed', transactionId);
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
 
       const expectedIdempotencyKey = `subscription_renewed_${transactionId}`;
 
@@ -259,9 +228,7 @@ describe('Cakto Webhook Server', () => {
 
       await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(logger.info).toHaveBeenCalledWith(
@@ -281,8 +248,6 @@ describe('Cakto Webhook Server', () => {
     test('retorna 200 para evento duplicado sem criar novo registro', async () => {
       const transactionId = 'evt_duplicate_123';
       const payload = createCaktoPayload('purchase_approved', transactionId);
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
       const expectedIdempotencyKey = `purchase_approved_${transactionId}`;
 
       // Mock returns null (ignoreDuplicates returns no data for duplicate)
@@ -293,9 +258,7 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(response.body.received).toBe(true);
@@ -309,8 +272,6 @@ describe('Cakto Webhook Server', () => {
     test('retorna 200 para erro PGRST116 (duplicate key)', async () => {
       const transactionId = 'evt_duplicate_456';
       const payload = createCaktoPayload('purchase_approved', transactionId);
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
 
       // Mock returns error with duplicate code
       const singleMock = jest.fn().mockResolvedValue({
@@ -323,9 +284,7 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(response.body.received).toBe(true);
@@ -340,8 +299,6 @@ describe('Cakto Webhook Server', () => {
     test('retorna 500 quando falha ao salvar no banco', async () => {
       const transactionId = 'evt_db_error';
       const payload = createCaktoPayload('purchase_approved', transactionId);
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
       const expectedIdempotencyKey = `purchase_approved_${transactionId}`;
 
       const singleMock = jest.fn().mockResolvedValue({
@@ -354,9 +311,7 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(500);
 
       expect(response.body.error).toBe('DB_ERROR');
@@ -375,7 +330,6 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', 'some-signature')
         .send(payload)
         .expect(500);
 
@@ -433,8 +387,6 @@ describe('Cakto Webhook Server', () => {
 
     test('aceita payload menor que 1MB', async () => {
       const payload = createCaktoPayload('purchase_approved', 'evt_normal_size', { info: 'normal sized payload' });
-      const payloadString = JSON.stringify(payload);
-      const signature = generateSignature(payloadString, WEBHOOK_SECRET);
 
       const singleMock = jest.fn().mockResolvedValue({ data: { id: 1 }, error: null });
       const selectMock = jest.fn().mockReturnValue({ single: singleMock });
@@ -443,9 +395,7 @@ describe('Cakto Webhook Server', () => {
 
       const response = await request(app)
         .post('/webhooks/cakto')
-        .set('x-cakto-signature', signature)
-        .set('Content-Type', 'application/json')
-        .send(payloadString)
+        .send(payload)
         .expect(200);
 
       expect(response.body.received).toBe(true);
@@ -465,12 +415,6 @@ describe('Rate Limiting (AC: #1)', () => {
     // Since rate limit is 100/min and we're in unit tests with mock,
     // this is a verification that the limiter middleware exists and allows normal requests.
     const payload = createCaktoPayload('test', 'evt_rate_limit_test');
-    const payloadString = JSON.stringify(payload);
-    const WEBHOOK_SECRET = process.env.CAKTO_WEBHOOK_SECRET || 'test-webhook-secret-123';
-    const signature = crypto
-      .createHmac('sha256', WEBHOOK_SECRET)
-      .update(payloadString)
-      .digest('hex');
 
     const singleMock = jest.fn().mockResolvedValue({ data: { id: 1 }, error: null });
     const selectMock = jest.fn().mockReturnValue({ single: singleMock });
@@ -480,9 +424,7 @@ describe('Rate Limiting (AC: #1)', () => {
     // Request within limit should succeed
     const response = await request(app)
       .post('/webhooks/cakto')
-      .set('x-cakto-signature', signature)
-      .set('Content-Type', 'application/json')
-      .send(payloadString);
+      .send(payload);
 
     // Rate limiter allows up to 100 requests per minute
     // So this should succeed (status 200) not be rate limited (429)
