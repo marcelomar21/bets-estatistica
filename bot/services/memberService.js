@@ -624,6 +624,130 @@ async function createActiveMember({ email, subscriptionData }) {
 }
 
 /**
+ * Check if a removed member can rejoin the group (within 24h of kick)
+ * Story 16.4: Added for member entry detection
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, data?: {canRejoin: boolean, hoursSinceKick?: number}, error?: object}>}
+ */
+async function canRejoinGroup(memberId) {
+  try {
+    const memberResult = await getMemberById(memberId);
+
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+
+    // Only removed members can rejoin
+    if (member.status !== 'removido') {
+      return { success: true, data: { canRejoin: false, reason: 'not_removed' } };
+    }
+
+    // If no kicked_at, treat as inconsistent state - don't allow rejoin
+    if (!member.kicked_at) {
+      logger.warn('[memberService] canRejoinGroup: removed member without kicked_at', { memberId });
+      return { success: true, data: { canRejoin: false, reason: 'no_kicked_at' } };
+    }
+
+    const kickedAt = new Date(member.kicked_at);
+    const now = new Date();
+    const hoursSinceKick = (now.getTime() - kickedAt.getTime()) / (1000 * 60 * 60);
+
+    // Can rejoin within 24 hours
+    const canRejoin = hoursSinceKick < 24;
+
+    logger.debug('[memberService] canRejoinGroup: checked', {
+      memberId,
+      hoursSinceKick: hoursSinceKick.toFixed(2),
+      canRejoin
+    });
+
+    return {
+      success: true,
+      data: { canRejoin, hoursSinceKick }
+    };
+  } catch (err) {
+    logger.error('[memberService] canRejoinGroup: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Reactivate a removed member as trial
+ * Story 16.4: Added for member entry detection
+ * Resets trial period and clears kick data
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function reactivateMember(memberId) {
+  try {
+    const { config } = require('../../lib/config');
+    const trialDays = config.membership?.trialDays || 7;
+
+    // Get current member to validate
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+
+    // Only removed members can be reactivated
+    if (member.status !== 'removido') {
+      logger.warn('[memberService] reactivateMember: member not in removido status', {
+        memberId,
+        currentStatus: member.status
+      });
+      return {
+        success: false,
+        error: { code: 'INVALID_MEMBER_STATUS', message: `Member is in '${member.status}' status, not 'removido'` }
+      };
+    }
+
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+
+    // Update with optimistic locking
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        status: 'trial',
+        trial_started_at: now.toISOString(),
+        trial_ends_at: trialEndsAt.toISOString(),
+        kicked_at: null,
+        notes: `Reativado em ${now.toISOString()}`
+      })
+      .eq('id', memberId)
+      .eq('status', 'removido')  // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] reactivateMember: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Member status changed during update' }
+        };
+      }
+      logger.error('[memberService] reactivateMember: database error', { memberId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] reactivateMember: success', {
+      memberId,
+      trialEndsAt: trialEndsAt.toISOString()
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] reactivateMember: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Get remaining trial days for a member
  * @param {number} memberId - Internal member ID
  * @returns {Promise<{success: boolean, data?: {daysRemaining: number}, error?: object}>}
@@ -685,4 +809,8 @@ module.exports = {
   activateMember,
   renewMemberSubscription,
   markMemberAsDefaulted,
+
+  // Story 16.4: Member entry detection helpers
+  canRejoinGroup,
+  reactivateMember,
 };

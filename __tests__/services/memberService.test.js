@@ -26,7 +26,9 @@ const {
   getMemberByTelegramId,
   updateMemberStatus,
   createTrialMember,
-  getTrialDaysRemaining
+  getTrialDaysRemaining,
+  canRejoinGroup,
+  reactivateMember
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -480,6 +482,217 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.daysRemaining).toBe(0);
+    });
+  });
+
+  // ============================================
+  // canRejoinGroup (Story 16.4)
+  // ============================================
+  describe('canRejoinGroup', () => {
+    test('retorna canRejoin true se kicked_at < 24h', async () => {
+      const recentKick = new Date(Date.now() - 12 * 60 * 60 * 1000); // 12 hours ago
+      const mockMember = {
+        id: 1,
+        status: 'removido',
+        kicked_at: recentKick.toISOString(),
+      };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await canRejoinGroup(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.canRejoin).toBe(true);
+      expect(result.data.hoursSinceKick).toBeLessThan(24);
+    });
+
+    test('retorna canRejoin false se kicked_at > 24h', async () => {
+      const oldKick = new Date(Date.now() - 48 * 60 * 60 * 1000); // 48 hours ago
+      const mockMember = {
+        id: 1,
+        status: 'removido',
+        kicked_at: oldKick.toISOString(),
+      };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await canRejoinGroup(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.canRejoin).toBe(false);
+      expect(result.data.hoursSinceKick).toBeGreaterThan(24);
+    });
+
+    test('retorna canRejoin false se status não é removido', async () => {
+      const mockMember = { id: 1, status: 'ativo' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await canRejoinGroup(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.canRejoin).toBe(false);
+      expect(result.data.reason).toBe('not_removed');
+    });
+
+    test('retorna canRejoin false se kicked_at é null (estado inconsistente)', async () => {
+      const mockMember = { id: 1, status: 'removido', kicked_at: null };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await canRejoinGroup(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.canRejoin).toBe(false);
+      expect(result.data.reason).toBe('no_kicked_at');
+    });
+
+    test('retorna erro MEMBER_NOT_FOUND se membro não existe', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await canRejoinGroup(999);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+  });
+
+  // ============================================
+  // reactivateMember (Story 16.4)
+  // ============================================
+  describe('reactivateMember', () => {
+    // Mock config
+    beforeEach(() => {
+      jest.mock('../../lib/config', () => ({
+        config: { membership: { trialDays: 7 } }
+      }));
+    });
+
+    test('reativa membro removido como trial com sucesso', async () => {
+      const mockMember = { id: 1, status: 'removido' };
+      const reactivatedMember = {
+        id: 1,
+        status: 'trial',
+        trial_started_at: '2026-01-18T00:00:00Z',
+        trial_ends_at: '2026-01-25T00:00:00Z',
+        kicked_at: null,
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: reactivatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq2 = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateEq1 = jest.fn().mockReturnValue({ eq: updateEq2 });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq1 });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await reactivateMember(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.status).toBe('trial');
+      expect(result.data.kicked_at).toBeNull();
+    });
+
+    test('retorna INVALID_MEMBER_STATUS se membro não está removido', async () => {
+      const mockMember = { id: 1, status: 'ativo' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await reactivateMember(1);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_MEMBER_STATUS');
+    });
+
+    test('retorna RACE_CONDITION se status mudou durante update', async () => {
+      const mockMember = { id: 1, status: 'removido' };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update with race condition
+      const updateSingle = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'No rows returned' }
+      });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq2 = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateEq1 = jest.fn().mockReturnValue({ eq: updateEq2 });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq1 });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await reactivateMember(1);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('RACE_CONDITION');
+    });
+
+    test('retorna MEMBER_NOT_FOUND se membro não existe', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await reactivateMember(999);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
     });
   });
 });

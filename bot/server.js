@@ -20,6 +20,7 @@ const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage } = require('./handlers/adminGroup');
+const { handleNewChatMembers } = require('./handlers/memberEvents');
 
 // Validate config
 validateConfig();
@@ -82,6 +83,11 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
     // Process message
     if (update.message) {
       const msg = update.message;
+
+      // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
+      if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
+        await handleNewChatMembers(msg);
+      }
 
       // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
       if (msg.chat.id.toString() === config.telegram.adminGroupId) {
