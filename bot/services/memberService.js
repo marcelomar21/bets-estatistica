@@ -748,6 +748,128 @@ async function reactivateMember(memberId) {
 }
 
 /**
+ * Kick a member from the Telegram group
+ * Story 16.6: Implementar Remocao Automatica de Inadimplentes
+ * Uses banChatMember with until_date for 24h temporary ban (allows re-entry after)
+ * @param {number|string} telegramId - Telegram user ID
+ * @param {string} chatId - Telegram chat/group ID
+ * @returns {Promise<{success: boolean, data?: {until_date: number}, error?: object}>}
+ */
+async function kickMemberFromGroup(telegramId, chatId) {
+  const { getBot } = require('../telegram');
+  const bot = getBot();
+
+  try {
+    // Ban temporario de 24h (permite reentrada depois)
+    // until_date = Unix timestamp (segundos desde epoch)
+    const until_date = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
+
+    await bot.banChatMember(chatId, telegramId, { until_date });
+
+    logger.info('[memberService] kickMemberFromGroup: success', { telegramId, chatId, until_date });
+    return { success: true, data: { until_date } };
+  } catch (err) {
+    // Usuario nao encontrado no grupo (400)
+    if (err.response?.statusCode === 400) {
+      const description = err.response?.body?.description || '';
+      if (description.includes('user not found') || description.includes('USER_NOT_PARTICIPANT')) {
+        logger.warn('[memberService] kickMemberFromGroup: user not in group', { telegramId });
+        return { success: false, error: { code: 'USER_NOT_IN_GROUP', message: 'User is not a member of the group' } };
+      }
+      if (description.includes('already kicked') || description.includes('PARTICIPANT_ID_INVALID')) {
+        logger.warn('[memberService] kickMemberFromGroup: user already kicked', { telegramId });
+        return { success: false, error: { code: 'USER_NOT_IN_GROUP', message: 'User was already kicked' } };
+      }
+    }
+
+    // Bot sem permissao (403)
+    if (err.response?.statusCode === 403) {
+      logger.error('[memberService] kickMemberFromGroup: bot lacks permissions', { telegramId, chatId });
+      return { success: false, error: { code: 'BOT_NO_PERMISSION', message: 'Bot lacks permission to ban users' } };
+    }
+
+    // Outros erros
+    logger.error('[memberService] kickMemberFromGroup: failed', { telegramId, chatId, error: err.message });
+    return { success: false, error: { code: 'TELEGRAM_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Mark a member as removed (kicked) from the group
+ * Story 16.6: Implementar Remocao Automatica de Inadimplentes
+ * Updates status to 'removido' and sets kicked_at timestamp
+ * @param {string} memberId - Internal member ID (UUID)
+ * @param {string} reason - Kick reason: 'trial_expired' or 'payment_failed'
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function markMemberAsRemoved(memberId, reason = null) {
+  try {
+    // Get current member to validate transition
+    const memberResult = await getMemberById(memberId);
+
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const currentStatus = memberResult.data.status;
+
+    // Validate transition using state machine
+    // VALID_TRANSITIONS allows: trial->removido, ativo->removido, inadimplente->removido
+    // Only 'removido' status cannot transition to 'removido' (final state)
+    if (!canTransition(currentStatus, 'removido')) {
+      logger.warn('[memberService] markMemberAsRemoved: invalid transition', {
+        memberId,
+        currentStatus,
+        targetStatus: 'removido'
+      });
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_MEMBER_STATUS',
+          message: `Cannot remove member from '${currentStatus}' status (already in final state).`
+        }
+      };
+    }
+
+    // Update with optimistic locking
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        status: 'removido',
+        kicked_at: new Date().toISOString(),
+        notes: reason ? `Removed: ${reason}` : null
+      })
+      .eq('id', memberId)
+      .eq('status', currentStatus) // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] markMemberAsRemoved: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Member status changed during update' }
+        };
+      }
+      logger.error('[memberService] markMemberAsRemoved: database error', { memberId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] markMemberAsRemoved: success', {
+      memberId,
+      previousStatus: currentStatus,
+      reason
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] markMemberAsRemoved: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Get remaining trial days for a member
  * @param {number} memberId - Internal member ID
  * @returns {Promise<{success: boolean, data?: {daysRemaining: number}, error?: object}>}
@@ -813,4 +935,8 @@ module.exports = {
   // Story 16.4: Member entry detection helpers
   canRejoinGroup,
   reactivateMember,
+
+  // Story 16.6: Kick expired members helpers
+  kickMemberFromGroup,
+  markMemberAsRemoved,
 };

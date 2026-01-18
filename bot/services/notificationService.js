@@ -247,6 +247,39 @@ Duvidas? Fale com @${operatorUsername}`;
 }
 
 /**
+ * Format farewell message for removed members
+ * Story 16.6: Implementar Remocao Automatica de Inadimplentes
+ * @param {object} member - Member object
+ * @param {string} reason - Removal reason: 'trial_expired' or 'payment_failed'
+ * @param {string} checkoutUrl - Cakto checkout URL for reactivation
+ * @returns {string} - Formatted message for Telegram (Markdown)
+ */
+function formatFarewellMessage(member, reason, checkoutUrl) {
+  const price = getSubscriptionPrice();
+
+  if (reason === 'trial_expired') {
+    return `Seu trial de 7 dias terminou
+
+Sentiremos sua falta!
+
+Para voltar a receber nossas apostas:
+[ASSINAR POR ${price.toUpperCase()}](${checkoutUrl})
+
+Voce tem 24h para reativar e voltar ao grupo.`;
+  }
+
+  // payment_failed (default for subscription_canceled, subscription_renewal_refused)
+  return `Sua assinatura nao foi renovada
+
+Voce foi removido do grupo por falta de pagamento.
+
+Para reativar seu acesso:
+[PAGAR AGORA](${checkoutUrl})
+
+Regularize em 24h para voltar automaticamente.`;
+}
+
+/**
  * Format renewal reminder message based on days until renewal
  * @param {object} member - Member object
  * @param {number} daysUntilRenewal - Days until subscription ends (1, 3, or 5)
@@ -296,4 +329,5 @@ module.exports = {
   getSubscriptionPrice,
   formatTrialReminder,
   formatRenewalReminder,
+  formatFarewellMessage,
 };

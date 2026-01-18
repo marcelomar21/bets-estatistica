@@ -129,6 +129,7 @@ function setupScheduler() {
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
   const { runTrialReminders } = require('./jobs/membership/trial-reminders');
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
+  const { runKickExpired } = require('./jobs/membership/kick-expired');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -237,8 +238,20 @@ function setupScheduler() {
   }, 30000);
   logger.info('[membership:process-webhooks] Interval started (every 30s)');
 
+  // Kick expired members - 00:01 São Paulo (Story 16.6)
+  cron.schedule('1 0 * * *', async () => {
+    logger.info('[scheduler] Running kick-expired job');
+    try {
+      const result = await runKickExpired();
+      logger.info('[scheduler] kick-expired complete', result);
+    } catch (err) {
+      logger.error('[scheduler] kick-expired failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
+  console.log('   00:01 - Kick expired members (membership)');
   console.log('   08:00 - Enrich + Request links');
   console.log('   09:00 - Trial reminders (membership)');
   console.log('   10:00 - Renewal reminders + Post bets (morning)');
