@@ -9,12 +9,28 @@
 # O scheduler interno roda os jobs nos horários programados.
 
 services:
+  # Main bot server (Telegram)
   - type: web
     name: bets-bot
     runtime: node
     plan: free
     buildCommand: npm install
     startCommand: node bot/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: America/Sao_Paulo
+      - fromGroup: bets-secrets
+
+  # Cakto webhook server (Payments)
+  - type: web
+    name: bets-webhook
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node bot/webhook-server.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -43,4 +59,10 @@ envVarGroups:
       - key: TELEGRAM_ADMIN_GROUP_ID
         sync: false
       - key: TELEGRAM_PUBLIC_GROUP_ID
+        sync: false
+      - key: CAKTO_CLIENT_ID
+        sync: false
+      - key: CAKTO_CLIENT_SECRET
+        sync: false
+      - key: CAKTO_WEBHOOK_SECRET
         sync: false

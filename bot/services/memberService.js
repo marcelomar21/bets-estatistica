@@ -256,6 +256,374 @@ async function createTrialMember({ telegramId, telegramUsername, email }, trialD
 }
 
 /**
+ * Get member by email address
+ * Story 16.3: Added for webhook processing
+ * @param {string} email - Email address
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getMemberByEmail(email) {
+  try {
+    if (!email) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'Email is required' }
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No rows returned
+        return {
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND', message: `Member with email ${email} not found` }
+        };
+      }
+      logger.error('[memberService] getMemberByEmail: database error', { email, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] getMemberByEmail: unexpected error', { email, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Activate a member with subscription data
+ * Story 16.3: Added for webhook processing
+ * Transitions from 'trial' to 'ativo' and sets subscription fields
+ * @param {number} memberId - Internal member ID
+ * @param {object} subscriptionData - Subscription information
+ * @param {string} subscriptionData.subscriptionId - Cakto subscription ID
+ * @param {string} subscriptionData.customerId - Cakto customer ID
+ * @param {string} subscriptionData.paymentMethod - Payment method (pix, boleto, cartao_recorrente)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function activateMember(memberId, { subscriptionId, customerId, paymentMethod }) {
+  try {
+    // Get current member
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const currentStatus = member.status;
+
+    // If already active, just update subscription data
+    if (currentStatus === 'ativo') {
+      const { data, error } = await supabase
+        .from('members')
+        .update({
+          cakto_subscription_id: subscriptionId,
+          cakto_customer_id: customerId,
+          payment_method: paymentMethod,
+          last_payment_at: new Date().toISOString()
+        })
+        .eq('id', memberId)
+        .select()
+        .single();
+
+      if (error) {
+        logger.error('[memberService] activateMember: failed to update active member', { memberId, error: error.message });
+        return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+      }
+
+      logger.info('[memberService] activateMember: updated already active member', { memberId });
+      return { success: true, data };
+    }
+
+    // Validate transition
+    if (!canTransition(currentStatus, 'ativo')) {
+      logger.warn('[memberService] activateMember: invalid transition', {
+        memberId,
+        currentStatus,
+        targetStatus: 'ativo'
+      });
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_MEMBER_STATUS',
+          message: `Cannot activate member from '${currentStatus}' status`
+        }
+      };
+    }
+
+    // Calculate subscription dates
+    const now = new Date();
+    const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
+
+    // Update with optimistic locking
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        status: 'ativo',
+        cakto_subscription_id: subscriptionId,
+        cakto_customer_id: customerId,
+        payment_method: paymentMethod,
+        subscription_started_at: now.toISOString(),
+        subscription_ends_at: subscriptionEndsAt.toISOString(),
+        last_payment_at: now.toISOString()
+      })
+      .eq('id', memberId)
+      .eq('status', currentStatus) // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] activateMember: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Member status changed during update' }
+        };
+      }
+      logger.error('[memberService] activateMember: database error', { memberId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] activateMember: success', {
+      memberId,
+      previousStatus: currentStatus,
+      subscriptionEndsAt: subscriptionEndsAt.toISOString()
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] activateMember: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Renew member subscription
+ * Story 16.3: Added for webhook processing
+ * Updates last_payment_at and extends subscription_ends_at by 30 days
+ * If inadimplente, transitions to ativo
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function renewMemberSubscription(memberId) {
+  try {
+    // Get current member
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const currentStatus = member.status;
+
+    // Calculate new subscription end date
+    const now = new Date();
+    const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
+
+    // If inadimplente, transition to ativo
+    if (currentStatus === 'inadimplente') {
+      if (!canTransition(currentStatus, 'ativo')) {
+        return {
+          success: false,
+          error: { code: 'INVALID_MEMBER_STATUS', message: 'Cannot renew from inadimplente status' }
+        };
+      }
+
+      const { data, error } = await supabase
+        .from('members')
+        .update({
+          status: 'ativo',
+          last_payment_at: now.toISOString(),
+          subscription_ends_at: subscriptionEndsAt.toISOString()
+        })
+        .eq('id', memberId)
+        .eq('status', currentStatus) // Optimistic lock
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return { success: false, error: { code: 'RACE_CONDITION', message: 'Status changed during update' } };
+        }
+        logger.error('[memberService] renewMemberSubscription: database error', { memberId, error: error.message });
+        return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+      }
+
+      logger.info('[memberService] renewMemberSubscription: reactivated from inadimplente', {
+        memberId,
+        subscriptionEndsAt: subscriptionEndsAt.toISOString()
+      });
+
+      return { success: true, data };
+    }
+
+    // For ativo members, just update dates
+    if (currentStatus === 'ativo') {
+      const { data, error } = await supabase
+        .from('members')
+        .update({
+          last_payment_at: now.toISOString(),
+          subscription_ends_at: subscriptionEndsAt.toISOString()
+        })
+        .eq('id', memberId)
+        .select()
+        .single();
+
+      if (error) {
+        logger.error('[memberService] renewMemberSubscription: database error', { memberId, error: error.message });
+        return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+      }
+
+      logger.info('[memberService] renewMemberSubscription: extended subscription', {
+        memberId,
+        subscriptionEndsAt: subscriptionEndsAt.toISOString()
+      });
+
+      return { success: true, data };
+    }
+
+    // For other statuses, renewal doesn't make sense
+    return {
+      success: false,
+      error: {
+        code: 'INVALID_MEMBER_STATUS',
+        message: `Cannot renew member with status '${currentStatus}'`
+      }
+    };
+  } catch (err) {
+    logger.error('[memberService] renewMemberSubscription: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Mark member as defaulted (inadimplente)
+ * Story 16.3: Added for webhook processing
+ * Transitions from 'ativo' to 'inadimplente'
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function markMemberAsDefaulted(memberId) {
+  try {
+    // Get current member
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const currentStatus = member.status;
+
+    // Validate transition
+    if (!canTransition(currentStatus, 'inadimplente')) {
+      logger.warn('[memberService] markMemberAsDefaulted: invalid transition', {
+        memberId,
+        currentStatus
+      });
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_MEMBER_STATUS',
+          message: `Cannot mark member as defaulted from '${currentStatus}' status`
+        }
+      };
+    }
+
+    // Update with optimistic locking
+    const { data, error } = await supabase
+      .from('members')
+      .update({ status: 'inadimplente' })
+      .eq('id', memberId)
+      .eq('status', currentStatus) // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] markMemberAsDefaulted: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Member status changed during update' }
+        };
+      }
+      logger.error('[memberService] markMemberAsDefaulted: database error', { memberId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] markMemberAsDefaulted: success', {
+      memberId,
+      previousStatus: currentStatus
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] markMemberAsDefaulted: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Create an active member directly (for payments before trial)
+ * Story 16.3: Added for webhook processing
+ * @param {object} memberData - Member data
+ * @param {string} memberData.email - Email address
+ * @param {object} memberData.subscriptionData - Subscription information
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function createActiveMember({ email, subscriptionData }) {
+  try {
+    const { subscriptionId, customerId, paymentMethod } = subscriptionData;
+
+    const now = new Date();
+    const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
+
+    const { data, error } = await supabase
+      .from('members')
+      .insert({
+        email: email,
+        status: 'ativo',
+        cakto_subscription_id: subscriptionId,
+        cakto_customer_id: customerId,
+        payment_method: paymentMethod,
+        subscription_started_at: now.toISOString(),
+        subscription_ends_at: subscriptionEndsAt.toISOString(),
+        last_payment_at: now.toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // Check for unique constraint violation (email already exists)
+      if (error.code === '23505') {
+        logger.warn('[memberService] createActiveMember: email already exists', { email });
+        return {
+          success: false,
+          error: { code: 'MEMBER_ALREADY_EXISTS', message: `Member with email ${email} already exists` }
+        };
+      }
+      logger.error('[memberService] createActiveMember: database error', { email, error: error.message, code: error.code });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] createActiveMember: success', {
+      memberId: data.id,
+      email,
+      subscriptionEndsAt: subscriptionEndsAt.toISOString()
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] createActiveMember: unexpected error', { email, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Get remaining trial days for a member
  * @param {number} memberId - Internal member ID
  * @returns {Promise<{success: boolean, data?: {daysRemaining: number}, error?: object}>}
@@ -307,7 +675,14 @@ module.exports = {
   // CRUD operations
   getMemberById,
   getMemberByTelegramId,
+  getMemberByEmail,
   updateMemberStatus,
   createTrialMember,
-  getTrialDaysRemaining
+  createActiveMember,
+  getTrialDaysRemaining,
+
+  // Story 16.3: Webhook processing helpers
+  activateMember,
+  renewMemberSubscription,
+  markMemberAsDefaulted,
 };

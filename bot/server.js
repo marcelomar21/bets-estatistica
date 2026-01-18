@@ -120,6 +120,7 @@ function setupScheduler() {
   const { runRequestLinks } = require('./jobs/requestLinks');
   const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
+  const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -196,6 +197,17 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
+  // Webhook processing - every 30 seconds (Story 16.3)
+  // Using setInterval instead of cron - node-cron doesn't support sub-minute intervals
+  setInterval(async () => {
+    try {
+      await runProcessWebhooks();
+    } catch (err) {
+      logger.error('[membership:process-webhooks] Interval error', { error: err.message });
+    }
+  }, 30000);
+  logger.info('[membership:process-webhooks] Interval started (every 30s)');
+
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   08:00 - Enrich + Request links');
@@ -205,6 +217,7 @@ function setupScheduler() {
   console.log('   20:00 - Enrich + Request links');
   console.log('   22:00 - Post bets (night)');
   console.log('   */5   - Health check');
+  console.log('   */30s - Process webhooks (membership)');
 }
 
 /**

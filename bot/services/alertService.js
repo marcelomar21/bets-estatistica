@@ -4,6 +4,32 @@
 const { alertAdmin, sendToAdmin } = require('../telegram');
 const logger = require('../../lib/logger');
 
+// Debounce cache for webhook alerts (prevents flooding)
+const webhookAlertCache = new Map();
+const WEBHOOK_ALERT_DEBOUNCE_MINUTES = 5;
+
+/**
+ * Check if webhook alert can be sent (debounce logic)
+ * Prevents sending the same event alert within WEBHOOK_ALERT_DEBOUNCE_MINUTES
+ * @param {string} eventId - Event idempotency key
+ * @returns {boolean} - true if alert can be sent
+ */
+function canSendWebhookAlert(eventId) {
+  const cacheKey = `webhook_${eventId}`;
+  const lastSent = webhookAlertCache.get(cacheKey);
+  const now = Date.now();
+  const debounceMs = WEBHOOK_ALERT_DEBOUNCE_MINUTES * 60 * 1000;
+
+  if (lastSent && (now - lastSent) < debounceMs) {
+    const minutesAgo = Math.round((now - lastSent) / 60000);
+    logger.debug('[alertService] Webhook alert debounced', { eventId, lastSentAgo: `${minutesAgo}min` });
+    return false;
+  }
+
+  webhookAlertCache.set(cacheKey, now);
+  return true;
+}
+
 /**
  * Send API error alert
  * @param {string} service - Service name (e.g., 'The Odds API', 'FootyStats')
@@ -150,6 +176,41 @@ async function postingFailureAlert(period, detectedAt, reason = null) {
 }
 
 /**
+ * Send webhook processing failure alert (AC5)
+ * Story 16.3: Added for webhook processing alerts
+ * Uses debounce pattern to prevent flooding admin with duplicate alerts
+ * @param {string} eventId - Event idempotency key
+ * @param {string} eventType - Type of webhook event
+ * @param {string} errorMessage - Error details
+ * @param {number} attempts - Number of processing attempts made
+ * @returns {Promise<{success: boolean, debounced?: boolean}>}
+ */
+async function webhookProcessingAlert(eventId, eventType, errorMessage, attempts) {
+  // Debounce check - prevent duplicate alerts for same event
+  if (!canSendWebhookAlert(eventId)) {
+    logger.info('[alertService] webhookProcessingAlert: debounced', { eventId });
+    return { success: true, debounced: true };
+  }
+
+  const text = `
+🔴 *WEBHOOK PROCESSING FAILED*
+
+📋 *Evento:* ${eventType}
+🔑 *ID:* \`${eventId}\`
+🔄 *Tentativas:* ${attempts}
+
+❌ *Erro:*
+${errorMessage}
+
+💡 *Ação:* Verifique os logs e considere reprocessar manualmente se necessário.
+
+🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+  `.trim();
+
+  return sendToAdmin(text);
+}
+
+/**
  * Send health check alert
  * @param {Array} alerts - Array of alert objects { severity, check, message, action }
  * @param {boolean} hasErrors - Whether any errors (vs just warnings)
@@ -183,4 +244,5 @@ module.exports = {
   trackingResultAlert,
   postingFailureAlert,
   healthCheckAlert,
+  webhookProcessingAlert,
 };

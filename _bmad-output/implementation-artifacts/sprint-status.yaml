@@ -225,7 +225,7 @@ development_status:
   epic-16: in-progress
   16-1-criar-infraestrutura-membros-state-machine: done
   16-2-criar-webhook-server-event-sourcing: done
-  16-3-implementar-processamento-assincrono-webhooks: backlog
+  16-3-implementar-processamento-assincrono-webhooks: done
   16-4-implementar-deteccao-entrada-sistema-trial: backlog
   16-5-implementar-notificacoes-cobranca: backlog
   16-6-implementar-remocao-automatica-inadimplentes: backlog
