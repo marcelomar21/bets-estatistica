@@ -6,7 +6,6 @@
  * - 3.2: Formatar mensagem aposta
  * - 3.3: Incluir deep link na mensagem
  * - 3.4: Validar requisitos antes de postar
- * - 10.1: Copy dinâmico com LLM
  * - 14.3: Integrar warns no job de postagem
  *
  * Run: node bot/jobs/postBets.js [morning|afternoon|night]
@@ -17,7 +16,6 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { sendToPublic, sendToAdmin } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
-const { getSuccessRate } = require('../services/metricsService');
 const { generateBetCopy } = require('../services/copyService');
 const { sendPostWarn } = require('./jobWarn');
 
@@ -73,13 +71,12 @@ function getPeriod() {
 }
 
 /**
- * Format bet message for Telegram (Story 10.1: LLM copy)
+ * Format bet message for Telegram - extrai dados do reasoning em bullets
  * @param {object} bet - Bet object
  * @param {object} template - Message template
- * @param {number} successRate - Historical success rate
  * @returns {Promise<string>}
  */
-async function formatBetMessage(bet, template, successRate) {
+async function formatBetMessage(bet, template) {
   const kickoffDate = new Date(bet.kickoffTime);
   const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -89,24 +86,6 @@ async function formatBetMessage(bet, template, successRate) {
     minute: '2-digit',
   });
 
-  // Generate engaging copy with LLM (Story 10.1)
-  let copyText = bet.reasoning; // Fallback to original reasoning
-  try {
-    const copyResult = await generateBetCopy(bet);
-    if (copyResult.success && copyResult.data?.copy) {
-      copyText = copyResult.data.copy;
-      logger.debug('Using LLM-generated copy', {
-        betId: bet.id,
-        fromCache: copyResult.data.fromCache
-      });
-    }
-  } catch (err) {
-    logger.warn('Failed to generate LLM copy, using fallback', {
-      betId: bet.id,
-      error: err.message
-    });
-  }
-
   // Build message parts
   const parts = [
     template.header,
@@ -114,16 +93,34 @@ async function formatBetMessage(bet, template, successRate) {
     `⚽ *${bet.homeTeamName} x ${bet.awayTeamName}*`,
     `🗓 ${kickoffStr}`,
     '',
-    `📊 *${bet.betMarket}*: ${bet.betPick}`,
-    `💰 Odd: *${bet.odds?.toFixed(2) || 'N/A'}*`,
-    '',
-    `📝 _${copyText}_`,
+    `📊 ${bet.betMarket}`,
+    `💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}`,
   ];
 
-  // Add success rate if available (Story 3.7)
-  if (successRate !== null && successRate >= 0) {
-    parts.push('');
-    parts.push(`📈 Taxa de acerto: *${successRate.toFixed(0)}%*`);
+  // Extrair dados do reasoning em bullets via LLM
+  if (bet.reasoning) {
+    try {
+      const copyResult = await generateBetCopy(bet);
+      if (copyResult.success && copyResult.data?.copy) {
+        parts.push('');
+        parts.push(copyResult.data.copy);
+        logger.debug('Using extracted data bullets', { betId: bet.id });
+      } else {
+        // Fallback: usar reasoning direto (truncado)
+        const truncated = bet.reasoning.length > 200
+          ? bet.reasoning.substring(0, 197) + '...'
+          : bet.reasoning;
+        parts.push('');
+        parts.push(`_${truncated}_`);
+      }
+    } catch (err) {
+      logger.warn('Failed to extract data bullets', { betId: bet.id, error: err.message });
+      const truncated = bet.reasoning.length > 200
+        ? bet.reasoning.substring(0, 197) + '...'
+        : bet.reasoning;
+      parts.push('');
+      parts.push(`_${truncated}_`);
+    }
   }
 
   // Add deep link
@@ -172,18 +169,7 @@ async function runPostBets() {
   const now = new Date().toISOString();
   logger.info('Starting post bets job', { period, timestamp: now });
 
-  // Step 1: Get success rate for messages
-  let successRate = null;
-  try {
-    const metricsResult = await getSuccessRate();
-    if (metricsResult.success) {
-      successRate = metricsResult.data.rate30Days;
-    }
-  } catch (err) {
-    logger.warn('Could not get success rate', { error: err.message });
-  }
-
-  // Step 2: Usar getFilaStatus() - MESMA lógica do /fila
+  // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   const filaResult = await getFilaStatus();
 
   if (!filaResult.success) {
@@ -229,7 +215,7 @@ async function runPostBets() {
 
       // Format and send message
       const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template, successRate);
+      const message = await formatBetMessage(bet, template);
 
       const sendResult = await sendToPublic(message);
 
@@ -273,7 +259,7 @@ async function runPostBets() {
 
       // Format and send message
       const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template, successRate);
+      const message = await formatBetMessage(bet, template);
 
       const sendResult = await sendToPublic(message);
 

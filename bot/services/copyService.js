@@ -1,5 +1,5 @@
 /**
- * Copy Service - Generate engaging copy for bet posts using LLM
+ * Copy Service - Extrai dados do reasoning em formato bullet points
  *
  * Story 10.1: Copy Dinâmico com LLM
  */
@@ -20,8 +20,8 @@ function getOpenAI() {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: 'gpt-4o-mini',
-    temperature: 0.7, // More creative than market interpreter
-    maxTokens: 150,
+    temperature: 0.2, // Baixa para extração precisa de dados
+    maxTokens: 200,
   });
 }
 
@@ -88,37 +88,50 @@ async function generateBetCopy(bet) {
   try {
     const llm = getOpenAI();
 
-    const prompt = `Você é um copywriter de apostas esportivas. Gere um copy CURTO e ENGAJADOR para esta aposta:
+    const prompt = `Extraia os dados estatísticos do texto abaixo em bullet points curtos.
 
-Jogo: ${bet.homeTeamName} x ${bet.awayTeamName}
-Aposta: ${bet.betMarket} - ${bet.betPick}
-Odd: ${bet.odds?.toFixed(2) || 'N/A'}
-Análise original: ${bet.reasoning || 'Aposta de alto valor estatístico'}
+Texto:
+${bet.reasoning || 'Sem análise disponível'}
 
 Regras:
-- Máximo 2-3 linhas curtas
-- Tom animado mas profissional
-- Em português BR informal
-- Mencione algum dado ou insight interessante
-- NÃO use emojis (serão adicionados separadamente)
-- NÃO repita a odd ou nome do mercado (já aparecem na mensagem)
+- Extraia APENAS dados numéricos/percentuais do texto
+- Máximo 4-5 bullets
+- Cada bullet deve ter no máximo 40 caracteres
+- Use "•" como marcador
+- Abrevie nomes de times (ex: "Sampaio Corrêa RJ" → "Sampaio")
+- Formato: "• Time: XX% dado" ou "• Dado: X,XX valor"
+- NÃO invente dados - use apenas o que está no texto
+- NÃO use emojis
+- Português BR
 
-Responda APENAS com o copy, sem aspas ou formatação adicional.`;
+Exemplo de saída:
+• Sampaio: 50% ambas marcam
+• Botafogo: 60% ambas marcam
+• Média ofensiva: 1,80 e 2,10 gols
+• 70% jogos com 3+ gols
+
+Responda APENAS com os bullets, sem texto adicional.`;
 
     const response = await llm.invoke(prompt);
     const copy = response.content.trim();
 
-    // Validate response
-    if (!copy || copy.length < 10) {
-      logger.warn('LLM returned empty or short copy', { betId: bet.id, copy });
+    // Validate response - deve ter pelo menos um bullet
+    if (!copy || !copy.includes('•')) {
+      logger.warn('LLM returned invalid format', { betId: bet.id, copy });
       return {
         success: false,
-        error: { code: 'EMPTY_RESPONSE', message: 'LLM returned insufficient copy' }
+        error: { code: 'INVALID_FORMAT', message: 'LLM did not return bullet format' }
       };
     }
 
-    // Truncate if too long (max 300 chars)
-    const finalCopy = copy.length > 300 ? copy.substring(0, 297) + '...' : copy;
+    // Limitar a 5 bullets e limpar formatação
+    const bullets = copy
+      .split('\n')
+      .filter(line => line.trim().startsWith('•'))
+      .slice(0, 5)
+      .join('\n');
+
+    const finalCopy = bullets || copy;
 
     // Cache the result
     setCache(cacheKey, finalCopy);

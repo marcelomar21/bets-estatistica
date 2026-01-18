@@ -1144,6 +1144,7 @@ async function getFilaStatus() {
         odds_at_post,
         bet_status,
         deep_link,
+        reasoning,
         elegibilidade,
         promovida_manual,
         league_matches!inner (
@@ -1168,7 +1169,9 @@ async function getFilaStatus() {
     const ativas = (activeBets || []).map(bet => ({
       id: bet.id,
       betMarket: bet.bet_market,
+      betPick: bet.bet_pick,
       odds: bet.odds_at_post || bet.odds,
+      reasoning: bet.reasoning,
       betStatus: 'posted',
       deepLink: bet.deep_link,
       promovidaManual: bet.promovida_manual,
@@ -1192,6 +1195,7 @@ async function getFilaStatus() {
           odds,
           bet_status,
           deep_link,
+          reasoning,
           elegibilidade,
           promovida_manual,
           league_matches!inner (
@@ -1221,7 +1225,9 @@ async function getFilaStatus() {
         novas = filteredNew.slice(0, slotsDisponiveis).map(bet => ({
           id: bet.id,
           betMarket: bet.bet_market,
+          betPick: bet.bet_pick,
           odds: bet.odds,
+          reasoning: bet.reasoning,
           betStatus: bet.bet_status,
           deepLink: bet.deep_link,
           promovidaManual: bet.promovida_manual,
