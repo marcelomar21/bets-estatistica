@@ -320,6 +320,146 @@ Pagamentos via PIX/Boleto precisam ser feitos manualmente.
 Duvidas? @${operatorUsername}`;
 }
 
+/**
+ * Send reactivation notification to a previously removed member
+ * Story 16.10: Reativar Membro Removido Após Pagamento
+ *
+ * Generates a unique invite link and sends a welcome-back message.
+ *
+ * @param {number|string} telegramId - Telegram user ID
+ * @param {number} memberId - Internal member ID (for updating invite data)
+ * @returns {Promise<{success: boolean, data?: {messageId: number, inviteLink: string}, error?: object}>}
+ */
+async function sendReactivationNotification(telegramId, memberId) {
+  // Issue #6 Fix: Input validation
+  if (!telegramId) {
+    logger.warn('[notificationService] sendReactivationNotification: invalid telegramId', { telegramId });
+    return {
+      success: false,
+      error: { code: 'INVALID_INPUT', message: 'telegramId is required' }
+    };
+  }
+
+  if (!memberId) {
+    logger.warn('[notificationService] sendReactivationNotification: invalid memberId', { memberId });
+    return {
+      success: false,
+      error: { code: 'INVALID_INPUT', message: 'memberId is required' }
+    };
+  }
+
+  const bot = getBot();
+  const groupId = config.telegram.publicGroupId;
+
+  if (!groupId) {
+    logger.error('[notificationService] sendReactivationNotification: TELEGRAM_PUBLIC_GROUP_ID not configured');
+    return {
+      success: false,
+      error: { code: 'CONFIG_MISSING', message: 'TELEGRAM_PUBLIC_GROUP_ID not configured' }
+    };
+  }
+
+  // Generate unique invite link
+  let inviteLink;
+  try {
+    const invite = await bot.createChatInviteLink(groupId, {
+      member_limit: 1, // Only 1 use
+      expire_date: Math.floor(Date.now() / 1000) + 86400 // Expires in 24h
+    });
+    inviteLink = invite.invite_link;
+
+    logger.info('[notificationService] sendReactivationNotification: invite link generated', {
+      memberId,
+      telegramId,
+      inviteLink: inviteLink.substring(0, 30) + '...'
+    });
+  } catch (err) {
+    logger.error('[notificationService] sendReactivationNotification: failed to generate invite link', {
+      memberId,
+      telegramId,
+      error: err.message
+    });
+    return {
+      success: false,
+      error: { code: 'INVITE_GENERATION_FAILED', message: err.message }
+    };
+  }
+
+  // Update member's invite data
+  // Issue #5 Fix: Fail if DB update fails to maintain consistency
+  try {
+    const { error } = await supabase
+      .from('members')
+      .update({
+        invite_link: inviteLink,
+        invite_generated_at: new Date().toISOString()
+      })
+      .eq('id', memberId);
+
+    if (error) {
+      logger.error('[notificationService] sendReactivationNotification: failed to update invite data', {
+        memberId,
+        error: error.message
+      });
+      return {
+        success: false,
+        error: { code: 'DB_UPDATE_FAILED', message: error.message }
+      };
+    }
+  } catch (err) {
+    logger.error('[notificationService] sendReactivationNotification: error updating invite data', {
+      memberId,
+      error: err.message
+    });
+    return {
+      success: false,
+      error: { code: 'DB_UPDATE_FAILED', message: err.message }
+    };
+  }
+
+  // Format reactivation message (AC3)
+  const message = `🎉 *Bem-vindo de volta!*
+
+Seu pagamento foi confirmado e seu acesso foi restaurado.
+
+👉 [Entrar no Grupo](${inviteLink})
+
+_Link válido por 24h (uso único)_`;
+
+  // Send message
+  const sendResult = await sendPrivateMessage(telegramId, message);
+
+  if (!sendResult.success) {
+    logger.warn('[notificationService] sendReactivationNotification: failed to send message', {
+      memberId,
+      telegramId,
+      error: sendResult.error
+    });
+    return {
+      success: false,
+      error: sendResult.error,
+      data: { inviteLink } // Return invite link even if message failed
+    };
+  }
+
+  // Register notification
+  await registerNotification(memberId, 'reactivation', 'telegram', sendResult.data.messageId);
+
+  logger.info('[notificationService] sendReactivationNotification: success', {
+    memberId,
+    telegramId,
+    messageId: sendResult.data.messageId
+  });
+
+  return {
+    success: true,
+    data: {
+      messageId: sendResult.data.messageId,
+      inviteLink
+    }
+  };
+}
+
 module.exports = {
   hasNotificationToday,
   registerNotification,
@@ -330,4 +470,6 @@ module.exports = {
   formatTrialReminder,
   formatRenewalReminder,
   formatFarewellMessage,
+  // Story 16.10: Reactivation notification
+  sendReactivationNotification,
 };

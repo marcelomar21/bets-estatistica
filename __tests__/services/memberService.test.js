@@ -42,6 +42,8 @@ const {
   appendToNotes,
   // Story 16.8: Reconciliation
   getMembersForReconciliation,
+  // Story 16.10: Reactivate removed member
+  reactivateRemovedMember,
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -1310,6 +1312,175 @@ describe('memberService', () => {
 
       // Verify select was called with correct fields
       expect(selectMock).toHaveBeenCalledWith('id, telegram_id, telegram_username, email, status, cakto_subscription_id');
+    });
+  });
+
+  // ============================================
+  // Story 16.10: REACTIVATE REMOVED MEMBER
+  // ============================================
+  describe('reactivateRemovedMember', () => {
+    test('reativa membro removido com sucesso', async () => {
+      const mockMember = {
+        id: 'uuid-1',
+        telegram_id: 123456789,
+        email: 'test@example.com',
+        status: 'removido',
+        notes: 'Removed: payment_failed'
+      };
+      const reactivatedMember = {
+        ...mockMember,
+        status: 'ativo',
+        kicked_at: null,
+        notes: 'Removed: payment_failed\nReativado após pagamento (subscription: sub_123)'
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update with optimistic lock
+      const updateSingle = jest.fn().mockResolvedValue({ data: reactivatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq2 = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateEq1 = jest.fn().mockReturnValue({ eq: updateEq2 });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq1 });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await reactivateRemovedMember('uuid-1', {
+        subscriptionId: 'sub_123',
+        paymentMethod: 'pix'
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data.status).toBe('ativo');
+      expect(result.data.kicked_at).toBeNull();
+    });
+
+    test('retorna erro quando membro não está em status removido', async () => {
+      const mockMember = {
+        id: 'uuid-1',
+        status: 'ativo',
+        notes: null
+      };
+
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      supabase.from.mockReturnValue({ select: getMemberSelect });
+
+      const result = await reactivateRemovedMember('uuid-1');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_MEMBER_STATUS');
+      expect(result.error.message).toContain("Expected 'removido'");
+    });
+
+    test('retorna erro quando membro não encontrado', async () => {
+      const getMemberSingle = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'No rows' }
+      });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      supabase.from.mockReturnValue({ select: getMemberSelect });
+
+      const result = await reactivateRemovedMember('uuid-not-found');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+
+    test('retorna erro em race condition (status mudou durante update)', async () => {
+      const mockMember = {
+        id: 'uuid-1',
+        status: 'removido',
+        notes: null
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update returning no rows (race condition)
+      const updateSingle = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'No rows returned' }
+      });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq2 = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateEq1 = jest.fn().mockReturnValue({ eq: updateEq2 });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq1 });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await reactivateRemovedMember('uuid-1');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('RACE_CONDITION');
+    });
+
+    test('reativa membro sem telegram_id (sem invite)', async () => {
+      const mockMember = {
+        id: 'uuid-1',
+        telegram_id: null,
+        email: 'test@example.com',
+        status: 'removido',
+        notes: null
+      };
+      const reactivatedMember = {
+        ...mockMember,
+        status: 'ativo',
+        kicked_at: null,
+        notes: 'Reativado após pagamento'
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: reactivatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq2 = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateEq1 = jest.fn().mockReturnValue({ eq: updateEq2 });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq1 });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await reactivateRemovedMember('uuid-1');
+
+      expect(result.success).toBe(true);
+      expect(result.data.telegram_id).toBeNull();
     });
   });
 });

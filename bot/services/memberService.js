@@ -502,6 +502,117 @@ async function renewMemberSubscription(memberId) {
 }
 
 /**
+ * Reactivate a removed member after payment
+ * Story 16.10: Reativar Membro Removido Após Pagamento
+ *
+ * This function bypasses the normal state machine for the special case
+ * where a previously removed member pays again and needs to be reactivated.
+ *
+ * @param {number} memberId - Internal member ID
+ * @param {object} options - Additional options
+ * @param {string} options.subscriptionId - Cakto subscription ID (optional)
+ * @param {string} options.paymentMethod - Payment method (optional)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function reactivateRemovedMember(memberId, options = {}) {
+  try {
+    // Get current member
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const currentStatus = member.status;
+
+    // Validate that member is in 'removido' status
+    if (currentStatus !== 'removido') {
+      logger.warn('[memberService] reactivateRemovedMember: member not in removido status', {
+        memberId,
+        currentStatus
+      });
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_MEMBER_STATUS',
+          message: `Cannot reactivate member with status '${currentStatus}'. Expected 'removido'.`
+        }
+      };
+    }
+
+    // Calculate subscription dates
+    const now = new Date();
+    const subscriptionStartsAt = now;
+    const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
+
+    // Build note for audit trail
+    // AC4: Different note for members without telegram_id
+    let reactivationNote;
+    if (!member.telegram_id) {
+      reactivationNote = 'Reativado após pagamento - aguardando /start para invite';
+    } else if (options.subscriptionId) {
+      reactivationNote = `Reativado após pagamento (subscription: ${options.subscriptionId})`;
+    } else {
+      reactivationNote = 'Reativado após pagamento';
+    }
+
+    // Update member with optimistic locking
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        status: 'ativo',
+        kicked_at: null,
+        subscription_started_at: subscriptionStartsAt.toISOString(),
+        subscription_ends_at: subscriptionEndsAt.toISOString(),
+        last_payment_at: now.toISOString(),
+        notes: member.notes
+          ? `${member.notes}\n${reactivationNote}`
+          : reactivationNote,
+        // Reset invite fields for new invite generation
+        invite_link: null,
+        invite_generated_at: null,
+        joined_group_at: null,
+        // Update Cakto IDs if provided
+        ...(options.subscriptionId && { cakto_subscription_id: options.subscriptionId }),
+        ...(options.paymentMethod && { payment_method: options.paymentMethod })
+      })
+      .eq('id', memberId)
+      .eq('status', 'removido') // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] reactivateRemovedMember: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Status changed during update' }
+        };
+      }
+      logger.error('[memberService] reactivateRemovedMember: database error', {
+        memberId,
+        error: error.message
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] reactivateRemovedMember: member reactivated', {
+      memberId,
+      telegramId: data.telegram_id,
+      subscriptionEndsAt: subscriptionEndsAt.toISOString()
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] reactivateRemovedMember: unexpected error', {
+      memberId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Mark member as defaulted (inadimplente)
  * Story 16.3: Added for webhook processing
  * Transitions from 'ativo' to 'inadimplente'
@@ -1408,6 +1519,9 @@ module.exports = {
   activateMember,
   renewMemberSubscription,
   markMemberAsDefaulted,
+
+  // Story 16.10: Reactivate removed member after payment
+  reactivateRemovedMember,
 
   // Story 16.4: Member entry detection helpers
   canRejoinGroup,

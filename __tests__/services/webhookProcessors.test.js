@@ -10,6 +10,12 @@ jest.mock('../../bot/services/memberService', () => ({
   renewMemberSubscription: jest.fn(),
   markMemberAsDefaulted: jest.fn(),
   createActiveMember: jest.fn(),
+  reactivateRemovedMember: jest.fn(),
+}));
+
+// Mock notificationService (Story 16.10)
+jest.mock('../../bot/services/notificationService', () => ({
+  sendReactivationNotification: jest.fn(),
 }));
 
 // Mock logger
@@ -37,7 +43,10 @@ const {
   renewMemberSubscription,
   markMemberAsDefaulted,
   createActiveMember,
+  reactivateRemovedMember,
 } = require('../../bot/services/memberService');
+
+const { sendReactivationNotification } = require('../../bot/services/notificationService');
 
 describe('webhookProcessors', () => {
   beforeEach(() => {
@@ -433,6 +442,211 @@ describe('webhookProcessors', () => {
 
       expect(result.success).toBe(true);
       expect(activateMember).toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // Story 16.10: Reactivate Removed Member
+  // ============================================
+  describe('Story 16.10: Reactivate removed member', () => {
+    describe('handlePurchaseApproved with removido status', () => {
+      test('reativa membro removido e envia notificação', async () => {
+        const payload = {
+          id: 'order_1',
+          subscription: 'sub_123',
+          paymentMethod: 'pix',
+          customer: { id: 'cus_456', email: 'removed@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 123456789,
+          email: 'removed@example.com',
+          status: 'removido'
+        };
+
+        const reactivatedMember = {
+          ...mockMember,
+          status: 'ativo',
+          kicked_at: null
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
+        sendReactivationNotification.mockResolvedValue({ success: true, data: { messageId: 1, inviteLink: 'https://t.me/+abc123' } });
+
+        const result = await handlePurchaseApproved(payload);
+
+        expect(result.success).toBe(true);
+        expect(reactivateRemovedMember).toHaveBeenCalledWith('uuid-1', {
+          subscriptionId: 'sub_123',
+          paymentMethod: 'pix'
+        });
+        expect(sendReactivationNotification).toHaveBeenCalledWith(123456789, 'uuid-1');
+        expect(activateMember).not.toHaveBeenCalled(); // Não deve chamar activateMember
+      });
+
+      test('reativa membro removido sem telegram_id (sem notificação)', async () => {
+        const payload = {
+          id: 'order_1',
+          customer: { email: 'removed@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: null,
+          email: 'removed@example.com',
+          status: 'removido'
+        };
+
+        const reactivatedMember = {
+          ...mockMember,
+          status: 'ativo',
+          kicked_at: null
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
+
+        const result = await handlePurchaseApproved(payload);
+
+        expect(result.success).toBe(true);
+        expect(reactivateRemovedMember).toHaveBeenCalled();
+        expect(sendReactivationNotification).not.toHaveBeenCalled(); // Sem telegram_id
+      });
+
+      test('continua se notificação falhar', async () => {
+        const payload = {
+          customer: { email: 'removed@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 123456789,
+          status: 'removido'
+        };
+
+        const reactivatedMember = { ...mockMember, status: 'ativo' };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
+        sendReactivationNotification.mockRejectedValue(new Error('Telegram error'));
+
+        const result = await handlePurchaseApproved(payload);
+
+        // Deve retornar sucesso mesmo com falha na notificação
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe('handleSubscriptionRenewed with removido status', () => {
+      test('reativa membro removido via subscription_renewed', async () => {
+        const payload = {
+          id: 'order_1',
+          subscription: 'sub_renewed',
+          paymentMethod: 'credit_card',
+          customer: { email: 'removed@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 987654321,
+          email: 'removed@example.com',
+          status: 'removido'
+        };
+
+        const reactivatedMember = {
+          ...mockMember,
+          status: 'ativo',
+          kicked_at: null
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
+        sendReactivationNotification.mockResolvedValue({ success: true, data: {} });
+
+        const result = await handleSubscriptionRenewed(payload);
+
+        expect(result.success).toBe(true);
+        expect(reactivateRemovedMember).toHaveBeenCalled();
+        expect(sendReactivationNotification).toHaveBeenCalledWith(987654321, 'uuid-1');
+        expect(renewMemberSubscription).not.toHaveBeenCalled(); // Não deve chamar renewMemberSubscription
+      });
+    });
+
+    describe('AC6: Idempotency for reactivated members', () => {
+      test('skips processing for already reactivated member in purchase_approved', async () => {
+        const payload = {
+          customer: { email: 'reactivated@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 123456789,
+          email: 'reactivated@example.com',
+          status: 'ativo',
+          notes: 'Reativado após pagamento (subscription: sub_123)'
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+
+        const result = await handlePurchaseApproved(payload);
+
+        expect(result.success).toBe(true);
+        expect(result.data.skipped).toBe(true);
+        expect(result.data.reason).toBe('already_reactivated');
+        expect(activateMember).not.toHaveBeenCalled();
+        expect(reactivateRemovedMember).not.toHaveBeenCalled();
+      });
+
+      test('skips processing for already reactivated member in subscription_renewed', async () => {
+        const payload = {
+          customer: { email: 'reactivated@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 123456789,
+          email: 'reactivated@example.com',
+          status: 'ativo',
+          notes: 'Reativado após pagamento'
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+
+        const result = await handleSubscriptionRenewed(payload);
+
+        expect(result.success).toBe(true);
+        expect(result.data.skipped).toBe(true);
+        expect(result.data.reason).toBe('already_reactivated');
+        expect(renewMemberSubscription).not.toHaveBeenCalled();
+        expect(reactivateRemovedMember).not.toHaveBeenCalled();
+      });
+
+      test('processes normally for ativo member without reactivation note', async () => {
+        const payload = {
+          id: 'order_1',
+          subscription: 'sub_123',
+          paymentMethod: 'pix',
+          customer: { email: 'normal@example.com' },
+        };
+
+        const mockMember = {
+          id: 'uuid-1',
+          telegram_id: 123456789,
+          email: 'normal@example.com',
+          status: 'ativo',
+          notes: null // No reactivation note
+        };
+
+        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+        activateMember.mockResolvedValue({ success: true, data: mockMember });
+
+        const result = await handlePurchaseApproved(payload);
+
+        expect(result.success).toBe(true);
+        expect(activateMember).toHaveBeenCalled(); // Should call activateMember normally
+      });
     });
   });
 });

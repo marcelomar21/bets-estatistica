@@ -13,6 +13,7 @@ const {
   reactivateMember
 } = require('../services/memberService');
 const { getSuccessRate } = require('../services/metricsService');
+const { registerNotification } = require('../services/notificationService');
 
 /**
  * Handle new_chat_members event from Telegram
@@ -66,9 +67,35 @@ async function processNewMember(user) {
 
     // Handle based on current status
     if (member.status === 'trial' || member.status === 'ativo') {
-      // Member already exists in trial or active status - skip
-      // Story 16.9: Still update joined_group_at if they're re-entering
+      // Story 16.10: Check if this is a reactivated member entering for the first time
+      // Reactivated members have: status='ativo', joined_group_at=null, notes contain 'Reativado após pagamento'
+      // Using specific pattern to avoid false positives from manual notes
+      const isReactivatedEntry = member.status === 'ativo'
+        && !member.joined_group_at
+        && member.notes?.includes('Reativado após pagamento');
+
+      // Story 16.9: Update joined_group_at
       await confirmMemberJoinedGroup(member.id, telegramId, username);
+
+      if (isReactivatedEntry) {
+        // AC5 (Story 16.10): Register reactivation_join event and notification
+        await registerMemberEvent(member.id, 'join', {
+          telegram_id: telegramId,
+          telegram_username: username,
+          source: 'telegram_webhook',
+          action: 'reactivation_join'
+        });
+
+        // Register notification for tracking
+        await registerReactivationJoinNotification(member.id);
+
+        logger.info('[membership:member-events] Reactivated member joined group', {
+          memberId: member.id,
+          telegramId,
+          username
+        });
+        return { processed: true, action: 'reactivation_join' };
+      }
 
       logger.debug('[membership:member-events] Member already exists, skipping', {
         memberId: member.id,
@@ -356,6 +383,24 @@ async function registerMemberEvent(memberId, eventType, payload) {
 }
 
 /**
+ * Register reactivation join notification
+ * Story 16.10: AC5 - Track when reactivated member enters group
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function registerReactivationJoinNotification(memberId) {
+  try {
+    return await registerNotification(memberId, 'reactivation_join', 'system');
+  } catch (err) {
+    logger.warn('[membership:member-events] Failed to register reactivation_join notification', {
+      memberId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Send payment required message to returning removed member
  * @param {number} telegramId - Telegram user ID
  * @param {number} memberId - Internal member ID for notification tracking
@@ -507,5 +552,7 @@ module.exports = {
   sendPaymentRequiredMessage,
   sendPaymentConfirmation,
   registerMemberEvent,
-  confirmMemberJoinedGroup
+  confirmMemberJoinedGroup,
+  // Story 16.10: Exported for unit testing
+  registerReactivationJoinNotification
 };

@@ -12,8 +12,10 @@ const {
   renewMemberSubscription,
   markMemberAsDefaulted,
   createActiveMember,
+  reactivateRemovedMember,
 } = require('./memberService');
 const { sendPaymentConfirmation } = require('../handlers/memberEvents');
+const { sendReactivationNotification } = require('./notificationService');
 
 /**
  * Normalize payment method from Cakto format to our format
@@ -123,14 +125,64 @@ async function handlePurchaseApproved(payload) {
     const memberResult = await getMemberByEmail(email);
 
     if (memberResult.success) {
-      // Member exists - activate them
+      // Member exists - check status to determine action
       const member = memberResult.data;
-      logger.info('[webhookProcessors] handlePurchaseApproved: activating existing member', {
+      logger.info('[webhookProcessors] handlePurchaseApproved: processing existing member', {
         memberId: member.id,
         email,
         currentStatus: member.status
       });
 
+      // Story 16.10 AC6: Idempotency - detect already reactivated member
+      // If member is 'ativo' and was recently reactivated, skip processing to avoid duplicates
+      const wasRecentlyReactivated = member.status === 'ativo'
+        && member.notes?.includes('Reativado após pagamento');
+
+      if (wasRecentlyReactivated) {
+        logger.info('[webhookProcessors] handlePurchaseApproved: idempotency - member already reactivated', {
+          memberId: member.id,
+          email
+        });
+        return { success: true, data: { skipped: true, reason: 'already_reactivated' } };
+      }
+
+      // Story 16.10: Handle reactivation of removed members
+      if (member.status === 'removido') {
+        logger.info('[webhookProcessors] handlePurchaseApproved: reactivating removed member', {
+          memberId: member.id,
+          email
+        });
+
+        const reactivateResult = await reactivateRemovedMember(member.id, {
+          subscriptionId: subscriptionData.subscriptionId,
+          paymentMethod: subscriptionData.paymentMethod
+        });
+
+        // Send reactivation notification with invite link if reactivation succeeded
+        if (reactivateResult.success && reactivateResult.data?.telegram_id) {
+          try {
+            await sendReactivationNotification(
+              reactivateResult.data.telegram_id,
+              reactivateResult.data.id
+            );
+          } catch (notifErr) {
+            // Don't fail the webhook processing if notification fails
+            logger.warn('[webhookProcessors] handlePurchaseApproved: reactivation notification failed', {
+              memberId: reactivateResult.data.id,
+              error: notifErr.message
+            });
+          }
+        } else if (reactivateResult.success && !reactivateResult.data?.telegram_id) {
+          // AC4: Member without telegram_id - note is already added in reactivateRemovedMember
+          logger.info('[webhookProcessors] handlePurchaseApproved: reactivated member without telegram_id', {
+            memberId: reactivateResult.data.id
+          });
+        }
+
+        return reactivateResult;
+      }
+
+      // Normal activation flow for non-removed members
       const activateResult = await activateMember(member.id, subscriptionData);
 
       // Send payment confirmation if activation succeeded and member has telegram_id
@@ -233,13 +285,56 @@ async function handleSubscriptionRenewed(payload) {
     }
 
     const member = memberResult.data;
-    logger.info('[webhookProcessors] handleSubscriptionRenewed: renewing member', {
+    logger.info('[webhookProcessors] handleSubscriptionRenewed: processing member', {
       memberId: member.id,
       email,
       currentStatus: member.status
     });
 
-    // Renew subscription
+    // Story 16.10 AC6: Idempotency - detect already reactivated member
+    const wasRecentlyReactivated = member.status === 'ativo'
+      && member.notes?.includes('Reativado após pagamento');
+
+    if (wasRecentlyReactivated) {
+      logger.info('[webhookProcessors] handleSubscriptionRenewed: idempotency - member already reactivated', {
+        memberId: member.id,
+        email
+      });
+      return { success: true, data: { skipped: true, reason: 'already_reactivated' } };
+    }
+
+    // Story 16.10: Handle reactivation of removed members (AC2)
+    if (member.status === 'removido') {
+      logger.info('[webhookProcessors] handleSubscriptionRenewed: reactivating removed member', {
+        memberId: member.id,
+        email
+      });
+
+      const subscriptionData = extractSubscriptionData(payload);
+      const reactivateResult = await reactivateRemovedMember(member.id, {
+        subscriptionId: subscriptionData.subscriptionId,
+        paymentMethod: subscriptionData.paymentMethod
+      });
+
+      // Send reactivation notification with invite link if reactivation succeeded
+      if (reactivateResult.success && reactivateResult.data?.telegram_id) {
+        try {
+          await sendReactivationNotification(
+            reactivateResult.data.telegram_id,
+            reactivateResult.data.id
+          );
+        } catch (notifErr) {
+          logger.warn('[webhookProcessors] handleSubscriptionRenewed: reactivation notification failed', {
+            memberId: reactivateResult.data.id,
+            error: notifErr.message
+          });
+        }
+      }
+
+      return reactivateResult;
+    }
+
+    // Normal renewal flow for non-removed members
     const renewResult = await renewMemberSubscription(member.id);
 
     // Send payment confirmation if renewal succeeded and member has telegram_id

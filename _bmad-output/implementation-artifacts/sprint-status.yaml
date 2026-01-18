@@ -223,6 +223,7 @@ development_status:
   # Epic 16: Gestão de Membros e Pagamentos Cakto (COMPLETO v2)
   # Reaberto em 2026-01-18: Migration faltante + Portão de Entrada
   # Fechado em 2026-01-18: Story 16.9 implementada
+  # Reaberto em 2026-01-18: Story 16.10 (gap identificado em teste E2E)
   # Ver: sprint-change-proposal-2026-01-18.md
   # ========================================
   epic-16: done
@@ -235,6 +236,7 @@ development_status:
   16-7-implementar-comandos-admin-gestao-membros: done
   16-8-implementar-reconciliacao-cakto: done
   16-9-implementar-portao-entrada-bot: done
+  16-10-reativar-membro-removido-apos-pagamento: done
   epic-16-retrospective: done
 
   # ========================================

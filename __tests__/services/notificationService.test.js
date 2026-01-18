@@ -39,6 +39,7 @@ jest.mock('../../lib/logger', () => ({
 jest.mock('../../bot/telegram', () => ({
   getBot: jest.fn(() => ({
     sendMessage: jest.fn(),
+    createChatInviteLink: jest.fn(),
   })),
 }));
 
@@ -48,6 +49,9 @@ jest.mock('../../lib/config', () => ({
       checkoutUrl: 'https://pay.cakto.com.br/checkout/123',
       operatorUsername: 'operador_test',
       subscriptionPrice: 'R$50/mes',
+    },
+    telegram: {
+      publicGroupId: '-1001234567890',
     },
   },
 }));
@@ -61,6 +65,7 @@ const {
   getSubscriptionPrice,
   formatTrialReminder,
   formatRenewalReminder,
+  sendReactivationNotification,
 } = require('../../bot/services/notificationService');
 const { getBot } = require('../../bot/telegram');
 
@@ -327,6 +332,149 @@ describe('notificationService', () => {
 
       expect(message).toContain('*Amanha*');
       expect(message).toContain('[PAGAR AGORA]');
+    });
+  });
+
+  // ============================================
+  // Story 16.10: sendReactivationNotification
+  // ============================================
+  describe('sendReactivationNotification', () => {
+    it('should generate invite link and send notification successfully', async () => {
+      const mockBot = {
+        createChatInviteLink: jest.fn().mockResolvedValue({
+          invite_link: 'https://t.me/+abc123xyz',
+        }),
+        sendMessage: jest.fn().mockResolvedValue({ message_id: 1001 }),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      // Mock DB update for invite_link
+      const mockUpdateChain = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      };
+
+      // Mock DB insert for notification registration
+      const mockInsertChain = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'notif-123' },
+          error: null,
+        }),
+      };
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return mockUpdateChain;
+        }
+        return mockInsertChain;
+      });
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid');
+
+      expect(result.success).toBe(true);
+      expect(result.data.inviteLink).toBe('https://t.me/+abc123xyz');
+      expect(result.data.messageId).toBe(1001);
+      expect(mockBot.createChatInviteLink).toHaveBeenCalledWith('-1001234567890', {
+        member_limit: 1,
+        expire_date: expect.any(Number),
+      });
+      expect(mockBot.sendMessage).toHaveBeenCalledWith(
+        123456789,
+        expect.stringContaining('Bem-vindo de volta'),
+        { parse_mode: 'Markdown' }
+      );
+    });
+
+    it('should return error when groupId is not configured', async () => {
+      const { config } = require('../../lib/config');
+      const originalGroupId = config.telegram.publicGroupId;
+      config.telegram.publicGroupId = null;
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_MISSING');
+
+      config.telegram.publicGroupId = originalGroupId;
+    });
+
+    it('should return error when invite link generation fails', async () => {
+      const mockBot = {
+        createChatInviteLink: jest.fn().mockRejectedValue(new Error('Bot lacks permission')),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVITE_GENERATION_FAILED');
+    });
+
+    it('should return error when DB update for invite_link fails', async () => {
+      const mockBot = {
+        createChatInviteLink: jest.fn().mockResolvedValue({
+          invite_link: 'https://t.me/+abc123xyz',
+        }),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      // Mock DB update failure
+      const mockUpdateChain = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          error: { message: 'DB connection error' },
+        }),
+      };
+      supabase.from.mockReturnValue(mockUpdateChain);
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_UPDATE_FAILED');
+    });
+
+    it('should return error when Telegram send message fails', async () => {
+      const mockBot = {
+        createChatInviteLink: jest.fn().mockResolvedValue({
+          invite_link: 'https://t.me/+abc123xyz',
+        }),
+        sendMessage: jest.fn().mockRejectedValue({
+          response: { statusCode: 403, body: { description: 'Blocked' } },
+        }),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      // Mock successful DB update
+      const mockUpdateChain = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      };
+      supabase.from.mockReturnValue(mockUpdateChain);
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('USER_BLOCKED_BOT');
+      // Should still return invite link even if message failed
+      expect(result.data.inviteLink).toBe('https://t.me/+abc123xyz');
+    });
+
+    it('should return error for invalid telegramId', async () => {
+      const result = await sendReactivationNotification(null, 'member-uuid');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_INPUT');
+    });
+
+    it('should return error for invalid memberId', async () => {
+      const result = await sendReactivationNotification(123456789, null);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_INPUT');
     });
   });
 });
