@@ -328,6 +328,41 @@ const MIN_ODDS = 1.60;
 
 ---
 
+## Git Workflow Rules
+
+### Branch Strategy
+```bash
+# ✅ SEMPRE criar branch nova antes de implementar
+git checkout -b feature/story-X.Y   # Para novas features
+git checkout -b fix/descricao-bug   # Para bug fixes
+
+# ❌ NUNCA implementar diretamente na master/main
+```
+
+### Commit Rules
+```bash
+# ✅ SEMPRE validar antes de commitar
+1. Rodar testes: npm test
+2. Verificar build: npm run build (se aplicável)
+3. Só então commitar
+
+# ✅ Commit após sucesso
+git add .
+git commit -m "feat(scope): descrição clara"
+git push -u origin feature/story-X.Y
+
+# ❌ NUNCA commitar código quebrado ou não testado
+```
+
+### Fluxo Obrigatório
+1. **Criar branch** → `feature/story-X.Y` ou `fix/issue-name`
+2. **Implementar** → seguir story/spec
+3. **Testar** → garantir que passa
+4. **Commit + Push** → só após testes bem-sucedidos
+5. **PR para merge** → code review quando aplicável
+
+---
+
 ## File Structure Reference
 
 ```
