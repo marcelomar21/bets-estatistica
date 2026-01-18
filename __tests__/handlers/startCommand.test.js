@@ -61,6 +61,9 @@ describe('Start Command Handler', () => {
       sendMessage: jest.fn().mockResolvedValue({ message_id: 123 }),
       createChatInviteLink: jest.fn().mockResolvedValue({
         invite_link: 'https://t.me/+ABC123'
+      }),
+      getChatMember: jest.fn().mockResolvedValue({
+        status: 'member'
       })
     };
     getBot.mockReturnValue(mockBot);
@@ -145,6 +148,7 @@ describe('Start Command Handler', () => {
           success: true,
           data: {
             id: 1,
+            telegram_id: 123456789,
             status: 'trial',
             joined_group_at: '2026-01-15T10:00:00Z'
           }
@@ -155,11 +159,15 @@ describe('Start Command Handler', () => {
           data: { daysRemaining: 5 }
         });
 
+        // Telegram API confirms user is still in group
+        mockBot.getChatMember.mockResolvedValue({ status: 'member' });
+
         const msg = createMockMessage();
         const result = await handleStartCommand(msg);
 
         expect(result.success).toBe(true);
         expect(result.action).toBe('already_in_group');
+        expect(mockBot.getChatMember).toHaveBeenCalledWith('-1001234567890', 123456789);
         expect(mockBot.sendMessage).toHaveBeenCalledWith(
           123456789,
           expect.stringContaining('Você já está no grupo'),
@@ -176,6 +184,54 @@ describe('Start Command Handler', () => {
             joined_group_at: null
           }
         });
+
+        const msg = createMockMessage();
+        const result = await handleStartCommand(msg);
+
+        expect(result.success).toBe(true);
+        expect(mockBot.createChatInviteLink).toHaveBeenCalled();
+      });
+
+      it('should generate new invite if user LEFT the group (db shows joined but Telegram API says left)', async () => {
+        getMemberByTelegramId.mockResolvedValue({
+          success: true,
+          data: {
+            id: 1,
+            telegram_id: 123456789,
+            status: 'trial',
+            joined_group_at: '2026-01-15T10:00:00Z' // DB says they joined
+          }
+        });
+
+        // Telegram API says user LEFT the group
+        mockBot.getChatMember.mockResolvedValue({ status: 'left' });
+
+        const msg = createMockMessage();
+        const result = await handleStartCommand(msg);
+
+        expect(result.success).toBe(true);
+        expect(mockBot.getChatMember).toHaveBeenCalledWith('-1001234567890', 123456789);
+        expect(mockBot.createChatInviteLink).toHaveBeenCalled();
+        expect(mockBot.sendMessage).toHaveBeenCalledWith(
+          123456789,
+          expect.stringContaining('Bem-vindo'),
+          expect.any(Object)
+        );
+      });
+
+      it('should generate new invite if user is NOT FOUND in group via Telegram API', async () => {
+        getMemberByTelegramId.mockResolvedValue({
+          success: true,
+          data: {
+            id: 1,
+            telegram_id: 123456789,
+            status: 'trial',
+            joined_group_at: '2026-01-15T10:00:00Z'
+          }
+        });
+
+        // Telegram API throws "user not found" error
+        mockBot.getChatMember.mockRejectedValue(new Error('Bad Request: user not found'));
 
         const msg = createMockMessage();
         const result = await handleStartCommand(msg);

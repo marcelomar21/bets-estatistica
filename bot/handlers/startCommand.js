@@ -23,6 +23,48 @@ const {
 const { getSuccessRate } = require('../services/metricsService');
 
 /**
+ * Check if user is actually in the Telegram group via API
+ * @param {object} bot - Telegram bot instance
+ * @param {string} groupId - Group chat ID
+ * @param {number} telegramId - User's Telegram ID
+ * @returns {Promise<{inGroup: boolean, status: string|null}>}
+ */
+async function isUserInGroup(bot, groupId, telegramId) {
+  try {
+    const chatMember = await bot.getChatMember(groupId, telegramId);
+    const status = chatMember.status;
+
+    // These statuses mean user is in the group
+    const inGroupStatuses = ['member', 'administrator', 'creator', 'restricted'];
+    const inGroup = inGroupStatuses.includes(status);
+
+    logger.debug('[membership:start-command] Checked user presence in group', {
+      telegramId,
+      groupId,
+      status,
+      inGroup
+    });
+
+    return { inGroup, status };
+  } catch (err) {
+    // Error 400 "Bad Request: user not found" means user is not in group
+    if (err.message?.includes('user not found') || err.message?.includes('PARTICIPANT_ID_INVALID')) {
+      logger.debug('[membership:start-command] User not found in group', { telegramId, groupId });
+      return { inGroup: false, status: null };
+    }
+
+    logger.warn('[membership:start-command] Error checking user presence', {
+      telegramId,
+      groupId,
+      error: err.message
+    });
+
+    // On error, fall back to database record (don't block the user)
+    return { inGroup: null, status: 'error' };
+  }
+}
+
+/**
  * Handle /start command with optional payload
  * @param {object} msg - Telegram message object
  * @returns {Promise<{success: boolean, action?: string, error?: object}>}
@@ -112,12 +154,33 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
  */
 async function handleActiveOrTrialMember(bot, chatId, firstName, member) {
   const isTrialMember = member.status === 'trial';
+  const groupId = config.telegram.publicGroupId;
 
-  // Check if member has joined the group
-  const hasJoinedGroup = !!member.joined_group_at;
+  // Check if member has joined the group according to DB
+  const hasJoinedGroupInDb = !!member.joined_group_at;
 
-  if (hasJoinedGroup) {
-    // Already in group - just show status
+  // If DB says they joined, verify they're ACTUALLY still in the group via Telegram API
+  if (hasJoinedGroupInDb) {
+    const presenceCheck = await isUserInGroup(bot, groupId, member.telegram_id);
+
+    // If API check failed (error), fall back to trusting DB record
+    // If API says user is NOT in group, generate new invite
+    if (presenceCheck.inGroup === false) {
+      logger.info('[membership:start-command] User left group but DB shows joined, generating new invite', {
+        memberId: member.id,
+        telegramId: member.telegram_id,
+        telegramStatus: presenceCheck.status
+      });
+
+      // Clear joined_group_at since they're not actually in the group
+      await clearJoinedGroupAt(member.id);
+
+      // Generate new invite link
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member);
+      return inviteResult;
+    }
+
+    // User is confirmed in group - show status message
     let statusMessage;
 
     if (isTrialMember) {
@@ -413,6 +476,38 @@ async function updateMemberInviteData(memberId, inviteLink) {
     }
   } catch (err) {
     logger.warn('[membership:start-command] Error updating invite data', {
+      memberId,
+      error: err.message
+    });
+  }
+}
+
+/**
+ * Clear joined_group_at when user has left the group
+ * This allows them to receive a new invite link
+ */
+async function clearJoinedGroupAt(memberId) {
+  try {
+    const { error } = await supabase
+      .from('members')
+      .update({
+        joined_group_at: null,
+        invite_link: null
+      })
+      .eq('id', memberId);
+
+    if (error) {
+      logger.warn('[membership:start-command] Failed to clear joined_group_at', {
+        memberId,
+        error: error.message
+      });
+    } else {
+      logger.info('[membership:start-command] Cleared joined_group_at for re-invite', {
+        memberId
+      });
+    }
+  } catch (err) {
+    logger.warn('[membership:start-command] Error clearing joined_group_at', {
       memberId,
       error: err.message
     });
