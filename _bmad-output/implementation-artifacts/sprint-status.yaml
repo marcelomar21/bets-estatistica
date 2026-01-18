@@ -229,6 +229,6 @@ development_status:
   16-4-implementar-deteccao-entrada-sistema-trial: done
   16-5-implementar-notificacoes-cobranca: done
   16-6-implementar-remocao-automatica-inadimplentes: done
-  16-7-implementar-comandos-admin-gestao-membros: backlog
+  16-7-implementar-comandos-admin-gestao-membros: done
   16-8-implementar-reconciliacao-cakto: backlog
   epic-16-retrospective: optional

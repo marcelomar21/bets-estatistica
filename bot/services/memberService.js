@@ -869,6 +869,452 @@ async function markMemberAsRemoved(memberId, reason = null) {
   }
 }
 
+// ============================================
+// Story 16.7: Statistics functions (AC: #1)
+// ============================================
+
+/**
+ * Get member statistics for /membros command
+ * Story 16.7: Implementar Comandos Admin para Gestao de Membros
+ * @returns {Promise<{success: boolean, data?: {total, ativo, trial, inadimplente, removido}, error?: object}>}
+ */
+async function getMemberStats() {
+  try {
+    const { data, error } = await supabase
+      .from('members')
+      .select('status');
+
+    if (error) {
+      logger.error('[memberService] getMemberStats: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const counts = {
+      total: data.length,
+      ativo: data.filter(m => m.status === 'ativo').length,
+      trial: data.filter(m => m.status === 'trial').length,
+      inadimplente: data.filter(m => m.status === 'inadimplente').length,
+      removido: data.filter(m => m.status === 'removido').length,
+    };
+
+    logger.debug('[memberService] getMemberStats: success', counts);
+    return { success: true, data: counts };
+  } catch (err) {
+    logger.error('[memberService] getMemberStats: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Calculate Monthly Recurring Revenue
+ * Story 16.7: Implementar Comandos Admin para Gestao de Membros
+ * @param {number} activeCount - Number of active members
+ * @param {number} pricePerMember - Price per member (default: 50)
+ * @returns {number} MRR in BRL
+ */
+function calculateMRR(activeCount, pricePerMember = 50) {
+  return activeCount * pricePerMember;
+}
+
+/**
+ * Calculate trial to active conversion rate
+ * Story 16.7: Implementar Comandos Admin para Gestao de Membros
+ * @returns {Promise<{success: boolean, data?: {rate, converted, totalTrials}, error?: object}>}
+ */
+async function calculateConversionRate() {
+  try {
+    // Count members who were trial and are now active
+    // (those with trial_started_at and status='ativo')
+    const { data: activeConverted, error: error1 } = await supabase
+      .from('members')
+      .select('id')
+      .eq('status', 'ativo')
+      .not('trial_started_at', 'is', null);
+
+    const { data: allTrials, error: error2 } = await supabase
+      .from('members')
+      .select('id')
+      .not('trial_started_at', 'is', null);
+
+    if (error1 || error2) {
+      logger.error('[memberService] calculateConversionRate: database error', {
+        error: error1?.message || error2?.message
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error1?.message || error2?.message } };
+    }
+
+    const converted = activeConverted?.length || 0;
+    const totalTrials = allTrials?.length || 0;
+    const rate = totalTrials > 0 ? (converted / totalTrials) * 100 : 0;
+
+    logger.debug('[memberService] calculateConversionRate: success', { rate, converted, totalTrials });
+    return { success: true, data: { rate, converted, totalTrials } };
+  } catch (err) {
+    logger.error('[memberService] calculateConversionRate: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get count of new members in the last 7 days
+ * Story 16.7: Implementar Comandos Admin para Gestao de Membros
+ * @returns {Promise<{success: boolean, data?: {count}, error?: object}>}
+ */
+async function getNewMembersThisWeek() {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('members')
+      .select('id')
+      .gte('created_at', sevenDaysAgo);
+
+    if (error) {
+      logger.error('[memberService] getNewMembersThisWeek: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const count = data?.length || 0;
+    logger.debug('[memberService] getNewMembersThisWeek: success', { count });
+    return { success: true, data: { count } };
+  } catch (err) {
+    logger.error('[memberService] getNewMembersThisWeek: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get member details by identifier (@username or telegram_id)
+ * Story 16.7: ADR-002 - Username first, fallback telegram_id
+ * @param {string} identifier - @username or numeric telegram_id
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getMemberDetails(identifier) {
+  try {
+    // Clean identifier and determine type
+    const cleanId = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+    const isNumeric = /^\d+$/.test(cleanId);
+
+    // Try username first (ADR-002)
+    if (!isNumeric) {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('telegram_username', cleanId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        logger.error('[memberService] getMemberDetails: database error', { error: error.message });
+        return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+      }
+
+      if (data) {
+        logger.debug('[memberService] getMemberDetails: found by username', { username: cleanId });
+        return { success: true, data };
+      }
+    }
+
+    // Fallback to telegram_id
+    const telegramId = isNumeric ? cleanId : null;
+    if (telegramId) {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('telegram_id', telegramId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        logger.error('[memberService] getMemberDetails: database error', { error: error.message });
+        return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+      }
+
+      if (data) {
+        logger.debug('[memberService] getMemberDetails: found by telegram_id', { telegramId });
+        return { success: true, data };
+      }
+    }
+
+    logger.warn('[memberService] getMemberDetails: member not found', { identifier });
+    return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Member not found' } };
+  } catch (err) {
+    logger.error('[memberService] getMemberDetails: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get notification history for a member
+ * Story 16.7: Task 2 - CRUD para gestao manual
+ * @param {number} memberId - Internal member ID
+ * @param {number} limit - Max records to return (default 10)
+ * @returns {Promise<{success: boolean, data?: array, error?: object}>}
+ */
+async function getNotificationHistory(memberId, limit = 10) {
+  try {
+    const { data, error } = await supabase
+      .from('member_notifications')
+      .select('*')
+      .eq('member_id', memberId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      logger.error('[memberService] getNotificationHistory: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.debug('[memberService] getNotificationHistory: success', { memberId, count: data?.length || 0 });
+    return { success: true, data: data || [] };
+  } catch (err) {
+    logger.error('[memberService] getNotificationHistory: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Add a manual trial member (admin action)
+ * Story 16.7: Task 2 - CRUD para gestao manual
+ * @param {string} telegramId - Telegram user ID
+ * @param {string} username - Telegram username (without @)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function addManualTrialMember(telegramId, username) {
+  try {
+    // Check if member exists
+    const existingResult = await getMemberByTelegramId(telegramId);
+
+    if (existingResult.success) {
+      const existing = existingResult.data;
+
+      // If already active, reject
+      if (existing.status === 'ativo') {
+        logger.warn('[memberService] addManualTrialMember: member already active', { telegramId });
+        return { success: false, error: { code: 'MEMBER_ACTIVE', message: 'Member is already active' } };
+      }
+
+      // If removed, reactivate as trial
+      if (existing.status === 'removido') {
+        // Use dynamic trial days from system_config (ADR-001)
+        const trialDaysResult = await getTrialDays();
+        const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+        const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+          .from('members')
+          .update({
+            status: 'trial',
+            trial_ends_at: trialEndsAt,
+            telegram_username: username,
+            kicked_at: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
+
+        if (error) {
+          logger.error('[memberService] addManualTrialMember: reactivate error', { error: error.message });
+          return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+        }
+
+        logger.info('[memberService] addManualTrialMember: reactivated as trial', { telegramId });
+        return { success: true, data, isNew: false };
+      }
+    }
+
+    // Create new trial member
+    const createResult = await createTrialMember({ telegramId, telegramUsername: username });
+    if (createResult.success) {
+      return { ...createResult, isNew: true };
+    }
+    return createResult;
+  } catch (err) {
+    logger.error('[memberService] addManualTrialMember: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Extend membership by X days
+ * Story 16.7: Task 2 - CRUD para gestao manual
+ * @param {number} memberId - Internal member ID
+ * @param {number} days - Days to extend
+ * @param {string} operatorUsername - Operator performing the action
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function extendMembership(memberId, days, operatorUsername) {
+  try {
+    const memberResult = await getMemberById(memberId);
+
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+
+    // Only removido members cannot be extended (AC6: "se membro 'removido', retorna erro")
+    if (member.status === 'removido') {
+      logger.warn('[memberService] extendMembership: cannot extend removed member', { memberId, status: member.status });
+      return { success: false, error: { code: 'INVALID_MEMBER_STATUS', message: 'Membro removido. Use /add_trial para reativar.' } };
+    }
+
+    const updateData = { updated_at: new Date().toISOString() };
+
+    if (member.status === 'trial') {
+      // Extend trial_ends_at
+      const currentEnd = member.trial_ends_at ? new Date(member.trial_ends_at) : new Date();
+      const newEnd = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
+      updateData.trial_ends_at = newEnd.toISOString();
+    } else if (member.status === 'ativo' || member.status === 'inadimplente') {
+      // Extend subscription_ends_at (AC6: "adiciona dias a subscription_ends_at se ativo/inadimplente")
+      const currentEnd = member.subscription_ends_at ? new Date(member.subscription_ends_at) : new Date();
+      const newEnd = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
+      updateData.subscription_ends_at = newEnd.toISOString();
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .update(updateData)
+      .eq('id', memberId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[memberService] extendMembership: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    // Append to notes for audit trail (ADR-004)
+    await appendToNotes(memberId, operatorUsername, `Estendeu ${member.status} por ${days} dias`);
+
+    logger.info('[memberService] extendMembership: success', { memberId, days, operator: operatorUsername });
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] extendMembership: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Append structured note to member notes field
+ * Story 16.7: ADR-004 - Notes em formato estruturado
+ * @param {number} memberId - Internal member ID
+ * @param {string} operador - Operator username
+ * @param {string} acao - Action description
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function appendToNotes(memberId, operador, acao) {
+  try {
+    // Get current member
+    const memberResult = await getMemberById(memberId);
+
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const currentNotes = member.notes || '';
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const newEntry = `[${timestamp}] @${operador}: ${acao}`;
+    const updatedNotes = currentNotes ? `${currentNotes}\n${newEntry}` : newEntry;
+
+    const { error } = await supabase
+      .from('members')
+      .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+      .eq('id', memberId);
+
+    if (error) {
+      logger.error('[memberService] appendToNotes: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.debug('[memberService] appendToNotes: success', { memberId, operador, acao });
+    return { success: true };
+  } catch (err) {
+    logger.error('[memberService] appendToNotes: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get current trial days configuration
+ * Story 16.7: ADR-001 - Read from system_config, fallback to env
+ * @returns {Promise<{success: boolean, data?: {days, source}, error?: object}>}
+ */
+async function getTrialDays() {
+  try {
+    const { data, error } = await supabase
+      .from('system_config')
+      .select('value')
+      .eq('key', 'TRIAL_DAYS')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      logger.error('[memberService] getTrialDays: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    if (data) {
+      const days = parseInt(data.value, 10);
+      logger.debug('[memberService] getTrialDays: from system_config', { days });
+      return { success: true, data: { days, source: 'system_config' } };
+    }
+
+    // Fallback to environment variable
+    const envDays = parseInt(process.env.TRIAL_DAYS || '7', 10);
+    logger.debug('[memberService] getTrialDays: from env fallback', { days: envDays });
+    return { success: true, data: { days: envDays, source: 'env' } };
+  } catch (err) {
+    logger.error('[memberService] getTrialDays: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Set trial days configuration
+ * Story 16.7: ADR-001 - Store in system_config
+ * @param {number} days - Number of trial days (1-30)
+ * @param {string} operatorUsername - Operator performing the change
+ * @returns {Promise<{success: boolean, data?: {oldValue, newValue}, error?: object}>}
+ */
+async function setTrialDays(days, operatorUsername) {
+  try {
+    // Validate range
+    if (days < 1 || days > 30) {
+      return { success: false, error: { code: 'INVALID_VALUE', message: 'Trial days must be between 1 and 30' } };
+    }
+
+    // Get current value
+    const currentResult = await getTrialDays();
+    const oldValue = currentResult.success ? currentResult.data.days : null;
+
+    // Upsert the value
+    const { error } = await supabase
+      .from('system_config')
+      .upsert({
+        key: 'TRIAL_DAYS',
+        value: days.toString(),
+        updated_at: new Date().toISOString(),
+        updated_by: operatorUsername
+      }, { onConflict: 'key' });
+
+    if (error) {
+      logger.error('[memberService] setTrialDays: database error', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] setTrialDays: success', {
+      operator: operatorUsername,
+      oldValue,
+      newValue: days
+    });
+
+    return { success: true, data: { oldValue, newValue: days } };
+  } catch (err) {
+    logger.error('[memberService] setTrialDays: unexpected error', { error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
 /**
  * Get remaining trial days for a member
  * @param {number} memberId - Internal member ID
@@ -939,4 +1385,21 @@ module.exports = {
   // Story 16.6: Kick expired members helpers
   kickMemberFromGroup,
   markMemberAsRemoved,
+
+  // Story 16.7: Statistics functions (AC: #1)
+  getMemberStats,
+  calculateMRR,
+  calculateConversionRate,
+  getNewMembersThisWeek,
+
+  // Story 16.7: CRUD functions for admin commands (Task 2)
+  getMemberDetails,
+  getNotificationHistory,
+  addManualTrialMember,
+  extendMembership,
+  appendToNotes,
+
+  // Story 16.7: System config functions (Task 5)
+  getTrialDays,
+  setTrialDays,
 };

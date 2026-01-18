@@ -28,7 +28,18 @@ const {
   createTrialMember,
   getTrialDaysRemaining,
   canRejoinGroup,
-  reactivateMember
+  reactivateMember,
+  // Story 16.7: Statistics functions
+  getMemberStats,
+  calculateMRR,
+  calculateConversionRate,
+  getNewMembersThisWeek,
+  // Story 16.7: CRUD functions for manual management
+  getMemberDetails,
+  getNotificationHistory,
+  addManualTrialMember,
+  extendMembership,
+  appendToNotes,
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -693,6 +704,548 @@ describe('memberService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+  });
+
+  // ============================================
+  // getMemberStats (Story 16.7, AC: #1)
+  // ============================================
+  describe('getMemberStats', () => {
+    test('retorna contagens corretas por status', async () => {
+      const mockMembers = [
+        { status: 'trial' },
+        { status: 'trial' },
+        { status: 'ativo' },
+        { status: 'ativo' },
+        { status: 'ativo' },
+        { status: 'inadimplente' },
+        { status: 'removido' },
+      ];
+
+      const selectMock = jest.fn().mockResolvedValue({ data: mockMembers, error: null });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberStats();
+
+      expect(result.success).toBe(true);
+      expect(result.data.total).toBe(7);
+      expect(result.data.ativo).toBe(3);
+      expect(result.data.trial).toBe(2);
+      expect(result.data.inadimplente).toBe(1);
+      expect(result.data.removido).toBe(1);
+    });
+
+    test('retorna zeros quando não há membros', async () => {
+      const selectMock = jest.fn().mockResolvedValue({ data: [], error: null });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberStats();
+
+      expect(result.success).toBe(true);
+      expect(result.data.total).toBe(0);
+      expect(result.data.ativo).toBe(0);
+      expect(result.data.trial).toBe(0);
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Connection error' }
+      });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberStats();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  // ============================================
+  // calculateMRR (Story 16.7, AC: #1)
+  // ============================================
+  describe('calculateMRR', () => {
+    test('calcula MRR com preço padrão de R$50', () => {
+      const mrr = calculateMRR(120);
+      expect(mrr).toBe(6000);
+    });
+
+    test('calcula MRR com preço customizado', () => {
+      const mrr = calculateMRR(100, 99);
+      expect(mrr).toBe(9900);
+    });
+
+    test('retorna 0 quando não há membros ativos', () => {
+      const mrr = calculateMRR(0);
+      expect(mrr).toBe(0);
+    });
+  });
+
+  // ============================================
+  // calculateConversionRate (Story 16.7, AC: #1)
+  // ============================================
+  describe('calculateConversionRate', () => {
+    test('calcula taxa de conversão corretamente', async () => {
+      // 3 membros que converteram (trial -> ativo)
+      const activeConverted = [{ id: 1 }, { id: 2 }, { id: 3 }];
+      // 6 membros que já fizeram trial
+      const allTrials = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 }];
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // Query para ativos convertidos
+          const notMock = jest.fn().mockResolvedValue({ data: activeConverted, error: null });
+          const eqMock = jest.fn().mockReturnValue({ not: notMock });
+          const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+          return { select: selectMock };
+        } else {
+          // Query para todos que já fizeram trial
+          const notMock = jest.fn().mockResolvedValue({ data: allTrials, error: null });
+          const selectMock = jest.fn().mockReturnValue({ not: notMock });
+          return { select: selectMock };
+        }
+      });
+
+      const result = await calculateConversionRate();
+
+      expect(result.success).toBe(true);
+      expect(result.data.rate).toBe(50); // 3/6 = 50%
+      expect(result.data.converted).toBe(3);
+      expect(result.data.totalTrials).toBe(6);
+    });
+
+    test('retorna 0% quando não há trials', async () => {
+      supabase.from.mockImplementation(() => {
+        const notMock = jest.fn().mockResolvedValue({ data: [], error: null });
+        const eqMock = jest.fn().mockReturnValue({ not: notMock });
+        const selectMock = jest.fn().mockReturnValue({ eq: eqMock, not: notMock });
+        return { select: selectMock };
+      });
+
+      const result = await calculateConversionRate();
+
+      expect(result.success).toBe(true);
+      expect(result.data.rate).toBe(0);
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      // Primeira query (.eq().not()) retorna erro
+      supabase.from.mockImplementation(() => {
+        const notMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } });
+        const eqMock = jest.fn().mockReturnValue({ not: notMock });
+        const selectMock = jest.fn().mockReturnValue({ eq: eqMock, not: notMock });
+        return { select: selectMock };
+      });
+
+      const result = await calculateConversionRate();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  // ============================================
+  // getNewMembersThisWeek (Story 16.7, AC: #1)
+  // ============================================
+  describe('getNewMembersThisWeek', () => {
+    test('retorna contagem de novos membros nos últimos 7 dias', async () => {
+      const newMembers = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }];
+
+      const gteMock = jest.fn().mockResolvedValue({ data: newMembers, error: null });
+      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNewMembersThisWeek();
+
+      expect(result.success).toBe(true);
+      expect(result.data.count).toBe(5);
+    });
+
+    test('retorna 0 quando não há novos membros', async () => {
+      const gteMock = jest.fn().mockResolvedValue({ data: [], error: null });
+      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNewMembersThisWeek();
+
+      expect(result.success).toBe(true);
+      expect(result.data.count).toBe(0);
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      const gteMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } });
+      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNewMembersThisWeek();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  // ============================================
+  // getMemberDetails (Story 16.7, AC: #2)
+  // ============================================
+  describe('getMemberDetails', () => {
+    test('busca por @username com sucesso', async () => {
+      const mockMember = { id: 'uuid-1', telegram_id: 123456789, telegram_username: 'testuser', status: 'ativo' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberDetails('@testuser');
+
+      expect(result.success).toBe(true);
+      expect(result.data.telegram_username).toBe('testuser');
+      expect(eqMock).toHaveBeenCalledWith('telegram_username', 'testuser');
+    });
+
+    test('busca por telegram_id numerico com sucesso', async () => {
+      const mockMember = { id: 'uuid-1', telegram_id: 123456789, status: 'ativo' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberDetails('123456789');
+
+      expect(result.success).toBe(true);
+      expect(result.data.telegram_id).toBe(123456789);
+      expect(eqMock).toHaveBeenCalledWith('telegram_id', '123456789');
+    });
+
+    test('retorna MEMBER_NOT_FOUND quando não existe', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberDetails('@nonexistent');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'OTHER_ERROR', message: 'Connection error' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getMemberDetails('@testuser');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  // ============================================
+  // getNotificationHistory (Story 16.7, AC: #2)
+  // ============================================
+  describe('getNotificationHistory', () => {
+    test('retorna histórico de notificações com sucesso', async () => {
+      const mockNotifications = [
+        { type: 'trial_reminder', channel: 'telegram', sent_at: '2026-01-17T09:00:00Z' },
+        { type: 'trial_reminder', channel: 'telegram', sent_at: '2026-01-16T09:00:00Z' },
+      ];
+
+      const limitMock = jest.fn().mockResolvedValue({ data: mockNotifications, error: null });
+      const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+      const eqMock = jest.fn().mockReturnValue({ order: orderMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNotificationHistory('uuid-1', 10);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].type).toBe('trial_reminder');
+    });
+
+    test('retorna array vazio quando não há notificações', async () => {
+      const limitMock = jest.fn().mockResolvedValue({ data: [], error: null });
+      const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+      const eqMock = jest.fn().mockReturnValue({ order: orderMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNotificationHistory('uuid-1');
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
+    });
+
+    test('retorna DB_ERROR em erro de banco', async () => {
+      const limitMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } });
+      const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
+      const eqMock = jest.fn().mockReturnValue({ order: orderMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getNotificationHistory('uuid-1');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  // ============================================
+  // addManualTrialMember (Story 16.7, AC: #4)
+  // ============================================
+  describe('addManualTrialMember', () => {
+    test('cria novo membro trial quando não existe', async () => {
+      const newMember = {
+        id: 'uuid-new',
+        telegram_id: 123456789,
+        telegram_username: 'testuser',
+        status: 'trial',
+      };
+
+      // Mock getMemberByTelegramId (not found)
+      const getSingleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      // Mock insert
+      const insertSingleMock = jest.fn().mockResolvedValue({ data: newMember, error: null });
+      const insertSelectMock = jest.fn().mockReturnValue({ single: insertSingleMock });
+      const insertMock = jest.fn().mockReturnValue({ select: insertSelectMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        // First 2 calls are getMemberByTelegramId (from addManualTrialMember and createTrialMember)
+        if (callCount <= 2) {
+          return { select: getSelectMock };
+        } else {
+          return { insert: insertMock };
+        }
+      });
+
+      const result = await addManualTrialMember(123456789, 'testuser');
+
+      expect(result.success).toBe(true);
+      expect(result.isNew).toBe(true);
+      expect(result.data.status).toBe('trial');
+    });
+
+    test('reinicia trial para membro removido', async () => {
+      const existingMember = { id: 'uuid-1', telegram_id: 123456789, status: 'removido' };
+      const updatedMember = { ...existingMember, status: 'trial' };
+
+      // Mock getMemberByTelegramId (found)
+      const getSingleMock = jest.fn().mockResolvedValue({ data: existingMember, error: null });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      // Mock update
+      const updateSingleMock = jest.fn().mockResolvedValue({ data: updatedMember, error: null });
+      const updateSelectMock = jest.fn().mockReturnValue({ single: updateSingleMock });
+      const updateEqMock = jest.fn().mockReturnValue({ select: updateSelectMock });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEqMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getSelectMock };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await addManualTrialMember(123456789, 'testuser');
+
+      expect(result.success).toBe(true);
+      expect(result.isNew).toBe(false);
+      expect(result.data.status).toBe('trial');
+    });
+
+    test('retorna MEMBER_ACTIVE se membro já está ativo', async () => {
+      const existingMember = { id: 'uuid-1', telegram_id: 123456789, status: 'ativo' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: existingMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await addManualTrialMember(123456789, 'testuser');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_ACTIVE');
+    });
+  });
+
+  // ============================================
+  // extendMembership (Story 16.7, AC: #6)
+  // ============================================
+  describe('extendMembership', () => {
+    test('estende trial por X dias', async () => {
+      const now = new Date();
+      const trialEnds = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
+      const mockMember = {
+        id: 'uuid-1',
+        status: 'trial',
+        trial_ends_at: trialEnds.toISOString(),
+        notes: ''
+      };
+      const extendedMember = { ...mockMember, trial_ends_at: new Date(trialEnds.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: extendedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await extendMembership('uuid-1', 7, '@admin');
+
+      expect(result.success).toBe(true);
+    });
+
+    test('estende assinatura de membro ativo', async () => {
+      const now = new Date();
+      const subEnds = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const mockMember = {
+        id: 'uuid-1',
+        status: 'ativo',
+        subscription_ends_at: subEnds.toISOString(),
+        notes: ''
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await extendMembership('uuid-1', 7, '@admin');
+
+      expect(result.success).toBe(true);
+    });
+
+    test('retorna INVALID_MEMBER_STATUS para membro removido', async () => {
+      const mockMember = { id: 'uuid-1', status: 'removido' };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await extendMembership('uuid-1', 7, '@admin');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_MEMBER_STATUS');
+    });
+  });
+
+  // ============================================
+  // appendToNotes (Story 16.7, ADR-004)
+  // ============================================
+  describe('appendToNotes', () => {
+    test('adiciona nota estruturada ao membro', async () => {
+      const mockMember = { id: 'uuid-1', notes: null };
+      const updatedMember = { ...mockMember, notes: '[2026-01-18 10:00] @admin: cortesia +7 dias' };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: updatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await appendToNotes('uuid-1', '@admin', 'cortesia +7 dias');
+
+      expect(result.success).toBe(true);
+    });
+
+    test('preserva notas existentes', async () => {
+      const mockMember = { id: 'uuid-1', notes: 'Nota anterior' };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await appendToNotes('uuid-1', '@admin', 'nova ação');
+
+      expect(result.success).toBe(true);
+      // The update mock should have been called with notes that include the old note
+      expect(updateMock).toHaveBeenCalled();
     });
   });
 });

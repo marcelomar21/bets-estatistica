@@ -19,7 +19,7 @@ const express = require('express');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
-const { handleAdminMessage } = require('./handlers/adminGroup');
+const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 
 // Validate config
@@ -92,6 +92,15 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
       // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
       if (msg.chat.id.toString() === config.telegram.adminGroupId) {
         await handleAdminMessage(bot, msg);
+      }
+    }
+
+    // Story 16.7: Process callback queries (inline keyboard buttons)
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      // Only handle from admin group
+      if (callbackQuery.message?.chat?.id?.toString() === config.telegram.adminGroupId) {
+        await handleRemovalCallback(bot, callbackQuery);
       }
     }
 
