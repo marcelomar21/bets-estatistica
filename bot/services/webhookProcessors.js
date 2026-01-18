@@ -432,6 +432,69 @@ async function handleSubscriptionCanceled(payload) {
 }
 
 /**
+ * Handle refund event
+ * Removes member from group when payment is refunded
+ * @param {object} payload - Webhook event payload
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function handleRefund(payload) {
+  logger.info('[webhookProcessors] handleRefund: processing', {
+    status: payload?.status,
+    refundedAt: payload?.refundedAt
+  });
+
+  try {
+    const email = extractEmail(payload);
+    if (!email) {
+      logger.warn('[webhookProcessors] handleRefund: no email in payload');
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'No email found in payload' }
+      };
+    }
+
+    // Find member by email
+    const memberResult = await getMemberByEmail(email);
+    if (!memberResult.success) {
+      // Member not found - might be a refund before registration completed
+      logger.info('[webhookProcessors] handleRefund: member not found, skipping', { email });
+      return { success: true, data: { skipped: true, reason: 'member_not_found' } };
+    }
+
+    const member = memberResult.data;
+
+    // If already removed, skip (idempotency)
+    if (member.status === 'removido') {
+      logger.info('[webhookProcessors] handleRefund: member already removed, skipping', {
+        memberId: member.id,
+        email
+      });
+      return { success: true, data: { skipped: true, reason: 'already_removed' } };
+    }
+
+    logger.info('[webhookProcessors] handleRefund: removing member due to refund', {
+      memberId: member.id,
+      email,
+      currentStatus: member.status
+    });
+
+    // Import markMemberAsRemoved function
+    const { markMemberAsRemoved } = require('./memberService');
+
+    // Remove member with refund reason
+    const removeResult = await markMemberAsRemoved(member.id, 'refund');
+    return removeResult;
+
+  } catch (err) {
+    logger.error('[webhookProcessors] handleRefund: error', { error: err.message });
+    return {
+      success: false,
+      error: { code: 'HANDLER_ERROR', message: err.message }
+    };
+  }
+}
+
+/**
  * Webhook handler registry
  * Maps event types to their handler functions
  */
@@ -441,6 +504,7 @@ const WEBHOOK_HANDLERS = {
   'subscription_renewed': handleSubscriptionRenewed,
   'subscription_renewal_refused': handleRenewalRefused,
   'subscription_canceled': handleSubscriptionCanceled,
+  'refund': handleRefund,
 };
 
 /**
@@ -498,6 +562,7 @@ module.exports = {
   handleSubscriptionRenewed,
   handleRenewalRefused,
   handleSubscriptionCanceled,
+  handleRefund,
 
   // Utility functions (for testing)
   normalizePaymentMethod,

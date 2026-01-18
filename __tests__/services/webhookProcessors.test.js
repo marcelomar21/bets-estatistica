@@ -9,6 +9,7 @@ jest.mock('../../bot/services/memberService', () => ({
   activateMember: jest.fn(),
   renewMemberSubscription: jest.fn(),
   markMemberAsDefaulted: jest.fn(),
+  markMemberAsRemoved: jest.fn(),
   createActiveMember: jest.fn(),
   reactivateRemovedMember: jest.fn(),
 }));
@@ -31,6 +32,7 @@ const {
   handlePurchaseApproved,
   handleSubscriptionRenewed,
   handleRenewalRefused,
+  handleRefund,
   normalizePaymentMethod,
   extractEmail,
   extractSubscriptionData,
@@ -42,6 +44,7 @@ const {
   activateMember,
   renewMemberSubscription,
   markMemberAsDefaulted,
+  markMemberAsRemoved,
   createActiveMember,
   reactivateRemovedMember,
 } = require('../../bot/services/memberService');
@@ -174,6 +177,10 @@ describe('webhookProcessors', () => {
 
     test('tem handler para subscription_canceled', () => {
       expect(WEBHOOK_HANDLERS['subscription_canceled']).toBeDefined();
+    });
+
+    test('tem handler para refund', () => {
+      expect(WEBHOOK_HANDLERS['refund']).toBeDefined();
     });
   });
 
@@ -405,6 +412,91 @@ describe('webhookProcessors', () => {
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
       expect(markMemberAsDefaulted).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================
+  // handleRefund
+  // ============================================
+  describe('handleRefund', () => {
+    test('remove membro ativo quando reembolso é processado', async () => {
+      // Estrutura Cakto Order
+      const payload = {
+        id: 'order_refund_1',
+        status: 'refunded',
+        refundedAt: '2026-01-18T18:12:30.409705-03:00',
+        customer: { id: 'cus_123', email: 'test@example.com' },
+      };
+
+      const mockMember = { id: 1, status: 'ativo' };
+      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+      markMemberAsRemoved.mockResolvedValue({ success: true, data: { ...mockMember, status: 'removido' } });
+
+      const result = await handleRefund(payload);
+
+      expect(result.success).toBe(true);
+      expect(markMemberAsRemoved).toHaveBeenCalledWith(1, 'refund');
+    });
+
+    test('remove membro trial quando reembolso é processado', async () => {
+      const payload = {
+        id: 'order_refund_2',
+        customer: { email: 'trial@example.com' },
+      };
+
+      const mockMember = { id: 2, status: 'trial' };
+      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+      markMemberAsRemoved.mockResolvedValue({ success: true, data: { ...mockMember, status: 'removido' } });
+
+      const result = await handleRefund(payload);
+
+      expect(result.success).toBe(true);
+      expect(markMemberAsRemoved).toHaveBeenCalledWith(2, 'refund');
+    });
+
+    test('pula se membro já está removido (idempotência)', async () => {
+      const payload = {
+        id: 'order_refund_3',
+        customer: { email: 'removed@example.com' },
+      };
+
+      const mockMember = { id: 3, status: 'removido' };
+      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+
+      const result = await handleRefund(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('already_removed');
+      expect(markMemberAsRemoved).not.toHaveBeenCalled();
+    });
+
+    test('pula se membro não encontrado', async () => {
+      const payload = {
+        id: 'order_refund_4',
+        customer: { email: 'unknown@example.com' },
+      };
+
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+
+      const result = await handleRefund(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('member_not_found');
+      expect(markMemberAsRemoved).not.toHaveBeenCalled();
+    });
+
+    test('retorna INVALID_PAYLOAD se email não encontrado', async () => {
+      const payload = { customer: { name: 'No Email User' } };
+
+      const result = await handleRefund(payload);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_PAYLOAD');
     });
   });
 

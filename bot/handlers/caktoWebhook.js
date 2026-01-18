@@ -84,17 +84,25 @@ async function handleCaktoWebhook(req, res) {
   const startTime = Date.now();
 
   try {
-    const { event_id, event_type, data } = req.body;
+    // Cakto payload structure: { event, secret, data: { id, refId, ... } }
+    const { event, data } = req.body;
+
+    // Map Cakto fields to our internal naming
+    const event_type = event;
+    // Use data.id as base for idempotency key (unique transaction ID)
+    const transaction_id = data?.id || data?.refId;
+    // Composite key: event_type + transaction_id (same order can have multiple events)
+    const event_id = transaction_id ? `${event_type}_${transaction_id}` : null;
 
     // Validate required fields
     if (!event_id) {
-      logger.warn('[cakto:webhook] Missing event_id in payload');
-      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Missing event_id' });
+      logger.warn('[cakto:webhook] Missing event_id (data.id) in payload', { event });
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Missing data.id' });
     }
 
     if (!event_type) {
-      logger.warn('[cakto:webhook] Missing event_type in payload');
-      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Missing event_type' });
+      logger.warn('[cakto:webhook] Missing event type in payload');
+      return res.status(400).json({ error: 'INVALID_PAYLOAD', message: 'Missing event' });
     }
 
     logger.info('[cakto:webhook] Received webhook', { eventId: event_id, eventType: event_type });
@@ -106,7 +114,7 @@ async function handleCaktoWebhook(req, res) {
         {
           idempotency_key: event_id,
           event_type: event_type,
-          payload: data || req.body,
+          payload: data,
           status: 'pending'
         },
         {
