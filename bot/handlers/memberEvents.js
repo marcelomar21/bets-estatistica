@@ -64,28 +64,20 @@ async function processNewMember(user) {
   if (existingResult.success) {
     const member = existingResult.data;
 
-    // Story 16.9: Gate Entry - Member entered via invite link
-    // Mark joined_group_at to confirm they're in the group
+    // Handle based on current status
     if (member.status === 'trial' || member.status === 'ativo') {
+      // Member already exists in trial or active status - skip
+      // Story 16.9: Still update joined_group_at if they're re-entering
       await confirmMemberJoinedGroup(member.id, telegramId, username);
 
-      // Register join event
-      await registerMemberEvent(member.id, 'join', {
-        telegram_id: telegramId,
-        telegram_username: username,
-        source: 'group_entry',
-        action: 'gate_entry_confirmed'
-      });
-
-      logger.info('[membership:member-events] Gate entry confirmed', {
+      logger.debug('[membership:member-events] Member already exists, skipping', {
         memberId: member.id,
-        telegramId,
-        status: member.status
+        status: member.status,
+        telegramId
       });
-      return { processed: true, action: 'gate_entry_confirmed' };
+      return { processed: false, action: 'already_exists' };
     }
 
-    // Handle based on current status
     if (member.status === 'removido') {
       // Check if can rejoin (< 24h since kick)
       const rejoinResult = await canRejoinGroup(member.id);
@@ -121,11 +113,12 @@ async function processNewMember(user) {
         return { processed: false, action: 'reactivation_failed' };
       } else {
         // Kicked > 24h ago, require payment (1.7)
-        // Note: In Gate Entry flow, they shouldn't reach here without paying
         logger.warn('[membership:member-events] Removed member entered without payment', {
           memberId: member.id,
           hoursSinceKick: rejoinResult.data?.hoursSinceKick?.toFixed(2)
         });
+        // Send payment required message
+        await sendPaymentRequiredMessage(telegramId, member.id);
         return { processed: true, action: 'payment_required' };
       }
     } else if (member.status === 'inadimplente') {
@@ -155,13 +148,7 @@ async function processNewMember(user) {
     return { processed: false, action: 'error' };
   }
 
-  // Story 16.9: With Gate Entry, new members should come via /start first
-  // If they somehow enter directly, create trial but log warning
-  logger.warn('[membership:member-events] Member entered without /start (bypassed gate)', {
-    telegramId,
-    username
-  });
-
+  // New member - create trial (1.5)
   const trialDays = config.membership?.trialDays || 7;
   const createResult = await createTrialMember({ telegramId, telegramUsername: username }, trialDays);
 
@@ -175,20 +162,20 @@ async function processNewMember(user) {
     await registerMemberEvent(memberId, 'join', {
       telegram_id: telegramId,
       telegram_username: username,
-      source: 'direct_entry',
-      action: 'bypassed_gate'
+      source: 'telegram_webhook',
+      action: 'created'
     });
 
-    // Try to send welcome message (may fail if user hasn't started bot)
+    // AC5: Send welcome message
     await sendWelcomeMessage(telegramId, firstName, memberId);
 
-    logger.info('[membership:member-events] New trial member created (bypassed gate)', {
+    logger.info('[membership:member-events] New trial member created', {
       memberId,
       telegramId,
       username,
       trialDays
     });
-    return { processed: true, action: 'created_bypassed_gate' };
+    return { processed: true, action: 'created' };
   }
 
   // Handle creation errors
