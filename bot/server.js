@@ -84,6 +84,28 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
     if (update.message) {
       const msg = update.message;
 
+      // DEBUG: Log all messages from public group to diagnose new_chat_members issue
+      if (msg.chat.id.toString() === config.telegram.publicGroupId) {
+        logger.info('[webhook:debug] Message from public group', {
+          chatId: msg.chat.id,
+          hasNewChatMembers: !!msg.new_chat_members,
+          newChatMembersCount: msg.new_chat_members?.length || 0,
+          messageType: msg.new_chat_members ? 'new_chat_members' : (msg.text ? 'text' : 'other'),
+          configuredPublicGroupId: config.telegram.publicGroupId
+        });
+      }
+
+      // DEBUG: Log new_chat_members from ANY chat to see if event arrives at all
+      if (msg.new_chat_members) {
+        logger.info('[webhook:debug] new_chat_members event received', {
+          chatId: msg.chat.id,
+          chatTitle: msg.chat.title,
+          configuredPublicGroupId: config.telegram.publicGroupId,
+          match: msg.chat.id.toString() === config.telegram.publicGroupId,
+          members: msg.new_chat_members.map(u => ({ id: u.id, username: u.username, is_bot: u.is_bot }))
+        });
+      }
+
       // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
       if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
         await handleNewChatMembers(msg);
