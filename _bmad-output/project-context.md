@@ -445,8 +445,7 @@ lib/
 └── lock.js                     # Distributed lock via Supabase
 
 sql/migrations/
-├── 002_membership_tables.sql   # members, member_notifications
-└── 003_webhook_events.sql      # webhook_events
+└── 005_membership_tables.sql   # members, member_notifications, webhook_events
 ```
 
 ---

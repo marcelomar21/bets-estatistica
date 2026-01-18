@@ -1,9 +1,9 @@
 ---
-stepsCompleted: [1, 2, 3, 4, 5]
-status: updated
-completedAt: "2026-01-10"
-updatedAt: "2026-01-13"
-lastAddendum: "v4.1-ux-admin-scraping"
+stepsCompleted: [1, 2, 3, 4]
+status: complete
+completedAt: "2026-01-17"
+updatedAt: "2026-01-17"
+lastAddendum: "v5-membership-payments"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
@@ -12,7 +12,9 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
-epicCount: 15
+epicCount: 16
+pendingEpic: 15
+priorityEpic: 16
 ---
 
 # bets-estatistica - Epic Breakdown
@@ -44,6 +46,43 @@ Este documento contém a decomposição completa de épicos e stories para bets-
 - FR49: Bot pode processar comando `/status` para listar apostas elegíveis, próximo horário de postagem e contagem de apostas na fila
 - FR50: Sistema pode incluir apostas com `promovida_manual = true` na seleção mesmo quando odds < 1.60
 - FR51: Bot pode confirmar execução de comandos admin com feedback visual (✅ ou ❌)
+
+**Gestão de Membros - Entrada e Trial (FR-MB1-MB6)**
+- FR-MB1: Bot pode detectar quando um novo usuário entra no grupo público via Telegram API
+- FR-MB2: Sistema pode registrar novo membro no BD com `telegram_id`, `username`, `data_entrada`, `status = 'trial'`
+- FR-MB3: Sistema pode calcular dias restantes de trial para cada membro
+- FR-MB4: Sistema pode identificar método de pagamento do membro (cartão recorrente vs avulso)
+- FR-MB5: Bot pode enviar mensagem de boas-vindas ao novo membro explicando o trial de 7 dias
+- FR-MB6: Sistema pode armazenar configuração global de dias de trial (default: 7)
+
+**Gestão de Membros - Integração Cakto Webhooks (FR-MB7-MB12)**
+- FR-MB7: Sistema pode receber webhooks do Cakto via endpoint HTTPS com validação de secret
+- FR-MB8: Sistema pode processar evento `purchase_approved` e marcar membro como `status = 'ativo'`
+- FR-MB9: Sistema pode processar evento `subscription_created` e registrar tipo de assinatura
+- FR-MB10: Sistema pode processar evento `subscription_renewed` e atualizar `data_proxima_renovacao`
+- FR-MB11: Sistema pode processar evento `subscription_renewal_refused` e marcar membro para remoção imediata
+- FR-MB12: Sistema pode processar evento `subscription_canceled` e marcar membro para remoção imediata
+
+**Gestão de Membros - Notificações (FR-MB13-MB17)**
+- FR-MB13: Sistema pode enviar mensagem privada no Telegram para membros em trial
+- FR-MB14: Sistema pode enviar lembrete diário a partir do dia 5 do trial para membros que não pagaram
+- FR-MB15: Sistema pode enviar lembrete diário a partir de 5 dias antes da renovação para membros com pagamento avulso (PIX/Boleto)
+- FR-MB16: Sistema não envia lembretes de renovação para membros com cartão de crédito recorrente
+- FR-MB17: Sistema pode incluir link de checkout do Cakto nas mensagens de cobrança
+
+**Gestão de Membros - Remoção Automática (FR-MB18-MB21)**
+- FR-MB18: Sistema pode remover (kick) membro do grupo Telegram via API
+- FR-MB19: Sistema pode executar kick automático no dia 8 (trial expirado) se membro não pagou
+- FR-MB20: Sistema pode executar kick imediato quando renovação falha ou assinatura é cancelada
+- FR-MB21: Sistema pode enviar mensagem ao membro removido com motivo e link para voltar
+
+**Gestão de Membros - Comandos Admin (FR-MB22-MB27)**
+- FR-MB22: Bot pode processar comando `/membros` e listar membros ativos, em trial, e inadimplentes com MRR e taxa de conversão
+- FR-MB23: Bot pode processar comando `/membro @user` e exibir status detalhado (data entrada, status, dias restantes, histórico de pagamentos)
+- FR-MB24: Bot pode processar comando `/trial <dias>` e configurar duração padrão do trial
+- FR-MB25: Bot pode processar comando `/add_trial @user` e adicionar usuário manualmente ao trial
+- FR-MB26: Bot pode processar comando `/remover_membro @user` e remover membro manualmente do grupo
+- FR-MB27: Bot pode processar comando `/estender @user <dias>` e estender assinatura por cortesia
 
 **Publicação Telegram (Grupo Público)**
 - FR10: Bot pode enviar mensagens para o grupo público do Telegram
@@ -130,6 +169,12 @@ Este documento contém a decomposição completa de épicos e stories para bets-
 - NFR19: Deploy deve ser simples (1 comando)
 - NFR20: Rollback deve ser possível (< 5 min)
 
+**Gestão de Membros**
+- NFR21: Webhook do Cakto deve ser processado rapidamente (< 5 segundos)
+- NFR22: Remoção de membro inadimplente deve ocorrer no horário correto (± 1 hora)
+- NFR23: Mensagens de cobrança devem ser entregues (99% via Telegram API)
+- NFR24: Dados de membros devem ser protegidos (criptografia em trânsito, acesso restrito)
+
 ### Additional Requirements
 
 **Da Architecture:**
@@ -159,6 +204,17 @@ Este documento contém a decomposição completa de épicos e stories para bets-
 - Error handling: retry + alertAdmin()
 - Remover puppeteer
 
+**Da Architecture (Gestão de Membros - Epic 16):**
+- Express server separado na porta 3001 para webhooks Cakto
+- Event sourcing: salvar webhook raw em `webhook_events` → processar async
+- State machine de membros: `trial → ativo → inadimplente → removido`
+- Locks distribuídos via Supabase para jobs de membership
+- Validação HMAC + rate limiting (100 req/min)
+- Tabelas: `members`, `member_notifications`, `webhook_events`
+- 5 jobs de membership: trial-reminders, kick-expired, renewal-reminders, process-webhooks, reconciliation
+- Service wrapper `caktoService.js` para OAuth + API Cakto
+- `memberService.js` para CRUD de membros + validação de transições
+
 ### FR Coverage Map
 
 | FR | Epic | Descrição |
@@ -172,6 +228,12 @@ Este documento contém a decomposição completa de épicos e stories para bets-
 | FR32-37 | Epic 5 | Métricas |
 | FR38-42 | Epic 3 | Regras de negócio |
 | FR43-46 | Epic 1 | Gestão de dados |
+| FR47-51 | Epic 13 | Gestão de elegibilidade |
+| FR-MB1-6 | Epic 16 | Entrada e trial de membros |
+| FR-MB7-12 | Epic 16 | Integração webhooks Cakto |
+| FR-MB13-17 | Epic 16 | Notificações de cobrança |
+| FR-MB18-21 | Epic 16 | Remoção automática |
+| FR-MB22-27 | Epic 16 | Comandos admin membros |
 
 ## Epic List
 
@@ -2294,3 +2356,537 @@ So that scraping rode antes das postagens.
 6. Story 15.6 (Métricas custo) → Monitoramento
 7. Story 15.7 (Limite diário) → Controle
 8. Story 15.8 (Novo schedule) → Finalização
+
+---
+
+# ADDENDUM v5 - Gestão de Membros e Pagamentos (2026-01-17)
+
+## Requirements Inventory - Addendum v5
+
+### Novos Functional Requirements (Gestão de Membros)
+
+**Entrada e Trial (FR-MB1-MB6)**
+- FR-MB1: Bot detecta entrada de novo usuário via Telegram API
+- FR-MB2: Sistema registra membro com `telegram_id`, `username`, `status = 'trial'`
+- FR-MB3: Sistema calcula dias restantes de trial
+- FR-MB4: Sistema identifica método de pagamento (cartão vs avulso)
+- FR-MB5: Bot envia mensagem de boas-vindas explicando trial 7 dias
+- FR-MB6: Sistema armazena configuração global de trial (default: 7)
+
+**Integração Cakto Webhooks (FR-MB7-MB12)**
+- FR-MB7: Sistema recebe webhooks via HTTPS com validação HMAC
+- FR-MB8: Processa `purchase_approved` → `status = 'ativo'`
+- FR-MB9: Processa `subscription_created` → registra tipo assinatura
+- FR-MB10: Processa `subscription_renewed` → atualiza renovação
+- FR-MB11: Processa `subscription_renewal_refused` → marca para kick
+- FR-MB12: Processa `subscription_canceled` → marca para kick
+
+**Notificações (FR-MB13-MB17)**
+- FR-MB13: Sistema envia mensagem privada para membros em trial
+- FR-MB14: Lembrete diário a partir do dia 5 do trial
+- FR-MB15: Lembrete 5 dias antes da renovação (PIX/Boleto)
+- FR-MB16: NÃO envia lembretes para cartão recorrente
+- FR-MB17: Inclui link checkout Cakto nas mensagens
+
+**Remoção Automática (FR-MB18-MB21)**
+- FR-MB18: Sistema pode remover (kick) membro via API Telegram
+- FR-MB19: Kick automático dia 8 (trial expirado)
+- FR-MB20: Kick imediato quando renovação falha/cancela
+- FR-MB21: Mensagem ao removido com motivo + link para voltar
+
+**Comandos Admin (FR-MB22-MB27)**
+- FR-MB22: `/membros` - lista ativos, trial, inadimplentes, MRR
+- FR-MB23: `/membro @user` - status detalhado
+- FR-MB24: `/trial <dias>` - configura duração trial
+- FR-MB25: `/add_trial @user` - adiciona ao trial
+- FR-MB26: `/remover_membro @user` - remove manualmente
+- FR-MB27: `/estender @user <dias>` - estende por cortesia
+
+### Novos Non-Functional Requirements
+
+- NFR21: Webhook response < 5 segundos
+- NFR22: Remoção ± 1 hora do horário programado
+- NFR23: 99% entrega de mensagens via Telegram
+- NFR24: Dados de membros protegidos (criptografia)
+
+### Requisitos da Architecture (ADRs)
+
+- ADR-001: Event Sourcing para webhooks (salvar raw → processar async)
+- ADR-002: Supabase como fonte de verdade de estado
+- ADR-003: Módulo `membership/` com jobs + locks distribuídos
+- ADR-004: Validação HMAC + rate limiting (100 req/min)
+
+### FR Coverage Map - Addendum v5
+
+| FR | Story | Descrição |
+|----|-------|-----------|
+| FR-MB1-6 | 16.4 | Entrada e trial de membros |
+| FR-MB7 | 16.2 | Webhook server + event sourcing |
+| FR-MB8-12 | 16.3 | Processamento de webhooks |
+| FR-MB13-17 | 16.5 | Notificações de cobrança |
+| FR-MB18-21 | 16.6 | Remoção automática |
+| FR-MB22-27 | 16.7 | Comandos admin membros |
+| ADR-001,004 | 16.2 | Segurança webhooks |
+| ADR-002,003 | 16.1, 16.8 | State machine + reconciliação |
+
+---
+
+## Epic 16: Gestão de Membros e Pagamentos Cakto
+
+Permitir que o sistema monetize através de assinaturas, gerenciando membros do grupo público com trial de 7 dias, processando pagamentos via Cakto, e automatizando remoção de inadimplentes.
+
+**Valor para o Usuário:**
+- Marcelo (operador) pode monetizar o grupo com R$50/mês
+- Novos membros têm experiência de trial de 7 dias
+- Pagamentos são processados automaticamente via Cakto
+- Inadimplentes são removidos sem intervenção manual
+- Operador tem visibilidade completa sobre MRR e membros
+
+**FRs cobertos:** FR-MB1-27, NFR21-24, ADR-001-004
+
+**Prioridade:** ALTA (Sprint atual)
+
+---
+
+### Story 16.1: Criar Infraestrutura de Membros e State Machine
+
+As a sistema,
+I want ter tabelas de membros e validação de transições de estado,
+So that possa gerenciar o ciclo de vida dos membros.
+
+**Acceptance Criteria:**
+
+**Given** migration executada no Supabase
+**When** tabelas criadas
+**Then** estrutura inclui:
+  - `members` com campos: id, telegram_id, telegram_username, email, status, cakto_subscription_id, cakto_customer_id, trial_started_at, trial_ends_at, subscription_started_at, subscription_ends_at, payment_method, last_payment_at, kicked_at, created_at, updated_at
+  - `member_notifications` com campos: id, member_id, type, channel, sent_at, message_id
+  - `webhook_events` com campos: id, idempotency_key, event_type, payload, status, attempts, max_attempts, last_error, created_at, processed_at
+**And** índices criados para consultas frequentes
+
+**Given** função `canTransition(currentStatus, newStatus)` implementada
+**When** chamada com transição válida (ex: trial → ativo)
+**Then** retorna true
+**And** quando chamada com transição inválida (ex: removido → ativo)
+**Then** retorna false
+
+**Given** função `updateMemberStatus(memberId, newStatus)` chamada
+**When** transição é válida
+**Then** atualiza status e updated_at
+**And** quando transição é inválida
+**Then** retorna erro com código INVALID_MEMBER_STATUS
+
+**Technical Notes:**
+- Criar sql/migrations/002_membership_tables.sql
+- Criar sql/migrations/003_webhook_events.sql
+- Criar bot/services/memberService.js com VALID_TRANSITIONS
+- Seguir Service Response Pattern: { success, data/error }
+
+### Story 16.2: Criar Webhook Server com Event Sourcing
+
+As a sistema,
+I want receber webhooks do Cakto de forma segura e confiável,
+So that nunca perca eventos de pagamento.
+
+**Acceptance Criteria:**
+
+**Given** Express server configurado na porta 3001
+**When** request POST recebido em /webhooks/cakto
+**Then** aplica rate limiting (100 req/min por IP)
+**And** rejeita payloads > 1MB com status 413
+**And** valida assinatura HMAC-SHA256 do header
+**And** se assinatura inválida, retorna 401
+
+**Given** webhook com assinatura válida recebido
+**When** processado pelo handler
+**Then** salva evento raw na tabela `webhook_events` com status 'pending'
+**And** responde 200 imediatamente (< 200ms)
+**And** NÃO processa o evento síncronamente
+
+**Given** evento já recebido anteriormente (mesmo idempotency_key)
+**When** webhook duplicado chega
+**Then** retorna 200 sem criar novo registro
+**And** loga como "duplicate webhook ignored"
+
+**Given** servidor iniciado
+**When** GET /health chamado
+**Then** retorna { status: 'ok', port: 3001 }
+
+**Technical Notes:**
+- Criar bot/webhook-server.js (Express + helmet + rate-limit)
+- Criar bot/handlers/caktoWebhook.js
+- Validar HMAC com crypto.timingSafeEqual
+- Usar CAKTO_WEBHOOK_SECRET do .env
+- Logar com prefixo [cakto:webhook]
+
+### Story 16.3: Implementar Processamento Assíncrono de Webhooks
+
+As a sistema,
+I want processar eventos de pagamento do Cakto,
+So that membros sejam ativados/desativados automaticamente.
+
+**Acceptance Criteria:**
+
+**Given** job process-webhooks rodando a cada 30 segundos
+**When** eventos com status 'pending' existem
+**Then** processa cada evento em ordem de criação
+**And** atualiza status para 'processing' durante execução
+**And** atualiza status para 'completed' após sucesso
+**And** incrementa attempts e atualiza last_error em caso de falha
+
+**Given** evento `purchase_approved` recebido
+**When** processado
+**Then** busca ou cria membro pelo email/telegram_id
+**And** atualiza status para 'ativo'
+**And** registra cakto_subscription_id e cakto_customer_id
+**And** registra payment_method (pix/boleto/cartao_recorrente)
+**And** registra subscription_started_at e calcula subscription_ends_at
+
+**Given** evento `subscription_renewed` recebido
+**When** processado
+**Then** atualiza last_payment_at
+**And** recalcula subscription_ends_at (+30 dias)
+**And** se status era 'inadimplente', muda para 'ativo'
+
+**Given** evento `subscription_renewal_refused` ou `subscription_canceled` recebido
+**When** processado
+**Then** muda status para 'inadimplente' (se era ativo)
+**And** agenda kick imediato (via flag ou fila)
+
+**Given** evento com attempts >= max_attempts (5)
+**When** job tenta processar
+**Then** muda status para 'failed'
+**And** envia alerta para admin com detalhes do erro
+
+**Technical Notes:**
+- Criar bot/jobs/membership/process-webhooks.js
+- Criar bot/services/caktoService.js para OAuth + API
+- Usar lock distribuído via lib/lock.js
+- Handler registry: WEBHOOK_HANDLERS[event_type]
+- Logar com prefixo [membership:process-webhooks]
+
+### Story 16.4: Implementar Detecção de Entrada e Sistema de Trial
+
+As a novo membro,
+I want ser registrado automaticamente quando entro no grupo,
+So that tenha 7 dias de trial para experimentar o serviço.
+
+**Acceptance Criteria:**
+
+**Given** novo usuário entra no grupo público (via new_chat_members)
+**When** bot detecta o evento
+**Then** cria registro em `members` com:
+  - telegram_id do usuário
+  - telegram_username (se disponível)
+  - status = 'trial'
+  - trial_started_at = NOW()
+  - trial_ends_at = NOW() + 7 dias (configurável)
+**And** envia mensagem de boas-vindas no privado
+
+**Given** usuário já existe na tabela members
+**When** entra novamente no grupo
+**Then** NÃO cria registro duplicado
+**And** se status era 'removido' e kicked_at < 24h, permite reentrada
+**And** se kicked_at > 24h, envia mensagem pedindo pagamento
+
+**Given** membro em trial
+**When** função `getTrialDaysRemaining(memberId)` chamada
+**Then** retorna número de dias restantes (0 a 7)
+**And** retorna 0 se trial já expirou
+
+**Given** configuração global de trial
+**When** variável TRIAL_DAYS alterada
+**Then** novos membros usam o novo valor
+**And** membros existentes mantêm seu trial original
+
+**Formato mensagem boas-vindas:**
+```
+👋 Bem-vindo ao [Nome do Grupo]!
+
+Você tem *7 dias grátis* para experimentar nossas apostas.
+
+📊 Receba 3 apostas diárias com análise estatística
+📈 Taxa de acerto histórica: XX%
+
+Após o trial, continue por apenas R$50/mês.
+
+💡 Dúvidas? Fale com @operador
+```
+
+**Technical Notes:**
+- Criar handler em bot/handlers/memberEvents.js
+- Usar evento 'new_chat_members' do Telegram
+- Função getMemberByTelegramId() em memberService.js
+- Função createTrialMember() em memberService.js
+- Config TRIAL_DAYS em lib/config.js (default: 7)
+
+### Story 16.5: Implementar Notificações de Cobrança
+
+As a operador,
+I want que membros recebam lembretes de pagamento automaticamente,
+So that a conversão de trial e renovação seja maximizada.
+
+**Acceptance Criteria:**
+
+**Given** job trial-reminders rodando às 09:00 BRT
+**When** membro está no dia 5, 6 ou 7 do trial
+**Then** envia mensagem privada com lembrete
+**And** registra em `member_notifications` (type: 'trial_reminder')
+**And** NÃO envia se já enviou hoje (mesmo type)
+
+**Given** job renewal-reminders rodando às 10:00 BRT
+**When** membro ativo com PIX/Boleto está a 5, 3 ou 1 dia da renovação
+**Then** envia mensagem privada com lembrete
+**And** registra em `member_notifications` (type: 'renewal_reminder')
+**And** NÃO envia se payment_method = 'cartao_recorrente'
+
+**Given** qualquer mensagem de cobrança
+**When** enviada ao membro
+**Then** inclui link de checkout Cakto personalizado
+**And** inclui dias restantes de forma clara
+**And** usa tom amigável, não agressivo
+
+**Formato lembrete trial (dia 5):**
+```
+⏰ Seu trial termina em *3 dias*!
+
+Você está aproveitando as apostas?
+
+Continue recebendo análises diárias por R$50/mês:
+👉 [ASSINAR AGORA](link_cakto)
+
+Dúvidas? @operador
+```
+
+**Formato lembrete renovação (PIX/Boleto):**
+```
+💳 Sua assinatura renova em *5 dias*
+
+Para não perder acesso, efetue o pagamento:
+👉 [PAGAR AGORA](link_cakto)
+
+⚠️ Pagamentos via PIX/Boleto precisam ser feitos manualmente.
+```
+
+**Technical Notes:**
+- Criar bot/jobs/membership/trial-reminders.js (09:00 BRT)
+- Criar bot/jobs/membership/renewal-reminders.js (10:00 BRT)
+- Função sendPrivateMessage(telegramId, message)
+- Função hasNotificationToday(memberId, type)
+- Função getCheckoutLink(memberId) via caktoService
+- Logar com prefixo [membership:trial-reminders] e [membership:renewal-reminders]
+
+### Story 16.6: Implementar Remoção Automática de Inadimplentes
+
+As a operador,
+I want que membros inadimplentes sejam removidos automaticamente,
+So that não precise fazer isso manualmente.
+
+**Acceptance Criteria:**
+
+**Given** job kick-expired rodando às 00:01 BRT
+**When** membro tem status 'trial' e trial_ends_at < NOW()
+**Then** envia mensagem de despedida no privado
+**And** remove (kick) membro do grupo via API Telegram
+**And** atualiza status para 'removido'
+**And** registra kicked_at = NOW()
+
+**Given** evento de cancelamento/falha de renovação processado
+**When** membro marcado para kick imediato
+**Then** envia mensagem de despedida no privado
+**And** remove membro do grupo imediatamente
+**And** atualiza status para 'removido'
+
+**Given** kick executado
+**When** API Telegram falha
+**Then** registra erro e tenta novamente na próxima execução
+**And** alerta admin após 3 tentativas falhas
+
+**Given** membro removido
+**When** mensagem de despedida enviada
+**Then** inclui motivo da remoção (trial expirado ou pagamento falhou)
+**And** inclui link para reativar assinatura
+**And** informa período de graça de 24h para voltar
+
+**Formato mensagem despedida (trial):**
+```
+😔 Seu trial de 7 dias terminou
+
+Sentiremos sua falta!
+
+Para voltar a receber nossas apostas:
+👉 [ASSINAR POR R$50/MÊS](link_cakto)
+
+⏰ Você tem 24h para reativar e voltar ao grupo.
+```
+
+**Formato mensagem despedida (inadimplente):**
+```
+⚠️ Sua assinatura não foi renovada
+
+Você foi removido do grupo por falta de pagamento.
+
+Para reativar seu acesso:
+👉 [PAGAR AGORA](link_cakto)
+
+⏰ Regularize em 24h para voltar automaticamente.
+```
+
+**Technical Notes:**
+- Criar bot/jobs/membership/kick-expired.js (00:01 BRT)
+- Função kickMember(telegramId, chatId) via Telegram API
+- Função sendFarewellMessage(memberId, reason)
+- Usar banChatMember com until_date para permitir reentrada
+- Logar com prefixo [membership:kick-expired]
+
+### Story 16.7: Implementar Comandos Admin para Gestão de Membros
+
+As a operador,
+I want ter comandos para gerenciar membros manualmente,
+So that possa ter controle total sobre o grupo.
+
+**Acceptance Criteria:**
+
+**Given** operador envia `/membros` no grupo admin
+**When** bot processa comando
+**Then** exibe resumo:
+  - Total de membros ativos
+  - Total em trial
+  - Total inadimplentes
+  - MRR (Monthly Recurring Revenue)
+  - Taxa de conversão (trial → ativo)
+
+**Given** operador envia `/membro @username` no grupo admin
+**When** bot processa comando
+**Then** exibe status detalhado do membro:
+  - Status atual (trial/ativo/inadimplente/removido)
+  - Data de entrada
+  - Dias restantes (trial ou assinatura)
+  - Método de pagamento
+  - Última renovação
+  - Histórico de notificações enviadas
+
+**Given** operador envia `/trial 14` no grupo admin
+**When** bot processa comando
+**Then** altera TRIAL_DAYS global para 14
+**And** confirma: "✅ Trial alterado para 14 dias (novos membros)"
+
+**Given** operador envia `/add_trial @username` no grupo admin
+**When** bot processa comando
+**Then** cria membro com status 'trial' se não existe
+**And** se já existe, reinicia trial
+**And** confirma com detalhes
+
+**Given** operador envia `/remover_membro @username` no grupo admin
+**When** bot processa comando
+**Then** remove membro do grupo via API
+**And** atualiza status para 'removido'
+**And** registra motivo: 'manual_removal'
+**And** confirma: "✅ @username removido do grupo"
+
+**Given** operador envia `/estender @username 7` no grupo admin
+**When** bot processa comando
+**Then** adiciona 7 dias à subscription_ends_at ou trial_ends_at
+**And** confirma: "✅ @username estendido por 7 dias (cortesia)"
+**And** registra em notes: 'cortesia +7 dias'
+
+**Formato /membros:**
+```
+📊 *MEMBROS DO GRUPO*
+
+👥 Total: 150 membros
+✅ Ativos: 120
+🆓 Trial: 25
+⚠️ Inadimplentes: 5
+
+💰 MRR: R$ 6.000,00
+📈 Conversão: 48% (trial → ativo)
+
+💡 Use /membro @user para detalhes
+```
+
+**Technical Notes:**
+- Adicionar handlers em bot/handlers/adminGroup.js
+- Funções em memberService.js: getMemberStats(), getMemberDetails()
+- Função setTrialDays() para config global
+- Função extendMembership(memberId, days)
+
+### Story 16.8: Implementar Reconciliação com Cakto
+
+As a sistema,
+I want reconciliar estado dos membros com o Cakto diariamente,
+So that detecte e corrija dessincronizações.
+
+**Acceptance Criteria:**
+
+**Given** job reconciliation rodando às 03:00 BRT
+**When** executa
+**Then** busca todos os membros com status 'ativo' ou 'trial'
+**And** para cada membro com cakto_subscription_id, consulta API Cakto
+**And** compara status local vs status Cakto
+
+**Given** membro local 'ativo' mas Cakto retorna 'canceled'
+**When** dessincronização detectada
+**Then** NÃO corrige automaticamente
+**And** envia alerta para admin:
+  - Membro afetado
+  - Status local vs Cakto
+  - Ação sugerida: "verificar manualmente"
+
+**Given** membro local 'trial' sem cakto_subscription_id
+**When** reconciliação executa
+**Then** ignora (trial não tem assinatura ainda)
+
+**Given** API Cakto indisponível
+**When** reconciliação tenta consultar
+**Then** loga erro e continua com próximo membro
+**And** ao final, reporta quantos falharam
+**And** se > 50% falhou, alerta admin
+
+**Given** reconciliação concluída
+**When** job termina
+**Then** loga resumo:
+  - Total verificados
+  - Total sincronizados
+  - Total dessincronizados
+  - Total com erro de API
+**And** se houver dessincronizações, envia alerta consolidado
+
+**Formato alerta dessincronização:**
+```
+⚠️ *DESSINCRONIZAÇÃO DETECTADA*
+
+Job: Reconciliação 03:00
+
+*2 membros com estado divergente:*
+
+👤 @user1
+   Local: ativo | Cakto: canceled
+   💡 Verificar se deve remover
+
+👤 @user2
+   Local: ativo | Cakto: expired
+   💡 Verificar pagamento
+
+🔧 Ação: Verificação manual necessária
+```
+
+**Technical Notes:**
+- Criar bot/jobs/membership/reconciliation.js (03:00 BRT)
+- Usar caktoService.getSubscription(subscriptionId)
+- Lock de 15 minutos (reconciliação pode demorar)
+- Rate limit nas chamadas Cakto (evitar throttling)
+- Logar com prefixo [membership:reconciliation]
+
+---
+
+## Ordem de Implementação - Epic 16
+
+1. Story 16.1 (Infraestrutura DB + State Machine) → Base
+2. Story 16.2 (Webhook Server + Event Sourcing) → Integração
+3. Story 16.3 (Processamento Webhooks) → Core
+4. Story 16.4 (Detecção Entrada + Trial) → Onboarding
+5. Story 16.5 (Notificações Cobrança) → Monetização
+6. Story 16.6 (Remoção Automática) → Enforcement
+7. Story 16.7 (Comandos Admin) → Operação
+8. Story 16.8 (Reconciliação Cakto) → Resiliência
