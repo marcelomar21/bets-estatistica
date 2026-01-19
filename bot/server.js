@@ -167,33 +167,58 @@ function setupScheduler() {
   const { runRequestLinks } = require('./jobs/requestLinks');
   const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
+  const { runTrackResults } = require('./jobs/trackResults');
+  const { runReminders } = require('./jobs/reminders');
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
   const { runTrialReminders } = require('./jobs/membership/trial-reminders');
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
   const { runReconciliation } = require('./jobs/membership/reconciliation');
+  const { withExecutionLogging } = require('./services/jobExecutionService');
 
   const TZ = 'America/Sao_Paulo';
 
-  // Morning prep - 08:00 São Paulo
-  cron.schedule('0 8 * * *', async () => {
-    logger.info('Running morning-prep job');
+  // Track results - 02:00 São Paulo (pega jogos noturnos que terminam após meia-noite)
+  cron.schedule('0 2 * * *', async () => {
+    logger.info('[scheduler] Running track-results job');
     try {
-      await runEnrichment();
-      await runRequestLinks('morning');
+      await withExecutionLogging('track-results', runTrackResults);
+      logger.info('[scheduler] track-results complete');
     } catch (err) {
-      logger.error('morning-prep failed', { error: err.message });
+      logger.error('[scheduler] track-results failed', { error: err.message });
     }
   }, { timezone: TZ });
 
-  // Trial reminders - 09:00 São Paulo (Story 16.5)
+  // Morning prep - 08:00 São Paulo
+  cron.schedule('0 8 * * *', async () => {
+    logger.info('[scheduler] Running morning-prep jobs');
+    try {
+      await withExecutionLogging('enrich-odds', runEnrichment);
+      await withExecutionLogging('request-links', () => runRequestLinks('morning'));
+      logger.info('[scheduler] morning-prep complete');
+    } catch (err) {
+      logger.error('[scheduler] morning-prep failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Trial reminders + Link reminders - 09:00 São Paulo
   cron.schedule('0 9 * * *', async () => {
+    // Story 16.5: Trial reminders first
     logger.info('[scheduler] Running trial-reminders job');
     try {
-      const result = await runTrialReminders();
-      logger.info('[scheduler] trial-reminders complete', result);
+      await withExecutionLogging('trial-reminders', runTrialReminders);
+      logger.info('[scheduler] trial-reminders complete');
     } catch (err) {
       logger.error('[scheduler] trial-reminders failed', { error: err.message });
+    }
+
+    // Link reminders (follow-up após requestLinks das 08:00)
+    logger.info('[scheduler] Running reminders job');
+    try {
+      await withExecutionLogging('reminders', runReminders);
+      logger.info('[scheduler] reminders complete');
+    } catch (err) {
+      logger.error('[scheduler] reminders failed', { error: err.message });
     }
   }, { timezone: TZ });
 
@@ -202,60 +227,19 @@ function setupScheduler() {
     // Story 16.5: Renewal reminders first
     logger.info('[scheduler] Running renewal-reminders job');
     try {
-      const result = await runRenewalReminders();
-      logger.info('[scheduler] renewal-reminders complete', result);
+      await withExecutionLogging('renewal-reminders', runRenewalReminders);
+      logger.info('[scheduler] renewal-reminders complete');
     } catch (err) {
       logger.error('[scheduler] renewal-reminders failed', { error: err.message });
     }
 
     // Then post bets
-    logger.info('Running morning-post job');
+    logger.info('[scheduler] Running morning-post job');
     try {
-      await runPostBets('morning');
+      await withExecutionLogging('post-bets', () => runPostBets('morning'));
+      logger.info('[scheduler] morning-post complete');
     } catch (err) {
-      logger.error('morning-post failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Afternoon prep - 13:00 São Paulo
-  cron.schedule('0 13 * * *', async () => {
-    logger.info('Running afternoon-prep job');
-    try {
-      await runEnrichment();
-      await runRequestLinks('afternoon');
-    } catch (err) {
-      logger.error('afternoon-prep failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Afternoon post - 15:00 São Paulo
-  cron.schedule('0 15 * * *', async () => {
-    logger.info('Running afternoon-post job');
-    try {
-      await runPostBets('afternoon');
-    } catch (err) {
-      logger.error('afternoon-post failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Night prep - 20:00 São Paulo
-  cron.schedule('0 20 * * *', async () => {
-    logger.info('Running night-prep job');
-    try {
-      await runEnrichment();
-      await runRequestLinks('night');
-    } catch (err) {
-      logger.error('night-prep failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Night post - 22:00 São Paulo
-  cron.schedule('0 22 * * *', async () => {
-    logger.info('Running night-post job');
-    try {
-      await runPostBets('night');
-    } catch (err) {
-      logger.error('night-post failed', { error: err.message });
+      logger.error('[scheduler] morning-post failed', { error: err.message });
     }
   }, { timezone: TZ });
 
@@ -284,8 +268,8 @@ function setupScheduler() {
   cron.schedule('1 0 * * *', async () => {
     logger.info('[scheduler] Running kick-expired job');
     try {
-      const result = await runKickExpired();
-      logger.info('[scheduler] kick-expired complete', result);
+      await withExecutionLogging('kick-expired', runKickExpired);
+      logger.info('[scheduler] kick-expired complete');
     } catch (err) {
       logger.error('[scheduler] kick-expired failed', { error: err.message });
     }
@@ -295,8 +279,8 @@ function setupScheduler() {
   cron.schedule('0 3 * * *', async () => {
     logger.info('[scheduler] Running reconciliation job');
     try {
-      const result = await runReconciliation();
-      logger.info('[scheduler] reconciliation complete', result);
+      await withExecutionLogging('reconciliation', runReconciliation);
+      logger.info('[scheduler] reconciliation complete');
     } catch (err) {
       logger.error('[scheduler] reconciliation failed', { error: err.message });
     }
@@ -305,14 +289,11 @@ function setupScheduler() {
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   00:01 - Kick expired members (membership)');
+  console.log('   02:00 - Track results');
   console.log('   03:00 - Cakto reconciliation (membership)');
-  console.log('   08:00 - Enrich + Request links');
-  console.log('   09:00 - Trial reminders (membership)');
-  console.log('   10:00 - Renewal reminders + Post bets (morning)');
-  console.log('   13:00 - Enrich + Request links');
-  console.log('   15:00 - Post bets (afternoon)');
-  console.log('   20:00 - Enrich + Request links');
-  console.log('   22:00 - Post bets (night)');
+  console.log('   08:00 - Enrich odds + Request links');
+  console.log('   09:00 - Trial reminders + Link reminders');
+  console.log('   10:00 - Renewal reminders + Post bets');
   console.log('   */5   - Health check');
   console.log('   */30s - Process webhooks (membership)');
 }

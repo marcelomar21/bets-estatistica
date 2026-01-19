@@ -29,7 +29,7 @@ const THRESHOLDS = {
 };
 
 // Scheduled post times (São Paulo timezone)
-const POST_SCHEDULE = [10, 15, 22]; // 10:00, 15:00, 22:00
+const POST_SCHEDULE = [10]; // Apenas 10:00 (simplificado)
 
 // Alert debounce cache (in-memory, resets on restart)
 const alertCache = new Map();
@@ -162,8 +162,8 @@ async function checkLastPosting() {
 
     // If we haven't passed any post time today, check yesterday's last post
     if (expectedPostHour === null) {
-      // Use yesterday's 22:00 as reference
-      expectedPostHour = 22;
+      // Use yesterday's last scheduled post as reference
+      expectedPostHour = POST_SCHEDULE[POST_SCHEDULE.length - 1];
     }
 
     // Calculate expected post time today

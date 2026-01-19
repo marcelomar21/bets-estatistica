@@ -8,6 +8,10 @@ const logger = require('../../lib/logger');
 const webhookAlertCache = new Map();
 const WEBHOOK_ALERT_DEBOUNCE_MINUTES = 5;
 
+// Debounce cache for job failure alerts
+const jobAlertCache = new Map();
+const JOB_ALERT_DEBOUNCE_MINUTES = 60;
+
 /**
  * Check if webhook alert can be sent (debounce logic)
  * Prevents sending the same event alert within WEBHOOK_ALERT_DEBOUNCE_MINUTES
@@ -28,6 +32,56 @@ function canSendWebhookAlert(eventId) {
 
   webhookAlertCache.set(cacheKey, now);
   return true;
+}
+
+/**
+ * Check if job failure alert can be sent (debounce logic)
+ * Prevents sending the same job alert within JOB_ALERT_DEBOUNCE_MINUTES
+ * @param {string} jobName - Job name
+ * @returns {boolean} - true if alert can be sent
+ */
+function canSendJobAlert(jobName) {
+  const cacheKey = `job_${jobName}`;
+  const lastSent = jobAlertCache.get(cacheKey);
+  const now = Date.now();
+  const debounceMs = JOB_ALERT_DEBOUNCE_MINUTES * 60 * 1000;
+
+  if (lastSent && (now - lastSent) < debounceMs) {
+    logger.debug('[alertService] Job alert debounced', { jobName });
+    return false;
+  }
+
+  jobAlertCache.set(cacheKey, now);
+  return true;
+}
+
+/**
+ * Send job failure alert to admin group
+ * Uses debounce pattern to prevent flooding admin with duplicate alerts
+ * @param {string} jobName - Job name that failed
+ * @param {string} errorMessage - Error details
+ * @param {string} executionId - Execution ID from job_executions table
+ * @returns {Promise<{success: boolean, debounced?: boolean}>}
+ */
+async function jobFailureAlert(jobName, errorMessage, executionId) {
+  if (!canSendJobAlert(jobName)) {
+    logger.info('[alertService] Job failure alert debounced', { jobName, executionId });
+    return { success: true, debounced: true };
+  }
+
+  const text = `
+🔴 *JOB FAILED*
+
+📋 *Job:* ${jobName}
+🔑 *ID:* \`${executionId || 'N/A'}\`
+
+❌ *Erro:*
+${errorMessage}
+
+🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+  `.trim();
+
+  return sendToAdmin(text);
 }
 
 /**
@@ -245,4 +299,5 @@ module.exports = {
   postingFailureAlert,
   healthCheckAlert,
   webhookProcessingAlert,
+  jobFailureAlert,
 };

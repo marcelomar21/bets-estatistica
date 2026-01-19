@@ -388,12 +388,12 @@ bot/                       # Módulo Telegram Bot
 ├── handlers/
 │   └── adminGroup.js      # Comandos admin
 ├── jobs/
-│   ├── requestLinks.js    # 8h/13h/20h
-│   ├── postBets.js        # 10h/15h/22h
-│   ├── enrichOdds.js      # Enriquece com odds
-│   ├── healthCheck.js     # Health check
-│   ├── reminders.js       # Lembretes
-│   └── trackResults.js    # Tracking resultados
+│   ├── requestLinks.js    # 8h
+│   ├── postBets.js        # 10h
+│   ├── enrichOdds.js      # 8h (enriquece com odds)
+│   ├── healthCheck.js     # */5min
+│   ├── reminders.js       # 9h (follow-up links)
+│   └── trackResults.js    # 2h (tracking resultados)
 └── services/
     ├── betService.js      # CRUD + estados
     ├── oddsService.js     # The Odds API
@@ -401,7 +401,8 @@ bot/                       # Módulo Telegram Bot
     ├── copyService.js     # Copy LLM
     ├── matchService.js    # Queries partidas
     ├── metricsService.js  # Taxa acerto
-    └── marketInterpreter.js # Interpreta mercados
+    ├── marketInterpreter.js # Interpreta mercados
+    └── jobExecutionService.js # Logging de execução de jobs
 
 lib/                       # Bibliotecas compartilhadas
 ├── db.js                  # PostgreSQL Pool (fonte única)
@@ -485,4 +486,4 @@ sql/migrations/
 
 ---
 
-_Última atualização: 2026-01-17_
+_Última atualização: 2026-01-18_
