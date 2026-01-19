@@ -228,33 +228,9 @@ async function checkJobsHealth() {
   const now = new Date();
 
   try {
-    // 1. Check pending_link bets stuck for too long
-    // Only consider bets with kickoff in the posting window (next 2 days)
-    const pendingCutoff = new Date(now - THRESHOLDS.PENDING_LINK_MAX_HOURS * 60 * 60 * 1000);
-    const maxKickoff = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days ahead
-    const { data: stuckPending, error: pendingError } = await supabase
-      .from('suggested_bets')
-      .select(`
-        id,
-        created_at,
-        league_matches!inner (kickoff_time)
-      `)
-      .eq('bet_status', 'pending_link')
-      .lt('created_at', pendingCutoff.toISOString())
-      .gte('league_matches.kickoff_time', now.toISOString())
-      .lte('league_matches.kickoff_time', maxKickoff.toISOString());
+    // Note: stuck_pending_link check removed (redundant with /apostas command)
 
-    if (pendingError) {
-      logger.error('Health check: Failed to query pending bets', { error: pendingError.message });
-    } else if (stuckPending && stuckPending.length > 0) {
-      issues.push({
-        type: 'stuck_pending_link',
-        count: stuckPending.length,
-        message: `${stuckPending.length} bet(s) waiting for links > ${THRESHOLDS.PENDING_LINK_MAX_HOURS}h`
-      });
-    }
-
-    // 2. Check ready bets not posted for too long
+    // 1. Check ready bets not posted for too long
     // Only consider bets with kickoff in the posting window (next 2 days)
     const readyCutoff = new Date(now - THRESHOLDS.READY_NOT_POSTED_HOURS * 60 * 60 * 1000);
     const maxKickoffTime = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days ahead

@@ -118,4 +118,209 @@ async function withExecutionLogging(jobName, fn) {
   }
 }
 
-module.exports = { startExecution, finishExecution, withExecutionLogging };
+// Cache for getLatestExecutions (30s TTL)
+let executionsCache = {
+  data: null,
+  timestamp: 0,
+  TTL_MS: 30000
+};
+
+/**
+ * Reset the executions cache (for testing)
+ */
+function _resetCache() {
+  executionsCache.data = null;
+  executionsCache.timestamp = 0;
+}
+
+/**
+ * Format job result JSONB to human-readable string
+ * @param {string} jobName - Name of the job
+ * @param {object} result - Result JSONB from database
+ * @returns {string} - Formatted result string (max 30 chars)
+ */
+function formatResult(jobName, result) {
+  if (!result) return '';
+
+  try {
+    // Format based on job type
+    switch (jobName) {
+      case 'pipeline':
+        if (result.analysesGenerated !== undefined) {
+          return `${result.analysesGenerated} análises`;
+        }
+        if (result.stepsRun !== undefined) {
+          const skipped = result.stepsSkipped ? `, ${result.stepsSkipped} skip` : '';
+          return `${result.stepsRun} steps${skipped}`;
+        }
+        if (result.dryRun) {
+          return 'dry-run';
+        }
+        return 'ok';
+
+      case 'post-bets':
+        const posted = result.posted || 0;
+        const reposted = result.reposted || 0;
+        if (posted > 0 || reposted > 0) {
+          return `${posted} posted, ${reposted} repost`;
+        }
+        return 'nenhuma';
+
+      case 'track-results':
+        const tracked = result.tracked || 0;
+        const green = result.green || 0;
+        const red = result.red || 0;
+        if (tracked > 0) {
+          return `${tracked} tracked (${green}G/${red}R)`;
+        }
+        return 'nenhum';
+
+      case 'kick-expired':
+        const kicked = result.kicked || result.count || 0;
+        return `${kicked} kicked`;
+
+      case 'enrich-odds':
+        const enriched = result.enriched || result.count || 0;
+        return `${enriched} enriched`;
+
+      case 'reminders':
+      case 'trial-reminders':
+      case 'renewal-reminders':
+        const sent = result.sent || result.count || 0;
+        return `${sent} sent`;
+
+      case 'reconciliation':
+        const reconciled = result.reconciled || result.count || 0;
+        return `${reconciled} reconciled`;
+
+      case 'request-links':
+        const requested = result.requested || result.count || 0;
+        return `${requested} requested`;
+
+      case 'healthCheck':
+        if (result.alerts && result.alerts.length > 0) {
+          return `${result.alerts.length} warns`;
+        }
+        return 'ok';
+
+      default:
+        // Generic: try to extract a count or stringify
+        if (typeof result.count === 'number') {
+          return `${result.count} items`;
+        }
+        const str = JSON.stringify(result);
+        return str.length > 30 ? str.substring(0, 27) + '...' : str;
+    }
+  } catch (err) {
+    logger.warn('[jobExecutionService] formatResult error', { jobName, error: err.message });
+  }
+
+  return '';
+}
+
+/**
+ * Get the latest execution of each job (for /status command)
+ * Uses DISTINCT ON to get one row per job_name, ordered by started_at DESC
+ * Results are cached for 30 seconds to prevent spam
+ * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
+ */
+async function getLatestExecutions() {
+  // Check cache
+  const now = Date.now();
+  if (executionsCache.data && (now - executionsCache.timestamp) < executionsCache.TTL_MS) {
+    logger.debug('[jobExecutionService] getLatestExecutions cache hit');
+    return { success: true, data: executionsCache.data, fromCache: true };
+  }
+
+  try {
+    // Supabase doesn't support DISTINCT ON, so we use RPC or a workaround
+    // Workaround: get recent executions and filter in JS
+    const { data, error } = await supabase
+      .from('job_executions')
+      .select('id, job_name, started_at, finished_at, status, duration_ms, result, error_message')
+      .order('started_at', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      logger.error('[jobExecutionService] getLatestExecutions query failed', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    // Get the latest execution for each job_name
+    const latestByJob = new Map();
+    for (const row of data || []) {
+      if (!latestByJob.has(row.job_name)) {
+        latestByJob.set(row.job_name, row);
+      }
+    }
+
+    const result = Array.from(latestByJob.values());
+
+    // Update cache
+    executionsCache.data = result;
+    executionsCache.timestamp = now;
+
+    logger.debug('[jobExecutionService] getLatestExecutions fetched', { count: result.length });
+    return { success: true, data: result };
+  } catch (err) {
+    logger.error('[jobExecutionService] getLatestExecutions error', { error: err.message });
+    return { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Cleanup stuck jobs - mark jobs with status='running' for over 1 hour as 'failed'
+ * Prevents orphaned records from jobs that crashed without finishing
+ * @returns {Promise<{success: boolean, data?: {cleaned: number}, error?: object}>}
+ */
+async function cleanupStuckJobs() {
+  try {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const { data, error } = await supabase
+      .from('job_executions')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: 'Timeout: job não finalizou'
+      })
+      .eq('status', 'running')
+      .lt('started_at', oneHourAgo)
+      .select('id');
+
+    if (error) {
+      logger.error('[jobExecutionService] cleanupStuckJobs update failed', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const cleaned = data?.length || 0;
+    if (cleaned > 0) {
+      logger.info('[jobExecutionService] cleanupStuckJobs cleaned stuck jobs', { cleaned });
+      // Invalidate cache so /status shows updated data
+      _resetCache();
+      // Alert admin about timed out jobs
+      await jobFailureAlert(
+        'cleanup-stuck-jobs',
+        `${cleaned} job(s) marcado(s) como failed por timeout (running > 1h)`,
+        null
+      );
+    } else {
+      logger.debug('[jobExecutionService] cleanupStuckJobs no stuck jobs found');
+    }
+
+    return { success: true, data: { cleaned } };
+  } catch (err) {
+    logger.error('[jobExecutionService] cleanupStuckJobs error', { error: err.message });
+    return { success: false, error: { code: 'INTERNAL_ERROR', message: err.message } };
+  }
+}
+
+module.exports = {
+  startExecution,
+  finishExecution,
+  withExecutionLogging,
+  getLatestExecutions,
+  cleanupStuckJobs,
+  formatResult,
+  _resetCache
+};

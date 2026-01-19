@@ -174,7 +174,7 @@ function setupScheduler() {
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
   const { runReconciliation } = require('./jobs/membership/reconciliation');
-  const { withExecutionLogging } = require('./services/jobExecutionService');
+  const { withExecutionLogging, cleanupStuckJobs } = require('./services/jobExecutionService');
 
   const TZ = 'America/Sao_Paulo';
 
@@ -286,6 +286,19 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
+  // Cleanup stuck job executions - every hour at minute 0
+  cron.schedule('0 * * * *', async () => {
+    logger.debug('[scheduler] Running cleanup-stuck-jobs');
+    try {
+      const result = await cleanupStuckJobs();
+      if (result.success && result.data.cleaned > 0) {
+        logger.info('[scheduler] cleanup-stuck-jobs complete', { cleaned: result.data.cleaned });
+      }
+    } catch (err) {
+      logger.error('[scheduler] cleanup-stuck-jobs failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   00:01 - Kick expired members (membership)');
@@ -296,6 +309,7 @@ function setupScheduler() {
   console.log('   10:00 - Renewal reminders + Post bets');
   console.log('   */5   - Health check');
   console.log('   */30s - Process webhooks (membership)');
+  console.log('   */1h  - Cleanup stuck jobs');
 }
 
 /**

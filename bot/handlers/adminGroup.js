@@ -11,6 +11,7 @@ const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
+const { getLatestExecutions, formatResult } = require('../services/jobExecutionService');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -281,19 +282,112 @@ async function handleApostasCommand(bot, msg, page = 1) {
 }
 
 /**
- * Handle /status command - Show bot status
+ * Handle /status command - Show bot status with job executions
  */
 async function handleStatusCommand(bot, msg) {
-  const statusText = `
-🤖 *Status do Bot*
+  const now = new Date();
+  const nowSP = now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-✅ Bot online (webhook mode)
-📊 Ambiente: ${config.env}
-🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
-  `.trim();
+  // Header always shows
+  let statusText = `🤖 *Status do Bot*\n\n✅ Bot online (webhook mode)\n📊 Ambiente: ${config.env}\n🕐 ${nowSP}\n`;
+
+  // Fetch job executions
+  const execResult = await getLatestExecutions();
+
+  if (!execResult.success) {
+    statusText += '\n⚠️ Erro ao buscar jobs';
+    await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
+    logger.warn('Status command: failed to fetch executions', { error: execResult.error?.message });
+    return;
+  }
+
+  const executions = execResult.data || [];
+
+  if (executions.length === 0) {
+    statusText += '\n📋 Nenhuma execução registrada';
+    await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
+    logger.info('Status command executed (no executions)');
+    return;
+  }
+
+  // Format job executions list
+  statusText += '\n📋 *Últimas Execuções:*\n';
+
+  let failCount = 0;
+  let warnCount = 0;
+  const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+
+  for (const exec of executions) {
+    const startedAt = new Date(exec.started_at);
+    const timeStr = startedAt.toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    let statusIcon;
+    let resultStr = '';
+
+    if (exec.status === 'running') {
+      // Check if running for too long (> 30 min)
+      const runningMs = Date.now() - startedAt.getTime();
+      const runningMin = Math.round(runningMs / 60000);
+
+      if (startedAt.getTime() < thirtyMinAgo) {
+        statusIcon = '⏳';
+        resultStr = `running há ${runningMin}min`;
+        warnCount++;
+      } else {
+        statusIcon = '🔄';
+        resultStr = 'running';
+      }
+    } else if (exec.status === 'failed') {
+      statusIcon = '❌';
+      resultStr = exec.error_message
+        ? (exec.error_message.length > 30 ? exec.error_message.substring(0, 27) + '...' : exec.error_message)
+        : 'erro';
+      failCount++;
+    } else if (exec.status === 'success') {
+      // Check if result has warnings (for healthCheck)
+      if (exec.result?.alerts?.length > 0) {
+        statusIcon = '⚠️';
+        warnCount++;
+      } else {
+        statusIcon = '✅';
+      }
+      resultStr = formatResult(exec.job_name, exec.result);
+    } else {
+      statusIcon = '❓';
+      resultStr = exec.status;
+    }
+
+    // Format line: icon job · HH:MM · result
+    const line = `${statusIcon} ${exec.job_name} · ${timeStr}${resultStr ? ` · ${resultStr}` : ''}`;
+    statusText += `${line}\n`;
+  }
+
+  // Add summary footer
+  if (failCount > 0 || warnCount > 0) {
+    statusText += '\n';
+    if (failCount > 0) statusText += `❌ ${failCount} falha(s)`;
+    if (failCount > 0 && warnCount > 0) statusText += ' │ ';
+    if (warnCount > 0) statusText += `⚠️ ${warnCount} warn(s)`;
+  }
+
+  // Truncate if too long (Telegram limit ~4096, use 2000 for safety)
+  // Truncate at line boundary to avoid breaking markdown
+  if (statusText.length > 2000) {
+    const lines = statusText.split('\n');
+    let truncated = '';
+    for (const line of lines) {
+      if ((truncated + line + '\n').length > 1990) break;
+      truncated += line + '\n';
+    }
+    statusText = truncated.trim() + '\n...';
+  }
 
   await bot.sendMessage(msg.chat.id, statusText, { parse_mode: 'Markdown' });
-  logger.info('Status command executed');
+  logger.info('Status command executed', { executions: executions.length, fromCache: execResult.fromCache });
 }
 
 /**

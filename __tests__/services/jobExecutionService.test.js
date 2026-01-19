@@ -23,7 +23,7 @@ jest.mock('../../bot/services/alertService', () => ({
   jobFailureAlert: jest.fn().mockResolvedValue({ success: true }),
 }));
 
-const { startExecution, finishExecution, withExecutionLogging } = require('../../bot/services/jobExecutionService');
+const { startExecution, finishExecution, withExecutionLogging, getLatestExecutions, cleanupStuckJobs, formatResult, _resetCache } = require('../../bot/services/jobExecutionService');
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { jobFailureAlert } = require('../../bot/services/alertService');
@@ -31,6 +31,7 @@ const { jobFailureAlert } = require('../../bot/services/alertService');
 describe('jobExecutionService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    _resetCache();
   });
 
   describe('startExecution', () => {
@@ -230,6 +231,274 @@ describe('jobExecutionService', () => {
         '[jobExecutionService] Running job without execution logging',
         { jobName: 'test-job' }
       );
+    });
+  });
+
+  describe('formatResult', () => {
+    test('retorna string vazia para result null', () => {
+      expect(formatResult('pipeline', null)).toBe('');
+    });
+
+    test('retorna string vazia para result undefined', () => {
+      expect(formatResult('pipeline', undefined)).toBe('');
+    });
+
+    test('retorna JSON para objeto vazio no job desconhecido', () => {
+      expect(formatResult('unknown-job', {})).toBe('{}');
+    });
+
+    test('retorna ok para pipeline com objeto vazio', () => {
+      expect(formatResult('pipeline', {})).toBe('ok');
+    });
+
+    test('formata pipeline com analysesGenerated', () => {
+      expect(formatResult('pipeline', { analysesGenerated: 5 })).toBe('5 análises');
+    });
+
+    test('formata pipeline com stepsRun', () => {
+      expect(formatResult('pipeline', { stepsRun: 3 })).toBe('3 steps');
+    });
+
+    test('formata pipeline com stepsRun e stepsSkipped', () => {
+      expect(formatResult('pipeline', { stepsRun: 3, stepsSkipped: 2 })).toBe('3 steps, 2 skip');
+    });
+
+    test('formata pipeline com dryRun', () => {
+      expect(formatResult('pipeline', { dryRun: true })).toBe('dry-run');
+    });
+
+    test('formata post-bets com posted e reposted', () => {
+      expect(formatResult('post-bets', { posted: 2, reposted: 1 })).toBe('2 posted, 1 repost');
+    });
+
+    test('formata post-bets sem postagens', () => {
+      expect(formatResult('post-bets', { posted: 0, reposted: 0 })).toBe('nenhuma');
+    });
+
+    test('formata track-results', () => {
+      expect(formatResult('track-results', { tracked: 5, green: 3, red: 2 })).toBe('5 tracked (3G/2R)');
+    });
+
+    test('formata track-results vazio', () => {
+      expect(formatResult('track-results', { tracked: 0 })).toBe('nenhum');
+    });
+
+    test('formata kick-expired', () => {
+      expect(formatResult('kick-expired', { kicked: 2 })).toBe('2 kicked');
+    });
+
+    test('formata enrich-odds', () => {
+      expect(formatResult('enrich-odds', { enriched: 4 })).toBe('4 enriched');
+    });
+
+    test('formata reminders', () => {
+      expect(formatResult('reminders', { sent: 3 })).toBe('3 sent');
+    });
+
+    test('formata trial-reminders', () => {
+      expect(formatResult('trial-reminders', { sent: 1 })).toBe('1 sent');
+    });
+
+    test('formata renewal-reminders', () => {
+      expect(formatResult('renewal-reminders', { count: 2 })).toBe('2 sent');
+    });
+
+    test('formata reconciliation', () => {
+      expect(formatResult('reconciliation', { reconciled: 10 })).toBe('10 reconciled');
+    });
+
+    test('formata request-links', () => {
+      expect(formatResult('request-links', { requested: 5 })).toBe('5 requested');
+    });
+
+    test('formata healthCheck com warns', () => {
+      expect(formatResult('healthCheck', { alerts: [1, 2] })).toBe('2 warns');
+    });
+
+    test('formata healthCheck ok', () => {
+      expect(formatResult('healthCheck', { alerts: [] })).toBe('ok');
+    });
+
+    test('formata job desconhecido com count', () => {
+      expect(formatResult('unknown-job', { count: 7 })).toBe('7 items');
+    });
+
+    test('formata job desconhecido com JSON truncado', () => {
+      const longResult = { data: 'some very long string that exceeds 30 characters limit' };
+      const result = formatResult('unknown-job', longResult);
+      expect(result.length).toBeLessThanOrEqual(30);
+      expect(result.endsWith('...')).toBe(true);
+    });
+  });
+
+  describe('getLatestExecutions', () => {
+    test('retorna lista vazia quando não há execuções', async () => {
+      const mockSelect = jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue({
+            data: [],
+            error: null,
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        select: mockSelect,
+      }));
+
+      const result = await getLatestExecutions();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
+    });
+
+    test('retorna última execução de cada job', async () => {
+      const mockData = [
+        { id: '1', job_name: 'post-bets', started_at: '2026-01-19T10:00:00Z', status: 'success' },
+        { id: '2', job_name: 'post-bets', started_at: '2026-01-19T08:00:00Z', status: 'success' },
+        { id: '3', job_name: 'pipeline', started_at: '2026-01-19T09:00:00Z', status: 'success' },
+      ];
+
+      const mockSelect = jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue({
+            data: mockData,
+            error: null,
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        select: mockSelect,
+      }));
+
+      const result = await getLatestExecutions();
+
+      expect(result.success).toBe(true);
+      expect(result.data.length).toBe(2); // post-bets and pipeline
+      expect(result.data.find(e => e.job_name === 'post-bets').id).toBe('1'); // mais recente
+    });
+
+    test('retorna erro quando query falha', async () => {
+      const mockSelect = jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'Database error' },
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        select: mockSelect,
+      }));
+
+      const result = await getLatestExecutions();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+
+    test('usa cache quando chamado em sequência rápida', async () => {
+      const mockData = [
+        { id: '1', job_name: 'post-bets', started_at: '2026-01-19T10:00:00Z', status: 'success' },
+      ];
+
+      const mockSelect = jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue({
+            data: mockData,
+            error: null,
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        select: mockSelect,
+      }));
+
+      // Primeira chamada - popula cache
+      const result1 = await getLatestExecutions();
+      expect(result1.success).toBe(true);
+
+      // Segunda chamada - deve usar cache
+      const result2 = await getLatestExecutions();
+      expect(result2.success).toBe(true);
+      expect(result2.fromCache).toBe(true);
+    });
+  });
+
+  describe('cleanupStuckJobs', () => {
+    test('não faz nada quando não há jobs stuck', async () => {
+      const mockUpdate = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          lt: jest.fn().mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+              data: [],
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        update: mockUpdate,
+      }));
+
+      const result = await cleanupStuckJobs();
+
+      expect(result.success).toBe(true);
+      expect(result.data.cleaned).toBe(0);
+    });
+
+    test('marca jobs stuck como failed', async () => {
+      const mockUpdate = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          lt: jest.fn().mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+              data: [{ id: '1' }, { id: '2' }],
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        update: mockUpdate,
+      }));
+
+      const result = await cleanupStuckJobs();
+
+      expect(result.success).toBe(true);
+      expect(result.data.cleaned).toBe(2);
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          error_message: 'Timeout: job não finalizou',
+        })
+      );
+    });
+
+    test('retorna erro quando update falha', async () => {
+      const mockUpdate = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          lt: jest.fn().mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'Update failed' },
+            }),
+          }),
+        }),
+      });
+
+      supabase.from.mockImplementation(() => ({
+        update: mockUpdate,
+      }));
+
+      const result = await cleanupStuckJobs();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
     });
   });
 });

@@ -22,6 +22,7 @@ require('dotenv').config();
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { withExecutionLogging } = require('../bot/services/jobExecutionService');
 
 const REPO_ROOT = path.join(__dirname, '..');
 
@@ -180,14 +181,12 @@ function checkRequirements(step) {
   return missing;
 }
 
-async function main() {
-  const options = parseArgs();
-
-  if (options.help) {
-    showHelp();
-    return;
-  }
-
+/**
+ * Run the pipeline steps (internal function for withExecutionLogging)
+ * @param {object} options - Parsed command line options
+ * @returns {Promise<{stepsRun: number, stepsSkipped: number}>}
+ */
+async function runPipeline(options) {
   console.log('🚀 Pipeline bets-estatistica\n');
   console.log('═'.repeat(60));
 
@@ -197,8 +196,7 @@ async function main() {
   if (options.step !== null) {
     const step = STEPS.find(s => s.id === options.step);
     if (!step) {
-      console.error(`❌ Step ${options.step} não encontrado`);
-      process.exit(1);
+      throw new Error(`Step ${options.step} não encontrado`);
     }
     stepsToRun = [step];
   } else if (options.from !== null) {
@@ -217,8 +215,11 @@ async function main() {
     for (const step of stepsToRun) {
       console.log(`  ${step.id}. ${step.name}: node ${step.script} ${step.args.join(' ')}`);
     }
-    return;
+    return { stepsRun: 0, stepsSkipped: 0, dryRun: true };
   }
+
+  let stepsRun = 0;
+  let stepsSkipped = 0;
 
   // Run each step
   for (const step of stepsToRun) {
@@ -230,28 +231,52 @@ async function main() {
     const missing = checkRequirements(step);
     if (missing.length > 0) {
       console.log(`\n⚠️  Pulando: variáveis faltando: ${missing.join(', ')}`);
+      stepsSkipped++;
       continue;
     }
 
     try {
       await runScript(step.script, step.args);
       console.log(`\n✅ Step ${step.id} concluído`);
+      stepsRun++;
     } catch (err) {
       console.error(`\n❌ Step ${step.id} falhou: ${err.message}`);
-      
+
       // Don't fail the whole pipeline for optional steps
       if (step.optional) {
         console.log('   (step opcional, continuando...)');
+        stepsSkipped++;
         continue;
       }
-      
-      process.exit(1);
+
+      throw err;
     }
   }
 
   console.log(`\n${'═'.repeat(60)}`);
   console.log('🎉 Pipeline concluído com sucesso!');
   console.log('═'.repeat(60));
+
+  return { stepsRun, stepsSkipped };
+}
+
+async function main() {
+  const options = parseArgs();
+
+  if (options.help) {
+    showHelp();
+    return;
+  }
+
+  // Wrap execution with logging (only if not dry-run and not help)
+  const result = await withExecutionLogging('pipeline', () => runPipeline(options));
+
+  // Force exit after a short delay to prevent hanging on pool close
+  setTimeout(() => {
+    process.exit(0);
+  }, 5000);
+
+  return result;
 }
 
 main().catch(err => {
