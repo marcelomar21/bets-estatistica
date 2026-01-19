@@ -65,19 +65,19 @@ describe('copyService', () => {
 
     test('gera copy com sucesso via LLM', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: 'Partida eletrizante! O histórico recente entre os times mostra que gols são praticamente garantidos neste clássico.',
+        content: '• Flamengo: 65% jogos com gols\n• Palmeiras: 70% ambas marcam\n• Média: 2,8 gols/jogo',
       });
 
       const result = await generateBetCopy(validBet);
 
       expect(result.success).toBe(true);
-      expect(result.data.copy).toContain('eletrizante');
+      expect(result.data.copy).toContain('• Flamengo');
       expect(result.data.fromCache).toBe(false);
     });
 
     test('retorna copy do cache na segunda chamada', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: 'Copy gerado pelo LLM para teste.',
+        content: '• Estatística: 80% de acerto\n• Dado importante aqui',
       });
 
       // First call - goes to LLM
@@ -95,15 +95,15 @@ describe('copyService', () => {
       expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
 
-    test('retorna erro quando LLM retorna copy muito curto', async () => {
+    test('retorna erro quando LLM retorna texto sem bullets', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: 'Curto',
+        content: 'Texto sem formato de bullet points',
       });
 
       const result = await generateBetCopy(validBet);
 
       expect(result.success).toBe(false);
-      expect(result.error.code).toBe('EMPTY_RESPONSE');
+      expect(result.error.code).toBe('INVALID_FORMAT');
     });
 
     test('retorna erro quando LLM retorna vazio', async () => {
@@ -114,20 +114,20 @@ describe('copyService', () => {
       const result = await generateBetCopy(validBet);
 
       expect(result.success).toBe(false);
-      expect(result.error.code).toBe('EMPTY_RESPONSE');
+      expect(result.error.code).toBe('INVALID_FORMAT');
     });
 
-    test('trunca copy muito longo', async () => {
-      const longCopy = 'A'.repeat(400);
+    test('limita a 5 bullets no máximo', async () => {
+      const manyBullets = '• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4\n• Bullet 5\n• Bullet 6\n• Bullet 7';
       mockInvoke.mockResolvedValueOnce({
-        content: longCopy,
+        content: manyBullets,
       });
 
       const result = await generateBetCopy(validBet);
 
       expect(result.success).toBe(true);
-      expect(result.data.copy.length).toBeLessThanOrEqual(300);
-      expect(result.data.copy.endsWith('...')).toBe(true);
+      const bulletCount = (result.data.copy.match(/•/g) || []).length;
+      expect(bulletCount).toBeLessThanOrEqual(5);
     });
 
     test('retorna erro quando LLM falha', async () => {
@@ -140,20 +140,20 @@ describe('copyService', () => {
       expect(result.error.message).toBe('API rate limit exceeded');
     });
 
-    test('remove espaços em branco extras do copy', async () => {
+    test('filtra linhas que não são bullets', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: '  Copy com espaços extras  \n  ',
+        content: 'Texto inicial\n• Bullet válido\nOutro texto\n• Segundo bullet',
       });
 
       const result = await generateBetCopy(validBet);
 
       expect(result.success).toBe(true);
-      expect(result.data.copy).toBe('Copy com espaços extras');
+      expect(result.data.copy).toBe('• Bullet válido\n• Segundo bullet');
     });
 
     test('funciona com bet sem odds', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: 'Copy sem odds especificada para partida.',
+        content: '• Estatística sem odds: 75%',
       });
 
       const betSemOdds = { ...validBet, odds: null };
@@ -164,7 +164,7 @@ describe('copyService', () => {
 
     test('funciona com bet sem reasoning', async () => {
       mockInvoke.mockResolvedValueOnce({
-        content: 'Copy sem reasoning especificado.',
+        content: '• Dado extraído: valor',
       });
 
       const betSemReasoning = { ...validBet, reasoning: null };
@@ -177,7 +177,7 @@ describe('copyService', () => {
   describe('clearCache', () => {
     test('limpa todo o cache', async () => {
       mockInvoke.mockResolvedValue({
-        content: 'Copy de teste para cache.',
+        content: '• Dado para cache: 50%',
       });
 
       // Generate some cached copies
@@ -197,7 +197,7 @@ describe('copyService', () => {
   describe('clearBetCache', () => {
     test('limpa cache de aposta específica', async () => {
       mockInvoke.mockResolvedValue({
-        content: 'Copy de teste para cache específico.',
+        content: '• Dado para cache específico: 75%',
       });
 
       // Generate cached copy
@@ -234,7 +234,7 @@ describe('copyService', () => {
 
     test('reflete tamanho atual do cache', async () => {
       mockInvoke.mockResolvedValue({
-        content: 'Copy para estatísticas.',
+        content: '• Estatística para teste: 90%',
       });
 
       expect(getCacheStats().size).toBe(0);
