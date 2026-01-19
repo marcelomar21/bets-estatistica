@@ -19,8 +19,12 @@ const {
   MATCH_COMPLETION_GRACE_HOURS,
 } = require('../../scripts/lib/matchScreening');
 const { buildIntermediateFileName } = require('../shared/naming');
+const { saveOutputs } = require('../persistence/saveOutputs');
+const pLimit = require('p-limit');
 
 const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
+const CONCURRENCY_LIMIT = Math.max(1, Math.min(10, Number(process.env.AGENT_CONCURRENCY) || 5));
+const MATCH_TIMEOUT_MS = Number(process.env.AGENT_MATCH_TIMEOUT_MS) || 10 * 60 * 1000; // 10 min default
 const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
 const SQL_DUMPS_DIR = path.join(__dirname, '../../data/sql_debug');
 const TABLE_SCHEMA_HINT = `
@@ -1223,41 +1227,86 @@ const processMatch = async (matchId) => {
     }),
   );
   await fs.writeJson(outputFile, payload, { spaces: 2 });
-  console.log(`Análise estruturada salva em ${outputFile}`);
-  return { generatedAt, outputFile };
+  infoLog(`[match:${matchId}] JSON salvo: ${outputFile}`);
+
+  // Persistir imediatamente no banco (não esperar step 5)
+  let persisted = false;
+  try {
+    const persistResult = await saveOutputs(matchId);
+    infoLog(`[match:${matchId}] Persistido no banco: ${persistResult.betsPersisted} bet(s)${persistResult.usedFallback ? ' [fallback]' : ''}`);
+    persisted = true;
+  } catch (persistErr) {
+    infoLog(`[match:${matchId}] AVISO: falha ao persistir no banco: ${persistErr.message} (JSON salvo como backup)`);
+    // Não falha o processo - JSON foi salvo como backup
+  }
+
+  return { generatedAt, outputFile, persisted };
 };
 
 async function main() {
   const matchIds = await resolveMatchTargets();
-  let successCount = 0;
-  let failCount = 0;
-  const failures = [];
+  const limit = pLimit(CONCURRENCY_LIMIT);
 
-  for (let index = 0; index < matchIds.length; index += 1) {
-    const matchId = matchIds[index];
-    infoLog(`Iniciando análise ${index + 1}/${matchIds.length} para match_id ${matchId}.`);
-    try {
-      const { generatedAt } = await processMatch(matchId);
-      await setQueueStatus(matchId, 'analise_completa', {
-        analysisGeneratedAt: generatedAt,
-        clearErrorReason: true,
-      });
-      successCount += 1;
-    } catch (err) {
-      console.error(`[agent][analysis] Falha ao processar match ${matchId}: ${err.message}`);
-      await setQueueStatus(matchId, 'pending', { errorReason: err.message });
-      failCount += 1;
-      failures.push({ matchId, error: err.message });
-    }
+  infoLog(`Processando ${matchIds.length} jogo(s) com concorrência ${CONCURRENCY_LIMIT}`);
+
+  const withTimeout = (promise, ms, matchId) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout após ${ms / 1000}s`)), ms)
+      ),
+    ]);
+
+  const results = await Promise.allSettled(
+    matchIds.map((matchId, index) =>
+      limit(async () => {
+        infoLog(`[match:${matchId}] Iniciando análise (${index + 1}/${matchIds.length})`);
+        try {
+          const { generatedAt, persisted } = await withTimeout(
+            processMatch(matchId),
+            MATCH_TIMEOUT_MS,
+            matchId
+          );
+          // Nota: saveOutputs() já atualiza status para 'relatorio_concluido'
+          // Só atualiza para 'analise_completa' se persistência falhou (backup em JSON)
+          if (!persisted) {
+            await setQueueStatus(matchId, 'analise_completa', {
+              analysisGeneratedAt: generatedAt,
+              clearErrorReason: true,
+            });
+          }
+          return { matchId, success: true, persisted };
+        } catch (err) {
+          console.error(`[agent][analysis] Falha match ${matchId}: ${err.message}`);
+          await setQueueStatus(matchId, 'pending', { errorReason: err.message });
+          return { matchId, success: false, error: err.message };
+        }
+      })
+    )
+  );
+
+  const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success);
+  const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
+  const persistedCount = succeeded.filter(r => r.value.persisted).length;
+  const notPersistedCount = succeeded.length - persistedCount;
+
+  infoLog(`Resumo: ${succeeded.length} sucesso(s), ${failed.length} falha(s) de ${matchIds.length} total.`);
+  infoLog(`Persistência: ${persistedCount} no banco, ${notPersistedCount} apenas JSON (requer step 5).`);
+
+  if (failed.length > 0) {
+    const failedIds = failed.map(r => {
+      if (r.status === 'rejected') return `unknown (${r.reason?.message || 'error'})`;
+      return r.value.matchId;
+    });
+    infoLog(`Matches com falha: ${failedIds.join(', ')}`);
   }
 
-  infoLog(`Resumo: ${successCount} sucesso(s), ${failCount} falha(s) de ${matchIds.length} total.`);
-  if (failures.length > 0) {
-    infoLog(`Matches com falha: ${failures.map((f) => f.matchId).join(', ')}`);
+  if (notPersistedCount > 0) {
+    infoLog(`AVISO: ${notPersistedCount} análise(s) salvas apenas em JSON. Execute 'node agent/persistence/main.js' para persistir.`);
   }
 
   // Só falha o script se NENHUM match foi processado com sucesso
-  if (successCount === 0 && matchIds.length > 0) {
+  if (succeeded.length === 0 && matchIds.length > 0) {
     process.exitCode = 1;
   }
 }

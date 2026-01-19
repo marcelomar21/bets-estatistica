@@ -64,10 +64,10 @@ const STEPS = [
   {
     id: 5,
     name: 'save-outputs',
-    description: 'Salva análises e apostas no banco',
+    description: 'Fallback: persiste análises não salvas no step 4',
     script: 'agent/persistence/main.js',
     args: [],
-    optional: false,
+    optional: true, // run-analysis agora persiste imediatamente; este é fallback
   },
   {
     id: 6,
@@ -205,8 +205,8 @@ async function main() {
     stepsToRun = STEPS.filter(s => s.id >= options.from);
   }
 
-  // Filter out optional steps if running full pipeline
-  if (options.step === null && options.from === null) {
+  // Filter out optional steps unless explicitly requested with --step=X
+  if (options.step === null) {
     stepsToRun = stepsToRun.filter(s => !s.optional);
   }
 
