@@ -1317,5 +1317,14 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await closePool();
+    try {
+      await closePool();
+    } catch (e) {
+      console.error('[agent][analysis] Erro ao fechar pool:', e.message);
+    }
+    // Força saída após 5s se ainda houver algo pendente
+    setTimeout(() => {
+      infoLog('Forçando saída do processo...');
+      process.exit(process.exitCode || 0);
+    }, 5000).unref();
   });
