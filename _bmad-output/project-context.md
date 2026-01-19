@@ -486,4 +486,33 @@ sql/migrations/
 
 ---
 
-_Última atualização: 2026-01-18_
+## Monitoramento & Infraestrutura
+
+### Hosting
+- **Bot:** Render.com (`bets-bot-giga.onrender.com`)
+- **Database:** Supabase (PostgreSQL)
+- **Pipeline:** GitHub Actions (daily-pipeline.yml, 06:00 BRT)
+
+### UptimeRobot (Externo)
+- **URL:** `bets-bot-giga.onrender.com`
+- **Intervalo:** 5 minutos
+- **Função:** Detecta se bot caiu (heartbeat externo)
+- **Dashboard:** https://dashboard.uptimerobot.com/monitors
+
+### Health Check (Interno)
+- **Arquivo:** `bot/jobs/healthCheck.js`
+- **Intervalo:** 5 minutos (cron)
+- **Função:** Verifica conexão com DB, alerta no Telegram se falhar
+- **NÃO faz:** Verificar stuck bets, posting schedule (redundante com `/status` e `jobFailureAlert`)
+
+### Alertas Automáticos
+| Evento | Quem alerta | Canal |
+|--------|-------------|-------|
+| Bot offline | UptimeRobot | Email/Telegram |
+| DB offline | healthCheck | Telegram Admin |
+| Job falhou | jobFailureAlert | Telegram Admin |
+| Pipeline falhou | GitHub Actions | Telegram Admin |
+
+---
+
+_Última atualização: 2026-01-19_
