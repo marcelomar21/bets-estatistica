@@ -18,12 +18,17 @@
  */
 function getDayLabel(dateKey) {
   const date = new Date(dateKey + 'T12:00:00'); // Avoid timezone issues
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const isToday = date.toDateString() === today.toDateString();
-  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+  // Compare dateKeys directly using America/Sao_Paulo timezone
+  // This ensures consistency with groupBetsByDay which also uses this timezone
+  const now = new Date();
+  const todayKey = now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const tomorrowDate = new Date(now);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowKey = tomorrowDate.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+
+  const isToday = dateKey === todayKey;
+  const isTomorrow = dateKey === tomorrowKey;
 
   const formatted = date.toLocaleDateString('pt-BR', {
     day: '2-digit',
