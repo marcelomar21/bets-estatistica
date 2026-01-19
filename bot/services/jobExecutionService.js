@@ -145,7 +145,7 @@ function formatResult(jobName, result) {
   try {
     // Format based on job type
     switch (jobName) {
-      case 'pipeline':
+      case 'pipeline': {
         if (result.analysesGenerated !== undefined) {
           return `${result.analysesGenerated} análises`;
         }
@@ -157,16 +157,18 @@ function formatResult(jobName, result) {
           return 'dry-run';
         }
         return 'ok';
+      }
 
-      case 'post-bets':
+      case 'post-bets': {
         const posted = result.posted || 0;
         const reposted = result.reposted || 0;
         if (posted > 0 || reposted > 0) {
           return `${posted} posted, ${reposted} repost`;
         }
         return 'nenhuma';
+      }
 
-      case 'track-results':
+      case 'track-results': {
         const tracked = result.tracked || 0;
         const green = result.green || 0;
         const red = result.red || 0;
@@ -174,28 +176,34 @@ function formatResult(jobName, result) {
           return `${tracked} tracked (${green}G/${red}R)`;
         }
         return 'nenhum';
+      }
 
-      case 'kick-expired':
+      case 'kick-expired': {
         const kicked = result.kicked || result.count || 0;
         return `${kicked} kicked`;
+      }
 
-      case 'enrich-odds':
+      case 'enrich-odds': {
         const enriched = result.enriched || result.count || 0;
         return `${enriched} enriched`;
+      }
 
       case 'reminders':
       case 'trial-reminders':
-      case 'renewal-reminders':
+      case 'renewal-reminders': {
         const sent = result.sent || result.count || 0;
         return `${sent} sent`;
+      }
 
-      case 'reconciliation':
+      case 'reconciliation': {
         const reconciled = result.reconciled || result.count || 0;
         return `${reconciled} reconciled`;
+      }
 
-      case 'request-links':
+      case 'request-links': {
         const requested = result.requested || result.count || 0;
         return `${requested} requested`;
+      }
 
       case 'healthCheck':
         if (result.alerts && result.alerts.length > 0) {
@@ -203,13 +211,14 @@ function formatResult(jobName, result) {
         }
         return 'ok';
 
-      default:
+      default: {
         // Generic: try to extract a count or stringify
         if (typeof result.count === 'number') {
           return `${result.count} items`;
         }
         const str = JSON.stringify(result);
         return str.length > 30 ? str.substring(0, 27) + '...' : str;
+      }
     }
   } catch (err) {
     logger.warn('[jobExecutionService] formatResult error', { jobName, error: err.message });
