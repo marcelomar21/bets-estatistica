@@ -20,7 +20,7 @@ const {
 } = require('../../scripts/lib/matchScreening');
 const { buildIntermediateFileName } = require('../shared/naming');
 const { saveOutputs } = require('../persistence/saveOutputs');
-const pLimit = require('p-limit');
+const pLimit = require('p-limit').default;
 
 const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
 const CONCURRENCY_LIMIT = Math.max(1, Math.min(10, Number(process.env.AGENT_CONCURRENCY) || 5));
