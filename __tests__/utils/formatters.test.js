@@ -8,9 +8,12 @@ const { getDayLabel, groupBetsByDay, formatBetListWithDays, paginateResults, for
 
 describe('formatters', () => {
   describe('getDayLabel', () => {
+    // Helper to generate dateKey consistently with America/Sao_Paulo timezone
+    const getDateKey = (date) => date.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+
     it('retorna HOJE para data de hoje', () => {
       const today = new Date();
-      const dateKey = today.toLocaleDateString('sv-SE');
+      const dateKey = getDateKey(today);
       const label = getDayLabel(dateKey);
       expect(label).toMatch(/^HOJE - \d{2}\/\d{2}$/);
     });
@@ -18,7 +21,7 @@ describe('formatters', () => {
     it('retorna AMANHA para data de amanha', () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateKey = tomorrow.toLocaleDateString('sv-SE');
+      const dateKey = getDateKey(tomorrow);
       const label = getDayLabel(dateKey);
       expect(label).toMatch(/^AMANHÃ - \d{2}\/\d{2}$/);
     });
@@ -26,7 +29,7 @@ describe('formatters', () => {
     it('retorna data com dia da semana para outras datas', () => {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + 5);
-      const dateKey = futureDate.toLocaleDateString('sv-SE');
+      const dateKey = getDateKey(futureDate);
       const label = getDayLabel(dateKey);
       // Should be DD/MM (weekday)
       expect(label).toMatch(/^\d{2}\/\d{2} \(.+\)$/);
