@@ -180,6 +180,45 @@ function getCheckoutLink() {
 }
 
 /**
+ * Get payment link for a member with affiliate tracking when applicable
+ * Story 18.3: Link de Pagamento Dinamico com Tracking
+ *
+ * Uses generatePaymentLink from memberService to generate URLs with affiliate tracking.
+ * Falls back to generic checkout URL if member is null/undefined.
+ *
+ * @param {object|null} member - Member object with affiliate_code and affiliate_clicked_at
+ * @returns {{success: boolean, data?: {url: string, hasAffiliate: boolean, affiliateCode: string|null}, error?: object}}
+ */
+function getPaymentLinkForMember(member) {
+  // If no member provided, fall back to generic checkout link
+  if (!member) {
+    const checkoutResult = getCheckoutLink();
+    if (!checkoutResult.success) {
+      return checkoutResult;
+    }
+    logger.debug('[membership:payment-link] getPaymentLinkForMember: no member, using generic link');
+    return {
+      success: true,
+      data: { url: checkoutResult.data.checkoutUrl, hasAffiliate: false, affiliateCode: null }
+    };
+  }
+
+  // Use generatePaymentLink from memberService for affiliate tracking
+  const { generatePaymentLink } = require('./memberService');
+  const result = generatePaymentLink(member);
+
+  if (result.success) {
+    logger.debug('[membership:payment-link] getPaymentLinkForMember: link generated', {
+      memberId: member.id,
+      hasAffiliate: result.data.hasAffiliate,
+      affiliateCode: result.data.affiliateCode
+    });
+  }
+
+  return result;
+}
+
+/**
  * Get operator username from config
  * @returns {string} - Operator username without @
  */
@@ -465,6 +504,8 @@ module.exports = {
   registerNotification,
   sendPrivateMessage,
   getCheckoutLink,
+  // Story 18.3: Payment link with affiliate tracking
+  getPaymentLinkForMember,
   getOperatorUsername,
   getSubscriptionPrice,
   formatTrialReminder,

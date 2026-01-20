@@ -43,6 +43,11 @@ jest.mock('../../bot/telegram', () => ({
   })),
 }));
 
+// Mock memberService for Story 18.3 - generatePaymentLink
+jest.mock('../../bot/services/memberService', () => ({
+  generatePaymentLink: jest.fn(),
+}));
+
 jest.mock('../../lib/config', () => ({
   config: {
     membership: {
@@ -61,6 +66,7 @@ const {
   registerNotification,
   sendPrivateMessage,
   getCheckoutLink,
+  getPaymentLinkForMember,
   getOperatorUsername,
   getSubscriptionPrice,
   formatTrialReminder,
@@ -475,6 +481,83 @@ describe('notificationService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('INVALID_INPUT');
+    });
+  });
+
+  // ============================================
+  // Story 18.3: getPaymentLinkForMember
+  // ============================================
+  describe('getPaymentLinkForMember', () => {
+    const { generatePaymentLink } = require('../../bot/services/memberService');
+
+    beforeEach(() => {
+      generatePaymentLink.mockClear();
+    });
+
+    it('should return generic checkout link when member is null', () => {
+      const result = getPaymentLinkForMember(null);
+
+      expect(result.success).toBe(true);
+      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(generatePaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('should return generic checkout link when member is undefined', () => {
+      const result = getPaymentLinkForMember(undefined);
+
+      expect(result.success).toBe(true);
+      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(generatePaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('should call generatePaymentLink and return result with affiliate', () => {
+      const member = { id: 1, telegram_id: 123456, affiliate_code: 'TEST123' };
+      generatePaymentLink.mockReturnValue({
+        success: true,
+        data: { url: 'https://pay.cakto.com.br/checkout/123?aff=TEST123', hasAffiliate: true, affiliateCode: 'TEST123' }
+      });
+
+      const result = getPaymentLinkForMember(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123?aff=TEST123');
+      expect(result.data.hasAffiliate).toBe(true);
+      expect(result.data.affiliateCode).toBe('TEST123');
+      expect(generatePaymentLink).toHaveBeenCalledWith(member);
+    });
+
+    it('should call generatePaymentLink and return result without affiliate', () => {
+      const member = { id: 2, telegram_id: 789012, affiliate_code: null };
+      generatePaymentLink.mockReturnValue({
+        success: true,
+        data: { url: 'https://pay.cakto.com.br/checkout/123', hasAffiliate: false, affiliateCode: null }
+      });
+
+      const result = getPaymentLinkForMember(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(generatePaymentLink).toHaveBeenCalledWith(member);
+    });
+
+    it('should propagate error from generatePaymentLink', () => {
+      const member = { id: 3, telegram_id: 345678 };
+      generatePaymentLink.mockReturnValue({
+        success: false,
+        error: { code: 'CONFIG_MISSING', message: 'CAKTO_CHECKOUT_URL not configured' }
+      });
+
+      const result = getPaymentLinkForMember(member);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_MISSING');
+      expect(generatePaymentLink).toHaveBeenCalledWith(member);
     });
   });
 });

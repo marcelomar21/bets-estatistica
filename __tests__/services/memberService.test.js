@@ -18,6 +18,16 @@ jest.mock('../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
+// Mock config for Story 18.3: generatePaymentLink tests
+jest.mock('../../lib/config', () => ({
+  config: {
+    membership: {
+      checkoutUrl: 'https://checkout.cakto.com.br/test-product',
+      trialDays: 7,
+    },
+  },
+}));
+
 const {
   MEMBER_STATUSES,
   VALID_TRANSITIONS,
@@ -48,6 +58,8 @@ const {
   setAffiliateCode,
   getAffiliateHistory,
   isAffiliateValid,
+  // Story 18.3: Payment link with affiliate tracking
+  generatePaymentLink,
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -1819,6 +1831,372 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       // Affiliate fields should be null/empty when not provided
+    });
+  });
+
+  describe('clearExpiredAffiliates', () => {
+    const { clearExpiredAffiliates } = require('../../bot/services/memberService');
+
+    test('retorna sucesso com cleared=0 quando não há afiliados expirados', async () => {
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: [], error: null })
+        })
+      });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await clearExpiredAffiliates();
+
+      expect(result.success).toBe(true);
+      expect(result.data.cleared).toBe(0);
+    });
+
+    test('limpa afiliados expirados (>14 dias) corretamente', async () => {
+      const expiredMembers = [
+        { id: 1, telegram_id: 111, affiliate_code: 'CODE1' },
+        { id: 2, telegram_id: 222, affiliate_code: 'CODE2' }
+      ];
+
+      // Mock select (find expired)
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: expiredMembers, error: null })
+        })
+      });
+
+      // Mock update
+      const updateMock = jest.fn().mockReturnValue({
+        in: jest.fn().mockResolvedValue({ error: null })
+      });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: selectMock };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await clearExpiredAffiliates();
+
+      expect(result.success).toBe(true);
+      expect(result.data.cleared).toBe(2);
+    });
+
+    test('retorna erro quando select falha', async () => {
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } })
+        })
+      });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await clearExpiredAffiliates();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+
+    test('retorna erro quando update falha', async () => {
+      const expiredMembers = [
+        { id: 1, telegram_id: 111, affiliate_code: 'CODE1' }
+      ];
+
+      // Mock select (find expired)
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: expiredMembers, error: null })
+        })
+      });
+
+      // Mock update (fails)
+      const updateMock = jest.fn().mockReturnValue({
+        in: jest.fn().mockResolvedValue({ error: { message: 'Update failed' } })
+      });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: selectMock };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await clearExpiredAffiliates();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+
+    test('não modifica affiliate_history (preserva sempre)', async () => {
+      const expiredMembers = [
+        { id: 1, telegram_id: 111, affiliate_code: 'CODE1', affiliate_history: [{ code: 'CODE1', clicked_at: '2024-01-01' }] }
+      ];
+
+      // Mock select
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: expiredMembers, error: null })
+        })
+      });
+
+      // Mock update - capture the update payload
+      let updatePayload = null;
+      const updateMock = jest.fn().mockImplementation((payload) => {
+        updatePayload = payload;
+        return {
+          in: jest.fn().mockResolvedValue({ error: null })
+        };
+      });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: selectMock };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      await clearExpiredAffiliates();
+
+      // Verify affiliate_history is NOT in the update payload
+      expect(updatePayload).toHaveProperty('affiliate_code', null);
+      expect(updatePayload).toHaveProperty('affiliate_clicked_at', null);
+      expect(updatePayload).not.toHaveProperty('affiliate_history');
+    });
+
+    test('não afeta membros com afiliado válido (< 14 dias) - Task 5.2', async () => {
+      // This test verifies the query uses correct date filter
+      // Members with affiliate_clicked_at < 14 days ago should NOT be selected
+
+      let capturedLtDate = null;
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockImplementation((column, value) => {
+            capturedLtDate = value;
+            // Simulate: no expired members found (all are valid)
+            return Promise.resolve({ data: [], error: null });
+          })
+        })
+      });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await clearExpiredAffiliates();
+
+      // Verify success with 0 cleared (no expired found)
+      expect(result.success).toBe(true);
+      expect(result.data.cleared).toBe(0);
+
+      // Verify the cutoff date is approximately 14 days ago
+      expect(capturedLtDate).toBeDefined();
+      const cutoffDate = new Date(capturedLtDate);
+      const now = new Date();
+      const daysDiff = (now - cutoffDate) / (1000 * 60 * 60 * 24);
+
+      // Should be approximately 14 days (allow 1 day tolerance for test timing)
+      expect(daysDiff).toBeGreaterThanOrEqual(13);
+      expect(daysDiff).toBeLessThanOrEqual(15);
+    });
+
+    test('processa em batches quando há muitos membros expirados (> 500)', async () => {
+      // Generate 600 expired members to trigger batch processing
+      const expiredMembers = Array.from({ length: 600 }, (_, i) => ({
+        id: i + 1,
+        telegram_id: 1000 + i,
+        affiliate_code: `CODE${i}`
+      }));
+
+      // Mock select
+      const selectMock = jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          lt: jest.fn().mockResolvedValue({ data: expiredMembers, error: null })
+        })
+      });
+
+      // Track update calls
+      const updateCalls = [];
+      const updateMock = jest.fn().mockImplementation((payload) => {
+        return {
+          in: jest.fn().mockImplementation((column, ids) => {
+            updateCalls.push({ column, idsCount: ids.length });
+            return Promise.resolve({ error: null });
+          })
+        };
+      });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: selectMock };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await clearExpiredAffiliates();
+
+      expect(result.success).toBe(true);
+      expect(result.data.cleared).toBe(600);
+
+      // Should have processed in batches (500 each)
+      expect(updateCalls.length).toBe(2);
+      expect(updateCalls[0].idsCount).toBe(500);
+      expect(updateCalls[1].idsCount).toBe(100);
+    });
+  });
+
+  // ============================================
+  // Story 18.3: generatePaymentLink
+  // ============================================
+  describe('generatePaymentLink', () => {
+    const MOCK_CHECKOUT_URL = 'https://checkout.cakto.com.br/test-product';
+
+    test('retorna link COM tracking quando afiliado e valido (< 14 dias)', () => {
+      const now = new Date();
+      const member = {
+        id: 1,
+        telegram_id: 123456,
+        affiliate_code: 'CODIGO123',
+        affiliate_clicked_at: now.toISOString(), // Today - valid
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(true);
+      expect(result.data.affiliateCode).toBe('CODIGO123');
+      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?aff=CODIGO123`);
+    });
+
+    test('retorna link SEM tracking quando membro nao tem affiliate_code', () => {
+      const member = {
+        id: 2,
+        telegram_id: 789012,
+        affiliate_code: null,
+        affiliate_clicked_at: null,
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(result.data.url).toBe(MOCK_CHECKOUT_URL);
+    });
+
+    test('retorna link SEM tracking quando afiliado expirou (> 14 dias)', () => {
+      const fifteenDaysAgo = new Date();
+      fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+
+      const member = {
+        id: 3,
+        telegram_id: 345678,
+        affiliate_code: 'EXPIRED_CODE',
+        affiliate_clicked_at: fifteenDaysAgo.toISOString(), // Expired
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(result.data.url).toBe(MOCK_CHECKOUT_URL);
+    });
+
+    test('retorna link SEM tracking quando affiliate_clicked_at e null', () => {
+      const member = {
+        id: 4,
+        telegram_id: 456789,
+        affiliate_code: 'ORPHAN_CODE', // Code exists but no clicked_at
+        affiliate_clicked_at: null,
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(result.data.url).toBe(MOCK_CHECKOUT_URL);
+    });
+
+    test('encoda caracteres especiais no affiliate_code', () => {
+      const now = new Date();
+      const member = {
+        id: 5,
+        telegram_id: 567890,
+        affiliate_code: 'CODE WITH SPACES & SPECIAL=CHARS',
+        affiliate_clicked_at: now.toISOString(),
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(true);
+      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?aff=CODE%20WITH%20SPACES%20%26%20SPECIAL%3DCHARS`);
+    });
+
+    test('retorna link COM tracking para afiliado no limite de 13 dias', () => {
+      const thirteenDaysAgo = new Date();
+      thirteenDaysAgo.setDate(thirteenDaysAgo.getDate() - 13);
+
+      const member = {
+        id: 6,
+        telegram_id: 678901,
+        affiliate_code: 'ALMOST_EXPIRED',
+        affiliate_clicked_at: thirteenDaysAgo.toISOString(), // Still valid (< 14)
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(true);
+      expect(result.data.affiliateCode).toBe('ALMOST_EXPIRED');
+    });
+
+    test('retorna link SEM tracking no limite exato de 14 dias', () => {
+      const fourteenDaysAgo = new Date();
+      fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+      const member = {
+        id: 7,
+        telegram_id: 789012,
+        affiliate_code: 'EXACTLY_EXPIRED',
+        affiliate_clicked_at: fourteenDaysAgo.toISOString(), // Expired (>= 14)
+      };
+
+      const result = generatePaymentLink(member);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+    });
+
+    test('retorna link generico quando member e null', () => {
+      const result = generatePaymentLink(null);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(result.data.url).toBe(MOCK_CHECKOUT_URL);
+    });
+
+    test('retorna link generico quando member e undefined', () => {
+      const result = generatePaymentLink(undefined);
+
+      expect(result.success).toBe(true);
+      expect(result.data.hasAffiliate).toBe(false);
+      expect(result.data.affiliateCode).toBeNull();
+      expect(result.data.url).toBe(MOCK_CHECKOUT_URL);
     });
   });
 });

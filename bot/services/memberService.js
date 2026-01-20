@@ -4,6 +4,7 @@
  */
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
+const { config } = require('../../lib/config');
 
 /**
  * Valid status values for members
@@ -1667,6 +1668,157 @@ function isAffiliateValid(member) {
   return daysSinceClick < 14;
 }
 
+/**
+ * Clear expired affiliate attributions (clicked > 14 days ago)
+ * Story 18.2: Lógica de Expiração de Atribuição
+ *
+ * Clears affiliate_code and affiliate_clicked_at for members whose
+ * last affiliate click was more than 14 days ago.
+ * Preserves affiliate_history (never deleted).
+ *
+ * Edge cases:
+ * - Members with affiliate_code but NULL affiliate_clicked_at are NOT expired
+ *   (can't determine expiration date, likely data inconsistency)
+ * - Uses batch processing (500 at a time) to avoid Supabase query limits
+ *
+ * @returns {Promise<{success: boolean, data?: {cleared: number}, error?: object}>}
+ */
+async function clearExpiredAffiliates() {
+  const BATCH_SIZE = 500; // Supabase IN clause limit safety margin
+
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 14);
+
+    // Find members with expired affiliates
+    // Note: Members with affiliate_code but NULL affiliate_clicked_at are NOT selected
+    // (NULL < date evaluates to false in PostgreSQL)
+    const { data: expired, error: selectError } = await supabase
+      .from('members')
+      .select('id, telegram_id, affiliate_code')
+      .not('affiliate_code', 'is', null)
+      .lt('affiliate_clicked_at', cutoffDate.toISOString());
+
+    if (selectError) {
+      logger.error('[membership:check-affiliate-expiration] clearExpiredAffiliates: select error', {
+        error: selectError.message,
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: selectError.message } };
+    }
+
+    if (!expired || expired.length === 0) {
+      logger.info('[membership:check-affiliate-expiration] clearExpiredAffiliates: no expired affiliates found');
+      return { success: true, data: { cleared: 0 } };
+    }
+
+    // Process in batches to avoid Supabase IN clause limits
+    const ids = expired.map((m) => m.id);
+    let processedCount = 0;
+
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batchIds = ids.slice(i, i + BATCH_SIZE);
+
+      const { error: updateError } = await supabase
+        .from('members')
+        .update({
+          affiliate_code: null,
+          affiliate_clicked_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .in('id', batchIds);
+
+      if (updateError) {
+        logger.error('[membership:check-affiliate-expiration] clearExpiredAffiliates: update error', {
+          error: updateError.message,
+          batch: Math.floor(i / BATCH_SIZE) + 1,
+          batchSize: batchIds.length,
+          processedSoFar: processedCount,
+        });
+        return { success: false, error: { code: 'DB_ERROR', message: updateError.message } };
+      }
+
+      processedCount += batchIds.length;
+    }
+
+    // Log without exposing full affiliate codes (privacy)
+    logger.info('[membership:check-affiliate-expiration] clearExpiredAffiliates: cleared expired affiliates', {
+      count: expired.length,
+      batches: Math.ceil(ids.length / BATCH_SIZE),
+    });
+
+    return { success: true, data: { cleared: expired.length } };
+  } catch (err) {
+    logger.error('[membership:check-affiliate-expiration] clearExpiredAffiliates: unexpected error', {
+      error: err.message,
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Generate payment link with affiliate tracking when applicable
+ * Story 18.3: Link de Pagamento Dinamico com Tracking
+ *
+ * Uses isAffiliateValid() to check if affiliate attribution is valid (within 14 days).
+ * If valid, appends affiliate code to checkout URL.
+ *
+ * @param {object} member - Member object with affiliate_code and affiliate_clicked_at
+ * @returns {{success: boolean, data?: {url: string, hasAffiliate: boolean, affiliateCode: string|null}, error?: object}}
+ */
+function generatePaymentLink(member) {
+  const checkoutUrl = config.membership?.checkoutUrl;
+
+  if (!checkoutUrl) {
+    logger.warn('[membership:payment-link] generatePaymentLink: CAKTO_CHECKOUT_URL not configured');
+    return {
+      success: false,
+      error: { code: 'CONFIG_MISSING', message: 'CAKTO_CHECKOUT_URL not configured' }
+    };
+  }
+
+  // Validate member input - return generic link if null/undefined
+  if (!member) {
+    logger.debug('[membership:payment-link] generatePaymentLink: no member provided, using generic link');
+    return {
+      success: true,
+      data: { url: checkoutUrl, hasAffiliate: false, affiliateCode: null }
+    };
+  }
+
+  // Check if affiliate is valid using existing function
+  const hasValidAffiliate = isAffiliateValid(member);
+
+  if (hasValidAffiliate) {
+    const affiliateCode = member.affiliate_code;
+    const url = `${checkoutUrl}?aff=${encodeURIComponent(affiliateCode)}`;
+
+    logger.info('[membership:payment-link] Generated link with affiliate tracking', {
+      memberId: member.id,
+      telegramId: member.telegram_id,
+      hasAffiliate: true,
+      affiliateCode
+    });
+
+    return {
+      success: true,
+      data: { url, hasAffiliate: true, affiliateCode }
+    };
+  }
+
+  // No valid affiliate - return plain URL (debug level - routine case)
+  logger.debug('[membership:payment-link] Generated link without affiliate tracking', {
+    memberId: member.id,
+    telegramId: member.telegram_id,
+    hasAffiliate: false,
+    reason: !member.affiliate_code ? 'no_affiliate_code' : 'affiliate_expired'
+  });
+
+  return {
+    success: true,
+    data: { url: checkoutUrl, hasAffiliate: false, affiliateCode: null }
+  };
+}
+
 module.exports = {
   // Constants
   MEMBER_STATUSES,
@@ -1724,4 +1876,10 @@ module.exports = {
   setAffiliateCode,
   getAffiliateHistory,
   isAffiliateValid,
+
+  // Story 18.2: Affiliate expiration
+  clearExpiredAffiliates,
+
+  // Story 18.3: Payment link with affiliate tracking
+  generatePaymentLink,
 };

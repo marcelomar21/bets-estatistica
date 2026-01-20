@@ -16,7 +16,7 @@ const {
   hasNotificationToday,
   registerNotification,
   sendPrivateMessage,
-  getCheckoutLink,
+  getPaymentLinkForMember,
   formatTrialReminder,
 } = require('../../services/notificationService');
 
@@ -117,13 +117,20 @@ async function sendTrialReminder(member) {
     return hasResult; // Pass through error
   }
 
-  // Get checkout link
-  const checkoutResult = getCheckoutLink();
-  if (!checkoutResult.success) {
+  // Get payment link with affiliate tracking (Story 18.3)
+  const linkResult = getPaymentLinkForMember(member);
+  if (!linkResult.success) {
     logger.warn('[membership:trial-reminders] sendTrialReminder: no checkout URL', { memberId });
-    return checkoutResult;
+    return linkResult;
   }
-  const checkoutUrl = checkoutResult.data.checkoutUrl;
+  const checkoutUrl = linkResult.data.url;
+
+  // Log affiliate tracking status
+  logger.debug('[membership:trial-reminders] Payment link generated', {
+    memberId,
+    hasAffiliate: linkResult.data.hasAffiliate,
+    affiliateCode: linkResult.data.affiliateCode
+  });
 
   // Get success rate for message
   let successRate = null;

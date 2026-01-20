@@ -16,7 +16,7 @@ const {
   hasNotificationToday,
   registerNotification,
   sendPrivateMessage,
-  getCheckoutLink,
+  getPaymentLinkForMember,
   formatRenewalReminder,
 } = require('../../services/notificationService');
 
@@ -123,13 +123,21 @@ async function sendRenewalReminder(member) {
     return hasResult; // Pass through error
   }
 
-  // Get checkout link
-  const checkoutResult = getCheckoutLink();
-  if (!checkoutResult.success) {
+  // Get payment link with affiliate tracking (Story 18.3)
+  // Note: Active members may not have valid affiliate_code (expired after 14 days)
+  const linkResult = getPaymentLinkForMember(member);
+  if (!linkResult.success) {
     logger.warn('[membership:renewal-reminders] sendRenewalReminder: no checkout URL', { memberId });
-    return checkoutResult;
+    return linkResult;
   }
-  const checkoutUrl = checkoutResult.data.checkoutUrl;
+  const checkoutUrl = linkResult.data.url;
+
+  // Log affiliate tracking status (likely hasAffiliate=false for renewals)
+  logger.debug('[membership:renewal-reminders] Payment link generated', {
+    memberId,
+    hasAffiliate: linkResult.data.hasAffiliate,
+    affiliateCode: linkResult.data.affiliateCode
+  });
 
   // Calculate days until renewal
   const daysUntilRenewal = getDaysUntilRenewal(subscriptionEndsAt);

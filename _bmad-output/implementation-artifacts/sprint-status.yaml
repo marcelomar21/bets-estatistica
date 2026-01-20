@@ -257,6 +257,6 @@ development_status:
   # ========================================
   epic-18: in-progress
   18-1-tracking-afiliados-entrada: done
-  18-2-logica-expiracao-atribuicao: backlog
-  18-3-link-pagamento-dinamico-tracking: backlog
+  18-2-logica-expiracao-atribuicao: done
+  18-3-link-pagamento-dinamico-tracking: done
   epic-18-retrospective: optional

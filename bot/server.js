@@ -174,6 +174,7 @@ function setupScheduler() {
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
   const { runReconciliation } = require('./jobs/membership/reconciliation');
+  const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
   const { withExecutionLogging, cleanupStuckJobs } = require('./services/jobExecutionService');
 
   const TZ = 'America/Sao_Paulo';
@@ -275,6 +276,17 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
+  // Check affiliate expiration - 00:30 São Paulo (Story 18.2)
+  cron.schedule('30 0 * * *', async () => {
+    logger.info('[scheduler] Running check-affiliate-expiration job');
+    try {
+      await withExecutionLogging('check-affiliate-expiration', runCheckAffiliateExpiration);
+      logger.info('[scheduler] check-affiliate-expiration complete');
+    } catch (err) {
+      logger.error('[scheduler] check-affiliate-expiration failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   // Cakto reconciliation - 03:00 São Paulo (Story 16.8)
   cron.schedule('0 3 * * *', async () => {
     logger.info('[scheduler] Running reconciliation job');
@@ -302,6 +314,7 @@ function setupScheduler() {
   logger.info('Internal scheduler started');
   console.log('⏰ Scheduler jobs:');
   console.log('   00:01 - Kick expired members (membership)');
+  console.log('   00:30 - Check affiliate expiration (membership)');
   console.log('   02:00 - Track results');
   console.log('   03:00 - Cakto reconciliation (membership)');
   console.log('   08:00 - Enrich odds + Request links');
