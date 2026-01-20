@@ -185,12 +185,62 @@ async function handlePaymentApproved(payload) {
   }
 
   if (!member) {
-    logger.warn('[webhookProcessors] handlePaymentApproved: member not found', {
+    // Membro não existe - criar como ativo diretamente (fluxo MP sem trial ou email ausente em test)
+    const email = payment.payer?.email;
+    if (!email) {
+      logger.warn('[webhookProcessors] handlePaymentApproved: member not found and no email', {
+        paymentId,
+        subscriptionId
+      });
+      return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Member not found and no email to create' } };
+    }
+
+    logger.info('[webhookProcessors] handlePaymentApproved: creating new member from payment', {
       paymentId,
-      subscriptionId,
-      email: payment.payer?.email
+      email,
+      subscriptionId
     });
-    return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Member not found' } };
+
+    // Criar membro como trial primeiro (telegram_id pode ser null)
+    // Será ativado quando fizer /start no bot ou já fica ativo se pagamento confirmado
+    const createResult = await memberService.createTrialMemberMP({
+      email,
+      subscriptionId: subscriptionId,
+      payerId: payment.payer?.id?.toString(),
+      couponCode: null
+    });
+
+    if (!createResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to create member', {
+        email,
+        error: createResult.error
+      });
+      return { success: false, error: createResult.error };
+    }
+
+    // Agora ativa o membro recém-criado
+    const paymentMethod = mercadoPagoService.mapPaymentMethod(payment.payment_method_id);
+    const activateResult = await memberService.activateMember(createResult.data.id, {
+      subscriptionId: subscriptionId,
+      customerId: payment.payer?.id?.toString(),
+      paymentMethod
+    });
+
+    if (!activateResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to activate new member', {
+        memberId: createResult.data.id,
+        error: activateResult.error
+      });
+      return { success: false, error: activateResult.error };
+    }
+
+    logger.info('[webhookProcessors] 🎉 New active member created from payment', {
+      memberId: createResult.data.id,
+      email,
+      paymentId
+    });
+
+    return { success: true, data: { memberId: createResult.data.id, action: 'created_active' } };
   }
 
   const paymentMethod = mercadoPagoService.mapPaymentMethod(payment.payment_method_id);

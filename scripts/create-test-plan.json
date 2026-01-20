@@ -1,0 +1,14 @@
+{
+  "reason": "Guru Bet - Assinatura Mensal (TESTE)",
+  "auto_recurring": {
+    "frequency": 1,
+    "frequency_type": "months",
+    "transaction_amount": 50,
+    "currency_id": "BRL",
+    "free_trial": {
+      "frequency": 7,
+      "frequency_type": "days"
+    }
+  },
+  "back_url": "https://bets-bot-giga.onrender.com/obrigado"
+}
