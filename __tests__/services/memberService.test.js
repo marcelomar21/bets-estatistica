@@ -2075,7 +2075,7 @@ describe('memberService', () => {
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(true);
       expect(result.data.affiliateCode).toBe('CODIGO123');
-      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?aff=CODIGO123`);
+      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?affiliate=CODIGO123`);
     });
 
     test('retorna link SEM tracking quando membro nao tem affiliate_code', () => {
@@ -2142,7 +2142,7 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(true);
-      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?aff=CODE%20WITH%20SPACES%20%26%20SPECIAL%3DCHARS`);
+      expect(result.data.url).toBe(`${MOCK_CHECKOUT_URL}?affiliate=CODE%20WITH%20SPACES%20%26%20SPECIAL%3DCHARS`);
     });
 
     test('retorna link COM tracking para afiliado no limite de 13 dias', () => {

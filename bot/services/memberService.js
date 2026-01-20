@@ -1790,7 +1790,7 @@ function generatePaymentLink(member) {
 
   if (hasValidAffiliate) {
     const affiliateCode = member.affiliate_code;
-    const url = `${checkoutUrl}?aff=${encodeURIComponent(affiliateCode)}`;
+    const url = `${checkoutUrl}?affiliate=${encodeURIComponent(affiliateCode)}`;
 
     logger.info('[membership:payment-link] Generated link with affiliate tracking', {
       memberId: member.id,

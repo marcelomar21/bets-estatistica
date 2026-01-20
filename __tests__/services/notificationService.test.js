@@ -518,13 +518,13 @@ describe('notificationService', () => {
       const member = { id: 1, telegram_id: 123456, affiliate_code: 'TEST123' };
       generatePaymentLink.mockReturnValue({
         success: true,
-        data: { url: 'https://pay.cakto.com.br/checkout/123?aff=TEST123', hasAffiliate: true, affiliateCode: 'TEST123' }
+        data: { url: 'https://pay.cakto.com.br/checkout/123?affiliate=TEST123', hasAffiliate: true, affiliateCode: 'TEST123' }
       });
 
       const result = getPaymentLinkForMember(member);
 
       expect(result.success).toBe(true);
-      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123?aff=TEST123');
+      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123?affiliate=TEST123');
       expect(result.data.hasAffiliate).toBe(true);
       expect(result.data.affiliateCode).toBe('TEST123');
       expect(generatePaymentLink).toHaveBeenCalledWith(member);
