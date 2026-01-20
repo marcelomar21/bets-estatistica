@@ -255,8 +255,8 @@ development_status:
   # Novo epic criado em 2026-01-19 para programa de afiliados
   # Ver: prd-afiliados.md, epics-afiliados.md
   # ========================================
-  epic-18: in-progress
+  epic-18: done
   18-1-tracking-afiliados-entrada: done
   18-2-logica-expiracao-atribuicao: done
   18-3-link-pagamento-dinamico-tracking: done
-  epic-18-retrospective: optional
+  epic-18-retrospective: done
