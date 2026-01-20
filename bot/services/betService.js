@@ -114,7 +114,7 @@ async function getBetsReadyForPosting() {
       `)
       .eq('elegibilidade', 'elegivel')  // Critério principal de elegibilidade
       .not('deep_link', 'is', null)     // Deve ter link
-      .in('bet_status', ['generated', 'pending_link', 'ready'])  // Exclui posted, success, failure
+      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])  // Exclui posted
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', maxDate.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
@@ -360,7 +360,7 @@ async function getAvailableBets() {
           kickoff_time
         )
       `)
-      .in('bet_status', ['generated', 'pending_link', 'ready', 'posted'])
+      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
       .gte('league_matches.kickoff_time', now.toISOString())
       .order('league_matches(kickoff_time)', { ascending: true })
       .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
@@ -394,6 +394,27 @@ async function getAvailableBets() {
     logger.error('Error fetching available bets', { error: err.message });
     return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
   }
+}
+
+/**
+ * Determina o status correto baseado em odds e link
+ * Status válidos: generated, pending_link, pending_odds, ready, posted
+ * @param {string} currentStatus - Status atual
+ * @param {number|null} odds - Odds da aposta
+ * @param {string|null} deepLink - Link da aposta
+ * @returns {string} - Novo status
+ */
+function determineStatus(currentStatus, odds, deepLink) {
+  // Nunca regride de posted
+  if (currentStatus === 'posted') return 'posted';
+
+  const hasOdds = odds && odds >= config.betting.minOdds;
+  const hasLink = !!deepLink;
+
+  if (hasOdds && hasLink) return 'ready';
+  if (hasOdds && !hasLink) return 'pending_link';
+  if (!hasOdds && hasLink) return 'pending_odds';
+  return 'generated';
 }
 
 /**
@@ -491,15 +512,63 @@ async function registrarPostagem(betId) {
 }
 
 /**
- * Mark bet as success or failure
+ * Mark bet result (success or failure)
+ * IMPORTANTE: Atualiza bet_result, NÃO bet_status
  * @param {number} betId - Bet ID
  * @param {boolean} won - Whether bet won
  * @returns {Promise<{success: boolean, error?: object}>}
  */
 async function markBetResult(betId, won) {
-  return updateBetStatus(betId, won ? 'success' : 'failure', {
-    result_updated_at: new Date().toISOString(),
-  });
+  try {
+    const result = won ? 'success' : 'failure';
+    const { error } = await supabase
+      .from('suggested_bets')
+      .update({
+        bet_result: result,
+        result_updated_at: new Date().toISOString(),
+      })
+      .eq('id', betId);
+
+    if (error) {
+      logger.error('Failed to update bet result', { betId, result, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('Bet result updated', { betId, result });
+    return { success: true };
+  } catch (err) {
+    logger.error('Error updating bet result', { betId, error: err.message });
+    return { success: false, error: { code: 'UPDATE_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Update bet result directly
+ * @param {number} betId - Bet ID
+ * @param {string} result - Result ('pending', 'success', 'failure', 'cancelled')
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function updateBetResult(betId, result) {
+  try {
+    const { error } = await supabase
+      .from('suggested_bets')
+      .update({
+        bet_result: result,
+        result_updated_at: new Date().toISOString(),
+      })
+      .eq('id', betId);
+
+    if (error) {
+      logger.error('Failed to update bet result', { betId, result, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('Bet result updated', { betId, result });
+    return { success: true };
+  } catch (err) {
+    logger.error('Error updating bet result', { betId, error: err.message });
+    return { success: false, error: { code: 'UPDATE_ERROR', message: err.message } };
+  }
 }
 
 /**
@@ -609,8 +678,8 @@ async function tryAutoPromote(betId) {
       return { promoted: false, reason: 'Bet not found' };
     }
 
-    // Skip if already ready, posted, or terminal status
-    if (['ready', 'posted', 'success', 'failure'].includes(bet.bet_status)) {
+    // Skip if already ready or posted
+    if (['ready', 'posted'].includes(bet.bet_status)) {
       return { promoted: false, reason: `Already ${bet.bet_status}` };
     }
 
@@ -1021,10 +1090,10 @@ async function getOverviewStats() {
     };
 
     // Get bets without odds (IDs)
-    const withoutOdds = (allBets || []).filter(b => (!b.odds || b.odds === 0) && !['posted', 'success', 'failure'].includes(b.bet_status));
+    const withoutOdds = (allBets || []).filter(b => (!b.odds || b.odds === 0) && b.bet_status !== 'posted');
 
     // Get bets without links (IDs)
-    const withoutLinks = (allBets || []).filter(b => !b.deep_link && ['generated', 'pending_link', 'ready'].includes(b.bet_status));
+    const withoutLinks = (allBets || []).filter(b => !b.deep_link && ['generated', 'pending_link', 'pending_odds', 'ready'].includes(b.bet_status));
 
     // Next game (first in list since ordered by kickoff)
     const nextGame = allBets && allBets.length > 0 ? {
@@ -1044,18 +1113,18 @@ async function getOverviewStats() {
       }, null)
       : null;
 
-    // Get success rate (last 30 days)
+    // Get success rate (last 30 days) - usando bet_result
     const { data: resultsBets, error: resultsError } = await supabase
       .from('suggested_bets')
-      .select('id, bet_status')
-      .in('bet_status', ['success', 'failure'])
+      .select('id, bet_result')
+      .in('bet_result', ['success', 'failure'])
       .gte('result_updated_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
     if (resultsError) {
       logger.warn('Error fetching results for success rate', { error: resultsError.message });
     }
 
-    const successCount = (resultsBets || []).filter(b => b.bet_status === 'success').length;
+    const successCount = (resultsBets || []).filter(b => b.bet_result === 'success').length;
     const totalResults = (resultsBets || []).length;
     const successRate = totalResults > 0 ? {
       wins: successCount,
@@ -1206,7 +1275,7 @@ async function getFilaStatus() {
         `)
         .eq('elegibilidade', 'elegivel')
         .not('deep_link', 'is', null)
-        .in('bet_status', ['generated', 'pending_link', 'ready'])
+        .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
         .gte('league_matches.kickoff_time', now.toISOString())
         .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
         .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
@@ -1580,6 +1649,7 @@ module.exports = {
   updateBetStatus,
   updateBetLink,
   updateBetOdds,
+  updateBetResult,
   tryAutoPromote,
   setBetPendingWithNote,
   markBetAsPosted,
@@ -1591,6 +1661,9 @@ module.exports = {
   promoverAposta,
   removerAposta,
   getFilaStatus,
+
+  // Utility functions
+  determineStatus,
 
   // Create functions
   createManualBet,

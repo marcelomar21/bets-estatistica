@@ -109,22 +109,49 @@ console.log('debug'); // ERRADO
 
 ---
 
-## Bet State Machine
+## Bet State Machines
+
+### bet_status (fluxo de publicação)
 
 ```
-generated → pending_link → ready → posted → success
-                                         ↘ failure
-                               ↘ cancelled
+generated → pending_link ──→ ready → posted
+    │              ↑            ↑
+    └──→ pending_odds ──────────┘
 ```
 
 **Estados válidos:**
-- `generated` - Aposta criada pela IA
-- `pending_link` - Link solicitado ao operador
-- `ready` - Link recebido, pronta para postar
-- `posted` - Enviada ao grupo público
+- `generated` - Aposta criada, sem odds nem link
+- `pending_link` - Com odds, aguardando link
+- `pending_odds` - Com link, aguardando odds (mercados manuais)
+- `ready` - Com odds E link, pronta para postar
+- `posted` - Enviada ao grupo público (NUNCA regride)
+
+**Lógica de determinação:**
+```javascript
+function determineStatus(currentStatus, odds, deepLink) {
+  if (currentStatus === 'posted') return 'posted';
+  const hasOdds = odds && odds >= MIN_ODDS;
+  const hasLink = !!deepLink;
+  if (hasOdds && hasLink) return 'ready';
+  if (hasOdds && !hasLink) return 'pending_link';
+  if (!hasOdds && hasLink) return 'pending_odds';
+  return 'generated';
+}
+```
+
+### bet_result (resultado do jogo)
+
+```
+pending → success
+       ↘ failure
+       ↘ cancelled
+```
+
+**Resultados válidos:**
+- `pending` - Aguardando resultado (default)
 - `success` - Jogo terminou, aposta ganhou
 - `failure` - Jogo terminou, aposta perdeu
-- `cancelled` - Cancelada (sem link a tempo, etc.)
+- `cancelled` - Cancelada manualmente
 
 ---
 
@@ -515,4 +542,4 @@ sql/migrations/
 
 ---
 
-_Última atualização: 2026-01-19_
+_Última atualização: 2026-01-20_

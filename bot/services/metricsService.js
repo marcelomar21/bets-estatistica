@@ -12,8 +12,8 @@ const logger = require('../../lib/logger');
  * Get success rate statistics
  *
  * FORMULA: rate = (success / total) * 100
- * - Only counts bets with status 'success' or 'failure'
- * - Does NOT count: 'posted', 'ready', 'pending_link', 'generated', 'cancelled'
+ * - Only counts bets with bet_result 'success' or 'failure'
+ * - Does NOT count: bet_result 'pending' or 'cancelled'
  *
  * 30-day filter: Uses result_updated_at field (not created_at or telegram_posted_at)
  * This ensures we measure when the result was known, not when the bet was created.
@@ -25,15 +25,15 @@ async function getSuccessRate() {
     // Get all time stats
     const { data: allTimeData, error: allTimeError } = await supabase
       .from('suggested_bets')
-      .select('id, bet_status')
-      .in('bet_status', ['success', 'failure']);
+      .select('id, bet_result')
+      .in('bet_result', ['success', 'failure']);
 
     if (allTimeError) {
       logger.error('Failed to fetch all-time stats', { error: allTimeError.message });
       return { success: false, error: { code: 'DB_ERROR', message: allTimeError.message } };
     }
 
-    const allTimeSuccess = allTimeData?.filter(b => b.bet_status === 'success').length || 0;
+    const allTimeSuccess = allTimeData?.filter(b => b.bet_result === 'success').length || 0;
     const allTimeTotal = allTimeData?.length || 0;
     const allTimeRate = allTimeTotal > 0 ? (allTimeSuccess / allTimeTotal) * 100 : null;
 
@@ -43,8 +43,8 @@ async function getSuccessRate() {
 
     const { data: recentData, error: recentError } = await supabase
       .from('suggested_bets')
-      .select('id, bet_status, result_updated_at')
-      .in('bet_status', ['success', 'failure'])
+      .select('id, bet_result, result_updated_at')
+      .in('bet_result', ['success', 'failure'])
       .gte('result_updated_at', thirtyDaysAgo.toISOString());
 
     if (recentError) {
@@ -52,7 +52,7 @@ async function getSuccessRate() {
       return { success: false, error: { code: 'DB_ERROR', message: recentError.message } };
     }
 
-    const recentSuccess = recentData?.filter(b => b.bet_status === 'success').length || 0;
+    const recentSuccess = recentData?.filter(b => b.bet_result === 'success').length || 0;
     const recentTotal = recentData?.length || 0;
     const recentRate = recentTotal > 0 ? (recentSuccess / recentTotal) * 100 : null;
 
@@ -89,7 +89,7 @@ async function getSuccessRate() {
  *
  * METRICS:
  * - totalPosted: Count of bets with telegram_posted_at (actually posted to group)
- * - totalCompleted: Count of bets with status 'success' or 'failure'
+ * - totalCompleted: Count of bets with bet_result 'success' or 'failure'
  * - byMarket: Breakdown by bet_market field, only counting completed bets
  * - averageOdds: Mean of odds_at_post for completed bets
  *
@@ -104,11 +104,12 @@ async function getDetailedStats() {
         id,
         bet_market,
         bet_status,
+        bet_result,
         odds_at_post,
         result_updated_at,
         telegram_posted_at
       `)
-      .in('bet_status', ['success', 'failure', 'posted'])
+      .eq('bet_status', 'posted')
       .order('telegram_posted_at', { ascending: false });
 
     if (error) {
@@ -118,17 +119,17 @@ async function getDetailedStats() {
     // Calculate stats by market
     const byMarket = {};
     for (const bet of data || []) {
-      if (!['success', 'failure'].includes(bet.bet_status)) continue;
-      
+      if (!['success', 'failure'].includes(bet.bet_result)) continue;
+
       const market = bet.bet_market || 'unknown';
       if (!byMarket[market]) {
         byMarket[market] = { success: 0, failure: 0 };
       }
-      byMarket[market][bet.bet_status]++;
+      byMarket[market][bet.bet_result]++;
     }
 
     // Calculate average odds
-    const completedBets = data?.filter(b => ['success', 'failure'].includes(b.bet_status)) || [];
+    const completedBets = data?.filter(b => ['success', 'failure'].includes(b.bet_result)) || [];
     const avgOdds = completedBets.length > 0
       ? completedBets.reduce((sum, b) => sum + (b.odds_at_post || 0), 0) / completedBets.length
       : null;

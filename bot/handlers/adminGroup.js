@@ -571,7 +571,8 @@ Filtra apostas por critério específico.
       hint = '💡 Use `/odd ID valor` para definir odds';
       break;
     case 'sem_link':
-      filtered = bets.filter(b => !b.deepLink && !['posted', 'success', 'failure'].includes(b.betStatus));
+      // Exclui posted (já foram ao ar com link)
+      filtered = bets.filter(b => !b.deepLink && b.betStatus !== 'posted');
       filterLabel = 'SEM LINK';
       hint = '💡 Use `/link ID url` para adicionar link';
       break;
@@ -588,11 +589,10 @@ Filtra apostas por critério específico.
     case 'prontas':
       // TODAS apostas com odds + link (universo maior que /fila)
       // Inclui: posted (ativas) + qualquer aposta com link e odds válidas
+      // Nota: getAvailableBets() já exclui apostas com bet_result terminal
       filtered = bets.filter(b => {
         const temLink = !!b.deepLink;
         const temOdds = b.odds && b.odds > 0;
-        // Exclui estados terminais
-        if (['success', 'failure', 'cancelled'].includes(b.betStatus)) return false;
         return temLink && temOdds;
       });
       filterLabel = 'PRONTAS';

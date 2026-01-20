@@ -100,17 +100,17 @@ describe('metricsService', () => {
 
   describe('getSuccessRate', () => {
     test('retorna stats corretas com dados válidos', async () => {
-      // Mock all-time query
+      // Mock all-time query (now uses bet_result)
       const mockAllTimeData = [
-        { id: 1, bet_status: 'success' },
-        { id: 2, bet_status: 'success' },
-        { id: 3, bet_status: 'failure' },
+        { id: 1, bet_result: 'success' },
+        { id: 2, bet_result: 'success' },
+        { id: 3, bet_result: 'failure' },
       ];
 
-      // Mock recent (30 days) query
+      // Mock recent (30 days) query (now uses bet_result)
       const mockRecentData = [
-        { id: 1, bet_status: 'success', result_updated_at: new Date().toISOString() },
-        { id: 2, bet_status: 'failure', result_updated_at: new Date().toISOString() },
+        { id: 1, bet_result: 'success', result_updated_at: new Date().toISOString() },
+        { id: 2, bet_result: 'failure', result_updated_at: new Date().toISOString() },
       ];
 
       // Setup mock chain for all-time query
@@ -209,16 +209,18 @@ describe('metricsService', () => {
 
   describe('getDetailedStats', () => {
     test('retorna stats detalhadas por mercado', async () => {
+      // Mock data now uses bet_result for success/failure and bet_status='posted' for all
       const mockData = [
-        { id: 1, bet_market: 'totals', bet_status: 'success', odds_at_post: 1.85, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
-        { id: 2, bet_market: 'totals', bet_status: 'failure', odds_at_post: 1.90, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
-        { id: 3, bet_market: 'btts', bet_status: 'success', odds_at_post: 2.00, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
-        { id: 4, bet_market: 'btts', bet_status: 'posted', odds_at_post: 1.75, result_updated_at: null, telegram_posted_at: '2026-01-11' },
+        { id: 1, bet_market: 'totals', bet_status: 'posted', bet_result: 'success', odds_at_post: 1.85, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
+        { id: 2, bet_market: 'totals', bet_status: 'posted', bet_result: 'failure', odds_at_post: 1.90, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
+        { id: 3, bet_market: 'btts', bet_status: 'posted', bet_result: 'success', odds_at_post: 2.00, result_updated_at: '2026-01-10', telegram_posted_at: '2026-01-09' },
+        { id: 4, bet_market: 'btts', bet_status: 'posted', bet_result: 'pending', odds_at_post: 1.75, result_updated_at: null, telegram_posted_at: '2026-01-11' },
       ];
 
+      // Query now uses .eq('bet_status', 'posted') instead of .in()
       supabase.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
             order: jest.fn().mockResolvedValue({ data: mockData, error: null }),
           }),
         }),
@@ -238,7 +240,7 @@ describe('metricsService', () => {
     test('retorna erro quando query falha', async () => {
       supabase.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
             order: jest.fn().mockResolvedValue({
               data: null,
               error: { message: 'Query failed' }

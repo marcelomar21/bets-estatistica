@@ -64,11 +64,15 @@ async function requestAdminOdds(bets) {
       message += `📊 ${bet.betMarket}\n`;
       message += `   → Responda: \`/odds ${bet.id} [valor]\`\n\n`;
 
-      // Update bet status using betService
-      await setBetPendingWithNote(
-        bet.id,
-        'Aguardando odds manual do admin (mercado não suportado pela API)'
-      );
+      // Só muda status se NÃO estiver posted e NÃO tiver link
+      // Apostas posted nunca devem ter status alterado
+      // Apostas com link devem ir para pending_odds, não pending_link
+      if (bet.betStatus !== 'posted' && !bet.deepLink) {
+        await setBetPendingWithNote(
+          bet.id,
+          'Aguardando odds manual do admin (mercado não suportado pela API)'
+        );
+      }
     }
 
     message += `\n_Sem resposta, essas apostas não serão postadas._`;
@@ -144,6 +148,7 @@ async function getEligibleBetsForEnrichment(daysAhead = 2) {
       odds,
       bet_status,
       eligible,
+      deep_link,
       league_matches!inner (
         home_team_name,
         away_team_name,
@@ -152,7 +157,7 @@ async function getEligibleBetsForEnrichment(daysAhead = 2) {
     `)
     .eq('eligible', true)
     .eq('bet_category', 'SAFE')
-    .in('bet_status', ['generated', 'pending_link', 'ready'])
+    .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
     .gte('league_matches.kickoff_time', now)
     .order('odds', { ascending: false, nullsFirst: false })
     .limit(100);
@@ -177,6 +182,7 @@ async function getEligibleBetsForEnrichment(daysAhead = 2) {
     betPick: bet.bet_pick,
     currentOdds: bet.odds,
     betStatus: bet.bet_status,
+    deepLink: bet.deep_link,
     homeTeamName: bet.league_matches.home_team_name,
     awayTeamName: bet.league_matches.away_team_name,
     kickoffTime: bet.league_matches.kickoff_time,

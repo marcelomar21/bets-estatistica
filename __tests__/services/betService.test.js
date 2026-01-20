@@ -233,51 +233,9 @@ describe('betService', () => {
       expect(result.reason).toBe('Bet not found');
     });
 
-    test('não promove aposta com status success', async () => {
-      const mockBet = {
-        id: 123,
-        bet_status: 'success',
-        odds: 1.85,
-        deep_link: 'https://bet365.com/bet/123',
-        eligible: true,
-      };
-
-      const selectMock = jest.fn().mockReturnValue({
-        eq: jest.fn().mockReturnValue({
-          single: jest.fn().mockResolvedValue({ data: mockBet, error: null }),
-        }),
-      });
-
-      supabase.from.mockReturnValue({ select: selectMock });
-
-      const result = await tryAutoPromote(123);
-
-      expect(result.promoted).toBe(false);
-      expect(result.reason).toBe('Already success');
-    });
-
-    test('não promove aposta com status failure', async () => {
-      const mockBet = {
-        id: 123,
-        bet_status: 'failure',
-        odds: 1.85,
-        deep_link: 'https://bet365.com/bet/123',
-        eligible: true,
-      };
-
-      const selectMock = jest.fn().mockReturnValue({
-        eq: jest.fn().mockReturnValue({
-          single: jest.fn().mockResolvedValue({ data: mockBet, error: null }),
-        }),
-      });
-
-      supabase.from.mockReturnValue({ select: selectMock });
-
-      const result = await tryAutoPromote(123);
-
-      expect(result.promoted).toBe(false);
-      expect(result.reason).toBe('Already failure');
-    });
+    // Note: Tests for 'success' and 'failure' status removed.
+    // After migration 013, these are now bet_result values, not bet_status.
+    // Apostas posted com bet_result='success'/'failure' já são cobertas pelo teste "já postada".
   });
 
   describe('updateBetStatus', () => {
