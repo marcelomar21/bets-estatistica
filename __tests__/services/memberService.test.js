@@ -44,6 +44,10 @@ const {
   getMembersForReconciliation,
   // Story 16.10: Reactivate removed member
   reactivateRemovedMember,
+  // Story 18.1: Affiliate tracking
+  setAffiliateCode,
+  getAffiliateHistory,
+  isAffiliateValid,
 } = require('../../bot/services/memberService');
 const { supabase } = require('../../lib/supabase');
 
@@ -1481,6 +1485,340 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.telegram_id).toBeNull();
+    });
+  });
+
+  // ============================================
+  // Story 18.1: AFFILIATE TRACKING FUNCTIONS
+  // ============================================
+
+  describe('setAffiliateCode', () => {
+    test('define código de afiliado com sucesso', async () => {
+      const mockMember = {
+        id: 1,
+        telegram_id: 123456789,
+        status: 'trial',
+        affiliate_code: null,
+        affiliate_history: [],
+        affiliate_clicked_at: null
+      };
+      const updatedMember = {
+        ...mockMember,
+        affiliate_code: 'CARLOS123',
+        affiliate_history: [{ code: 'CARLOS123', clicked_at: expect.any(String) }],
+        affiliate_clicked_at: expect.any(String)
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: updatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await setAffiliateCode(1, 'CARLOS123');
+
+      expect(result.success).toBe(true);
+      expect(result.data.affiliate_code).toBe('CARLOS123');
+    });
+
+    test('sobrescreve código anterior (modelo último clique)', async () => {
+      const mockMember = {
+        id: 1,
+        affiliate_code: 'CARLOS123',
+        affiliate_history: [{ code: 'CARLOS123', clicked_at: '2026-01-10T10:00:00Z' }],
+        affiliate_clicked_at: '2026-01-10T10:00:00Z'
+      };
+      const updatedMember = {
+        ...mockMember,
+        affiliate_code: 'MARIA456',
+        affiliate_history: [
+          { code: 'CARLOS123', clicked_at: '2026-01-10T10:00:00Z' },
+          { code: 'MARIA456', clicked_at: expect.any(String) }
+        ]
+      };
+
+      // Mock getMemberById
+      const getMemberSingle = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getMemberEq = jest.fn().mockReturnValue({ single: getMemberSingle });
+      const getMemberSelect = jest.fn().mockReturnValue({ eq: getMemberEq });
+
+      // Mock update
+      const updateSingle = jest.fn().mockResolvedValue({ data: updatedMember, error: null });
+      const updateSelect = jest.fn().mockReturnValue({ single: updateSingle });
+      const updateEq = jest.fn().mockReturnValue({ select: updateSelect });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEq });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getMemberSelect };
+        } else {
+          return { update: updateMock };
+        }
+      });
+
+      const result = await setAffiliateCode(1, 'MARIA456');
+
+      expect(result.success).toBe(true);
+      expect(result.data.affiliate_code).toBe('MARIA456');
+      expect(result.data.affiliate_history).toHaveLength(2);
+    });
+
+    test('retorna INVALID_PAYLOAD quando código vazio', async () => {
+      const result = await setAffiliateCode(1, '');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_PAYLOAD');
+    });
+
+    test('retorna MEMBER_NOT_FOUND quando membro não existe', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await setAffiliateCode(999, 'CARLOS123');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+  });
+
+  describe('getAffiliateHistory', () => {
+    test('retorna histórico de afiliados com sucesso', async () => {
+      const mockMember = {
+        id: 1,
+        affiliate_code: 'MARIA456',
+        affiliate_history: [
+          { code: 'CARLOS123', clicked_at: '2026-01-10T10:00:00Z' },
+          { code: 'MARIA456', clicked_at: '2026-01-15T14:30:00Z' }
+        ],
+        affiliate_clicked_at: '2026-01-15T14:30:00Z'
+      };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getAffiliateHistory(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.history).toHaveLength(2);
+      expect(result.data.currentCode).toBe('MARIA456');
+      expect(result.data.clickedAt).toBe('2026-01-15T14:30:00Z');
+    });
+
+    test('retorna histórico vazio quando nunca teve afiliado', async () => {
+      const mockMember = {
+        id: 1,
+        affiliate_code: null,
+        affiliate_history: [],
+        affiliate_clicked_at: null
+      };
+
+      const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getAffiliateHistory(1);
+
+      expect(result.success).toBe(true);
+      expect(result.data.history).toEqual([]);
+      expect(result.data.currentCode).toBeNull();
+    });
+
+    test('retorna MEMBER_NOT_FOUND quando membro não existe', async () => {
+      const singleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const eqMock = jest.fn().mockReturnValue({ single: singleMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+
+      supabase.from.mockReturnValue({ select: selectMock });
+
+      const result = await getAffiliateHistory(999);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+  });
+
+  describe('isAffiliateValid', () => {
+    test('retorna true quando afiliado válido (< 14 dias)', () => {
+      const recentClick = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000); // 5 days ago
+      const member = {
+        affiliate_code: 'CARLOS123',
+        affiliate_clicked_at: recentClick.toISOString()
+      };
+
+      const result = isAffiliateValid(member);
+
+      expect(result).toBe(true);
+    });
+
+    test('retorna false quando afiliado expirado (>= 14 dias)', () => {
+      const oldClick = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000); // 15 days ago
+      const member = {
+        affiliate_code: 'CARLOS123',
+        affiliate_clicked_at: oldClick.toISOString()
+      };
+
+      const result = isAffiliateValid(member);
+
+      expect(result).toBe(false);
+    });
+
+    test('retorna false quando não tem affiliate_code', () => {
+      const member = {
+        affiliate_code: null,
+        affiliate_clicked_at: null
+      };
+
+      const result = isAffiliateValid(member);
+
+      expect(result).toBe(false);
+    });
+
+    test('retorna false quando não tem affiliate_clicked_at', () => {
+      const member = {
+        affiliate_code: 'CARLOS123',
+        affiliate_clicked_at: null
+      };
+
+      const result = isAffiliateValid(member);
+
+      expect(result).toBe(false);
+    });
+
+    test('retorna false quando member é null', () => {
+      const result = isAffiliateValid(null);
+
+      expect(result).toBe(false);
+    });
+
+    test('retorna true no limite de 14 dias (13 dias 23h)', () => {
+      // Just under 14 days
+      const almostExpired = new Date(Date.now() - (13 * 24 + 23) * 60 * 60 * 1000);
+      const member = {
+        affiliate_code: 'CARLOS123',
+        affiliate_clicked_at: almostExpired.toISOString()
+      };
+
+      const result = isAffiliateValid(member);
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('createTrialMember with affiliateCode', () => {
+    test('cria membro trial com código de afiliado', async () => {
+      const newMember = {
+        id: 1,
+        telegram_id: 123456789,
+        status: 'trial',
+        affiliate_code: 'CARLOS123',
+        affiliate_history: [{ code: 'CARLOS123', clicked_at: expect.any(String) }],
+        affiliate_clicked_at: expect.any(String)
+      };
+
+      // Mock getMemberByTelegramId (not found)
+      const getSingleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      // Mock insert
+      const insertSingleMock = jest.fn().mockResolvedValue({ data: newMember, error: null });
+      const insertSelectMock = jest.fn().mockReturnValue({ single: insertSingleMock });
+      const insertMock = jest.fn().mockReturnValue({ select: insertSelectMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getSelectMock };
+        } else {
+          return { insert: insertMock };
+        }
+      });
+
+      const result = await createTrialMember({
+        telegramId: 123456789,
+        telegramUsername: 'testuser',
+        affiliateCode: 'CARLOS123'
+      }, 2); // 2 days for affiliate
+
+      expect(result.success).toBe(true);
+      expect(result.data.affiliate_code).toBe('CARLOS123');
+    });
+
+    test('cria membro trial sem código de afiliado', async () => {
+      const newMember = {
+        id: 1,
+        telegram_id: 123456789,
+        status: 'trial',
+        affiliate_code: null,
+        affiliate_history: null,
+        affiliate_clicked_at: null
+      };
+
+      // Mock getMemberByTelegramId (not found)
+      const getSingleMock = jest.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'PGRST116', message: 'Not found' }
+      });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      // Mock insert
+      const insertSingleMock = jest.fn().mockResolvedValue({ data: newMember, error: null });
+      const insertSelectMock = jest.fn().mockReturnValue({ single: insertSingleMock });
+      const insertMock = jest.fn().mockReturnValue({ select: insertSelectMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getSelectMock };
+        } else {
+          return { insert: insertMock };
+        }
+      });
+
+      const result = await createTrialMember({
+        telegramId: 123456789,
+        telegramUsername: 'testuser'
+      }, 7); // 7 days for regular
+
+      expect(result.success).toBe(true);
+      // Affiliate fields should be null/empty when not provided
     });
   });
 });

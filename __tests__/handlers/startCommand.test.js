@@ -30,6 +30,7 @@ jest.mock('../../lib/config', () => ({
     },
     membership: {
       trialDays: 7,
+      affiliateTrialDays: 2, // Story 18.1: 2 days for affiliates
       checkoutUrl: 'https://checkout.example.com',
       operatorUsername: 'testoperator',
       subscriptionPrice: 'R$50/mês'
@@ -37,7 +38,7 @@ jest.mock('../../lib/config', () => ({
   }
 }));
 
-const { handleStartCommand, handleStatusCommand } = require('../../bot/handlers/startCommand');
+const { handleStartCommand, handleStatusCommand, extractAffiliateCode } = require('../../bot/handlers/startCommand');
 const { getBot } = require('../../bot/telegram');
 const { supabase } = require('../../lib/supabase');
 const {
@@ -45,7 +46,8 @@ const {
   createTrialMember,
   canRejoinGroup,
   reactivateMember,
-  getTrialDaysRemaining
+  getTrialDaysRemaining,
+  setAffiliateCode
 } = require('../../bot/services/memberService');
 const { getSuccessRate } = require('../../bot/services/metricsService');
 
@@ -116,8 +118,9 @@ describe('Start Command Handler', () => {
 
         expect(result.success).toBe(true);
         expect(result.action).toBe('created');
+        // Story 18.1: Now includes affiliateCode (null when no affiliate)
         expect(createTrialMember).toHaveBeenCalledWith(
-          { telegramId: 123456789, telegramUsername: 'testuser' },
+          { telegramId: 123456789, telegramUsername: 'testuser', affiliateCode: null },
           7
         );
         expect(mockBot.createChatInviteLink).toHaveBeenCalledWith(
@@ -423,6 +426,178 @@ describe('Start Command Handler', () => {
       expect(mockBot.sendMessage).toHaveBeenCalledWith(
         123456789,
         expect.stringContaining('não está cadastrado')
+      );
+    });
+  });
+
+  // ============================================
+  // Story 18.1: Affiliate Tracking Tests
+  // ============================================
+
+  describe('extractAffiliateCode', () => {
+    it('should extract code from valid aff_ payload', () => {
+      const result = extractAffiliateCode('aff_CARLOS123');
+      expect(result.hasAffiliate).toBe(true);
+      expect(result.affiliateCode).toBe('CARLOS123');
+    });
+
+    it('should extract code case-insensitively', () => {
+      const result = extractAffiliateCode('AFF_maria456');
+      expect(result.hasAffiliate).toBe(true);
+      expect(result.affiliateCode).toBe('maria456');
+    });
+
+    it('should handle mixed case prefix', () => {
+      const result = extractAffiliateCode('Aff_TestCode');
+      expect(result.hasAffiliate).toBe(true);
+      expect(result.affiliateCode).toBe('TestCode');
+    });
+
+    it('should return false for non-affiliate payloads', () => {
+      const result = extractAffiliateCode('join');
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should return false for ref_ prefix (not aff_)', () => {
+      const result = extractAffiliateCode('ref_CODIGO');
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should return false for empty payload', () => {
+      const result = extractAffiliateCode('');
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should return false for null payload', () => {
+      const result = extractAffiliateCode(null);
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should return false for undefined payload', () => {
+      const result = extractAffiliateCode(undefined);
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should return false for aff_ with no code', () => {
+      const result = extractAffiliateCode('aff_');
+      expect(result.hasAffiliate).toBe(false);
+      expect(result.affiliateCode).toBeNull();
+    });
+
+    it('should trim whitespace from payload', () => {
+      const result = extractAffiliateCode('  aff_CODE123  ');
+      expect(result.hasAffiliate).toBe(true);
+      expect(result.affiliateCode).toBe('CODE123'); // Trims both leading and trailing
+    });
+  });
+
+  describe('handleStartCommand with affiliate', () => {
+    const createMockMessage = (overrides = {}) => ({
+      from: {
+        id: 123456789,
+        username: 'testuser',
+        first_name: 'Test'
+      },
+      chat: {
+        id: 123456789,
+        type: 'private'
+      },
+      text: '/start aff_CARLOS123',
+      ...overrides
+    });
+
+    it('should create new member with affiliate code and 2-day trial', async () => {
+      getMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      createTrialMember.mockResolvedValue({
+        success: true,
+        data: { id: 1, status: 'trial', affiliate_code: 'CARLOS123' }
+      });
+
+      const msg = createMockMessage();
+      const result = await handleStartCommand(msg);
+
+      expect(result.success).toBe(true);
+      expect(result.action).toBe('created');
+      // Should call with affiliateCode and 2 days trial
+      expect(createTrialMember).toHaveBeenCalledWith(
+        { telegramId: 123456789, telegramUsername: 'testuser', affiliateCode: 'CARLOS123' },
+        2 // 2 days for affiliates
+      );
+    });
+
+    it('should update affiliate code for existing member', async () => {
+      getMemberByTelegramId.mockResolvedValue({
+        success: true,
+        data: {
+          id: 1,
+          telegram_id: 123456789,
+          status: 'trial',
+          affiliate_code: 'OLD_AFFILIATE',
+          joined_group_at: null
+        }
+      });
+
+      setAffiliateCode.mockResolvedValue({
+        success: true,
+        data: { id: 1, affiliate_code: 'CARLOS123' }
+      });
+
+      const msg = createMockMessage();
+      const result = await handleStartCommand(msg);
+
+      expect(result.success).toBe(true);
+      // Should update affiliate code (last-click model)
+      expect(setAffiliateCode).toHaveBeenCalledWith(1, 'CARLOS123');
+    });
+
+    it('should NOT update affiliate when no aff_ parameter', async () => {
+      getMemberByTelegramId.mockResolvedValue({
+        success: true,
+        data: {
+          id: 1,
+          telegram_id: 123456789,
+          status: 'trial',
+          affiliate_code: 'EXISTING_AFFILIATE',
+          joined_group_at: null
+        }
+      });
+
+      const msg = createMockMessage({ text: '/start join' }); // No affiliate code
+      const result = await handleStartCommand(msg);
+
+      expect(result.success).toBe(true);
+      // Should NOT call setAffiliateCode - preserve existing affiliate
+      expect(setAffiliateCode).not.toHaveBeenCalled();
+    });
+
+    it('should use 7-day trial for non-affiliate new member', async () => {
+      getMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      createTrialMember.mockResolvedValue({
+        success: true,
+        data: { id: 1, status: 'trial' }
+      });
+
+      const msg = createMockMessage({ text: '/start join' }); // No affiliate
+      const result = await handleStartCommand(msg);
+
+      expect(result.success).toBe(true);
+      // Should call with 7 days trial (no affiliate)
+      expect(createTrialMember).toHaveBeenCalledWith(
+        { telegramId: 123456789, telegramUsername: 'testuser', affiliateCode: null },
+        7 // 7 days for regular
       );
     });
   });

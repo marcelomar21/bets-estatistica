@@ -200,10 +200,11 @@ async function updateMemberStatus(memberId, newStatus) {
  * @param {number|string} memberData.telegramId - Telegram user ID
  * @param {string} [memberData.telegramUsername] - Telegram username
  * @param {string} [memberData.email] - Email address
+ * @param {string} [memberData.affiliateCode] - Affiliate code from deep link (optional)
  * @param {number} [trialDays=7] - Number of trial days
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createTrialMember({ telegramId, telegramUsername, email }, trialDays = 7) {
+async function createTrialMember({ telegramId, telegramUsername, email, affiliateCode }, trialDays = 7) {
   try {
     // Check if member already exists
     const existingResult = await getMemberByTelegramId(telegramId);
@@ -224,16 +225,32 @@ async function createTrialMember({ telegramId, telegramUsername, email }, trialD
     const now = new Date();
     const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
 
+    // Build insert data with optional affiliate fields
+    const insertData = {
+      telegram_id: telegramId,
+      telegram_username: telegramUsername || null,
+      email: email || null,
+      status: 'trial',
+      trial_started_at: now.toISOString(),
+      trial_ends_at: trialEndsAt.toISOString()
+    };
+
+    // Story 18.1: Add affiliate tracking if code provided
+    if (affiliateCode) {
+      insertData.affiliate_code = affiliateCode;
+      insertData.affiliate_clicked_at = now.toISOString();
+      insertData.affiliate_history = JSON.stringify([
+        { code: affiliateCode, clicked_at: now.toISOString() }
+      ]);
+      logger.info('[membership:affiliate] New member with affiliate', {
+        telegramId,
+        affiliateCode
+      });
+    }
+
     const { data, error } = await supabase
       .from('members')
-      .insert({
-        telegram_id: telegramId,
-        telegram_username: telegramUsername || null,
-        email: email || null,
-        status: 'trial',
-        trial_started_at: now.toISOString(),
-        trial_ends_at: trialEndsAt.toISOString()
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -1498,6 +1515,158 @@ async function getTrialDaysRemaining(memberId) {
   }
 }
 
+// ============================================
+// Story 18.1: Affiliate Tracking Functions
+// ============================================
+
+/**
+ * Set affiliate code for a member (last-click attribution model)
+ * Story 18.1: Tracking de Afiliados e Entrada
+ *
+ * Updates affiliate_code, affiliate_clicked_at, and appends to affiliate_history.
+ * Implements last-click model: new affiliate overwrites previous.
+ *
+ * @param {number} memberId - Internal member ID
+ * @param {string} affiliateCode - Affiliate code from deep link
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function setAffiliateCode(memberId, affiliateCode) {
+  try {
+    if (!affiliateCode || typeof affiliateCode !== 'string') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'Affiliate code is required' }
+      };
+    }
+
+    // Get current member to preserve history
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+    const now = new Date().toISOString();
+
+    // Parse existing history (default to empty array)
+    let history = [];
+    try {
+      history = member.affiliate_history || [];
+      if (typeof history === 'string') {
+        history = JSON.parse(history);
+      }
+    } catch {
+      logger.warn('[membership:affiliate] Failed to parse affiliate_history, starting fresh', { memberId });
+      history = [];
+    }
+
+    // Append new click to history (never delete previous entries)
+    history.push({ code: affiliateCode, clicked_at: now });
+
+    // Update member with new affiliate data
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        affiliate_code: affiliateCode,
+        affiliate_clicked_at: now,
+        affiliate_history: history
+      })
+      .eq('id', memberId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[membership:affiliate] setAffiliateCode: database error', {
+        memberId,
+        affiliateCode,
+        error: error.message
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[membership:affiliate] Affiliate code set', {
+      memberId,
+      affiliateCode,
+      previousCode: member.affiliate_code,
+      historyCount: history.length
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[membership:affiliate] setAffiliateCode: unexpected error', {
+      memberId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get affiliate history for a member
+ * Story 18.1: Tracking de Afiliados e Entrada
+ *
+ * Returns the full append-only history of affiliate clicks.
+ *
+ * @param {number} memberId - Internal member ID
+ * @returns {Promise<{success: boolean, data?: {history: Array, currentCode: string|null}, error?: object}>}
+ */
+async function getAffiliateHistory(memberId) {
+  try {
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const member = memberResult.data;
+
+    // Parse history
+    let history = [];
+    try {
+      history = member.affiliate_history || [];
+      if (typeof history === 'string') {
+        history = JSON.parse(history);
+      }
+    } catch {
+      history = [];
+    }
+
+    return {
+      success: true,
+      data: {
+        history,
+        currentCode: member.affiliate_code,
+        clickedAt: member.affiliate_clicked_at
+      }
+    };
+  } catch (err) {
+    logger.error('[membership:affiliate] getAffiliateHistory: unexpected error', {
+      memberId,
+      error: err.message
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Check if affiliate attribution is valid (within 14-day window)
+ * Story 18.1 / 18.2: Lógica de Expiração de Atribuição
+ *
+ * @param {object} member - Member object with affiliate_code and affiliate_clicked_at
+ * @returns {boolean} - True if affiliate is valid (clicked within 14 days)
+ */
+function isAffiliateValid(member) {
+  if (!member || !member.affiliate_code || !member.affiliate_clicked_at) {
+    return false;
+  }
+
+  const clickedAt = new Date(member.affiliate_clicked_at);
+  const now = new Date();
+  const daysSinceClick = (now.getTime() - clickedAt.getTime()) / (1000 * 60 * 60 * 24);
+
+  // Valid if clicked within 14 days
+  return daysSinceClick < 14;
+}
+
 module.exports = {
   // Constants
   MEMBER_STATUSES,
@@ -1550,4 +1719,9 @@ module.exports = {
 
   // Story 16.8: Reconciliation helpers
   getMembersForReconciliation,
+
+  // Story 18.1: Affiliate tracking functions
+  setAffiliateCode,
+  getAffiliateHistory,
+  isAffiliateValid,
 };

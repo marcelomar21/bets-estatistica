@@ -1,4 +1,4 @@
-# generated: 2026-01-17
+# generated: 2026-01-19
 # project: bets-estatistica
 # project_key: bets-estatistica
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-01-17
+generated: 2026-01-19
 project: bets-estatistica
 project_key: bets-estatistica
 tracking_system: file-system
@@ -249,3 +249,14 @@ development_status:
   17-4-implementar-validacao-padronizada-input: backlog
   17-5-consolidar-utilitarios-compartilhados: backlog
   epic-17-retrospective: optional
+
+  # ========================================
+  # Epic 18: Sistema de Afiliados (Extensão Epic 16)
+  # Novo epic criado em 2026-01-19 para programa de afiliados
+  # Ver: prd-afiliados.md, epics-afiliados.md
+  # ========================================
+  epic-18: in-progress
+  18-1-tracking-afiliados-entrada: done
+  18-2-logica-expiracao-atribuicao: backlog
+  18-3-link-pagamento-dinamico-tracking: backlog
+  epic-18-retrospective: optional
