@@ -32,6 +32,9 @@ jobs:
           FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_GROUP_ID: ${{ secrets.TELEGRAM_ADMIN_GROUP_ID }}
+          TELEGRAM_PUBLIC_GROUP_ID: ${{ secrets.TELEGRAM_PUBLIC_GROUP_ID }}
           NODE_ENV: production
           TZ: America/Sao_Paulo
         run: node scripts/pipeline.js
