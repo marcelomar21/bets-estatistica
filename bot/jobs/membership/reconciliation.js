@@ -1,8 +1,9 @@
 /**
- * Job: Reconciliation - Daily sync check between local DB and Cakto API
- * Story 16.8: Implementar Reconciliacao com Cakto
+ * Job: Reconciliation - Daily sync check between local DB and Mercado Pago API
+ * Story 16.8: Implementar Reconciliacao
+ * Tech-Spec: Migração Cakto → Mercado Pago
  *
- * Compares member status in Supabase with subscription status from Cakto API.
+ * Compares member status in Supabase with subscription status from MP API.
  * Does NOT auto-correct - only alerts admin for manual review.
  *
  * Run: node bot/jobs/membership/reconciliation.js
@@ -14,38 +15,37 @@ const logger = require('../../../lib/logger');
 const { sleep } = require('../../../lib/utils');
 const { alertAdmin } = require('../../services/alertService');
 const { getMembersForReconciliation } = require('../../services/memberService');
-const { getSubscription } = require('../../services/caktoService');
+const { getSubscription } = require('../../services/mercadoPagoService');
 
 const JOB_NAME = 'membership:reconciliation';
 const RATE_LIMIT_MS = 100; // 10 req/s
 // L1 FIX: Document that this is exported for testing/tuning
 const PROGRESS_LOG_INTERVAL = 100; // Log every 100 members
 
-// M3 FIX: Extract bad statuses as constant for clarity
-const BAD_CAKTO_STATUSES = ['canceled', 'cancelled', 'expired', 'defaulted', 'suspended'];
+// MP preapproval statuses that indicate problems
+const BAD_MP_STATUSES = ['cancelled', 'paused', 'pending'];
 
 // Lock to prevent concurrent runs (in-memory, same process)
 let reconciliationRunning = false;
 
 /**
- * Check if member is desynchronized with Cakto
+ * Check if member is desynchronized with Mercado Pago
  * @param {string} localStatus - Member status in Supabase
- * @param {string} caktoStatus - Subscription status from Cakto
+ * @param {string} mpStatus - Subscription status from MP (preapproval status)
  * @returns {{desync: boolean, action: string|null}}
  */
-function isDesynchronized(localStatus, caktoStatus) {
+function isDesynchronized(localStatus, mpStatus) {
   // Trial members are ignored (no subscription yet)
   if (localStatus === 'trial') {
     return { desync: false, action: null };
   }
 
-  // Active member should have active subscription
+  // Active member should have authorized subscription
   if (localStatus === 'ativo') {
-    // M3 FIX: Use extracted constant
-    if (BAD_CAKTO_STATUSES.includes(caktoStatus?.toLowerCase())) {
+    if (BAD_MP_STATUSES.includes(mpStatus?.toLowerCase())) {
       return {
         desync: true,
-        action: caktoStatus === 'canceled' || caktoStatus === 'cancelled'
+        action: mpStatus === 'cancelled'
           ? 'Verificar se deve remover membro'
           : 'Verificar pagamento/cobranca'
       };
@@ -57,12 +57,12 @@ function isDesynchronized(localStatus, caktoStatus) {
 
 /**
  * Format and send desync alert to admin group
- * @param {Array} members - Desynchronized members with caktoStatus and suggestedAction
+ * @param {Array} members - Desynchronized members with mpStatus and suggestedAction
  */
 async function sendDesyncAlert(members) {
   const today = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const lines = members.map(m =>
-    `@${m.telegram_username || 'sem_username'} (${m.telegram_id})\n   Local: ${m.status} | Cakto: ${m.caktoStatus}\n   Acao: ${m.suggestedAction}`
+    `@${m.telegram_username || 'sem_username'} (${m.telegram_id})\n   Local: ${m.status} | MP: ${m.mpStatus}\n   Acao: ${m.suggestedAction}`
   );
 
   const message = `*DESSINCRONIZACAO DETECTADA*
@@ -107,7 +107,7 @@ async function sendCriticalFailureAlert(stats, errors) {
 Job: Reconciliacao 03:00 BRT
 Data: ${today}
 
-*API Cakto com problemas*
+*API Mercado Pago com problemas*
 
 Verificados: ${stats.total}
 Falhas: ${stats.failed} (${failureRate}%)
@@ -115,7 +115,7 @@ Sincronizados: ${stats.synced}
 
 Erros mais frequentes: ${topErrors || 'N/A'}
 
-Acao: Verificar status da API Cakto`;
+Acao: Verificar status da API Mercado Pago`;
 
   await alertAdmin(message);
   logger.error(`[${JOB_NAME}] Alerta critico enviado`, { failureRate, topErrors });
@@ -126,9 +126,9 @@ Acao: Verificar status da API Cakto`;
  * L2 FIX: Detailed JSDoc for internal function
  *
  * This function performs the actual reconciliation logic:
- * 1. Fetches all active members with cakto_subscription_id
- * 2. Queries Cakto API for each subscription status (with rate limiting)
- * 3. Compares local status with Cakto status using isDesynchronized()
+ * 1. Fetches all active members with mp_subscription_id
+ * 2. Queries Mercado Pago API for each subscription status (with rate limiting)
+ * 3. Compares local status with MP status using isDesynchronized()
  * 4. Sends alerts for any desynchronizations found
  * 5. Sends critical alert if > 50% of API calls fail
  *
@@ -185,35 +185,35 @@ async function _runReconciliationInternal() {
       // Rate limiting
       await sleep(RATE_LIMIT_MS);
 
-      const caktoResult = await getSubscription(member.cakto_subscription_id);
+      const mpResult = await getSubscription(member.mp_subscription_id);
 
       // Handle SUBSCRIPTION_NOT_FOUND as desync
-      if (!caktoResult.success) {
-        if (caktoResult.error?.code === 'SUBSCRIPTION_NOT_FOUND') {
-          // Subscription deleted in Cakto = desync
+      if (!mpResult.success) {
+        if (mpResult.error?.code === 'SUBSCRIPTION_NOT_FOUND') {
+          // Subscription deleted in MP = desync
           stats.desynced++;
           desyncedMembers.push({
             ...member,
-            caktoStatus: 'NOT_FOUND',
-            suggestedAction: 'Assinatura nao existe no Cakto - verificar se deve remover'
+            mpStatus: 'NOT_FOUND',
+            suggestedAction: 'Assinatura nao existe no MP - verificar se deve remover'
           });
         } else {
           // API error
           stats.failed++;
-          errors.push({ memberId: member.id, error: caktoResult.error.code });
+          errors.push({ memberId: member.id, error: mpResult.error.code });
         }
         continue;
       }
 
       // 3. Compare status
-      const caktoStatus = caktoResult.data.status;
-      const { desync, action } = isDesynchronized(member.status, caktoStatus);
+      const mpStatus = mpResult.data.status;
+      const { desync, action } = isDesynchronized(member.status, mpStatus);
 
       if (desync) {
         stats.desynced++;
         desyncedMembers.push({
           ...member,
-          caktoStatus,
+          mpStatus,
           suggestedAction: action
         });
       } else {
@@ -281,7 +281,7 @@ module.exports = {
   sendCriticalFailureAlert,
   // L1 FIX: Export constants for testing/tuning
   PROGRESS_LOG_INTERVAL,
-  BAD_CAKTO_STATUSES,
+  BAD_MP_STATUSES,
   // For testing
   _runReconciliationInternal,
 };

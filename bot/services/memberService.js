@@ -319,8 +319,8 @@ async function getMemberByEmail(email) {
  * Transitions from 'trial' to 'ativo' and sets subscription fields
  * @param {number} memberId - Internal member ID
  * @param {object} subscriptionData - Subscription information
- * @param {string} subscriptionData.subscriptionId - Cakto subscription ID
- * @param {string} subscriptionData.customerId - Cakto customer ID
+ * @param {string} subscriptionData.subscriptionId - Mercado Pago subscription ID
+ * @param {string} subscriptionData.customerId - Mercado Pago customer/payer ID
  * @param {string} subscriptionData.paymentMethod - Payment method (pix, boleto, cartao_recorrente)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
@@ -340,8 +340,8 @@ async function activateMember(memberId, { subscriptionId, customerId, paymentMet
       const { data, error } = await supabase
         .from('members')
         .update({
-          cakto_subscription_id: subscriptionId,
-          cakto_customer_id: customerId,
+          mp_subscription_id: subscriptionId,
+          mp_payer_id: customerId,
           payment_method: paymentMethod,
           last_payment_at: new Date().toISOString()
         })
@@ -383,8 +383,8 @@ async function activateMember(memberId, { subscriptionId, customerId, paymentMet
       .from('members')
       .update({
         status: 'ativo',
-        cakto_subscription_id: subscriptionId,
-        cakto_customer_id: customerId,
+        mp_subscription_id: subscriptionId,
+        mp_payer_id: customerId,
         payment_method: paymentMethod,
         subscription_started_at: now.toISOString(),
         subscription_ends_at: subscriptionEndsAt.toISOString(),
@@ -590,8 +590,8 @@ async function reactivateRemovedMember(memberId, options = {}) {
         invite_link: null,
         invite_generated_at: null,
         joined_group_at: null,
-        // Update Cakto IDs if provided
-        ...(options.subscriptionId && { cakto_subscription_id: options.subscriptionId }),
+        // Update Mercado Pago IDs if provided
+        ...(options.subscriptionId && { mp_subscription_id: options.subscriptionId }),
         ...(options.paymentMethod && { payment_method: options.paymentMethod })
       })
       .eq('id', memberId)
@@ -699,14 +699,14 @@ async function markMemberAsDefaulted(memberId) {
 /**
  * Create an active member directly (for payments before trial)
  * Story 16.3: Added for webhook processing
- * Story 18: Added affiliate tracking from webhook
+ * Tech-Spec: Migração MP - Uses mp_subscription_id and affiliate_coupon
  * @param {object} memberData - Member data
  * @param {string} memberData.email - Email address
  * @param {object} memberData.subscriptionData - Subscription information
- * @param {string} [memberData.affiliateCode] - Affiliate code from webhook (optional)
+ * @param {string} [memberData.affiliateCoupon] - Coupon code from MP checkout (optional)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createActiveMember({ email, subscriptionData, affiliateCode }) {
+async function createActiveMember({ email, subscriptionData, affiliateCoupon }) {
   try {
     const { subscriptionId, customerId, paymentMethod } = subscriptionData;
 
@@ -717,24 +717,20 @@ async function createActiveMember({ email, subscriptionData, affiliateCode }) {
     const insertData = {
       email: email,
       status: 'ativo',
-      cakto_subscription_id: subscriptionId,
-      cakto_customer_id: customerId,
+      mp_subscription_id: subscriptionId,
+      mp_payer_id: customerId,
       payment_method: paymentMethod,
       subscription_started_at: now.toISOString(),
       subscription_ends_at: subscriptionEndsAt.toISOString(),
       last_payment_at: now.toISOString()
     };
 
-    // Story 18: Add affiliate tracking if code provided from webhook
-    if (affiliateCode) {
-      insertData.affiliate_code = affiliateCode;
-      insertData.affiliate_clicked_at = now.toISOString();
-      insertData.affiliate_history = JSON.stringify([
-        { code: affiliateCode, clicked_at: now.toISOString(), source: 'webhook' }
-      ]);
-      logger.info('[memberService] createActiveMember: with affiliate from webhook', {
+    // Add affiliate coupon if provided
+    if (affiliateCoupon) {
+      insertData.affiliate_coupon = affiliateCoupon;
+      logger.info('[memberService] createActiveMember: with affiliate coupon', {
         email,
-        affiliateCode
+        affiliateCoupon
       });
     }
 
@@ -761,7 +757,7 @@ async function createActiveMember({ email, subscriptionData, affiliateCode }) {
       memberId: data.id,
       email,
       subscriptionEndsAt: subscriptionEndsAt.toISOString(),
-      hasAffiliate: !!affiliateCode
+      hasAffiliate: !!affiliateCoupon
     });
 
     return { success: true, data };
@@ -1464,9 +1460,9 @@ async function setTrialDays(days, operatorUsername) {
 }
 
 /**
- * Get members that need reconciliation with Cakto
+ * Get members that need reconciliation with Mercado Pago
  * Story 16.8: Members with active status and subscription that need status verification
- * Returns only active members with cakto_subscription_id (trial members are ignored)
+ * Returns only active members with mp_subscription_id (trial members are ignored)
  * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
  */
 async function getMembersForReconciliation() {
@@ -1474,9 +1470,9 @@ async function getMembersForReconciliation() {
     // H1 FIX: Query only 'ativo' status directly - don't fetch trial members just to filter them out
     const { data, error } = await supabase
       .from('members')
-      .select('id, telegram_id, telegram_username, email, status, cakto_subscription_id')
+      .select('id, telegram_id, telegram_username, email, status, mp_subscription_id')
       .eq('status', 'ativo')
-      .not('cakto_subscription_id', 'is', null);
+      .not('mp_subscription_id', 'is', null);
 
     if (error) {
       logger.error('[memberService] getMembersForReconciliation: database error', { error: error.message });
@@ -1838,6 +1834,153 @@ function generatePaymentLink(member) {
   };
 }
 
+// ============================================
+// MERCADO PAGO FUNCTIONS
+// Tech-Spec: Migração Cakto → Mercado Pago
+// ============================================
+
+/**
+ * Get member by Mercado Pago subscription ID
+ * @param {string} subscriptionId - MP preapproval ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getMemberBySubscription(subscriptionId) {
+  try {
+    if (!subscriptionId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'subscriptionId is required' }
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('mp_subscription_id', subscriptionId)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return {
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND', message: `Member with subscription ${subscriptionId} not found` }
+        };
+      }
+      logger.error('[memberService] getMemberBySubscription: database error', { subscriptionId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] getMemberBySubscription: unexpected error', { subscriptionId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Create a trial member from Mercado Pago subscription
+ * MP manages the trial period (7 days free, then charges automatically)
+ * @param {object} memberData - Member data from MP
+ * @param {string} memberData.email - Email from MP payer
+ * @param {string} memberData.subscriptionId - MP preapproval ID
+ * @param {string} memberData.payerId - MP payer ID
+ * @param {string} [memberData.couponCode] - Affiliate coupon used at checkout
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function createTrialMemberMP({ email, subscriptionId, payerId, couponCode }) {
+  try {
+    const insertData = {
+      email,
+      status: 'trial',
+      mp_subscription_id: subscriptionId,
+      mp_payer_id: payerId
+    };
+
+    // Add affiliate coupon if provided
+    if (couponCode) {
+      insertData.affiliate_coupon = couponCode;
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        logger.warn('[memberService] createTrialMemberMP: email already exists', { email });
+        return {
+          success: false,
+          error: { code: 'MEMBER_ALREADY_EXISTS', message: `Member with email ${email} already exists` }
+        };
+      }
+      logger.error('[memberService] createTrialMemberMP: database error', { email, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] createTrialMemberMP: success', {
+      memberId: data.id,
+      email,
+      subscriptionId,
+      hasCoupon: !!couponCode
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] createTrialMemberMP: unexpected error', { email, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Update subscription data for an existing member
+ * Used when member already exists and makes a new subscription
+ * @param {number} memberId - Internal member ID
+ * @param {object} subscriptionData - Data to update
+ * @param {string} subscriptionData.subscriptionId - MP preapproval ID
+ * @param {string} [subscriptionData.payerId] - MP payer ID
+ * @param {string} [subscriptionData.couponCode] - Affiliate coupon
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function updateSubscriptionData(memberId, { subscriptionId, payerId, couponCode }) {
+  try {
+    const updateData = {
+      mp_subscription_id: subscriptionId
+    };
+
+    if (payerId) {
+      updateData.mp_payer_id = payerId;
+    }
+
+    if (couponCode) {
+      updateData.affiliate_coupon = couponCode;
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .update(updateData)
+      .eq('id', memberId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[memberService] updateSubscriptionData: database error', { memberId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] updateSubscriptionData: success', {
+      memberId,
+      subscriptionId
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] updateSubscriptionData: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   // Constants
   MEMBER_STATUSES,
@@ -1901,4 +2044,9 @@ module.exports = {
 
   // Story 18.3: Payment link with affiliate tracking
   generatePaymentLink,
+
+  // Tech-Spec: Migração Mercado Pago
+  getMemberBySubscription,
+  createTrialMemberMP,
+  updateSubscriptionData,
 };

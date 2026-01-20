@@ -1,619 +1,550 @@
 /**
- * Webhook Processors - Event handlers for Cakto webhooks
- * Story 16.3: Implementar Processamento Assíncrono de Webhooks
+ * Webhook Processors - Mercado Pago
+ * Tech-Spec: Migração Cakto → Mercado Pago
  *
- * Handles different webhook event types from Cakto payment platform.
- * Each handler processes a specific event type and updates member status accordingly.
+ * Processa eventos de webhook salvos na tabela webhook_events.
+ * Chamado pelo job process-webhooks.js.
+ *
+ * Eventos processados:
+ * - subscription_preapproval (created/cancelled): Criação/cancelamento de assinatura
+ * - subscription_authorized_payment / payment: Pagamentos aprovados/rejeitados
  */
+const mercadoPagoService = require('./mercadoPagoService');
 const logger = require('../../lib/logger');
-const {
-  getMemberByEmail,
-  activateMember,
-  renewMemberSubscription,
-  markMemberAsDefaulted,
-  createActiveMember,
-  reactivateRemovedMember,
-} = require('./memberService');
-const { sendPaymentConfirmation } = require('../handlers/memberEvents');
-const { sendReactivationNotification } = require('./notificationService');
+const { config } = require('../../lib/config');
 
-/**
- * Normalize payment method from Cakto format to our format
- * Cakto uses: credit_card, pix, boleto, picpay, etc.
- * @param {string} caktoMethod - Payment method from Cakto
- * @returns {string} - Normalized payment method
- */
-function normalizePaymentMethod(caktoMethod) {
-  const methodMap = {
-    'credit_card': 'cartao_recorrente',
-    'debit_card': 'cartao_recorrente',
-    'pix': 'pix',
-    'boleto': 'boleto',
-    'bank_slip': 'boleto',
-    'picpay': 'pix',
-  };
-  return methodMap[caktoMethod?.toLowerCase()] || 'cartao_recorrente';
-}
-
-// Simple email regex for basic validation
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/**
- * Validate email format
- * @param {string} email - Email to validate
- * @returns {boolean} - true if valid email format
- */
-function isValidEmail(email) {
-  return typeof email === 'string' && EMAIL_REGEX.test(email);
-}
-
-/**
- * Extract customer email from Cakto webhook payload
- * Cakto Order structure: { customer: { email: "...", name: "..." }, ... }
- * @param {object} payload - Webhook payload (Cakto Order object)
- * @returns {string|null} - Email or null if not found or invalid
- */
-function extractEmail(payload) {
-  // Cakto Order structure - customer.email is the primary location
-  // Also handle wrapped payloads for flexibility
-  const email = payload?.customer?.email
-    || payload?.data?.customer?.email
-    || payload?.email
-    || null;
-
-  // Validate email format if found
-  if (email && !isValidEmail(email)) {
-    logger.warn('[webhookProcessors] extractEmail: invalid email format', { email });
-    return null;
+// Lazy load memberService to avoid circular dependency
+let _memberService = null;
+function getMemberService() {
+  if (!_memberService) {
+    _memberService = require('./memberService');
   }
-
-  return email;
+  return _memberService;
 }
 
-/**
- * Extract subscription data from Cakto Order payload
- * Cakto Order structure:
- * {
- *   id: "order_uuid",
- *   subscription: "subscription_uuid",
- *   paymentMethod: "credit_card",
- *   customer: { id: "...", email: "...", name: "..." },
- *   product: { id: "...", name: "...", type: "subscription" },
- *   ...
- * }
- * @param {object} payload - Webhook payload (Cakto Order object)
- * @returns {object} - Subscription data
- */
-function extractSubscriptionData(payload) {
-  // Cakto uses flat structure for subscription reference
-  const orderId = payload?.id || payload?.data?.id || null;
-  const subscriptionId = payload?.subscription || payload?.data?.subscription || null;
-  const customerId = payload?.customer?.id || payload?.data?.customer?.id || null;
-  const paymentMethod = payload?.paymentMethod || payload?.data?.paymentMethod || null;
-
-  return {
-    subscriptionId: subscriptionId || orderId, // Use order ID as fallback
-    customerId: customerId,
-    paymentMethod: normalizePaymentMethod(paymentMethod),
-  };
-}
-
-/**
- * Extract affiliate code from Cakto webhook payload
- * Story 18: Affiliate tracking from webhook
- *
- * The webhook contains affiliate info in two places:
- * - payload.affiliate: affiliate's EMAIL (e.g., "affiliate@example.com")
- * - payload.checkoutUrl: contains affiliate CODE (e.g., "?affiliate=5ZSwLuCf")
- *
- * We extract the CODE from checkoutUrl since that's what we store in member records.
- *
- * @param {object} payload - Webhook payload (Cakto Order object)
- * @returns {string|null} - Affiliate code or null if not found
- */
-function extractAffiliateCode(payload) {
-  // Try to extract from checkoutUrl first (contains the actual code)
-  const checkoutUrl = payload?.checkoutUrl || payload?.data?.checkoutUrl || null;
-
-  if (checkoutUrl) {
-    try {
-      const url = new URL(checkoutUrl);
-      const affiliateCode = url.searchParams.get('affiliate');
-      if (affiliateCode) {
-        logger.debug('[webhookProcessors] extractAffiliateCode: found in checkoutUrl', { affiliateCode });
-        return affiliateCode;
-      }
-    } catch (err) {
-      logger.warn('[webhookProcessors] extractAffiliateCode: invalid checkoutUrl', { checkoutUrl });
-    }
+// Lazy load notificationService to avoid circular dependency
+let _notificationService = null;
+function getNotificationService() {
+  if (!_notificationService) {
+    _notificationService = require('./notificationService');
   }
-
-  // Fallback: check if affiliate field exists (this is the email, not code)
-  // We log it for debugging but can't use it as the code
-  const affiliateEmail = payload?.affiliate || payload?.data?.affiliate || null;
-  if (affiliateEmail && !checkoutUrl) {
-    logger.debug('[webhookProcessors] extractAffiliateCode: has affiliate email but no code in URL', { affiliateEmail });
-  }
-
-  return null;
+  return _notificationService;
 }
 
-/**
- * Handle purchase_approved event (AC2)
- * Creates or activates a member when payment is approved
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function handlePurchaseApproved(payload) {
-  logger.info('[webhookProcessors] handlePurchaseApproved: processing', {
-    payloadKeys: Object.keys(payload || {})
-  });
-
-  try {
-    const email = extractEmail(payload);
-    if (!email) {
-      logger.warn('[webhookProcessors] handlePurchaseApproved: no email in payload');
-      return {
-        success: false,
-        error: { code: 'INVALID_PAYLOAD', message: 'No email found in payload' }
-      };
-    }
-
-    const subscriptionData = extractSubscriptionData(payload);
-
-    // Story 18: Extract affiliate code from webhook payload
-    const affiliateCode = extractAffiliateCode(payload);
-    if (affiliateCode) {
-      logger.info('[webhookProcessors] handlePurchaseApproved: affiliate code found', { affiliateCode });
-    }
-
-    // Try to find existing member by email
-    const memberResult = await getMemberByEmail(email);
-
-    if (memberResult.success) {
-      // Member exists - check status to determine action
-      const member = memberResult.data;
-      logger.info('[webhookProcessors] handlePurchaseApproved: processing existing member', {
-        memberId: member.id,
-        email,
-        currentStatus: member.status
-      });
-
-      // Story 16.10 AC6: Idempotency - detect already reactivated member
-      // If member is 'ativo' and was recently reactivated, skip processing to avoid duplicates
-      const wasRecentlyReactivated = member.status === 'ativo'
-        && member.notes?.includes('Reativado após pagamento');
-
-      if (wasRecentlyReactivated) {
-        logger.info('[webhookProcessors] handlePurchaseApproved: idempotency - member already reactivated', {
-          memberId: member.id,
-          email
-        });
-        return { success: true, data: { skipped: true, reason: 'already_reactivated' } };
-      }
-
-      // Story 16.10: Handle reactivation of removed members
-      if (member.status === 'removido') {
-        logger.info('[webhookProcessors] handlePurchaseApproved: reactivating removed member', {
-          memberId: member.id,
-          email
-        });
-
-        const reactivateResult = await reactivateRemovedMember(member.id, {
-          subscriptionId: subscriptionData.subscriptionId,
-          paymentMethod: subscriptionData.paymentMethod
-        });
-
-        // Send reactivation notification with invite link if reactivation succeeded
-        if (reactivateResult.success && reactivateResult.data?.telegram_id) {
-          try {
-            await sendReactivationNotification(
-              reactivateResult.data.telegram_id,
-              reactivateResult.data.id
-            );
-          } catch (notifErr) {
-            // Don't fail the webhook processing if notification fails
-            logger.warn('[webhookProcessors] handlePurchaseApproved: reactivation notification failed', {
-              memberId: reactivateResult.data.id,
-              error: notifErr.message
-            });
-          }
-        } else if (reactivateResult.success && !reactivateResult.data?.telegram_id) {
-          // AC4: Member without telegram_id - note is already added in reactivateRemovedMember
-          logger.info('[webhookProcessors] handlePurchaseApproved: reactivated member without telegram_id', {
-            memberId: reactivateResult.data.id
-          });
-        }
-
-        return reactivateResult;
-      }
-
-      // Normal activation flow for non-removed members
-      const activateResult = await activateMember(member.id, subscriptionData);
-
-      // Send payment confirmation if activation succeeded and member has telegram_id
-      if (activateResult.success && activateResult.data?.telegram_id) {
-        try {
-          await sendPaymentConfirmation(
-            activateResult.data.telegram_id,
-            activateResult.data.id,
-            activateResult.data.subscription_ends_at
-          );
-        } catch (notifErr) {
-          // Don't fail the webhook processing if notification fails
-          logger.warn('[webhookProcessors] handlePurchaseApproved: payment confirmation failed', {
-            memberId: activateResult.data.id,
-            error: notifErr.message
-          });
-        }
-      }
-
-      return activateResult;
-    }
-
-    // Member doesn't exist - create as active (payment before trial)
-    if (memberResult.error?.code === 'MEMBER_NOT_FOUND') {
-      logger.info('[webhookProcessors] handlePurchaseApproved: creating new active member', { email });
-
-      const createResult = await createActiveMember({
-        email,
-        subscriptionData,
-        affiliateCode  // Story 18: Pass affiliate code from webhook
-      });
-
-      // Send payment confirmation if creation succeeded and member has telegram_id
-      if (createResult.success && createResult.data?.telegram_id) {
-        try {
-          await sendPaymentConfirmation(
-            createResult.data.telegram_id,
-            createResult.data.id,
-            createResult.data.subscription_ends_at
-          );
-        } catch (notifErr) {
-          logger.warn('[webhookProcessors] handlePurchaseApproved: payment confirmation failed (new member)', {
-            memberId: createResult.data.id,
-            error: notifErr.message
-          });
-        }
-      }
-
-      return createResult;
-    }
-
-    // Other error
-    return memberResult;
-
-  } catch (err) {
-    logger.error('[webhookProcessors] handlePurchaseApproved: error', { error: err.message });
-    return {
-      success: false,
-      error: { code: 'HANDLER_ERROR', message: err.message }
-    };
-  }
-}
-
-/**
- * Handle subscription_created event
- * Similar to purchase_approved - creates or activates a member
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
+// ============================================
+// HANDLER: Assinatura Criada (trial inicia)
+// ============================================
 async function handleSubscriptionCreated(payload) {
-  logger.info('[webhookProcessors] handleSubscriptionCreated: processing');
+  const subscriptionId = payload.data?.id;
+  if (!subscriptionId) {
+    logger.warn('[webhookProcessors] handleSubscriptionCreated: missing subscription ID');
+    return { success: false, error: { code: 'MISSING_SUBSCRIPTION_ID', message: 'Missing subscription ID' } };
+  }
 
-  // Delegate to purchase_approved handler - same logic
-  return handlePurchaseApproved(payload);
-}
+  // Buscar detalhes da assinatura no MP
+  const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+  if (!subscriptionResult.success) {
+    logger.error('[webhookProcessors] handleSubscriptionCreated: failed to fetch subscription', {
+      subscriptionId,
+      error: subscriptionResult.error
+    });
+    return { success: false, error: subscriptionResult.error };
+  }
 
-/**
- * Handle subscription_renewed event (AC3)
- * Extends subscription and reactivates from inadimplente if needed
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function handleSubscriptionRenewed(payload) {
-  logger.info('[webhookProcessors] handleSubscriptionRenewed: processing');
+  const subscription = subscriptionResult.data;
 
-  try {
-    const email = extractEmail(payload);
-    if (!email) {
-      logger.warn('[webhookProcessors] handleSubscriptionRenewed: no email in payload');
-      return {
-        success: false,
-        error: { code: 'INVALID_PAYLOAD', message: 'No email found in payload' }
-      };
-    }
+  // Só processa assinaturas autorizadas (cartão validado)
+  if (subscription.status !== 'authorized') {
+    logger.info('[webhookProcessors] handleSubscriptionCreated: ignoring non-authorized subscription', {
+      subscriptionId,
+      status: subscription.status
+    });
+    return { success: true, data: { skipped: true, reason: 'not_authorized' } };
+  }
 
-    // Find member by email
-    const memberResult = await getMemberByEmail(email);
-    if (!memberResult.success) {
-      logger.warn('[webhookProcessors] handleSubscriptionRenewed: member not found', { email });
-      return memberResult;
-    }
+  const email = subscription.payer_email;
+  if (!email) {
+    logger.warn('[webhookProcessors] handleSubscriptionCreated: subscription without email', { subscriptionId });
+    return { success: false, error: { code: 'MISSING_EMAIL', message: 'Missing email' } };
+  }
 
-    const member = memberResult.data;
-    logger.info('[webhookProcessors] handleSubscriptionRenewed: processing member', {
-      memberId: member.id,
-      email,
-      currentStatus: member.status
+  // Extrair cupom de afiliado
+  const couponCode = mercadoPagoService.extractCouponCode(subscription);
+
+  const memberService = getMemberService();
+
+  // Verificar se já existe membro com esse email
+  const existingResult = await memberService.getMemberByEmail(email);
+
+  if (existingResult.success) {
+    // Membro existente - atualizar subscription ID
+    const member = existingResult.data;
+
+    const updateResult = await memberService.updateSubscriptionData(member.id, {
+      subscriptionId,
+      payerId: subscription.payer_id?.toString(),
+      couponCode
     });
 
-    // Story 16.10 AC6: Idempotency - detect already reactivated member
-    const wasRecentlyReactivated = member.status === 'ativo'
-      && member.notes?.includes('Reativado após pagamento');
-
-    if (wasRecentlyReactivated) {
-      logger.info('[webhookProcessors] handleSubscriptionRenewed: idempotency - member already reactivated', {
+    if (!updateResult.success) {
+      logger.error('[webhookProcessors] handleSubscriptionCreated: failed to update existing member', {
         memberId: member.id,
-        email
+        error: updateResult.error
       });
-      return { success: true, data: { skipped: true, reason: 'already_reactivated' } };
+      return { success: false, error: updateResult.error };
     }
 
-    // Story 16.10: Handle reactivation of removed members (AC2)
-    if (member.status === 'removido') {
-      logger.info('[webhookProcessors] handleSubscriptionRenewed: reactivating removed member', {
+    logger.info('[webhookProcessors] handleSubscriptionCreated: updated existing member', {
+      memberId: member.id,
+      subscriptionId
+    });
+
+    return { success: true, data: { memberId: member.id, action: 'updated' } };
+  }
+
+  // Novo membro - criar como TRIAL
+  const createResult = await memberService.createTrialMemberMP({
+    email,
+    subscriptionId,
+    payerId: subscription.payer_id?.toString(),
+    couponCode
+  });
+
+  if (!createResult.success) {
+    logger.error('[webhookProcessors] handleSubscriptionCreated: failed to create trial member', {
+      email,
+      error: createResult.error
+    });
+    return { success: false, error: createResult.error };
+  }
+
+  const newMember = createResult.data;
+
+  logger.info('[webhookProcessors] handleSubscriptionCreated: new trial member created', {
+    memberId: newMember.id,
+    email,
+    subscriptionId,
+    couponCode
+  });
+
+  // Nota: Para enviar convite do grupo, precisamos do telegram_id
+  // O membro receberá o convite quando fizer /start no bot e vincular o email
+
+  return { success: true, data: { memberId: newMember.id, action: 'created' } };
+}
+
+// ============================================
+// HANDLER: Pagamento Aprovado (trial → ativo, ou renovação)
+// ============================================
+async function handlePaymentApproved(payload) {
+  const paymentId = payload.data?.id;
+  if (!paymentId) {
+    logger.warn('[webhookProcessors] handlePaymentApproved: missing payment ID');
+    return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
+  }
+
+  // Buscar detalhes do pagamento no MP
+  const paymentResult = await mercadoPagoService.getPayment(paymentId);
+  if (!paymentResult.success) {
+    logger.error('[webhookProcessors] handlePaymentApproved: failed to fetch payment', {
+      paymentId,
+      error: paymentResult.error
+    });
+    return { success: false, error: paymentResult.error };
+  }
+
+  const payment = paymentResult.data;
+
+  // Verificar se pagamento foi aprovado
+  if (payment.status !== 'approved') {
+    logger.info('[webhookProcessors] handlePaymentApproved: ignoring non-approved payment', {
+      paymentId,
+      status: payment.status
+    });
+    return { success: true, data: { skipped: true, reason: 'not_approved' } };
+  }
+
+  const memberService = getMemberService();
+
+  // Buscar membro pela subscription ou email
+  const subscriptionId = payment.metadata?.preapproval_id;
+  let member = null;
+
+  if (subscriptionId) {
+    const subResult = await memberService.getMemberBySubscription(subscriptionId);
+    if (subResult.success) {
+      member = subResult.data;
+    }
+  }
+
+  if (!member && payment.payer?.email) {
+    const emailResult = await memberService.getMemberByEmail(payment.payer.email);
+    if (emailResult.success) {
+      member = emailResult.data;
+    }
+  }
+
+  if (!member) {
+    logger.warn('[webhookProcessors] handlePaymentApproved: member not found', {
+      paymentId,
+      subscriptionId,
+      email: payment.payer?.email
+    });
+    return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Member not found' } };
+  }
+
+  const paymentMethod = mercadoPagoService.mapPaymentMethod(payment.payment_method_id);
+
+  // Processar de acordo com status atual do membro
+  if (member.status === 'trial') {
+    // 🎯 CONVERSÃO: trial → ativo (1º pagamento)
+    const activateResult = await memberService.activateMember(member.id, {
+      subscriptionId: subscriptionId || member.mp_subscription_id,
+      customerId: payment.payer?.id?.toString(),
+      paymentMethod
+    });
+
+    if (!activateResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to activate member', {
         memberId: member.id,
-        email
+        error: activateResult.error
       });
-
-      const subscriptionData = extractSubscriptionData(payload);
-      const reactivateResult = await reactivateRemovedMember(member.id, {
-        subscriptionId: subscriptionData.subscriptionId,
-        paymentMethod: subscriptionData.paymentMethod
-      });
-
-      // Send reactivation notification with invite link if reactivation succeeded
-      if (reactivateResult.success && reactivateResult.data?.telegram_id) {
-        try {
-          await sendReactivationNotification(
-            reactivateResult.data.telegram_id,
-            reactivateResult.data.id
-          );
-        } catch (notifErr) {
-          logger.warn('[webhookProcessors] handleSubscriptionRenewed: reactivation notification failed', {
-            memberId: reactivateResult.data.id,
-            error: notifErr.message
-          });
-        }
-      }
-
-      return reactivateResult;
+      return { success: false, error: activateResult.error };
     }
 
-    // Normal renewal flow for non-removed members
-    const renewResult = await renewMemberSubscription(member.id);
+    logger.info('[webhookProcessors] 🎉 Trial converted to active', {
+      memberId: member.id,
+      paymentId
+    });
 
-    // Send payment confirmation if renewal succeeded and member has telegram_id
-    if (renewResult.success && renewResult.data?.telegram_id) {
+    return { success: true, data: { memberId: member.id, action: 'activated' } };
+
+  } else if (member.status === 'ativo') {
+    // Renovação normal
+    const renewResult = await memberService.renewMemberSubscription(member.id);
+
+    if (!renewResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to renew subscription', {
+        memberId: member.id,
+        error: renewResult.error
+      });
+      return { success: false, error: renewResult.error };
+    }
+
+    logger.info('[webhookProcessors] Subscription renewed', {
+      memberId: member.id,
+      paymentId
+    });
+
+    return { success: true, data: { memberId: member.id, action: 'renewed' } };
+
+  } else if (member.status === 'inadimplente') {
+    // Recuperou do inadimplente
+    const activateResult = await memberService.activateMember(member.id, {
+      subscriptionId: subscriptionId || member.mp_subscription_id,
+      customerId: payment.payer?.id?.toString(),
+      paymentMethod
+    });
+
+    if (!activateResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to recover from defaulted', {
+        memberId: member.id,
+        error: activateResult.error
+      });
+      return { success: false, error: activateResult.error };
+    }
+
+    logger.info('[webhookProcessors] Member recovered from defaulted', {
+      memberId: member.id,
+      paymentId
+    });
+
+    return { success: true, data: { memberId: member.id, action: 'recovered' } };
+
+  } else if (member.status === 'removido') {
+    // Reativação após remoção - SEM RESTRIÇÃO DE TEMPO
+    const reactivateResult = await memberService.reactivateRemovedMember(member.id, {
+      subscriptionId: subscriptionId || member.mp_subscription_id,
+      paymentMethod
+    });
+
+    if (!reactivateResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to reactivate member', {
+        memberId: member.id,
+        error: reactivateResult.error
+      });
+      return { success: false, error: reactivateResult.error };
+    }
+
+    // Enviar convite do grupo se tiver telegram_id
+    if (member.telegram_id) {
+      const notificationService = getNotificationService();
       try {
-        await sendPaymentConfirmation(
-          renewResult.data.telegram_id,
-          renewResult.data.id,
-          renewResult.data.subscription_ends_at
-        );
-      } catch (notifErr) {
-        logger.warn('[webhookProcessors] handleSubscriptionRenewed: payment confirmation failed', {
-          memberId: renewResult.data.id,
-          error: notifErr.message
+        await notificationService.sendReactivationNotification(member.telegram_id, member.id);
+      } catch (err) {
+        logger.warn('[webhookProcessors] handlePaymentApproved: reactivation notification failed', {
+          memberId: member.id,
+          error: err.message
         });
       }
     }
 
-    return renewResult;
-
-  } catch (err) {
-    logger.error('[webhookProcessors] handleSubscriptionRenewed: error', { error: err.message });
-    return {
-      success: false,
-      error: { code: 'HANDLER_ERROR', message: err.message }
-    };
-  }
-}
-
-/**
- * Handle subscription_renewal_refused event (AC4)
- * Marks member as inadimplente when renewal fails
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function handleRenewalRefused(payload) {
-  logger.info('[webhookProcessors] handleRenewalRefused: processing');
-
-  try {
-    const email = extractEmail(payload);
-    if (!email) {
-      logger.warn('[webhookProcessors] handleRenewalRefused: no email in payload');
-      return {
-        success: false,
-        error: { code: 'INVALID_PAYLOAD', message: 'No email found in payload' }
-      };
-    }
-
-    // Find member by email
-    const memberResult = await getMemberByEmail(email);
-    if (!memberResult.success) {
-      logger.warn('[webhookProcessors] handleRenewalRefused: member not found', { email });
-      return memberResult;
-    }
-
-    const member = memberResult.data;
-
-    // Only mark as defaulted if currently active
-    if (member.status !== 'ativo') {
-      logger.info('[webhookProcessors] handleRenewalRefused: member not active, skipping', {
-        memberId: member.id,
-        currentStatus: member.status
-      });
-      return { success: true, data: { skipped: true, reason: 'not_active' } };
-    }
-
-    logger.info('[webhookProcessors] handleRenewalRefused: marking member as defaulted', {
+    logger.info('[webhookProcessors] Member reactivated after removal', {
       memberId: member.id,
-      email
+      paymentId
     });
 
-    const defaultResult = await markMemberAsDefaulted(member.id);
-    return defaultResult;
-
-  } catch (err) {
-    logger.error('[webhookProcessors] handleRenewalRefused: error', { error: err.message });
-    return {
-      success: false,
-      error: { code: 'HANDLER_ERROR', message: err.message }
-    };
+    return { success: true, data: { memberId: member.id, action: 'reactivated' } };
   }
-}
 
-/**
- * Handle subscription_canceled event (AC4)
- * Marks member as inadimplente when subscription is canceled
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function handleSubscriptionCanceled(payload) {
-  logger.info('[webhookProcessors] handleSubscriptionCanceled: processing');
-
-  // Same logic as renewal refused
-  return handleRenewalRefused(payload);
-}
-
-/**
- * Handle refund event
- * Removes member from group when payment is refunded
- * @param {object} payload - Webhook event payload
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function handleRefund(payload) {
-  logger.info('[webhookProcessors] handleRefund: processing', {
-    status: payload?.status,
-    refundedAt: payload?.refundedAt
+  logger.warn('[webhookProcessors] handlePaymentApproved: unexpected member status', {
+    memberId: member.id,
+    status: member.status
   });
 
-  try {
-    const email = extractEmail(payload);
-    if (!email) {
-      logger.warn('[webhookProcessors] handleRefund: no email in payload');
-      return {
-        success: false,
-        error: { code: 'INVALID_PAYLOAD', message: 'No email found in payload' }
-      };
-    }
-
-    // Find member by email
-    const memberResult = await getMemberByEmail(email);
-    if (!memberResult.success) {
-      // Member not found - might be a refund before registration completed
-      logger.info('[webhookProcessors] handleRefund: member not found, skipping', { email });
-      return { success: true, data: { skipped: true, reason: 'member_not_found' } };
-    }
-
-    const member = memberResult.data;
-
-    // If already removed, skip (idempotency)
-    if (member.status === 'removido') {
-      logger.info('[webhookProcessors] handleRefund: member already removed, skipping', {
-        memberId: member.id,
-        email
-      });
-      return { success: true, data: { skipped: true, reason: 'already_removed' } };
-    }
-
-    logger.info('[webhookProcessors] handleRefund: removing member due to refund', {
-      memberId: member.id,
-      email,
-      currentStatus: member.status
-    });
-
-    // Import markMemberAsRemoved function
-    const { markMemberAsRemoved } = require('./memberService');
-
-    // Remove member with refund reason
-    const removeResult = await markMemberAsRemoved(member.id, 'refund');
-    return removeResult;
-
-  } catch (err) {
-    logger.error('[webhookProcessors] handleRefund: error', { error: err.message });
-    return {
-      success: false,
-      error: { code: 'HANDLER_ERROR', message: err.message }
-    };
-  }
+  return { success: false, error: { code: 'UNEXPECTED_STATUS', message: `Unexpected member status: ${member.status}` } };
 }
 
-/**
- * Webhook handler registry
- * Maps event types to their handler functions
- */
-const WEBHOOK_HANDLERS = {
-  'purchase_approved': handlePurchaseApproved,
-  'subscription_created': handleSubscriptionCreated,
-  'subscription_renewed': handleSubscriptionRenewed,
-  'subscription_renewal_refused': handleRenewalRefused,
-  'subscription_canceled': handleSubscriptionCanceled,
-  'refund': handleRefund,
-};
-
-/**
- * Process a webhook event by delegating to the appropriate handler
- * @param {object} event - Webhook event object
- * @param {string} event.event_type - Type of the webhook event
- * @param {object} event.payload - Event payload data
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function processWebhookEvent({ event_type, payload }) {
-  logger.info('[webhookProcessors] processWebhookEvent: received', { eventType: event_type });
-
-  const handler = WEBHOOK_HANDLERS[event_type];
-
-  if (!handler) {
-    logger.warn('[webhookProcessors] processWebhookEvent: unknown event type', { eventType: event_type });
-    return {
-      success: false,
-      error: {
-        code: 'UNKNOWN_EVENT_TYPE',
-        message: `Unknown event type: ${event_type}`
-      }
-    };
+// ============================================
+// HANDLER: Pagamento Rejeitado
+// ============================================
+async function handlePaymentRejected(payload) {
+  const paymentId = payload.data?.id;
+  if (!paymentId) {
+    logger.warn('[webhookProcessors] handlePaymentRejected: missing payment ID');
+    return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
   }
 
-  try {
-    const result = await handler(payload);
-    logger.info('[webhookProcessors] processWebhookEvent: completed', {
-      eventType: event_type,
-      success: result.success
+  // Buscar detalhes do pagamento no MP
+  const paymentResult = await mercadoPagoService.getPayment(paymentId);
+  if (!paymentResult.success) {
+    logger.error('[webhookProcessors] handlePaymentRejected: failed to fetch payment', {
+      paymentId,
+      error: paymentResult.error
     });
-    return result;
+    return { success: false, error: paymentResult.error };
+  }
+
+  const payment = paymentResult.data;
+  const memberService = getMemberService();
+
+  // Buscar membro
+  const subscriptionId = payment.metadata?.preapproval_id;
+  let member = null;
+
+  if (subscriptionId) {
+    const subResult = await memberService.getMemberBySubscription(subscriptionId);
+    if (subResult.success) {
+      member = subResult.data;
+    }
+  }
+
+  if (!member && payment.payer?.email) {
+    const emailResult = await memberService.getMemberByEmail(payment.payer.email);
+    if (emailResult.success) {
+      member = emailResult.data;
+    }
+  }
+
+  if (!member) {
+    logger.info('[webhookProcessors] handlePaymentRejected: member not found, ignoring', {
+      paymentId
+    });
+    return { success: true, data: { skipped: true, reason: 'member_not_found' } };
+  }
+
+  // Só marca como inadimplente se já era ativo
+  // (trial com falha será cancelado pelo MP automaticamente)
+  if (member.status === 'ativo') {
+    const defaultResult = await memberService.markMemberAsDefaulted(member.id);
+
+    if (!defaultResult.success) {
+      logger.error('[webhookProcessors] handlePaymentRejected: failed to mark as defaulted', {
+        memberId: member.id,
+        error: defaultResult.error
+      });
+      return { success: false, error: defaultResult.error };
+    }
+
+    logger.warn('[webhookProcessors] Member marked as defaulted - payment rejected', {
+      memberId: member.id,
+      paymentId,
+      reason: payment.status_detail
+    });
+
+    return { success: true, data: { memberId: member.id, action: 'marked_defaulted' } };
+  }
+
+  logger.info('[webhookProcessors] handlePaymentRejected: member not active, ignoring', {
+    memberId: member.id,
+    status: member.status
+  });
+
+  return { success: true, data: { skipped: true, reason: 'member_not_active' } };
+}
+
+// ============================================
+// HANDLER: Assinatura Cancelada
+// ============================================
+async function handleSubscriptionCancelled(payload) {
+  const subscriptionId = payload.data?.id;
+  if (!subscriptionId) {
+    logger.warn('[webhookProcessors] handleSubscriptionCancelled: missing subscription ID');
+    return { success: false, error: { code: 'MISSING_SUBSCRIPTION_ID', message: 'Missing subscription ID' } };
+  }
+
+  const memberService = getMemberService();
+
+  // Buscar membro pela subscription
+  const memberResult = await memberService.getMemberBySubscription(subscriptionId);
+  if (!memberResult.success) {
+    logger.info('[webhookProcessors] handleSubscriptionCancelled: member not found, ignoring', {
+      subscriptionId
+    });
+    return { success: true, data: { skipped: true, reason: 'member_not_found' } };
+  }
+
+  const member = memberResult.data;
+
+  // Já está removido? Ignorar
+  if (member.status === 'removido') {
+    logger.info('[webhookProcessors] handleSubscriptionCancelled: member already removed', {
+      memberId: member.id
+    });
+    return { success: true, data: { skipped: true, reason: 'already_removed' } };
+  }
+
+  const reason = member.status === 'trial' ? 'trial_not_converted' : 'subscription_cancelled';
+
+  const notificationService = getNotificationService();
+
+  // 1. Enviar mensagem de despedida com link para reativar
+  if (member.telegram_id) {
+    const checkoutUrl = process.env.MP_CHECKOUT_URL || config.membership?.checkoutUrl;
+    if (checkoutUrl) {
+      const farewellMessage = notificationService.formatFarewellMessage(member, reason, checkoutUrl);
+      await notificationService.sendPrivateMessage(member.telegram_id, farewellMessage);
+    }
+  }
+
+  // 2. Kick do grupo Telegram
+  if (member.telegram_id) {
+    const groupId = config.telegram.publicGroupId;
+    if (groupId) {
+      const kickResult = await memberService.kickMemberFromGroup(member.telegram_id, groupId);
+      if (!kickResult.success) {
+        logger.error('[webhookProcessors] handleSubscriptionCancelled: failed to kick member', {
+          memberId: member.id,
+          error: kickResult.error
+        });
+        // Continua - atualizar DB é mais importante
+      }
+    }
+  }
+
+  // 3. Atualizar status no banco
+  const removeResult = await memberService.markMemberAsRemoved(member.id, reason);
+  if (!removeResult.success) {
+    logger.error('[webhookProcessors] handleSubscriptionCancelled: failed to mark as removed', {
+      memberId: member.id,
+      error: removeResult.error
+    });
+    return { success: false, error: removeResult.error };
+  }
+
+  logger.info('[webhookProcessors] Member removed due to subscription cancelled', {
+    memberId: member.id,
+    subscriptionId,
+    previousStatus: member.status,
+    reason
+  });
+
+  return { success: true, data: { memberId: member.id, action: 'removed' } };
+}
+
+// ============================================
+// ROUTER DE EVENTOS
+// ============================================
+async function processWebhookEvent({ event_type, payload }) {
+  const action = payload?.action;
+
+  logger.info('[webhookProcessors] processWebhookEvent: received', { eventType: event_type, action });
+
+  try {
+    // subscription_preapproval events
+    if (event_type === 'subscription_preapproval') {
+      // Buscar status atual da assinatura para determinar ação
+      const subscriptionId = payload?.data?.id;
+      if (!subscriptionId) {
+        return { success: false, error: { code: 'MISSING_SUBSCRIPTION_ID', message: 'Missing subscription ID' } };
+      }
+
+      const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+
+      if (action === 'created' ||
+          (subscriptionResult.success && subscriptionResult.data.status === 'authorized')) {
+        return await handleSubscriptionCreated(payload);
+      }
+
+      if (subscriptionResult.success && subscriptionResult.data.status === 'cancelled') {
+        return await handleSubscriptionCancelled(payload);
+      }
+
+      logger.info('[webhookProcessors] Ignoring subscription_preapproval event', {
+        action,
+        status: subscriptionResult.data?.status
+      });
+      return { success: true, data: { skipped: true, reason: 'unhandled_action' } };
+    }
+
+    // Payment events
+    if (event_type === 'subscription_authorized_payment' || event_type === 'payment') {
+      const paymentId = payload?.data?.id;
+      if (!paymentId) {
+        return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
+      }
+
+      const paymentResult = await mercadoPagoService.getPayment(paymentId);
+      if (!paymentResult.success) {
+        return { success: false, error: paymentResult.error };
+      }
+
+      const payment = paymentResult.data;
+
+      if (payment.status === 'approved') {
+        return await handlePaymentApproved(payload);
+      }
+
+      if (payment.status === 'rejected') {
+        return await handlePaymentRejected(payload);
+      }
+
+      logger.info('[webhookProcessors] Ignoring payment event', {
+        paymentId,
+        status: payment.status
+      });
+      return { success: true, data: { skipped: true, reason: 'unhandled_status' } };
+    }
+
+    // Evento não tratado
+    logger.info('[webhookProcessors] Unhandled event type', { event_type, action });
+    return { success: true, data: { skipped: true, reason: 'unhandled_event_type' } };
+
   } catch (err) {
-    logger.error('[webhookProcessors] processWebhookEvent: handler error', {
-      eventType: event_type,
+    logger.error('[webhookProcessors] Error processing event', {
+      event_type,
+      action,
       error: err.message
     });
-    return {
-      success: false,
-      error: { code: 'HANDLER_ERROR', message: err.message }
-    };
+    return { success: false, error: { code: 'HANDLER_ERROR', message: err.message } };
   }
 }
 
 module.exports = {
-  // Main entry point
   processWebhookEvent,
-
-  // Handler registry
-  WEBHOOK_HANDLERS,
-
-  // Individual handlers (for testing)
-  handlePurchaseApproved,
+  // Export handlers for testing
   handleSubscriptionCreated,
-  handleSubscriptionRenewed,
-  handleRenewalRefused,
-  handleSubscriptionCanceled,
-  handleRefund,
-
-  // Utility functions (for testing)
-  normalizePaymentMethod,
-  extractEmail,
-  extractSubscriptionData,
-  extractAffiliateCode,  // Story 18: Affiliate tracking from webhook
+  handlePaymentApproved,
+  handlePaymentRejected,
+  handleSubscriptionCancelled
 };

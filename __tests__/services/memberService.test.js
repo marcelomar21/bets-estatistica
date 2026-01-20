@@ -1273,11 +1273,11 @@ describe('memberService', () => {
   // getMembersForReconciliation (Story 16.8, AC: #2)
   // ============================================
   describe('getMembersForReconciliation', () => {
-    test('retorna apenas membros ativos com cakto_subscription_id', async () => {
+    test('retorna apenas membros ativos com mp_subscription_id', async () => {
       // H1 FIX: Query now uses .eq('status', 'ativo') directly - only 'ativo' members returned
       const mockMembers = [
-        { id: 'uuid-1', telegram_id: 111, status: 'ativo', cakto_subscription_id: 'sub_1' },
-        { id: 'uuid-2', telegram_id: 222, status: 'ativo', cakto_subscription_id: 'sub_2' },
+        { id: 'uuid-1', telegram_id: 111, status: 'ativo', mp_subscription_id: 'sub_1' },
+        { id: 'uuid-2', telegram_id: 222, status: 'ativo', mp_subscription_id: 'sub_2' },
       ];
 
       const notMock = jest.fn().mockResolvedValue({ data: mockMembers, error: null });
@@ -1327,7 +1327,7 @@ describe('memberService', () => {
       await getMembersForReconciliation();
 
       // Verify select was called with correct fields
-      expect(selectMock).toHaveBeenCalledWith('id, telegram_id, telegram_username, email, status, cakto_subscription_id');
+      expect(selectMock).toHaveBeenCalledWith('id, telegram_id, telegram_username, email, status, mp_subscription_id');
     });
   });
 

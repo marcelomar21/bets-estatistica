@@ -1,6 +1,7 @@
 /**
  * Start Command Handler - Gate Entry System for Group Access
  * Story 16.9: Implementar Portão de Entrada com Bot
+ * Tech-Spec: Migração MP - Simplified (removed affiliate deep link tracking)
  *
  * Flow:
  * 1. User clicks public link (t.me/Bot?start=join)
@@ -8,6 +9,9 @@
  * 3. Bot registers member as trial + sends welcome with invite link
  * 4. User clicks invite → enters private group
  * 5. All private notifications now work
+ *
+ * Note: With MP, affiliate tracking happens via coupons at MP checkout,
+ * not via Telegram deep links. The /start command is simplified.
  */
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
@@ -18,38 +22,9 @@ const {
   createTrialMember,
   canRejoinGroup,
   reactivateMember,
-  getTrialDaysRemaining,
-  setAffiliateCode
+  getTrialDaysRemaining
 } = require('../services/memberService');
 const { getSuccessRate } = require('../services/metricsService');
-
-/**
- * Extract affiliate code from /start payload
- * Story 18.1: Tracking de Afiliados e Entrada
- *
- * Format: t.me/BetsBot?start=aff_CODIGO123
- * Extracts: CODIGO123 (removes 'aff_' prefix)
- *
- * @param {string} payload - Raw payload from /start command
- * @returns {{hasAffiliate: boolean, affiliateCode: string|null}}
- */
-function extractAffiliateCode(payload) {
-  if (!payload || typeof payload !== 'string') {
-    return { hasAffiliate: false, affiliateCode: null };
-  }
-
-  const trimmed = payload.trim();
-
-  // Check for aff_ prefix (case-insensitive)
-  if (trimmed.toLowerCase().startsWith('aff_')) {
-    const code = trimmed.substring(4); // Remove 'aff_' prefix
-    if (code.length > 0) {
-      return { hasAffiliate: true, affiliateCode: code };
-    }
-  }
-
-  return { hasAffiliate: false, affiliateCode: null };
-}
 
 /**
  * Check if user is actually in the Telegram group via API
@@ -109,17 +84,12 @@ async function handleStartCommand(msg) {
   const text = msg.text || '';
   const payload = text.replace('/start', '').trim();
 
-  // Story 18.1: Extract affiliate code from payload
-  const { hasAffiliate, affiliateCode } = extractAffiliateCode(payload);
-
   logger.info('[membership:start-command] Received /start', {
     telegramId,
     username,
     firstName,
     payload,
-    chatId,
-    hasAffiliate,
-    affiliateCode
+    chatId
   });
 
   // Only respond to private chats
@@ -133,8 +103,7 @@ async function handleStartCommand(msg) {
 
   if (existingResult.success) {
     const member = existingResult.data;
-    // Story 18.1: Pass affiliate code to handle existing member
-    return await handleExistingMember(bot, chatId, telegramId, firstName, member, payload, affiliateCode);
+    return await handleExistingMember(bot, chatId, telegramId, firstName, member, payload);
   }
 
   // Member not found - check if error was something other than NOT_FOUND
@@ -148,14 +117,13 @@ async function handleStartCommand(msg) {
   }
 
   // New member - create trial and send welcome with invite
-  // Story 18.1: Pass affiliate code to handle new member
-  return await handleNewMember(bot, chatId, telegramId, username, firstName, affiliateCode);
+  return await handleNewMember(bot, chatId, telegramId, username, firstName);
 }
 
 /**
  * Handle existing member based on their status
  */
-async function handleExistingMember(bot, chatId, telegramId, firstName, member, _payload, affiliateCode = null) {
+async function handleExistingMember(bot, chatId, telegramId, firstName, member, _payload) {
   const { status } = member;
 
   logger.info('[membership:start-command] Existing member', {
@@ -163,26 +131,6 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
     telegramId,
     status
   });
-
-  // Story 18.1: Update affiliate code if provided (last-click model)
-  // Only update if affiliate code is provided - don't clear existing affiliate
-  if (affiliateCode) {
-    const affiliateResult = await setAffiliateCode(member.id, affiliateCode);
-    if (affiliateResult.success) {
-      logger.info('[membership:affiliate] Updated affiliate for existing member', {
-        memberId: member.id,
-        affiliateCode,
-        previousCode: member.affiliate_code
-      });
-    } else {
-      // Log but don't fail the whole flow
-      logger.warn('[membership:affiliate] Failed to update affiliate for existing member', {
-        memberId: member.id,
-        affiliateCode,
-        error: affiliateResult.error
-      });
-    }
-  }
 
   switch (status) {
     case 'trial':
@@ -341,25 +289,15 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
 
 /**
  * Handle new member - create trial and send welcome
- * Story 18.1: Added affiliateCode parameter for affiliate tracking
+ * Note: With MP, trial duration is configured in the MP subscription plan (7 days free)
+ * Bot just registers the member so they can join the Telegram group
  */
-async function handleNewMember(bot, chatId, telegramId, username, firstName, affiliateCode = null) {
-  // Story 18.1: Affiliate members get 2-day trial, regular gets 7-day
-  const defaultTrialDays = config.membership?.trialDays || 7;
-  const affiliateTrialDays = config.membership?.affiliateTrialDays || 2;
-  const trialDays = affiliateCode ? affiliateTrialDays : defaultTrialDays;
+async function handleNewMember(bot, chatId, telegramId, username, firstName) {
+  const trialDays = config.membership?.trialDays || 7;
 
-  if (affiliateCode) {
-    logger.info('[membership:affiliate] New member via affiliate link', {
-      telegramId,
-      affiliateCode,
-      trialDays: affiliateTrialDays
-    });
-  }
-
-  // Create trial member with optional affiliate code
+  // Create trial member
   const createResult = await createTrialMember(
-    { telegramId, telegramUsername: username, affiliateCode },
+    { telegramId, telegramUsername: username },
     trialDays
   );
 
@@ -385,8 +323,7 @@ async function handleNewMember(bot, chatId, telegramId, username, firstName, aff
   await registerMemberEvent(member.id, 'trial_start', {
     telegram_id: telegramId,
     telegram_username: username,
-    source: 'start_command',
-    affiliate_code: affiliateCode || null // Story 18.1: Include affiliate in event
+    source: 'start_command'
   });
 
   // Generate invite and send welcome
@@ -396,8 +333,7 @@ async function handleNewMember(bot, chatId, telegramId, username, firstName, aff
     memberId: member.id,
     telegramId,
     username,
-    trialDays,
-    affiliateCode: affiliateCode || null
+    trialDays
   });
 
   return { success: true, action: 'created', ...inviteResult };
@@ -737,7 +673,5 @@ ${extraInfo}
 
 module.exports = {
   handleStartCommand,
-  handleStatusCommand,
-  // Story 18.1: Export for testing
-  extractAffiliateCode
+  handleStatusCommand
 };

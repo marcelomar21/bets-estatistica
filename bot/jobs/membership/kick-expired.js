@@ -1,10 +1,15 @@
 /**
- * Job: Kick Expired Members - Remove expired trials and defaulted members
+ * Job: Kick Defaulted Members
  * Story 16.6: Implementar Remocao Automatica de Inadimplentes
+ * Tech-Spec: Migração MP - Simplified
  *
  * Removes:
- * 1. Trial members whose trial_ends_at < NOW (expired trials)
- * 2. Inadimplente members (payment failed/canceled)
+ * - Inadimplente members (payment failed after being active)
+ *
+ * Note: With Mercado Pago, trial expiration is handled via webhooks.
+ * When MP cancels a subscription (trial not converted), the webhook
+ * handler (handleSubscriptionCancelled) processes the removal.
+ * This job only handles inadimplente members as a safety net.
  *
  * Run: node bot/jobs/membership/kick-expired.js
  * Schedule: 00:01 BRT daily
@@ -33,41 +38,6 @@ const CONFIG = {
 
 // Lock to prevent concurrent runs (in-memory, same process)
 let kickExpiredRunning = false;
-
-/**
- * Get members with expired trial
- * Returns members with status='trial' and trial_ends_at < NOW()
- * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
- */
-async function getExpiredTrialMembers() {
-  try {
-    const now = new Date().toISOString();
-
-    const { data: members, error } = await supabase
-      .from('members')
-      .select('*')
-      .eq('status', 'trial')
-      .lt('trial_ends_at', now);
-
-    if (error) {
-      logger.error('[membership:kick-expired] getExpiredTrialMembers: database error', {
-        error: error.message,
-      });
-      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
-    }
-
-    logger.debug('[membership:kick-expired] getExpiredTrialMembers: found members', {
-      count: members?.length || 0,
-    });
-
-    return { success: true, data: { members: members || [] } };
-  } catch (err) {
-    logger.error('[membership:kick-expired] getExpiredTrialMembers: unexpected error', {
-      error: err.message,
-    });
-    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
-  }
-}
 
 /**
  * Get members marked as inadimplente (defaulted)
@@ -111,7 +81,7 @@ async function getInadimplenteMembers() {
  * - USER_NOT_IN_GROUP: Not an error - member already removed from group
  *
  * @param {object} member - Member object
- * @param {string} reason - 'trial_expired' or 'payment_failed'
+ * @param {string} reason - 'payment_failed' or 'subscription_cancelled'
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function processMemberKick(member, reason) {
@@ -198,9 +168,6 @@ async function processMemberKick(member, reason) {
   }
 
   // 3. Mark as removed in DB
-  // IMPORTANT: If this fails, the member was kicked from Telegram but status remains unchanged.
-  // On next run, getExpiredTrialMembers/getInadimplenteMembers will return them again,
-  // but kickMemberFromGroup will return USER_NOT_IN_GROUP, and we'll mark them as removed then.
   const removeResult = await markMemberAsRemoved(memberId, reason);
 
   if (!removeResult.success) {
@@ -209,7 +176,6 @@ async function processMemberKick(member, reason) {
       error: removeResult.error,
       note: 'Member was kicked from Telegram. Will be marked as removed on next run.',
     });
-    // Return success since the kick worked - DB will be fixed on next run
   }
 
   logger.info('[membership:kick-expired] processMemberKick: member kicked successfully', {
@@ -255,7 +221,8 @@ async function _runKickExpiredInternal() {
   let failed = 0;
 
   try {
-    // 1. Process inadimplente members first (immediate kicks from webhooks)
+    // Process inadimplente members (payment failures after being active)
+    // Note: Trial expirations are now handled via MP webhook (subscription_cancelled)
     const inadimplenteResult = await getInadimplenteMembers();
 
     if (inadimplenteResult.success && inadimplenteResult.data.members.length > 0) {
@@ -274,27 +241,8 @@ async function _runKickExpiredInternal() {
           failed++;
         }
       }
-    }
-
-    // 2. Process expired trial members
-    const trialsResult = await getExpiredTrialMembers();
-
-    if (trialsResult.success && trialsResult.data.members.length > 0) {
-      logger.info('[membership:kick-expired] Processing expired trial members', {
-        count: trialsResult.data.members.length,
-      });
-
-      for (const member of trialsResult.data.members) {
-        const result = await processMemberKick(member, 'trial_expired');
-
-        if (result.success) {
-          kicked++;
-        } else if (result.error?.code === 'USER_NOT_IN_GROUP') {
-          alreadyRemoved++;
-        } else {
-          failed++;
-        }
-      }
+    } else {
+      logger.info('[membership:kick-expired] No inadimplente members to process');
     }
 
     const duration = Date.now() - startTime;
@@ -327,7 +275,6 @@ if (require.main === module) {
 
 module.exports = {
   runKickExpired,
-  getExpiredTrialMembers,
   getInadimplenteMembers,
   processMemberKick,
   CONFIG,

@@ -1,6 +1,7 @@
 /**
  * Tests for kick-expired job
  * Story 16.6: Implementar Remocao Automatica de Inadimplentes
+ * Tech-Spec: Migração MP - Trial expiration now handled by MP webhooks
  */
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
@@ -36,7 +37,7 @@ jest.mock('../../../bot/telegram', () => ({
 jest.mock('../../../lib/config', () => ({
   config: {
     membership: {
-      checkoutUrl: 'https://pay.cakto.com.br/checkout/123',
+      checkoutUrl: 'https://checkout.example.com',
       subscriptionPrice: 'R$50/mes',
     },
     telegram: {
@@ -51,7 +52,6 @@ jest.mock('../../../bot/services/alertService', () => ({
 
 const {
   runKickExpired,
-  getExpiredTrialMembers,
   getInadimplenteMembers,
   processMemberKick,
   CONFIG,
@@ -66,66 +66,8 @@ describe('kick-expired job', () => {
     process.env.TELEGRAM_PUBLIC_GROUP_ID = '-100123456789';
   });
 
-  describe('getExpiredTrialMembers', () => {
-    it('should return members with expired trial', async () => {
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const mockMembers = [
-        { id: 'member-1', telegram_id: 111, status: 'trial', trial_ends_at: yesterday },
-        { id: 'member-2', telegram_id: 222, status: 'trial', trial_ends_at: yesterday },
-      ];
-
-      const mockChain = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: mockMembers,
-          error: null,
-        }),
-      };
-      supabase.from.mockReturnValue(mockChain);
-
-      const result = await getExpiredTrialMembers();
-
-      expect(result.success).toBe(true);
-      expect(result.data.members.length).toBe(2);
-      expect(supabase.from).toHaveBeenCalledWith('members');
-      expect(mockChain.eq).toHaveBeenCalledWith('status', 'trial');
-    });
-
-    it('should return empty array when no expired trials', async () => {
-      const mockChain = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: [],
-          error: null,
-        }),
-      };
-      supabase.from.mockReturnValue(mockChain);
-
-      const result = await getExpiredTrialMembers();
-
-      expect(result.success).toBe(true);
-      expect(result.data.members.length).toBe(0);
-    });
-
-    it('should handle database error', async () => {
-      const mockChain = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: null,
-          error: { message: 'Connection failed' },
-        }),
-      };
-      supabase.from.mockReturnValue(mockChain);
-
-      const result = await getExpiredTrialMembers();
-
-      expect(result.success).toBe(false);
-      expect(result.error.code).toBe('DB_ERROR');
-    });
-  });
+  // Note: getExpiredTrialMembers was removed in MP migration
+  // Trial expiration is now handled by MP webhooks (subscription_cancelled)
 
   describe('getInadimplenteMembers', () => {
     it('should return members with inadimplente status', async () => {
@@ -462,7 +404,7 @@ describe('kick-expired job', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should process inadimplentes first, then expired trials', async () => {
+    it('should process only inadimplente members (trial handled by MP webhooks)', async () => {
       // Mock getInadimplenteMembers
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
@@ -472,19 +414,7 @@ describe('kick-expired job', () => {
         }),
       };
 
-      // Mock getExpiredTrialMembers
-      const mockTrialChain = {
-        select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: [],
-          error: null,
-        }),
-      };
-
-      supabase.from
-        .mockReturnValueOnce(mockInadimplenteChain)  // getInadimplenteMembers
-        .mockReturnValueOnce(mockTrialChain);        // getExpiredTrialMembers
+      supabase.from.mockReturnValueOnce(mockInadimplenteChain);
 
       const result = await runKickExpired();
 
@@ -544,7 +474,7 @@ describe('formatFarewellMessage', () => {
 
   it('should format trial_expired message correctly', () => {
     const member = { id: 'member-1', telegram_username: 'testuser' };
-    const checkoutUrl = 'https://pay.cakto.com.br/checkout/123';
+    const checkoutUrl = 'https://checkout.example.com';
 
     const message = formatFarewellMessage(member, 'trial_expired', checkoutUrl);
 
@@ -557,7 +487,7 @@ describe('formatFarewellMessage', () => {
 
   it('should format payment_failed message correctly', () => {
     const member = { id: 'member-1', telegram_username: 'testuser' };
-    const checkoutUrl = 'https://pay.cakto.com.br/checkout/123';
+    const checkoutUrl = 'https://checkout.example.com';
 
     const message = formatFarewellMessage(member, 'payment_failed', checkoutUrl);
 
@@ -570,7 +500,7 @@ describe('formatFarewellMessage', () => {
 
   it('should use payment_failed as default for unknown reason', () => {
     const member = { id: 'member-1', telegram_username: 'testuser' };
-    const checkoutUrl = 'https://pay.cakto.com.br/checkout/123';
+    const checkoutUrl = 'https://checkout.example.com';
 
     const message = formatFarewellMessage(member, 'unknown_reason', checkoutUrl);
 

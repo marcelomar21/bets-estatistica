@@ -1,22 +1,35 @@
 /**
- * Tests for webhookProcessors.js
- * Story 16.3: Implementar Processamento Assíncrono de Webhooks
+ * Tests for webhookProcessors.js - Mercado Pago
+ * Tech-Spec: Migração Cakto → Mercado Pago
  */
+
+// Mock mercadoPagoService
+jest.mock('../../bot/services/mercadoPagoService', () => ({
+  getSubscription: jest.fn(),
+  getPayment: jest.fn(),
+  extractCouponCode: jest.fn(),
+  mapPaymentMethod: jest.fn()
+}));
 
 // Mock memberService
 jest.mock('../../bot/services/memberService', () => ({
   getMemberByEmail: jest.fn(),
+  getMemberBySubscription: jest.fn(),
+  createTrialMemberMP: jest.fn(),
+  updateSubscriptionData: jest.fn(),
   activateMember: jest.fn(),
   renewMemberSubscription: jest.fn(),
   markMemberAsDefaulted: jest.fn(),
   markMemberAsRemoved: jest.fn(),
-  createActiveMember: jest.fn(),
   reactivateRemovedMember: jest.fn(),
+  kickMemberFromGroup: jest.fn(),
 }));
 
-// Mock notificationService (Story 16.10)
+// Mock notificationService
 jest.mock('../../bot/services/notificationService', () => ({
   sendReactivationNotification: jest.fn(),
+  sendPrivateMessage: jest.fn(),
+  formatFarewellMessage: jest.fn().mockReturnValue('Mensagem de despedida'),
 }));
 
 // Mock logger
@@ -27,434 +40,353 @@ jest.mock('../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
-const {
-  processWebhookEvent,
-  handlePurchaseApproved,
-  handleSubscriptionRenewed,
-  handleRenewalRefused,
-  handleRefund,
-  normalizePaymentMethod,
-  extractEmail,
-  extractSubscriptionData,
-  extractAffiliateCode,  // Story 18: Affiliate tracking
-  WEBHOOK_HANDLERS,
-} = require('../../bot/services/webhookProcessors');
+// Mock config
+jest.mock('../../lib/config', () => ({
+  config: {
+    telegram: {
+      publicGroupId: '-1001234567890'
+    },
+    membership: {
+      checkoutUrl: 'https://checkout.example.com'
+    }
+  }
+}));
 
 const {
+  processWebhookEvent,
+  handleSubscriptionCreated,
+  handlePaymentApproved,
+  handlePaymentRejected,
+  handleSubscriptionCancelled
+} = require('../../bot/services/webhookProcessors');
+
+const mercadoPagoService = require('../../bot/services/mercadoPagoService');
+const {
   getMemberByEmail,
+  getMemberBySubscription,
+  createTrialMemberMP,
+  updateSubscriptionData,
   activateMember,
   renewMemberSubscription,
   markMemberAsDefaulted,
   markMemberAsRemoved,
-  createActiveMember,
   reactivateRemovedMember,
+  kickMemberFromGroup,
 } = require('../../bot/services/memberService');
 
 const { sendReactivationNotification } = require('../../bot/services/notificationService');
 
-describe('webhookProcessors', () => {
+describe('webhookProcessors - Mercado Pago', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   // ============================================
-  // UTILITY FUNCTIONS
-  // ============================================
-  describe('normalizePaymentMethod', () => {
-    test('converte credit_card para cartao_recorrente', () => {
-      expect(normalizePaymentMethod('credit_card')).toBe('cartao_recorrente');
-    });
-
-    test('converte pix para pix', () => {
-      expect(normalizePaymentMethod('pix')).toBe('pix');
-    });
-
-    test('converte boleto para boleto', () => {
-      expect(normalizePaymentMethod('boleto')).toBe('boleto');
-    });
-
-    test('converte bank_slip para boleto', () => {
-      expect(normalizePaymentMethod('bank_slip')).toBe('boleto');
-    });
-
-    test('retorna cartao_recorrente para método desconhecido', () => {
-      expect(normalizePaymentMethod('unknown_method')).toBe('cartao_recorrente');
-    });
-
-    test('retorna cartao_recorrente para null/undefined', () => {
-      expect(normalizePaymentMethod(null)).toBe('cartao_recorrente');
-      expect(normalizePaymentMethod(undefined)).toBe('cartao_recorrente');
-    });
-  });
-
-  describe('extractEmail', () => {
-    test('extrai email de customer.email (estrutura Cakto)', () => {
-      const payload = { customer: { email: 'test@example.com', name: 'Test User' } };
-      expect(extractEmail(payload)).toBe('test@example.com');
-    });
-
-    test('extrai email de data.customer.email (wrapped)', () => {
-      const payload = { data: { customer: { email: 'test@example.com' } } };
-      expect(extractEmail(payload)).toBe('test@example.com');
-    });
-
-    test('extrai email de payload.email (fallback)', () => {
-      const payload = { email: 'test@example.com' };
-      expect(extractEmail(payload)).toBe('test@example.com');
-    });
-
-    test('retorna null se email não encontrado', () => {
-      expect(extractEmail({})).toBeNull();
-      expect(extractEmail(null)).toBeNull();
-    });
-
-    test('retorna null para email com formato inválido', () => {
-      expect(extractEmail({ customer: { email: 'invalid-email' } })).toBeNull();
-      expect(extractEmail({ customer: { email: 'no-at-sign.com' } })).toBeNull();
-      expect(extractEmail({ customer: { email: '@nodomain.com' } })).toBeNull();
-    });
-
-    test('aceita email com formato válido', () => {
-      expect(extractEmail({ customer: { email: 'user@domain.com' } })).toBe('user@domain.com');
-      expect(extractEmail({ customer: { email: 'user.name+tag@domain.co.uk' } })).toBe('user.name+tag@domain.co.uk');
-    });
-  });
-
-  describe('extractSubscriptionData', () => {
-    test('extrai dados de Order Cakto', () => {
-      // Estrutura real do Cakto Order
-      const payload = {
-        id: 'order_123',
-        subscription: 'sub_456',
-        paymentMethod: 'credit_card',
-        customer: { id: 'cus_789', email: 'test@example.com' },
-      };
-
-      const result = extractSubscriptionData(payload);
-      expect(result.subscriptionId).toBe('sub_456');
-      expect(result.customerId).toBe('cus_789');
-      expect(result.paymentMethod).toBe('cartao_recorrente');
-    });
-
-    test('usa order ID como fallback para subscriptionId', () => {
-      const payload = {
-        id: 'order_123',
-        paymentMethod: 'pix',
-        customer: { id: 'cus_789' },
-      };
-
-      const result = extractSubscriptionData(payload);
-      expect(result.subscriptionId).toBe('order_123');
-      expect(result.paymentMethod).toBe('pix');
-    });
-
-    test('lida com payload vazio', () => {
-      const result = extractSubscriptionData({});
-      expect(result.subscriptionId).toBeNull();
-      expect(result.customerId).toBeNull();
-      expect(result.paymentMethod).toBe('cartao_recorrente');
-    });
-  });
-
-  // ============================================
-  // extractAffiliateCode (Story 18)
-  // ============================================
-  describe('extractAffiliateCode', () => {
-    test('extrai affiliate code da checkoutUrl', () => {
-      const payload = {
-        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=ABC123',
-      };
-      const result = extractAffiliateCode(payload);
-      expect(result).toBe('ABC123');
-    });
-
-    test('extrai affiliate code com caracteres especiais', () => {
-      const payload = {
-        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=5ZSwLuCf',
-      };
-      const result = extractAffiliateCode(payload);
-      expect(result).toBe('5ZSwLuCf');
-    });
-
-    test('retorna null quando checkoutUrl não tem affiliate', () => {
-      const payload = {
-        checkoutUrl: 'https://pay.cakto.com.br/product',
-      };
-      const result = extractAffiliateCode(payload);
-      expect(result).toBeNull();
-    });
-
-    test('retorna null quando payload não tem checkoutUrl', () => {
-      const payload = {
-        affiliate: 'affiliate@example.com',  // Só tem email, não tem código
-      };
-      const result = extractAffiliateCode(payload);
-      expect(result).toBeNull();
-    });
-
-    test('retorna null para payload vazio', () => {
-      const result = extractAffiliateCode({});
-      expect(result).toBeNull();
-    });
-
-    test('extrai affiliate de payload com estrutura data', () => {
-      const payload = {
-        data: {
-          checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=XYZ789',
-        },
-      };
-      const result = extractAffiliateCode(payload);
-      expect(result).toBe('XYZ789');
-    });
-  });
-
-  // ============================================
-  // WEBHOOK HANDLERS REGISTRY
-  // ============================================
-  describe('WEBHOOK_HANDLERS', () => {
-    test('tem handler para purchase_approved', () => {
-      expect(WEBHOOK_HANDLERS['purchase_approved']).toBeDefined();
-    });
-
-    test('tem handler para subscription_created', () => {
-      expect(WEBHOOK_HANDLERS['subscription_created']).toBeDefined();
-    });
-
-    test('tem handler para subscription_renewed', () => {
-      expect(WEBHOOK_HANDLERS['subscription_renewed']).toBeDefined();
-    });
-
-    test('tem handler para subscription_renewal_refused', () => {
-      expect(WEBHOOK_HANDLERS['subscription_renewal_refused']).toBeDefined();
-    });
-
-    test('tem handler para subscription_canceled', () => {
-      expect(WEBHOOK_HANDLERS['subscription_canceled']).toBeDefined();
-    });
-
-    test('tem handler para refund', () => {
-      expect(WEBHOOK_HANDLERS['refund']).toBeDefined();
-    });
-  });
-
-  // ============================================
-  // handleSubscriptionCreated (delegates to purchase_approved)
+  // handleSubscriptionCreated
   // ============================================
   describe('handleSubscriptionCreated', () => {
-    test('delega para handlePurchaseApproved corretamente', async () => {
-      // Estrutura Cakto Order
+    it('should create trial member for new subscription', async () => {
       const payload = {
-        id: 'order_sub_created',
-        subscription: 'sub_created_123',
-        paymentMethod: 'credit_card',
-        customer: { id: 'cus_created', email: 'created@example.com' },
+        data: { id: 'sub_123' }
       };
 
-      const mockMember = { id: 1, status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      activateMember.mockResolvedValue({ success: true, data: { ...mockMember, status: 'ativo' } });
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_123',
+          status: 'authorized',
+          payer_email: 'new@example.com',
+          payer_id: 12345
+        }
+      });
 
-      // Import handleSubscriptionCreated
-      const { handleSubscriptionCreated } = require('../../bot/services/webhookProcessors');
+      mercadoPagoService.extractCouponCode.mockReturnValue(null);
+
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      createTrialMemberMP.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', email: 'new@example.com', status: 'trial' }
+      });
+
       const result = await handleSubscriptionCreated(payload);
 
       expect(result.success).toBe(true);
-      expect(getMemberByEmail).toHaveBeenCalledWith('created@example.com');
-      expect(activateMember).toHaveBeenCalled();
+      expect(result.data.action).toBe('created');
+      expect(createTrialMemberMP).toHaveBeenCalledWith({
+        email: 'new@example.com',
+        subscriptionId: 'sub_123',
+        payerId: '12345',
+        couponCode: null
+      });
     });
-  });
 
-  // ============================================
-  // handleSubscriptionCanceled (delegates to renewal_refused)
-  // ============================================
-  describe('handleSubscriptionCanceled', () => {
-    test('delega para handleRenewalRefused corretamente', async () => {
-      // Estrutura Cakto Order
+    it('should update existing member subscription data', async () => {
       const payload = {
-        id: 'order_canceled',
-        customer: { id: 'cus_canceled', email: 'canceled@example.com' },
+        data: { id: 'sub_456' }
       };
 
-      const mockMember = { id: 1, status: 'ativo' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      markMemberAsDefaulted.mockResolvedValue({ success: true, data: { ...mockMember, status: 'inadimplente' } });
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_456',
+          status: 'authorized',
+          payer_email: 'existing@example.com',
+          payer_id: 67890
+        }
+      });
 
-      // Import handleSubscriptionCanceled
-      const { handleSubscriptionCanceled } = require('../../bot/services/webhookProcessors');
-      const result = await handleSubscriptionCanceled(payload);
+      mercadoPagoService.extractCouponCode.mockReturnValue('COUPON10');
+
+      getMemberByEmail.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', email: 'existing@example.com', status: 'trial' }
+      });
+
+      updateSubscriptionData.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', mp_subscription_id: 'sub_456' }
+      });
+
+      const result = await handleSubscriptionCreated(payload);
 
       expect(result.success).toBe(true);
-      expect(getMemberByEmail).toHaveBeenCalledWith('canceled@example.com');
-      expect(markMemberAsDefaulted).toHaveBeenCalledWith(1);
+      expect(result.data.action).toBe('updated');
+      expect(updateSubscriptionData).toHaveBeenCalledWith('uuid-2', {
+        subscriptionId: 'sub_456',
+        payerId: '67890',
+        couponCode: 'COUPON10'
+      });
     });
 
-    test('pula se membro não está ativo (herda comportamento)', async () => {
+    it('should skip non-authorized subscriptions', async () => {
       const payload = {
-        id: 'order_canceled_2',
-        customer: { id: 'cus_canceled_2', email: 'canceled2@example.com' },
+        data: { id: 'sub_pending' }
       };
 
-      const mockMember = { id: 2, status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_pending',
+          status: 'pending',
+          payer_email: 'test@example.com'
+        }
+      });
 
-      const { handleSubscriptionCanceled } = require('../../bot/services/webhookProcessors');
-      const result = await handleSubscriptionCanceled(payload);
+      const result = await handleSubscriptionCreated(payload);
 
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
-      expect(markMemberAsDefaulted).not.toHaveBeenCalled();
-    });
-  });
-
-  // ============================================
-  // handlePurchaseApproved (AC2)
-  // ============================================
-  describe('handlePurchaseApproved', () => {
-    test('ativa membro existente', async () => {
-      // Estrutura real do Cakto Order
-      const payload = {
-        id: 'order_123',
-        subscription: 'sub_123',
-        paymentMethod: 'pix',
-        customer: { id: 'cus_456', email: 'test@example.com', name: 'Test User' },
-        product: { id: 'prod_1', name: 'Guru Bet', type: 'subscription' },
-      };
-
-      const mockMember = { id: 1, email: 'test@example.com', status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      activateMember.mockResolvedValue({ success: true, data: { ...mockMember, status: 'ativo' } });
-
-      const result = await handlePurchaseApproved(payload);
-
-      expect(result.success).toBe(true);
-      expect(getMemberByEmail).toHaveBeenCalledWith('test@example.com');
-      expect(activateMember).toHaveBeenCalledWith(1, {
-        subscriptionId: 'sub_123',
-        customerId: 'cus_456',
-        paymentMethod: 'pix',
-      });
+      expect(result.data.reason).toBe('not_authorized');
+      expect(createTrialMemberMP).not.toHaveBeenCalled();
     });
 
-    test('cria novo membro se não existe', async () => {
-      const payload = {
-        id: 'order_new',
-        subscription: 'sub_new',
-        paymentMethod: 'boleto',
-        customer: { id: 'cus_new', email: 'new@example.com' },
-      };
+    it('should return error if subscription ID missing', async () => {
+      const payload = { data: {} };
 
-      getMemberByEmail.mockResolvedValue({
-        success: false,
-        error: { code: 'MEMBER_NOT_FOUND' },
-      });
-      createActiveMember.mockResolvedValue({ success: true, data: { id: 99, status: 'ativo' } });
-
-      const result = await handlePurchaseApproved(payload);
-
-      expect(result.success).toBe(true);
-      expect(createActiveMember).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        subscriptionData: {
-          subscriptionId: 'sub_new',
-          customerId: 'cus_new',
-          paymentMethod: 'boleto',
-        },
-        affiliateCode: null,  // Story 18: No affiliate in this payload
-      });
-    });
-
-    test('cria novo membro com affiliate code do webhook', async () => {
-      // Story 18: Payload com affiliate code na checkoutUrl
-      const payload = {
-        id: 'order_affiliate',
-        subscription: 'sub_aff',
-        paymentMethod: 'pix',
-        customer: { id: 'cus_aff', email: 'affiliate-buyer@example.com' },
-        affiliate: 'affiliate@example.com',  // Email do afiliado
-        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=ABC123',  // Código do afiliado
-      };
-
-      getMemberByEmail.mockResolvedValue({
-        success: false,
-        error: { code: 'MEMBER_NOT_FOUND' },
-      });
-      createActiveMember.mockResolvedValue({ success: true, data: { id: 100, status: 'ativo' } });
-
-      const result = await handlePurchaseApproved(payload);
-
-      expect(result.success).toBe(true);
-      expect(createActiveMember).toHaveBeenCalledWith({
-        email: 'affiliate-buyer@example.com',
-        subscriptionData: {
-          subscriptionId: 'sub_aff',
-          customerId: 'cus_aff',
-          paymentMethod: 'pix',
-        },
-        affiliateCode: 'ABC123',  // Story 18: Código extraído da checkoutUrl
-      });
-    });
-
-    test('retorna INVALID_PAYLOAD se email não encontrado', async () => {
-      const payload = { customer: { name: 'No Email User' } };
-
-      const result = await handlePurchaseApproved(payload);
+      const result = await handleSubscriptionCreated(payload);
 
       expect(result.success).toBe(false);
-      expect(result.error.code).toBe('INVALID_PAYLOAD');
+      expect(result.error.code).toBe('MISSING_SUBSCRIPTION_ID');
     });
   });
 
   // ============================================
-  // handleSubscriptionRenewed (AC3)
+  // handlePaymentApproved
   // ============================================
-  describe('handleSubscriptionRenewed', () => {
-    test('renova assinatura de membro ativo', async () => {
-      // Estrutura Cakto Order - customer.email
+  describe('handlePaymentApproved', () => {
+    it('should activate trial member on first payment', async () => {
       const payload = {
-        id: 'order_renew_1',
-        customer: { id: 'cus_123', email: 'test@example.com' },
+        data: { id: 'pay_123' }
       };
 
-      const mockMember = { id: 1, status: 'ativo' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      renewMemberSubscription.mockResolvedValue({ success: true, data: mockMember });
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_123',
+          status: 'approved',
+          payer: { id: 12345, email: 'trial@example.com' },
+          metadata: { preapproval_id: 'sub_123' },
+          payment_method_id: 'credit_card'
+        }
+      });
 
-      const result = await handleSubscriptionRenewed(payload);
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('cartao_recorrente');
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'trial', mp_subscription_id: 'sub_123' }
+      });
+
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo' }
+      });
+
+      const result = await handlePaymentApproved(payload);
 
       expect(result.success).toBe(true);
-      expect(renewMemberSubscription).toHaveBeenCalledWith(1);
+      expect(result.data.action).toBe('activated');
+      expect(activateMember).toHaveBeenCalledWith('uuid-1', {
+        subscriptionId: 'sub_123',
+        customerId: '12345',
+        paymentMethod: 'cartao_recorrente'
+      });
     });
 
-    test('reativa membro inadimplente', async () => {
-      // Estrutura Cakto Order
+    it('should renew active member subscription', async () => {
       const payload = {
-        id: 'order_renew_2',
-        customer: { id: 'cus_456', email: 'test@example.com' },
+        data: { id: 'pay_456' }
       };
 
-      const mockMember = { id: 1, status: 'inadimplente' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      renewMemberSubscription.mockResolvedValue({ success: true, data: { ...mockMember, status: 'ativo' } });
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_456',
+          status: 'approved',
+          payer: { id: 12345, email: 'active@example.com' },
+          metadata: { preapproval_id: 'sub_456' }
+        }
+      });
 
-      const result = await handleSubscriptionRenewed(payload);
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('pix');
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', status: 'ativo', mp_subscription_id: 'sub_456' }
+      });
+
+      renewMemberSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', status: 'ativo' }
+      });
+
+      const result = await handlePaymentApproved(payload);
 
       expect(result.success).toBe(true);
-      expect(renewMemberSubscription).toHaveBeenCalledWith(1);
+      expect(result.data.action).toBe('renewed');
+      expect(renewMemberSubscription).toHaveBeenCalledWith('uuid-2');
     });
 
-    test('retorna erro se membro não encontrado', async () => {
-      // Estrutura Cakto Order
+    it('should recover inadimplente member', async () => {
       const payload = {
-        id: 'order_renew_3',
-        customer: { id: 'cus_789', email: 'unknown@example.com' },
+        data: { id: 'pay_789' }
       };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_789',
+          status: 'approved',
+          payer: { id: 12345, email: 'defaulted@example.com' },
+          metadata: { preapproval_id: 'sub_789' }
+        }
+      });
+
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('pix');
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-3', status: 'inadimplente', mp_subscription_id: 'sub_789' }
+      });
+
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-3', status: 'ativo' }
+      });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.action).toBe('recovered');
+    });
+
+    it('should reactivate removed member and send notification', async () => {
+      const payload = {
+        data: { id: 'pay_reactivate' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_reactivate',
+          status: 'approved',
+          payer: { id: 12345, email: 'removed@example.com' },
+          metadata: { preapproval_id: 'sub_reactivate' }
+        }
+      });
+
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('pix');
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-4', status: 'removido', telegram_id: 123456789, mp_subscription_id: 'sub_reactivate' }
+      });
+
+      reactivateRemovedMember.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-4', status: 'ativo' }
+      });
+
+      sendReactivationNotification.mockResolvedValue({ success: true });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.action).toBe('reactivated');
+      expect(reactivateRemovedMember).toHaveBeenCalled();
+      expect(sendReactivationNotification).toHaveBeenCalledWith(123456789, 'uuid-4');
+    });
+
+    it('should skip non-approved payments', async () => {
+      const payload = {
+        data: { id: 'pay_pending' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_pending',
+          status: 'pending'
+        }
+      });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('not_approved');
+    });
+
+    it('should return error if member not found', async () => {
+      const payload = {
+        data: { id: 'pay_unknown' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_unknown',
+          status: 'approved',
+          payer: { email: 'unknown@example.com' },
+          metadata: { preapproval_id: 'sub_unknown' }
+        }
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
 
       getMemberByEmail.mockResolvedValue({
         success: false,
-        error: { code: 'MEMBER_NOT_FOUND' },
+        error: { code: 'MEMBER_NOT_FOUND' }
       });
 
-      const result = await handleSubscriptionRenewed(payload);
+      const result = await handlePaymentApproved(payload);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('MEMBER_NOT_FOUND');
@@ -462,93 +394,164 @@ describe('webhookProcessors', () => {
   });
 
   // ============================================
-  // handleRenewalRefused (AC4)
+  // handlePaymentRejected
   // ============================================
-  describe('handleRenewalRefused', () => {
-    test('marca membro ativo como inadimplente', async () => {
-      // Estrutura Cakto Order
+  describe('handlePaymentRejected', () => {
+    it('should mark active member as defaulted', async () => {
       const payload = {
-        id: 'order_refused_1',
-        customer: { id: 'cus_123', email: 'test@example.com' },
+        data: { id: 'pay_rejected' }
       };
 
-      const mockMember = { id: 1, status: 'ativo' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      markMemberAsDefaulted.mockResolvedValue({ success: true, data: { ...mockMember, status: 'inadimplente' } });
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_rejected',
+          status: 'rejected',
+          status_detail: 'cc_rejected_insufficient_amount',
+          payer: { email: 'active@example.com' },
+          metadata: { preapproval_id: 'sub_123' }
+        }
+      });
 
-      const result = await handleRenewalRefused(payload);
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo' }
+      });
+
+      markMemberAsDefaulted.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'inadimplente' }
+      });
+
+      const result = await handlePaymentRejected(payload);
 
       expect(result.success).toBe(true);
-      expect(markMemberAsDefaulted).toHaveBeenCalledWith(1);
+      expect(result.data.action).toBe('marked_defaulted');
+      expect(markMemberAsDefaulted).toHaveBeenCalledWith('uuid-1');
     });
 
-    test('pula se membro não está ativo', async () => {
-      // Estrutura Cakto Order
+    it('should skip if member not active', async () => {
       const payload = {
-        id: 'order_refused_2',
-        customer: { id: 'cus_456', email: 'test@example.com' },
+        data: { id: 'pay_rejected_trial' }
       };
 
-      const mockMember = { id: 1, status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_rejected_trial',
+          status: 'rejected',
+          payer: { email: 'trial@example.com' },
+          metadata: { preapproval_id: 'sub_trial' }
+        }
+      });
 
-      const result = await handleRenewalRefused(payload);
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', status: 'trial' }
+      });
+
+      const result = await handlePaymentRejected(payload);
 
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('member_not_active');
       expect(markMemberAsDefaulted).not.toHaveBeenCalled();
+    });
+
+    it('should skip if member not found', async () => {
+      const payload = {
+        data: { id: 'pay_rejected_unknown' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_rejected_unknown',
+          status: 'rejected',
+          payer: { email: 'unknown@example.com' }
+        }
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      const result = await handlePaymentRejected(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('member_not_found');
     });
   });
 
   // ============================================
-  // handleRefund
+  // handleSubscriptionCancelled
   // ============================================
-  describe('handleRefund', () => {
-    test('remove membro ativo quando reembolso é processado', async () => {
-      // Estrutura Cakto Order
+  describe('handleSubscriptionCancelled', () => {
+    it('should remove member when subscription cancelled', async () => {
       const payload = {
-        id: 'order_refund_1',
-        status: 'refunded',
-        refundedAt: '2026-01-18T18:12:30.409705-03:00',
-        customer: { id: 'cus_123', email: 'test@example.com' },
+        data: { id: 'sub_cancelled' }
       };
 
-      const mockMember = { id: 1, status: 'ativo' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      markMemberAsRemoved.mockResolvedValue({ success: true, data: { ...mockMember, status: 'removido' } });
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo', telegram_id: 123456789 }
+      });
 
-      const result = await handleRefund(payload);
+      kickMemberFromGroup.mockResolvedValue({ success: true });
+      markMemberAsRemoved.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'removido' }
+      });
+
+      const result = await handleSubscriptionCancelled(payload);
 
       expect(result.success).toBe(true);
-      expect(markMemberAsRemoved).toHaveBeenCalledWith(1, 'refund');
+      expect(result.data.action).toBe('removed');
+      expect(markMemberAsRemoved).toHaveBeenCalledWith('uuid-1', 'subscription_cancelled');
+      expect(kickMemberFromGroup).toHaveBeenCalledWith(123456789, '-1001234567890');
     });
 
-    test('remove membro trial quando reembolso é processado', async () => {
+    it('should remove trial member with trial_not_converted reason', async () => {
       const payload = {
-        id: 'order_refund_2',
-        customer: { email: 'trial@example.com' },
+        data: { id: 'sub_trial_expired' }
       };
 
-      const mockMember = { id: 2, status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      markMemberAsRemoved.mockResolvedValue({ success: true, data: { ...mockMember, status: 'removido' } });
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', status: 'trial', telegram_id: 987654321 }
+      });
 
-      const result = await handleRefund(payload);
+      kickMemberFromGroup.mockResolvedValue({ success: true });
+      markMemberAsRemoved.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-2', status: 'removido' }
+      });
+
+      const result = await handleSubscriptionCancelled(payload);
 
       expect(result.success).toBe(true);
-      expect(markMemberAsRemoved).toHaveBeenCalledWith(2, 'refund');
+      expect(result.data.action).toBe('removed');
+      expect(markMemberAsRemoved).toHaveBeenCalledWith('uuid-2', 'trial_not_converted');
     });
 
-    test('pula se membro já está removido (idempotência)', async () => {
+    it('should skip if member already removed', async () => {
       const payload = {
-        id: 'order_refund_3',
-        customer: { email: 'removed@example.com' },
+        data: { id: 'sub_already_removed' }
       };
 
-      const mockMember = { id: 3, status: 'removido' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-3', status: 'removido' }
+      });
 
-      const result = await handleRefund(payload);
+      const result = await handleSubscriptionCancelled(payload);
 
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
@@ -556,274 +559,184 @@ describe('webhookProcessors', () => {
       expect(markMemberAsRemoved).not.toHaveBeenCalled();
     });
 
-    test('pula se membro não encontrado', async () => {
+    it('should skip if member not found', async () => {
       const payload = {
-        id: 'order_refund_4',
-        customer: { email: 'unknown@example.com' },
+        data: { id: 'sub_unknown' }
       };
 
-      getMemberByEmail.mockResolvedValue({
+      getMemberBySubscription.mockResolvedValue({
         success: false,
-        error: { code: 'MEMBER_NOT_FOUND' },
+        error: { code: 'MEMBER_NOT_FOUND' }
       });
 
-      const result = await handleRefund(payload);
+      const result = await handleSubscriptionCancelled(payload);
 
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
       expect(result.data.reason).toBe('member_not_found');
-      expect(markMemberAsRemoved).not.toHaveBeenCalled();
-    });
-
-    test('retorna INVALID_PAYLOAD se email não encontrado', async () => {
-      const payload = { customer: { name: 'No Email User' } };
-
-      const result = await handleRefund(payload);
-
-      expect(result.success).toBe(false);
-      expect(result.error.code).toBe('INVALID_PAYLOAD');
     });
   });
 
   // ============================================
-  // processWebhookEvent
+  // processWebhookEvent (router)
   // ============================================
   describe('processWebhookEvent', () => {
-    test('retorna UNKNOWN_EVENT_TYPE para evento desconhecido', async () => {
-      const result = await processWebhookEvent({
-        event_type: 'unknown_event',
-        payload: {},
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error.code).toBe('UNKNOWN_EVENT_TYPE');
-    });
-
-    test('chama handler correto para purchase_approved', async () => {
-      // Estrutura Cakto Order real
-      const payload = {
-        id: 'order_proc_1',
-        subscription: 'sub_123',
-        paymentMethod: 'pix',
-        customer: { id: 'cus_456', email: 'test@example.com' },
+    it('should route subscription_preapproval created to handleSubscriptionCreated', async () => {
+      const event = {
+        event_type: 'subscription_preapproval',
+        payload: {
+          action: 'created',
+          data: { id: 'sub_123' }
+        }
       };
 
-      const mockMember = { id: 1, status: 'trial' };
-      getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-      activateMember.mockResolvedValue({ success: true, data: { ...mockMember, status: 'ativo' } });
-
-      const result = await processWebhookEvent({
-        event_type: 'purchase_approved',
-        payload,
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_123',
+          status: 'authorized',
+          payer_email: 'test@example.com',
+          payer_id: 12345
+        }
       });
+
+      mercadoPagoService.extractCouponCode.mockReturnValue(null);
+
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      createTrialMemberMP.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'trial' }
+      });
+
+      const result = await processWebhookEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(createTrialMemberMP).toHaveBeenCalled();
+    });
+
+    it('should route subscription_preapproval cancelled to handleSubscriptionCancelled', async () => {
+      const event = {
+        event_type: 'subscription_preapproval',
+        payload: {
+          action: 'updated',
+          data: { id: 'sub_cancelled' }
+        }
+      };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_cancelled',
+          status: 'cancelled'
+        }
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo', telegram_id: 123456789 }
+      });
+
+      kickMemberFromGroup.mockResolvedValue({ success: true });
+      markMemberAsRemoved.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'removido' }
+      });
+
+      const result = await processWebhookEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(markMemberAsRemoved).toHaveBeenCalled();
+    });
+
+    it('should route payment approved to handlePaymentApproved', async () => {
+      const event = {
+        event_type: 'payment',
+        payload: {
+          action: 'payment.created',
+          data: { id: 'pay_123' }
+        }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_123',
+          status: 'approved',
+          payer: { id: 12345, email: 'test@example.com' },
+          metadata: { preapproval_id: 'sub_123' }
+        }
+      });
+
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('pix');
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'trial', mp_subscription_id: 'sub_123' }
+      });
+
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo' }
+      });
+
+      const result = await processWebhookEvent(event);
 
       expect(result.success).toBe(true);
       expect(activateMember).toHaveBeenCalled();
     });
-  });
 
-  // ============================================
-  // Story 16.10: Reactivate Removed Member
-  // ============================================
-  describe('Story 16.10: Reactivate removed member', () => {
-    describe('handlePurchaseApproved with removido status', () => {
-      test('reativa membro removido e envia notificação', async () => {
-        const payload = {
-          id: 'order_1',
-          subscription: 'sub_123',
-          paymentMethod: 'pix',
-          customer: { id: 'cus_456', email: 'removed@example.com' },
-        };
+    it('should route payment rejected to handlePaymentRejected', async () => {
+      const event = {
+        event_type: 'payment',
+        payload: {
+          action: 'payment.updated',
+          data: { id: 'pay_rejected' }
+        }
+      };
 
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 123456789,
-          email: 'removed@example.com',
-          status: 'removido'
-        };
-
-        const reactivatedMember = {
-          ...mockMember,
-          status: 'ativo',
-          kicked_at: null
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
-        sendReactivationNotification.mockResolvedValue({ success: true, data: { messageId: 1, inviteLink: 'https://t.me/+abc123' } });
-
-        const result = await handlePurchaseApproved(payload);
-
-        expect(result.success).toBe(true);
-        expect(reactivateRemovedMember).toHaveBeenCalledWith('uuid-1', {
-          subscriptionId: 'sub_123',
-          paymentMethod: 'pix'
-        });
-        expect(sendReactivationNotification).toHaveBeenCalledWith(123456789, 'uuid-1');
-        expect(activateMember).not.toHaveBeenCalled(); // Não deve chamar activateMember
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_rejected',
+          status: 'rejected',
+          payer: { email: 'test@example.com' },
+          metadata: { preapproval_id: 'sub_123' }
+        }
       });
 
-      test('reativa membro removido sem telegram_id (sem notificação)', async () => {
-        const payload = {
-          id: 'order_1',
-          customer: { email: 'removed@example.com' },
-        };
-
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: null,
-          email: 'removed@example.com',
-          status: 'removido'
-        };
-
-        const reactivatedMember = {
-          ...mockMember,
-          status: 'ativo',
-          kicked_at: null
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
-
-        const result = await handlePurchaseApproved(payload);
-
-        expect(result.success).toBe(true);
-        expect(reactivateRemovedMember).toHaveBeenCalled();
-        expect(sendReactivationNotification).not.toHaveBeenCalled(); // Sem telegram_id
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'ativo' }
       });
 
-      test('continua se notificação falhar', async () => {
-        const payload = {
-          customer: { email: 'removed@example.com' },
-        };
-
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 123456789,
-          status: 'removido'
-        };
-
-        const reactivatedMember = { ...mockMember, status: 'ativo' };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
-        sendReactivationNotification.mockRejectedValue(new Error('Telegram error'));
-
-        const result = await handlePurchaseApproved(payload);
-
-        // Deve retornar sucesso mesmo com falha na notificação
-        expect(result.success).toBe(true);
+      markMemberAsDefaulted.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-1', status: 'inadimplente' }
       });
+
+      const result = await processWebhookEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(markMemberAsDefaulted).toHaveBeenCalled();
     });
 
-    describe('handleSubscriptionRenewed with removido status', () => {
-      test('reativa membro removido via subscription_renewed', async () => {
-        const payload = {
-          id: 'order_1',
-          subscription: 'sub_renewed',
-          paymentMethod: 'credit_card',
-          customer: { email: 'removed@example.com' },
-        };
+    it('should skip unhandled event types', async () => {
+      const event = {
+        event_type: 'merchant_order',
+        payload: {
+          data: { id: 'order_123' }
+        }
+      };
 
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 987654321,
-          email: 'removed@example.com',
-          status: 'removido'
-        };
+      const result = await processWebhookEvent(event);
 
-        const reactivatedMember = {
-          ...mockMember,
-          status: 'ativo',
-          kicked_at: null
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-        reactivateRemovedMember.mockResolvedValue({ success: true, data: reactivatedMember });
-        sendReactivationNotification.mockResolvedValue({ success: true, data: {} });
-
-        const result = await handleSubscriptionRenewed(payload);
-
-        expect(result.success).toBe(true);
-        expect(reactivateRemovedMember).toHaveBeenCalled();
-        expect(sendReactivationNotification).toHaveBeenCalledWith(987654321, 'uuid-1');
-        expect(renewMemberSubscription).not.toHaveBeenCalled(); // Não deve chamar renewMemberSubscription
-      });
-    });
-
-    describe('AC6: Idempotency for reactivated members', () => {
-      test('skips processing for already reactivated member in purchase_approved', async () => {
-        const payload = {
-          customer: { email: 'reactivated@example.com' },
-        };
-
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 123456789,
-          email: 'reactivated@example.com',
-          status: 'ativo',
-          notes: 'Reativado após pagamento (subscription: sub_123)'
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-
-        const result = await handlePurchaseApproved(payload);
-
-        expect(result.success).toBe(true);
-        expect(result.data.skipped).toBe(true);
-        expect(result.data.reason).toBe('already_reactivated');
-        expect(activateMember).not.toHaveBeenCalled();
-        expect(reactivateRemovedMember).not.toHaveBeenCalled();
-      });
-
-      test('skips processing for already reactivated member in subscription_renewed', async () => {
-        const payload = {
-          customer: { email: 'reactivated@example.com' },
-        };
-
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 123456789,
-          email: 'reactivated@example.com',
-          status: 'ativo',
-          notes: 'Reativado após pagamento'
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-
-        const result = await handleSubscriptionRenewed(payload);
-
-        expect(result.success).toBe(true);
-        expect(result.data.skipped).toBe(true);
-        expect(result.data.reason).toBe('already_reactivated');
-        expect(renewMemberSubscription).not.toHaveBeenCalled();
-        expect(reactivateRemovedMember).not.toHaveBeenCalled();
-      });
-
-      test('processes normally for ativo member without reactivation note', async () => {
-        const payload = {
-          id: 'order_1',
-          subscription: 'sub_123',
-          paymentMethod: 'pix',
-          customer: { email: 'normal@example.com' },
-        };
-
-        const mockMember = {
-          id: 'uuid-1',
-          telegram_id: 123456789,
-          email: 'normal@example.com',
-          status: 'ativo',
-          notes: null // No reactivation note
-        };
-
-        getMemberByEmail.mockResolvedValue({ success: true, data: mockMember });
-        activateMember.mockResolvedValue({ success: true, data: mockMember });
-
-        const result = await handlePurchaseApproved(payload);
-
-        expect(result.success).toBe(true);
-        expect(activateMember).toHaveBeenCalled(); // Should call activateMember normally
-      });
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('unhandled_event_type');
     });
   });
 });
