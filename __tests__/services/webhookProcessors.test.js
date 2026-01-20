@@ -36,6 +36,7 @@ const {
   normalizePaymentMethod,
   extractEmail,
   extractSubscriptionData,
+  extractAffiliateCode,  // Story 18: Affiliate tracking
   WEBHOOK_HANDLERS,
 } = require('../../bot/services/webhookProcessors');
 
@@ -152,6 +153,58 @@ describe('webhookProcessors', () => {
       expect(result.subscriptionId).toBeNull();
       expect(result.customerId).toBeNull();
       expect(result.paymentMethod).toBe('cartao_recorrente');
+    });
+  });
+
+  // ============================================
+  // extractAffiliateCode (Story 18)
+  // ============================================
+  describe('extractAffiliateCode', () => {
+    test('extrai affiliate code da checkoutUrl', () => {
+      const payload = {
+        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=ABC123',
+      };
+      const result = extractAffiliateCode(payload);
+      expect(result).toBe('ABC123');
+    });
+
+    test('extrai affiliate code com caracteres especiais', () => {
+      const payload = {
+        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=5ZSwLuCf',
+      };
+      const result = extractAffiliateCode(payload);
+      expect(result).toBe('5ZSwLuCf');
+    });
+
+    test('retorna null quando checkoutUrl não tem affiliate', () => {
+      const payload = {
+        checkoutUrl: 'https://pay.cakto.com.br/product',
+      };
+      const result = extractAffiliateCode(payload);
+      expect(result).toBeNull();
+    });
+
+    test('retorna null quando payload não tem checkoutUrl', () => {
+      const payload = {
+        affiliate: 'affiliate@example.com',  // Só tem email, não tem código
+      };
+      const result = extractAffiliateCode(payload);
+      expect(result).toBeNull();
+    });
+
+    test('retorna null para payload vazio', () => {
+      const result = extractAffiliateCode({});
+      expect(result).toBeNull();
+    });
+
+    test('extrai affiliate de payload com estrutura data', () => {
+      const payload = {
+        data: {
+          checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=XYZ789',
+        },
+      };
+      const result = extractAffiliateCode(payload);
+      expect(result).toBe('XYZ789');
     });
   });
 
@@ -306,6 +359,38 @@ describe('webhookProcessors', () => {
           customerId: 'cus_new',
           paymentMethod: 'boleto',
         },
+        affiliateCode: null,  // Story 18: No affiliate in this payload
+      });
+    });
+
+    test('cria novo membro com affiliate code do webhook', async () => {
+      // Story 18: Payload com affiliate code na checkoutUrl
+      const payload = {
+        id: 'order_affiliate',
+        subscription: 'sub_aff',
+        paymentMethod: 'pix',
+        customer: { id: 'cus_aff', email: 'affiliate-buyer@example.com' },
+        affiliate: 'affiliate@example.com',  // Email do afiliado
+        checkoutUrl: 'https://pay.cakto.com.br/product?affiliate=ABC123',  // Código do afiliado
+      };
+
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      createActiveMember.mockResolvedValue({ success: true, data: { id: 100, status: 'ativo' } });
+
+      const result = await handlePurchaseApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(createActiveMember).toHaveBeenCalledWith({
+        email: 'affiliate-buyer@example.com',
+        subscriptionData: {
+          subscriptionId: 'sub_aff',
+          customerId: 'cus_aff',
+          paymentMethod: 'pix',
+        },
+        affiliateCode: 'ABC123',  // Story 18: Código extraído da checkoutUrl
       });
     });
 

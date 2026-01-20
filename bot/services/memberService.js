@@ -699,30 +699,48 @@ async function markMemberAsDefaulted(memberId) {
 /**
  * Create an active member directly (for payments before trial)
  * Story 16.3: Added for webhook processing
+ * Story 18: Added affiliate tracking from webhook
  * @param {object} memberData - Member data
  * @param {string} memberData.email - Email address
  * @param {object} memberData.subscriptionData - Subscription information
+ * @param {string} [memberData.affiliateCode] - Affiliate code from webhook (optional)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createActiveMember({ email, subscriptionData }) {
+async function createActiveMember({ email, subscriptionData, affiliateCode }) {
   try {
     const { subscriptionId, customerId, paymentMethod } = subscriptionData;
 
     const now = new Date();
     const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
 
+    // Build insert data
+    const insertData = {
+      email: email,
+      status: 'ativo',
+      cakto_subscription_id: subscriptionId,
+      cakto_customer_id: customerId,
+      payment_method: paymentMethod,
+      subscription_started_at: now.toISOString(),
+      subscription_ends_at: subscriptionEndsAt.toISOString(),
+      last_payment_at: now.toISOString()
+    };
+
+    // Story 18: Add affiliate tracking if code provided from webhook
+    if (affiliateCode) {
+      insertData.affiliate_code = affiliateCode;
+      insertData.affiliate_clicked_at = now.toISOString();
+      insertData.affiliate_history = JSON.stringify([
+        { code: affiliateCode, clicked_at: now.toISOString(), source: 'webhook' }
+      ]);
+      logger.info('[memberService] createActiveMember: with affiliate from webhook', {
+        email,
+        affiliateCode
+      });
+    }
+
     const { data, error } = await supabase
       .from('members')
-      .insert({
-        email: email,
-        status: 'ativo',
-        cakto_subscription_id: subscriptionId,
-        cakto_customer_id: customerId,
-        payment_method: paymentMethod,
-        subscription_started_at: now.toISOString(),
-        subscription_ends_at: subscriptionEndsAt.toISOString(),
-        last_payment_at: now.toISOString()
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -742,7 +760,8 @@ async function createActiveMember({ email, subscriptionData }) {
     logger.info('[memberService] createActiveMember: success', {
       memberId: data.id,
       email,
-      subscriptionEndsAt: subscriptionEndsAt.toISOString()
+      subscriptionEndsAt: subscriptionEndsAt.toISOString(),
+      hasAffiliate: !!affiliateCode
     });
 
     return { success: true, data };

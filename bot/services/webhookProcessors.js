@@ -99,6 +99,46 @@ function extractSubscriptionData(payload) {
 }
 
 /**
+ * Extract affiliate code from Cakto webhook payload
+ * Story 18: Affiliate tracking from webhook
+ *
+ * The webhook contains affiliate info in two places:
+ * - payload.affiliate: affiliate's EMAIL (e.g., "affiliate@example.com")
+ * - payload.checkoutUrl: contains affiliate CODE (e.g., "?affiliate=5ZSwLuCf")
+ *
+ * We extract the CODE from checkoutUrl since that's what we store in member records.
+ *
+ * @param {object} payload - Webhook payload (Cakto Order object)
+ * @returns {string|null} - Affiliate code or null if not found
+ */
+function extractAffiliateCode(payload) {
+  // Try to extract from checkoutUrl first (contains the actual code)
+  const checkoutUrl = payload?.checkoutUrl || payload?.data?.checkoutUrl || null;
+
+  if (checkoutUrl) {
+    try {
+      const url = new URL(checkoutUrl);
+      const affiliateCode = url.searchParams.get('affiliate');
+      if (affiliateCode) {
+        logger.debug('[webhookProcessors] extractAffiliateCode: found in checkoutUrl', { affiliateCode });
+        return affiliateCode;
+      }
+    } catch (err) {
+      logger.warn('[webhookProcessors] extractAffiliateCode: invalid checkoutUrl', { checkoutUrl });
+    }
+  }
+
+  // Fallback: check if affiliate field exists (this is the email, not code)
+  // We log it for debugging but can't use it as the code
+  const affiliateEmail = payload?.affiliate || payload?.data?.affiliate || null;
+  if (affiliateEmail && !checkoutUrl) {
+    logger.debug('[webhookProcessors] extractAffiliateCode: has affiliate email but no code in URL', { affiliateEmail });
+  }
+
+  return null;
+}
+
+/**
  * Handle purchase_approved event (AC2)
  * Creates or activates a member when payment is approved
  * @param {object} payload - Webhook event payload
@@ -120,6 +160,12 @@ async function handlePurchaseApproved(payload) {
     }
 
     const subscriptionData = extractSubscriptionData(payload);
+
+    // Story 18: Extract affiliate code from webhook payload
+    const affiliateCode = extractAffiliateCode(payload);
+    if (affiliateCode) {
+      logger.info('[webhookProcessors] handlePurchaseApproved: affiliate code found', { affiliateCode });
+    }
 
     // Try to find existing member by email
     const memberResult = await getMemberByEmail(email);
@@ -211,7 +257,8 @@ async function handlePurchaseApproved(payload) {
 
       const createResult = await createActiveMember({
         email,
-        subscriptionData
+        subscriptionData,
+        affiliateCode  // Story 18: Pass affiliate code from webhook
       });
 
       // Send payment confirmation if creation succeeded and member has telegram_id
@@ -568,4 +615,5 @@ module.exports = {
   normalizePaymentMethod,
   extractEmail,
   extractSubscriptionData,
+  extractAffiliateCode,  // Story 18: Affiliate tracking from webhook
 };
