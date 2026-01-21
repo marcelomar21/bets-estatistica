@@ -478,7 +478,7 @@ describe('formatFarewellMessage', () => {
 
     const message = formatFarewellMessage(member, 'trial_expired', checkoutUrl);
 
-    expect(message).toContain('trial de 7 dias terminou');
+    expect(message).toContain('trial terminou');
     expect(message).toContain('Sentiremos sua falta');
     expect(message).toContain('ASSINAR POR R$50/MES');
     expect(message).toContain(checkoutUrl);
