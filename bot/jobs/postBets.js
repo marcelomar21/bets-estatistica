@@ -142,6 +142,33 @@ async function formatBetMessage(bet, template) {
 }
 
 /**
+ * Format bet preview (simpler version without LLM copy)
+ * @param {object} bet - Bet object
+ * @param {string} type - 'repost' or 'new'
+ * @returns {string}
+ */
+function formatBetPreview(bet, type) {
+  const kickoffDate = new Date(bet.kickoffTime);
+  const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const typeLabel = type === 'repost' ? '🔄' : '🆕';
+
+  return [
+    `${typeLabel} *${bet.homeTeamName} x ${bet.awayTeamName}*`,
+    `   🗓 ${kickoffStr}`,
+    `   📊 ${bet.betMarket}`,
+    `   💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}`,
+    `   🔗 ${bet.deepLink ? '✅' : '❌ SEM LINK'}`,
+  ].join('\n');
+}
+
+/**
  * Generate preview message for confirmation
  * @param {array} ativas - Active bets to repost
  * @param {array} novas - New bets to post
@@ -150,27 +177,21 @@ async function formatBetMessage(bet, template) {
 function generatePreviewMessage(ativas, novas) {
   const parts = ['📋 *PREVIEW DA POSTAGEM*\n'];
 
-  if (ativas.length > 0) {
-    parts.push('*Repostagem (ativas):*');
-    for (const bet of ativas) {
-      parts.push(`• ${bet.homeTeamName} x ${bet.awayTeamName} (${bet.betMarket})`);
-    }
-    parts.push('');
-  }
+  const allBets = [
+    ...ativas.map(b => ({ ...b, type: 'repost' })),
+    ...novas.map(b => ({ ...b, type: 'new' })),
+  ];
 
-  if (novas.length > 0) {
-    parts.push('*Novas apostas:*');
-    for (const bet of novas) {
-      parts.push(`• ${bet.homeTeamName} x ${bet.awayTeamName} (${bet.betMarket})`);
+  if (allBets.length > 0) {
+    for (const bet of allBets) {
+      parts.push(formatBetPreview(bet, bet.type));
+      parts.push('');
     }
-    parts.push('');
-  }
-
-  if (ativas.length === 0 && novas.length === 0) {
+  } else {
     parts.push('_Nenhuma aposta para postar._');
   }
 
-  parts.push(`\n⏱ *Auto-postagem em 15 minutos se não houver resposta*`);
+  parts.push(`⏱ *Auto-postagem em 15 minutos se não houver resposta*`);
 
   return parts.join('\n');
 }
