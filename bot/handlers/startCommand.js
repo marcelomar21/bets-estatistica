@@ -23,7 +23,8 @@ const {
   canRejoinGroup,
   reactivateMember,
   getTrialDaysRemaining,
-  linkTelegramId
+  linkTelegramId,
+  getTrialDays
 } = require('../services/memberService');
 const { getSuccessRate } = require('../services/metricsService');
 
@@ -473,6 +474,10 @@ Seu email ${email} foi vinculado a este Telegram.
   const checkoutUrl = config.membership?.checkoutUrl;
   const subscriptionPrice = config.membership?.subscriptionPrice || 'R$50/mês';
 
+  // Get trial days from system_config (database)
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+
   let paymentMessage;
   let replyMarkup = null;
 
@@ -483,7 +488,7 @@ Seu email ${email} foi vinculado a este Telegram.
 Para ter acesso ao grupo do GuruBet, você precisa assinar primeiro.
 
 💰 *Valor:* ${subscriptionPrice}
-🎁 *Inclui 2 dias grátis para testar!*
+🎁 *Inclui ${trialDays} dias grátis para testar!*
 
 👇 *Clique no botão abaixo para assinar:*
     `.trim();
@@ -521,7 +526,9 @@ Envie /start novamente e informe o mesmo email que usou no checkout.
  */
 async function generateAndSendInvite(bot, chatId, firstName, member) {
   const groupId = config.telegram.publicGroupId;
-  const trialDays = config.membership?.trialDays || 2;
+  // Get trial days from system_config (database)
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Generate unique invite link

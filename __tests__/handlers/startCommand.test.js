@@ -47,7 +47,8 @@ const {
   canRejoinGroup,
   reactivateMember,
   getTrialDaysRemaining,
-  linkTelegramId
+  linkTelegramId,
+  getTrialDays
 } = require('../../bot/services/memberService');
 const { getSuccessRate } = require('../../bot/services/metricsService');
 
@@ -83,6 +84,12 @@ describe('Start Command Handler', () => {
     getSuccessRate.mockResolvedValue({
       success: true,
       data: { rate30Days: 72.5 }
+    });
+
+    // Mock getTrialDays
+    getTrialDays.mockResolvedValue({
+      success: true,
+      data: { days: 7, source: 'mock' }
     });
   });
 
