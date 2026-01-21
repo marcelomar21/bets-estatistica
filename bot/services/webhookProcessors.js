@@ -31,6 +31,71 @@ function getNotificationService() {
   return _notificationService;
 }
 
+// Lazy load telegram bot to send admin notifications
+let _bot = null;
+function getBot() {
+  if (!_bot) {
+    const { getBot: getTelegramBot } = require('../telegram');
+    _bot = getTelegramBot();
+  }
+  return _bot;
+}
+
+/**
+ * Send payment notification to admin group
+ * @param {object} params - Notification params
+ * @param {string} params.email - Payer email
+ * @param {number} params.amount - Payment amount
+ * @param {string} params.action - Action type (new_member, conversion, renewal, recovery, reactivation)
+ * @param {number} [params.memberId] - Member ID if available
+ */
+async function notifyAdminPayment({ email, amount, action, memberId }) {
+  try {
+    const bot = getBot();
+    const adminGroupId = config.telegram.adminGroupId;
+
+    if (!bot || !adminGroupId) {
+      logger.warn('[webhookProcessors] notifyAdminPayment: bot or adminGroupId not configured');
+      return;
+    }
+
+    const actionEmojis = {
+      new_member: '🆕',
+      conversion: '🎉',
+      renewal: '🔄',
+      recovery: '💪',
+      reactivation: '🔙'
+    };
+
+    const actionTexts = {
+      new_member: 'Novo membro ativo',
+      conversion: 'Trial convertido',
+      renewal: 'Assinatura renovada',
+      recovery: 'Recuperado de inadimplente',
+      reactivation: 'Reativação'
+    };
+
+    const emoji = actionEmojis[action] || '💰';
+    const actionText = actionTexts[action] || 'Pagamento aprovado';
+    const amountFormatted = (amount || 50).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const message = `
+${emoji} *${actionText}!*
+
+📧 ${email}
+💰 ${amountFormatted}
+${memberId ? `🆔 ID: ${memberId}` : ''}
+    `.trim();
+
+    await bot.sendMessage(adminGroupId, message, { parse_mode: 'Markdown' });
+
+    logger.info('[webhookProcessors] notifyAdminPayment: sent', { email, action, amount });
+  } catch (err) {
+    // Don't fail the webhook processing if notification fails
+    logger.warn('[webhookProcessors] notifyAdminPayment: failed', { error: err.message });
+  }
+}
+
 // ============================================
 // HANDLER: Assinatura Criada (trial inicia)
 // ============================================
@@ -242,6 +307,14 @@ async function handlePaymentApproved(payload) {
       paymentId
     });
 
+    // Notify admin group
+    await notifyAdminPayment({
+      email,
+      amount: payment.transaction_amount,
+      action: 'new_member',
+      memberId: createResult.data.id
+    });
+
     return { success: true, data: { memberId: createResult.data.id, action: 'created_active' } };
   }
 
@@ -269,6 +342,14 @@ async function handlePaymentApproved(payload) {
       paymentId
     });
 
+    // Notify admin group
+    await notifyAdminPayment({
+      email: member.email,
+      amount: payment.transaction_amount,
+      action: 'conversion',
+      memberId: member.id
+    });
+
     return { success: true, data: { memberId: member.id, action: 'activated' } };
 
   } else if (member.status === 'ativo') {
@@ -286,6 +367,14 @@ async function handlePaymentApproved(payload) {
     logger.info('[webhookProcessors] Subscription renewed', {
       memberId: member.id,
       paymentId
+    });
+
+    // Notify admin group
+    await notifyAdminPayment({
+      email: member.email,
+      amount: payment.transaction_amount,
+      action: 'renewal',
+      memberId: member.id
     });
 
     return { success: true, data: { memberId: member.id, action: 'renewed' } };
@@ -309,6 +398,14 @@ async function handlePaymentApproved(payload) {
     logger.info('[webhookProcessors] Member recovered from defaulted', {
       memberId: member.id,
       paymentId
+    });
+
+    // Notify admin group
+    await notifyAdminPayment({
+      email: member.email,
+      amount: payment.transaction_amount,
+      action: 'recovery',
+      memberId: member.id
     });
 
     return { success: true, data: { memberId: member.id, action: 'recovered' } };
@@ -344,6 +441,14 @@ async function handlePaymentApproved(payload) {
     logger.info('[webhookProcessors] Member reactivated after removal', {
       memberId: member.id,
       paymentId
+    });
+
+    // Notify admin group
+    await notifyAdminPayment({
+      email: member.email,
+      amount: payment.transaction_amount,
+      action: 'reactivation',
+      memberId: member.id
     });
 
     return { success: true, data: { memberId: member.id, action: 'reactivated' } };
