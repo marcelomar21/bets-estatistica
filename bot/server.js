@@ -20,6 +20,7 @@ const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
+const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
 
@@ -135,7 +136,17 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
       const callbackQuery = update.callback_query;
       // Only handle from admin group
       if (callbackQuery.message?.chat?.id?.toString() === config.telegram.adminGroupId) {
-        await handleRemovalCallback(bot, callbackQuery);
+        const data = callbackQuery.data || '';
+
+        // Handle post confirmation callbacks
+        if (data.startsWith('postbets_confirm:') || data.startsWith('postbets_cancel:')) {
+          const [actionFull, confirmationId] = data.split(':');
+          const action = actionFull.replace('postbets_', ''); // 'confirm' or 'cancel'
+          await handlePostConfirmation(action, confirmationId, callbackQuery);
+        } else {
+          // Handle removal callbacks (existing)
+          await handleRemovalCallback(bot, callbackQuery);
+        }
       }
     }
 

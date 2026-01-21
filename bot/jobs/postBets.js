@@ -14,10 +14,16 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
-const { sendToPublic, sendToAdmin } = require('../telegram');
+const { sendToPublic, sendToAdmin, getBot } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
 const { sendPostWarn } = require('./jobWarn');
+
+// Store pending confirmations (in-memory)
+const pendingConfirmations = new Map();
+
+// Confirmation timeout in ms (15 minutes)
+const CONFIRMATION_TIMEOUT_MS = 15 * 60 * 1000;
 
 // Message templates for variety (Story 3.6)
 const MESSAGE_TEMPLATES = [
@@ -136,6 +142,166 @@ async function formatBetMessage(bet, template) {
 }
 
 /**
+ * Generate preview message for confirmation
+ * @param {array} ativas - Active bets to repost
+ * @param {array} novas - New bets to post
+ * @returns {string}
+ */
+function generatePreviewMessage(ativas, novas) {
+  const parts = ['📋 *PREVIEW DA POSTAGEM*\n'];
+
+  if (ativas.length > 0) {
+    parts.push('*Repostagem (ativas):*');
+    for (const bet of ativas) {
+      parts.push(`• ${bet.homeTeamName} x ${bet.awayTeamName} (${bet.betMarket})`);
+    }
+    parts.push('');
+  }
+
+  if (novas.length > 0) {
+    parts.push('*Novas apostas:*');
+    for (const bet of novas) {
+      parts.push(`• ${bet.homeTeamName} x ${bet.awayTeamName} (${bet.betMarket})`);
+    }
+    parts.push('');
+  }
+
+  if (ativas.length === 0 && novas.length === 0) {
+    parts.push('_Nenhuma aposta para postar._');
+  }
+
+  parts.push(`\n⏱ *Auto-postagem em 15 minutos se não houver resposta*`);
+
+  return parts.join('\n');
+}
+
+/**
+ * Request confirmation from admin before posting
+ * @param {array} ativas - Active bets
+ * @param {array} novas - New bets
+ * @param {string} period - Period name
+ * @returns {Promise<{confirmed: boolean, autoPosted: boolean}>}
+ */
+async function requestConfirmation(ativas, novas, period) {
+  const confirmationId = `postbets_${Date.now()}`;
+  const preview = generatePreviewMessage(ativas, novas);
+
+  const bot = getBot();
+
+  // Send confirmation request to admin group
+  const sendResult = await bot.sendMessage(
+    config.telegram.adminGroupId,
+    preview,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Confirmar', callback_data: `postbets_confirm:${confirmationId}` },
+            { text: '❌ Cancelar', callback_data: `postbets_cancel:${confirmationId}` },
+          ],
+        ],
+      },
+    }
+  );
+
+  if (!sendResult || !sendResult.message_id) {
+    logger.error('Failed to send confirmation request');
+    // If we can't ask for confirmation, proceed with posting
+    return { confirmed: true, autoPosted: true };
+  }
+
+  const messageId = sendResult.message_id;
+
+  // Create a promise that resolves when user responds or timeout
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      // Auto-post after timeout
+      pendingConfirmations.delete(confirmationId);
+      logger.info('Post confirmation auto-approved (timeout)', { confirmationId });
+
+      // Update message to show it was auto-posted
+      bot.editMessageText(
+        `${preview}\n\n✅ *Auto-postado* (sem resposta em 15min)`,
+        {
+          chat_id: config.telegram.adminGroupId,
+          message_id: messageId,
+          parse_mode: 'Markdown',
+        }
+      ).catch(() => {}); // Ignore edit errors
+
+      resolve({ confirmed: true, autoPosted: true });
+    }, CONFIRMATION_TIMEOUT_MS);
+
+    // Store confirmation data
+    pendingConfirmations.set(confirmationId, {
+      resolve,
+      timeoutId,
+      messageId,
+      period,
+    });
+  });
+}
+
+/**
+ * Handle confirmation callback from admin
+ * @param {string} action - 'confirm' or 'cancel'
+ * @param {string} confirmationId - Confirmation ID
+ * @param {object} callbackQuery - Telegram callback query
+ * @returns {Promise<boolean>} - true if handled
+ */
+async function handlePostConfirmation(action, confirmationId, callbackQuery) {
+  const pending = pendingConfirmations.get(confirmationId);
+
+  if (!pending) {
+    logger.warn('Post confirmation not found or expired', { confirmationId });
+    return false;
+  }
+
+  // Clear timeout
+  clearTimeout(pending.timeoutId);
+  pendingConfirmations.delete(confirmationId);
+
+  const bot = getBot();
+  const user = callbackQuery.from;
+
+  if (action === 'confirm') {
+    logger.info('Post confirmed by admin', { confirmationId, userId: user.id, username: user.username });
+
+    // Update message
+    await bot.editMessageText(
+      `✅ *Postagem confirmada* por @${user.username || user.first_name}`,
+      {
+        chat_id: config.telegram.adminGroupId,
+        message_id: pending.messageId,
+        parse_mode: 'Markdown',
+      }
+    ).catch(() => {});
+
+    pending.resolve({ confirmed: true, autoPosted: false });
+  } else {
+    logger.info('Post cancelled by admin', { confirmationId, userId: user.id, username: user.username });
+
+    // Update message
+    await bot.editMessageText(
+      `❌ *Postagem cancelada* por @${user.username || user.first_name}`,
+      {
+        chat_id: config.telegram.adminGroupId,
+        message_id: pending.messageId,
+        parse_mode: 'Markdown',
+      }
+    ).catch(() => {});
+
+    pending.resolve({ confirmed: false, autoPosted: false });
+  }
+
+  // Answer callback to remove loading state
+  await bot.answerCallbackQuery(callbackQuery.id).catch(() => {});
+
+  return true;
+}
+
+/**
  * Validate bet before posting (Story 3.4, Story 13.5: AC6)
  * Story 13.5: Apostas com promovida_manual=true ignoram filtro de odds mínimas
  * @param {object} bet - Bet object
@@ -163,11 +329,12 @@ function validateBetForPosting(bet) {
 /**
  * Main job - Usa getFilaStatus() como fonte única de verdade
  * Garante que /postar posta EXATAMENTE o que /fila mostra
+ * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
-async function runPostBets() {
+async function runPostBets(skipConfirmation = false) {
   const period = getPeriod();
   const now = new Date().toISOString();
-  logger.info('Starting post bets job', { period, timestamp: now });
+  logger.info('Starting post bets job', { period, timestamp: now, skipConfirmation });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   const filaResult = await getFilaStatus();
@@ -178,7 +345,7 @@ async function runPostBets() {
     // Warn failure (Story 14.3 AC5)
     await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`);
 
-    return { reposted: 0, posted: 0, skipped: 0, totalSent: 0 };
+    return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
   }
 
   const { ativas, novas } = filaResult.data;
@@ -188,6 +355,26 @@ async function runPostBets() {
     novas: novas.length,
     total: ativas.length + novas.length
   });
+
+  // If nothing to post, skip confirmation
+  if (ativas.length === 0 && novas.length === 0) {
+    logger.info('No bets to post, skipping confirmation');
+    return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
+  }
+
+  // Step 2: Request confirmation (unless skipped)
+  if (!skipConfirmation) {
+    const confirmation = await requestConfirmation(ativas, novas, period);
+
+    if (!confirmation.confirmed) {
+      logger.info('Post bets cancelled by admin');
+      return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: true };
+    }
+
+    if (confirmation.autoPosted) {
+      logger.info('Post bets auto-confirmed after timeout');
+    }
+  }
 
   let reposted = 0;
   let repostFailed = 0;
@@ -324,7 +511,8 @@ async function runPostBets() {
     repostFailed,
     posted,
     skipped,
-    totalSent: reposted + posted
+    totalSent: reposted + posted,
+    cancelled: false
   };
 }
 
@@ -341,4 +529,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, validateBetForPosting };
+module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation };
