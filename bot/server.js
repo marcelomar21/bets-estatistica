@@ -167,7 +167,8 @@ async function setupWebhook() {
 function setupScheduler() {
   const cron = require('node-cron');
   const { runEnrichment } = require('./jobs/enrichOdds');
-  const { runRequestLinks } = require('./jobs/requestLinks');
+  // DISABLED: Request links chato no admin
+  // const { runRequestLinks } = require('./jobs/requestLinks');
   const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
   const { runTrackResults } = require('./jobs/trackResults');
@@ -200,7 +201,8 @@ function setupScheduler() {
     logger.info('[scheduler] Running morning-prep jobs');
     try {
       await withExecutionLogging('enrich-odds', runEnrichment);
-      await withExecutionLogging('request-links', () => runRequestLinks('morning'));
+      // DISABLED: Request links chato no admin
+      // await withExecutionLogging('request-links', () => runRequestLinks('morning'));
       logger.info('[scheduler] morning-prep complete');
     } catch (err) {
       logger.error('[scheduler] morning-prep failed', { error: err.message });
