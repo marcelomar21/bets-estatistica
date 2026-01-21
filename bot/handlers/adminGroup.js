@@ -2023,6 +2023,12 @@ async function handlePostarCommand(bot, msg) {
 
     const totalSent = (result.reposted || 0) + (result.posted || 0);
 
+    // If cancelled via confirmation, don't send additional message
+    if (result.cancelled) {
+      logger.info('Posting cancelled via confirmation');
+      return;
+    }
+
     if (totalSent === 0) {
       await bot.sendMessage(
         msg.chat.id,
