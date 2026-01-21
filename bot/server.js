@@ -171,7 +171,8 @@ function setupScheduler() {
   const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
   const { runTrackResults } = require('./jobs/trackResults');
-  const { runReminders } = require('./jobs/reminders');
+  // DISABLED: Reminders de links são chatos no admin
+  // const { runReminders } = require('./jobs/reminders');
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
   // DISABLED: Trial reminders não fazem sentido no fluxo MP (usuário já assinou)
   // const { runTrialReminders } = require('./jobs/membership/trial-reminders');
@@ -217,14 +218,14 @@ function setupScheduler() {
     //   logger.error('[scheduler] trial-reminders failed', { error: err.message });
     // }
 
-    // Link reminders (follow-up após requestLinks das 08:00)
-    logger.info('[scheduler] Running reminders job');
-    try {
-      await withExecutionLogging('reminders', runReminders);
-      logger.info('[scheduler] reminders complete');
-    } catch (err) {
-      logger.error('[scheduler] reminders failed', { error: err.message });
-    }
+    // DISABLED: Link reminders são chatos no admin
+    // logger.info('[scheduler] Running reminders job');
+    // try {
+    //   await withExecutionLogging('reminders', runReminders);
+    //   logger.info('[scheduler] reminders complete');
+    // } catch (err) {
+    //   logger.error('[scheduler] reminders failed', { error: err.message });
+    // }
   }, { timezone: TZ });
 
   // Morning post + Renewal reminders - 10:00 São Paulo
