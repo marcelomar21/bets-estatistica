@@ -44,12 +44,20 @@ jest.mock('../../lib/logger', () => ({
 jest.mock('../../lib/config', () => ({
   config: {
     telegram: {
-      publicGroupId: '-1001234567890'
+      publicGroupId: '-1001234567890',
+      adminGroupId: '-1009999999999'
     },
     membership: {
       checkoutUrl: 'https://checkout.example.com'
     }
   }
+}));
+
+// Mock telegram bot for admin notifications
+jest.mock('../../bot/telegram', () => ({
+  getBot: jest.fn().mockReturnValue({
+    sendMessage: jest.fn().mockResolvedValue({ message_id: 1 })
+  })
 }));
 
 const {
@@ -361,7 +369,7 @@ describe('webhookProcessors - Mercado Pago', () => {
       expect(result.data.reason).toBe('not_approved');
     });
 
-    it('should return error if member not found', async () => {
+    it('should return error if member not found and no email in payment', async () => {
       const payload = {
         data: { id: 'pay_unknown' }
       };
@@ -371,8 +379,36 @@ describe('webhookProcessors - Mercado Pago', () => {
         data: {
           id: 'pay_unknown',
           status: 'approved',
-          payer: { email: 'unknown@example.com' },
+          payer: {}, // No email
           metadata: { preapproval_id: 'sub_unknown' }
+        }
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+    });
+
+    it('should create new member if not found but email exists in payment', async () => {
+      const payload = {
+        data: { id: 'pay_new' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_new',
+          status: 'approved',
+          payer: { id: 'payer123', email: 'new@example.com' },
+          payment_method_id: 'credit_card',
+          transaction_amount: 50,
+          point_of_interaction: { transaction_data: { subscription_id: 'sub_new' } }
         }
       });
 
@@ -386,10 +422,28 @@ describe('webhookProcessors - Mercado Pago', () => {
         error: { code: 'MEMBER_NOT_FOUND' }
       });
 
+      createTrialMemberMP.mockResolvedValue({
+        success: true,
+        data: { id: 99, email: 'new@example.com', status: 'trial' }
+      });
+
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 99, status: 'ativo' }
+      });
+
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('credit_card');
+
       const result = await handlePaymentApproved(payload);
 
-      expect(result.success).toBe(false);
-      expect(result.error.code).toBe('MEMBER_NOT_FOUND');
+      expect(result.success).toBe(true);
+      expect(result.data.action).toBe('created_active');
+      expect(createTrialMemberMP).toHaveBeenCalledWith({
+        email: 'new@example.com',
+        subscriptionId: 'sub_new',
+        payerId: 'payer123',
+        couponCode: null
+      });
     });
   });
 
