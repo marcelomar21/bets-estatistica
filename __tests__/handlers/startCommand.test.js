@@ -38,15 +38,16 @@ jest.mock('../../lib/config', () => ({
   }
 }));
 
-const { handleStartCommand, handleStatusCommand } = require('../../bot/handlers/startCommand');
+const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('../../bot/handlers/startCommand');
 const { getBot } = require('../../bot/telegram');
 const { supabase } = require('../../lib/supabase');
 const {
   getMemberByTelegramId,
-  createTrialMember,
+  getMemberByEmail,
   canRejoinGroup,
   reactivateMember,
-  getTrialDaysRemaining
+  getTrialDaysRemaining,
+  linkTelegramId
 } = require('../../bot/services/memberService');
 const { getSuccessRate } = require('../../bot/services/metricsService');
 
@@ -100,46 +101,22 @@ describe('Start Command Handler', () => {
       ...overrides
     });
 
-    describe('AC1: New member via /start join', () => {
-      it('should create trial member and send welcome with invite link', async () => {
+    describe('AC1: New member via /start - asks for email (MP flow)', () => {
+      it('should ask for email when member not found by telegram_id', async () => {
         getMemberByTelegramId.mockResolvedValue({
           success: false,
           error: { code: 'MEMBER_NOT_FOUND' }
-        });
-
-        createTrialMember.mockResolvedValue({
-          success: true,
-          data: { id: 1, status: 'trial' }
         });
 
         const msg = createMockMessage();
         const result = await handleStartCommand(msg);
 
         expect(result.success).toBe(true);
-        expect(result.action).toBe('created');
-        // Tech-Spec: MP migration - affiliateCode removed from /start (now via MP coupons)
-        expect(createTrialMember).toHaveBeenCalledWith(
-          { telegramId: 123456789, telegramUsername: 'testuser' },
-          7
-        );
-        expect(mockBot.createChatInviteLink).toHaveBeenCalledWith(
-          '-1001234567890',
-          expect.objectContaining({
-            member_limit: 1
-          })
-        );
+        expect(result.action).toBe('waiting_email');
         expect(mockBot.sendMessage).toHaveBeenCalledWith(
           123456789,
-          expect.stringContaining('Bem-vindo'),
-          expect.objectContaining({
-            reply_markup: expect.objectContaining({
-              inline_keyboard: expect.arrayContaining([
-                expect.arrayContaining([
-                  expect.objectContaining({ text: '🚀 ENTRAR NO GRUPO' })
-                ])
-              ])
-            })
-          })
+          expect.stringContaining('digite o email'),
+          expect.any(Object)
         );
       });
     });
@@ -311,22 +288,17 @@ describe('Start Command Handler', () => {
     });
 
     describe('AC6: Generic /start (no payload)', () => {
-      it('should handle /start without payload same as /start join', async () => {
+      it('should handle /start without payload same as /start join - asks for email', async () => {
         getMemberByTelegramId.mockResolvedValue({
           success: false,
           error: { code: 'MEMBER_NOT_FOUND' }
-        });
-
-        createTrialMember.mockResolvedValue({
-          success: true,
-          data: { id: 1, status: 'trial' }
         });
 
         const msg = createMockMessage({ text: '/start' });
         const result = await handleStartCommand(msg);
 
         expect(result.success).toBe(true);
-        expect(result.action).toBe('created');
+        expect(result.action).toBe('waiting_email');
       });
     });
 
@@ -343,28 +315,20 @@ describe('Start Command Handler', () => {
         expect(mockBot.sendMessage).not.toHaveBeenCalled();
       });
 
-      it('should handle invite link generation failure gracefully', async () => {
+      it('should handle database error gracefully', async () => {
         getMemberByTelegramId.mockResolvedValue({
           success: false,
-          error: { code: 'MEMBER_NOT_FOUND' }
+          error: { code: 'DB_ERROR', message: 'Connection failed' }
         });
-
-        createTrialMember.mockResolvedValue({
-          success: true,
-          data: { id: 1, status: 'trial' }
-        });
-
-        mockBot.createChatInviteLink.mockRejectedValue(new Error('Bot not admin'));
 
         const msg = createMockMessage();
         const result = await handleStartCommand(msg);
 
         expect(result.success).toBe(false);
-        expect(result.action).toBe('invite_generation_failed');
+        expect(result.action).toBe('error');
         expect(mockBot.sendMessage).toHaveBeenCalledWith(
           123456789,
-          expect.stringContaining('Não foi possível gerar seu link'),
-          expect.any(Object)
+          expect.stringContaining('Erro ao verificar seu cadastro')
         );
       });
     });
@@ -430,7 +394,117 @@ describe('Start Command Handler', () => {
   });
 
   // ============================================
-  // Note: Affiliate tracking via deep links removed in MP migration
-  // Affiliates now tracked via coupons at MP checkout
+  // Email Verification Flow (MP Migration)
   // ============================================
+  describe('handleEmailInput', () => {
+    const createMockMessage = (email) => ({
+      from: {
+        id: 123456789,
+        username: 'testuser',
+        first_name: 'Test'
+      },
+      chat: {
+        id: 123456789,
+        type: 'private'
+      },
+      text: email
+    });
+
+    beforeEach(() => {
+      // Reset mocks for email tests
+      getMemberByEmail.mockReset();
+      linkTelegramId.mockReset();
+    });
+
+    it('should link telegram_id when email found with no telegram_id', async () => {
+      getMemberByEmail.mockResolvedValue({
+        success: true,
+        data: { id: 1, telegram_id: null, status: 'ativo', email: 'test@example.com' }
+      });
+
+      linkTelegramId.mockResolvedValue({
+        success: true,
+        data: { id: 1, telegram_id: '123456789', status: 'ativo' }
+      });
+
+      const msg = createMockMessage('test@example.com');
+      const result = await handleEmailInput(msg);
+
+      expect(result.success).toBe(true);
+      expect(linkTelegramId).toHaveBeenCalledWith(1, 123456789, 'testuser');
+      expect(mockBot.createChatInviteLink).toHaveBeenCalled();
+    });
+
+    it('should reject if email already linked to different telegram', async () => {
+      getMemberByEmail.mockResolvedValue({
+        success: true,
+        data: { id: 1, telegram_id: '999999999', status: 'ativo' }
+      });
+
+      const msg = createMockMessage('test@example.com');
+      const result = await handleEmailInput(msg);
+
+      expect(result.success).toBe(false);
+      expect(result.action).toBe('email_already_linked');
+      expect(mockBot.sendMessage).toHaveBeenCalledWith(
+        123456789,
+        expect.stringContaining('já está vinculado a outra conta')
+      );
+    });
+
+    it('should send payment link when email not found', async () => {
+      getMemberByEmail.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      const msg = createMockMessage('notfound@example.com');
+      const result = await handleEmailInput(msg);
+
+      expect(result.success).toBe(true);
+      expect(result.action).toBe('payment_link_sent');
+      expect(mockBot.sendMessage).toHaveBeenCalledWith(
+        123456789,
+        expect.stringContaining('Não encontramos uma assinatura'),
+        expect.objectContaining({
+          reply_markup: expect.objectContaining({
+            inline_keyboard: expect.arrayContaining([
+              expect.arrayContaining([
+                expect.objectContaining({ text: '💳 ASSINAR AGORA' })
+              ])
+            ])
+          })
+        })
+      );
+    });
+
+    it('should reject invalid email format', async () => {
+      const msg = createMockMessage('invalid-email');
+      const result = await handleEmailInput(msg);
+
+      expect(result.success).toBe(false);
+      expect(result.action).toBe('invalid_email');
+      expect(mockBot.sendMessage).toHaveBeenCalledWith(
+        123456789,
+        expect.stringContaining('Email inválido')
+      );
+    });
+  });
+
+  describe('shouldHandleAsEmailInput', () => {
+    it('should return false for non-private chats', () => {
+      const msg = { chat: { type: 'group' }, text: 'test@example.com', from: { id: 123 } };
+      expect(shouldHandleAsEmailInput(msg)).toBe(false);
+    });
+
+    it('should return false for commands', () => {
+      const msg = { chat: { type: 'private' }, text: '/start', from: { id: 123 } };
+      expect(shouldHandleAsEmailInput(msg)).toBe(false);
+    });
+
+    it('should return false if no conversation state', () => {
+      const msg = { chat: { type: 'private' }, text: 'test@example.com', from: { id: 999 } };
+      expect(shouldHandleAsEmailInput(msg)).toBe(false);
+    });
+  });
 });
