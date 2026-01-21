@@ -36,6 +36,7 @@ jest.mock('../../bot/services/memberService', () => ({
   createTrialMember: jest.fn(),
   canRejoinGroup: jest.fn(),
   reactivateMember: jest.fn(),
+  getTrialDays: jest.fn(),
 }));
 
 jest.mock('../../bot/services/metricsService', () => ({
@@ -56,6 +57,7 @@ const {
   createTrialMember,
   canRejoinGroup,
   reactivateMember,
+  getTrialDays,
 } = require('../../bot/services/memberService');
 const { getSuccessRate } = require('../../bot/services/metricsService');
 
@@ -71,6 +73,10 @@ describe('memberEvents', () => {
     getSuccessRate.mockResolvedValue({
       success: true,
       data: { rate30Days: 72.5 },
+    });
+    getTrialDays.mockResolvedValue({
+      success: true,
+      data: 7,
     });
   });
 

@@ -10,7 +10,8 @@ const {
   getMemberByTelegramId,
   createTrialMember,
   canRejoinGroup,
-  reactivateMember
+  reactivateMember,
+  getTrialDays
 } = require('../services/memberService');
 const { getSuccessRate } = require('../services/metricsService');
 const { registerNotification } = require('../services/notificationService');
@@ -176,7 +177,9 @@ async function processNewMember(user) {
   }
 
   // New member - create trial (1.5)
-  const trialDays = config.membership?.trialDays || 7;
+  // Read trial days from system_config (set via /trial command)
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data : 7;
   const createResult = await createTrialMember({ telegramId, telegramUsername: username }, trialDays);
 
   if (createResult.success) {
@@ -237,7 +240,9 @@ async function sendWelcomeMessage(telegramId, firstName, memberId) {
     successRateText = metricsResult.data.rate30Days.toFixed(1);
   }
 
-  const trialDays = config.membership?.trialDays || 7;
+  // Read trial days from system_config (set via /trial command)
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data : 7;
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Format message (4.3)
