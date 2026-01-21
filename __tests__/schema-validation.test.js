@@ -45,7 +45,7 @@ describe('Database Schema Validation', () => {
     test('should have all required columns', async () => {
       const { data, error } = await supabase
         .from('members')
-        .select('id, telegram_id, telegram_username, status, trial_started_at, trial_ends_at, subscription_started_at, subscription_ends_at, payment_method, kicked_at, created_at, updated_at')
+        .select('id, telegram_id, telegram_username, status, trial_started_at, subscription_started_at, subscription_ends_at, payment_method, kicked_at, created_at, updated_at')
         .limit(1);
 
       expect(error).toBeNull();

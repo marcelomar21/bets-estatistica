@@ -52,6 +52,7 @@ jest.mock('../../bot/services/memberService', () => ({
   createTrialMember: jest.fn(),
   canRejoinGroup: jest.fn(),
   reactivateMember: jest.fn(),
+  getTrialDays: jest.fn().mockResolvedValue({ success: true, data: 7 }),
 }));
 
 jest.mock('../../bot/services/metricsService', () => ({
