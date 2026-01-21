@@ -297,7 +297,7 @@ function formatFarewellMessage(member, reason, checkoutUrl) {
   const price = getSubscriptionPrice();
 
   if (reason === 'trial_expired') {
-    return `Seu trial de 7 dias terminou
+    return `Seu trial terminou
 
 Sentiremos sua falta!
 

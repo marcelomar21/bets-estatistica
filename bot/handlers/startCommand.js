@@ -447,13 +447,15 @@ Se você acha que isso é um erro, entre em contato com o suporte.
 
     // Send welcome message with invite based on member status
     if (member.status === 'ativo' || member.status === 'trial') {
-      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, linkResult.data);
-
+      // Send "linked" message FIRST
       await bot.sendMessage(chatId, `
 ✅ *Conta vinculada com sucesso!*
 
 Seu email ${email} foi vinculado a este Telegram.
       `.trim(), { parse_mode: 'Markdown' });
+
+      // Then send invite
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, linkResult.data);
 
       return { success: true, action: 'linked_and_invited', ...inviteResult };
     }
@@ -481,7 +483,7 @@ Seu email ${email} foi vinculado a este Telegram.
 Para ter acesso ao grupo do GuruBet, você precisa assinar primeiro.
 
 💰 *Valor:* ${subscriptionPrice}
-🎁 *Inclui 7 dias grátis para testar!*
+🎁 *Inclui 2 dias grátis para testar!*
 
 👇 *Clique no botão abaixo para assinar:*
     `.trim();
@@ -519,7 +521,7 @@ Envie /start novamente e informe o mesmo email que usou no checkout.
  */
 async function generateAndSendInvite(bot, chatId, firstName, member) {
   const groupId = config.telegram.publicGroupId;
-  const trialDays = config.membership?.trialDays || 7;
+  const trialDays = config.membership?.trialDays || 2;
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Generate unique invite link
@@ -558,9 +560,9 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
     return { success: false, action: 'invite_generation_failed' };
   }
 
-  // Get success rate for welcome message
+  // Get success rate for welcome message (fallback to 71.29% if not available)
   const metricsResult = await getSuccessRate();
-  let successRateText = 'N/A';
+  let successRateText = '71.29';
   if (metricsResult.success && metricsResult.data.rate30Days !== null) {
     successRateText = metricsResult.data.rate30Days.toFixed(1);
   }
@@ -576,8 +578,8 @@ Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
 Você tem *${daysText}* para experimentar nossas apostas.
 
 📊 *O que você recebe:*
-• 3 apostas diárias com análise estatística
-• Horários: 10h, 15h e 22h
+• 3 sugestões de apostas diárias
+• Análise estatística completa
 • Taxa de acerto histórica: *${successRateText}%*
 
 💰 Após o trial, continue por apenas *R$50/mês*.
