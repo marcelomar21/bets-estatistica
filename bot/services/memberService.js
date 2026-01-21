@@ -1981,6 +1981,70 @@ async function updateSubscriptionData(memberId, { subscriptionId, payerId, coupo
   }
 }
 
+/**
+ * Link telegram_id to an existing member (for MP flow where payment happens before /start)
+ * @param {number} memberId - Internal member ID
+ * @param {number|string} telegramId - Telegram user ID to link
+ * @param {string} [telegramUsername] - Telegram username (optional)
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function linkTelegramId(memberId, telegramId, telegramUsername = null) {
+  try {
+    if (!memberId || !telegramId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'Member ID and Telegram ID are required' }
+      };
+    }
+
+    // Check if this telegram_id is already linked to another member
+    const existingResult = await getMemberByTelegramId(telegramId);
+    if (existingResult.success) {
+      // Already has a member with this telegram_id
+      if (existingResult.data.id === memberId) {
+        // Same member - already linked
+        return { success: true, data: existingResult.data };
+      }
+      return {
+        success: false,
+        error: { code: 'TELEGRAM_ALREADY_LINKED', message: 'Este Telegram já está vinculado a outra conta' }
+      };
+    }
+
+    const updateData = {
+      telegram_id: telegramId.toString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (telegramUsername) {
+      updateData.telegram_username = telegramUsername;
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .update(updateData)
+      .eq('id', memberId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[memberService] linkTelegramId: database error', { memberId, telegramId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] linkTelegramId: success', {
+      memberId,
+      telegramId,
+      telegramUsername
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] linkTelegramId: unexpected error', { memberId, telegramId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   // Constants
   MEMBER_STATUSES,
@@ -2049,4 +2113,5 @@ module.exports = {
   getMemberBySubscription,
   createTrialMemberMP,
   updateSubscriptionData,
+  linkTelegramId,
 };

@@ -11,6 +11,7 @@ const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, stopBot, testConnection } = require('./telegram');
 const { handleAdminMessage } = require('./handlers/adminGroup');
+const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
 
 // Validate config on startup
 validateConfig();
@@ -19,18 +20,29 @@ validateConfig();
 const bot = initBot('polling');
 
 /**
- * Handle messages in admin group
+ * Handle messages
  */
 bot.on('message', async (msg) => {
-  // Only process messages from admin group
-  if (msg.chat.id.toString() !== config.telegram.adminGroupId) {
-    return;
-  }
-
   try {
-    await handleAdminMessage(bot, msg);
+    // Handle admin group messages
+    if (msg.chat.id.toString() === config.telegram.adminGroupId) {
+      await handleAdminMessage(bot, msg);
+      return;
+    }
+
+    // Handle private chat messages
+    if (msg.chat.type === 'private' && msg.text) {
+      if (msg.text.startsWith('/start')) {
+        await handleStartCommand(msg);
+      } else if (msg.text === '/status') {
+        await handleStatusCommand(msg);
+      } else if (shouldHandleAsEmailInput(msg)) {
+        // Handle email verification flow (MP payment before /start)
+        await handleEmailInput(msg);
+      }
+    }
   } catch (err) {
-    logger.error('Error handling admin message', { error: err.message });
+    logger.error('Error handling message', { error: err.message });
   }
 });
 

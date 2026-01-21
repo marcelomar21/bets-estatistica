@@ -167,7 +167,9 @@ async function handlePaymentApproved(payload) {
   const memberService = getMemberService();
 
   // Buscar membro pela subscription ou email
-  const subscriptionId = payment.metadata?.preapproval_id;
+  // subscription_id está em point_of_interaction para pagamentos de assinatura MP
+  const subscriptionId = payment.point_of_interaction?.transaction_data?.subscription_id ||
+                         payment.metadata?.preapproval_id;
   let member = null;
 
   if (subscriptionId) {
@@ -379,7 +381,9 @@ async function handlePaymentRejected(payload) {
   const memberService = getMemberService();
 
   // Buscar membro
-  const subscriptionId = payment.metadata?.preapproval_id;
+  // subscription_id está em point_of_interaction para pagamentos de assinatura MP
+  const subscriptionId = payment.point_of_interaction?.transaction_data?.subscription_id ||
+                         payment.metadata?.preapproval_id;
   let member = null;
 
   if (subscriptionId) {

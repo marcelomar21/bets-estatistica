@@ -19,12 +19,54 @@ const { getBot } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
 const {
   getMemberByTelegramId,
-  createTrialMember,
+  getMemberByEmail,
   canRejoinGroup,
   reactivateMember,
-  getTrialDaysRemaining
+  getTrialDaysRemaining,
+  linkTelegramId
 } = require('../services/memberService');
 const { getSuccessRate } = require('../services/metricsService');
+
+/**
+ * In-memory conversation state for email verification flow
+ * Key: telegramId, Value: { state: 'waiting_email', timestamp: Date }
+ * States expire after 5 minutes
+ */
+const conversationState = new Map();
+const CONVERSATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Set conversation state for a user
+ */
+function setConversationState(telegramId, state) {
+  conversationState.set(telegramId.toString(), {
+    state,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Get conversation state for a user (returns null if expired or not set)
+ */
+function getConversationState(telegramId) {
+  const entry = conversationState.get(telegramId.toString());
+  if (!entry) return null;
+
+  // Check if expired
+  if (Date.now() - entry.timestamp > CONVERSATION_TIMEOUT_MS) {
+    conversationState.delete(telegramId.toString());
+    return null;
+  }
+
+  return entry.state;
+}
+
+/**
+ * Clear conversation state for a user
+ */
+function clearConversationState(telegramId) {
+  conversationState.delete(telegramId.toString());
+}
 
 /**
  * Check if user is actually in the Telegram group via API
@@ -288,55 +330,188 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
 }
 
 /**
- * Handle new member - create trial and send welcome
- * Note: With MP, trial duration is configured in the MP subscription plan (7 days free)
- * Bot just registers the member so they can join the Telegram group
+ * Handle new member - ask for email to verify MP payment or create trial
+ * Note: With MP, payment can happen before user starts the bot. We need to ask
+ * for email to link the telegram_id with an existing member.
  */
 async function handleNewMember(bot, chatId, telegramId, username, firstName) {
-  const trialDays = config.membership?.trialDays || 7;
+  // Ask for email to check if they already paid via MP
+  const askEmailMessage = `
+Olá, ${firstName || 'apostador'}! 👋
 
-  // Create trial member
-  const createResult = await createTrialMember(
-    { telegramId, telegramUsername: username },
-    trialDays
-  );
+Para continuar, preciso verificar seu cadastro.
 
-  if (!createResult.success) {
-    if (createResult.error?.code === 'MEMBER_ALREADY_EXISTS') {
-      // Race condition - member was created between check and insert
-      logger.warn('[membership:start-command] Race condition on member creation', { telegramId });
-      await bot.sendMessage(chatId, '⏳ Processando... envie /start novamente.');
-      return { success: false, action: 'race_condition' };
-    }
+📧 *Por favor, digite o email que você usou no pagamento:*
 
-    logger.error('[membership:start-command] Failed to create member', {
-      telegramId,
-      error: createResult.error
-    });
-    await bot.sendMessage(chatId, '❌ Erro ao criar sua conta. Tente novamente.');
-    return { success: false, action: 'creation_failed' };
+_(Se você ainda não é assinante, digite qualquer email para começar seu trial gratuito)_
+  `.trim();
+
+  await bot.sendMessage(chatId, askEmailMessage, { parse_mode: 'Markdown' });
+
+  // Set conversation state to wait for email
+  setConversationState(telegramId, 'waiting_email');
+
+  logger.info('[membership:start-command] Waiting for email from new user', {
+    telegramId,
+    username
+  });
+
+  return { success: true, action: 'waiting_email' };
+}
+
+/**
+ * Handle email input from user (called when user sends a text message while in waiting_email state)
+ * @param {object} msg - Telegram message object
+ * @returns {Promise<{success: boolean, action?: string, error?: object}>}
+ */
+async function handleEmailInput(msg) {
+  const bot = getBot();
+  const telegramId = msg.from.id;
+  const username = msg.from.username;
+  const firstName = msg.from.first_name;
+  const chatId = msg.chat.id;
+  const text = (msg.text || '').trim().toLowerCase();
+
+  // Clear conversation state
+  clearConversationState(telegramId);
+
+  // Validate email format (basic validation)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(text)) {
+    await bot.sendMessage(chatId, `
+❌ Email inválido. Por favor, envie um email válido.
+
+Envie /start para tentar novamente.
+    `.trim());
+    return { success: false, action: 'invalid_email' };
   }
 
-  const member = createResult.data;
+  const email = text;
 
-  // Register event
-  await registerMemberEvent(member.id, 'trial_start', {
-    telegram_id: telegramId,
-    telegram_username: username,
-    source: 'start_command'
-  });
-
-  // Generate invite and send welcome
-  const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member);
-
-  logger.info('[membership:start-command] New trial member created', {
-    memberId: member.id,
+  logger.info('[membership:start-command] Email received, checking member', {
     telegramId,
-    username,
-    trialDays
+    email
   });
 
-  return { success: true, action: 'created', ...inviteResult };
+  // Check if member exists with this email
+  const emailResult = await getMemberByEmail(email);
+
+  if (emailResult.success) {
+    const member = emailResult.data;
+
+    // Check if member already has a telegram_id linked
+    if (member.telegram_id && member.telegram_id !== telegramId.toString()) {
+      // Different telegram is linked to this email
+      logger.warn('[membership:start-command] Email already linked to different Telegram', {
+        email,
+        linkedTelegramId: member.telegram_id,
+        attemptingTelegramId: telegramId
+      });
+
+      await bot.sendMessage(chatId, `
+❌ Este email já está vinculado a outra conta do Telegram.
+
+Se você acha que isso é um erro, entre em contato com o suporte.
+      `.trim());
+      return { success: false, action: 'email_already_linked' };
+    }
+
+    // Email exists and either has no telegram_id or same telegram_id
+    // Link telegram_id to member
+    const linkResult = await linkTelegramId(member.id, telegramId, username);
+
+    if (!linkResult.success) {
+      logger.error('[membership:start-command] Failed to link Telegram', {
+        memberId: member.id,
+        telegramId,
+        error: linkResult.error
+      });
+      await bot.sendMessage(chatId, '❌ Erro ao vincular sua conta. Tente novamente.');
+      return { success: false, action: 'link_failed', error: linkResult.error };
+    }
+
+    // Register event
+    await registerMemberEvent(member.id, 'telegram_linked', {
+      telegram_id: telegramId,
+      telegram_username: username,
+      email,
+      source: 'email_verification'
+    });
+
+    logger.info('[membership:start-command] Telegram linked to existing member', {
+      memberId: member.id,
+      telegramId,
+      email,
+      status: member.status
+    });
+
+    // Send welcome message with invite based on member status
+    if (member.status === 'ativo' || member.status === 'trial') {
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, linkResult.data);
+
+      await bot.sendMessage(chatId, `
+✅ *Conta vinculada com sucesso!*
+
+Seu email ${email} foi vinculado a este Telegram.
+      `.trim(), { parse_mode: 'Markdown' });
+
+      return { success: true, action: 'linked_and_invited', ...inviteResult };
+    }
+
+    // Member is not in active/trial status - handle accordingly
+    return await handleExistingMember(bot, chatId, telegramId, firstName, linkResult.data, null);
+  }
+
+  // Email not found - user hasn't paid yet, send payment link
+  logger.info('[membership:start-command] Email not found, sending payment link', {
+    telegramId,
+    email
+  });
+
+  const checkoutUrl = config.membership?.checkoutUrl;
+  const subscriptionPrice = config.membership?.subscriptionPrice || 'R$50/mês';
+
+  let paymentMessage;
+  let replyMarkup = null;
+
+  if (checkoutUrl) {
+    paymentMessage = `
+❌ Não encontramos uma assinatura com o email *${email}*.
+
+Para ter acesso ao grupo do GuruBet, você precisa assinar primeiro.
+
+💰 *Valor:* ${subscriptionPrice}
+🎁 *Inclui 7 dias grátis para testar!*
+
+👇 *Clique no botão abaixo para assinar:*
+    `.trim();
+
+    replyMarkup = {
+      inline_keyboard: [[
+        { text: '💳 ASSINAR AGORA', url: checkoutUrl }
+      ]]
+    };
+  } else {
+    const operatorUsername = config.membership?.operatorUsername || 'operador';
+    paymentMessage = `
+❌ Não encontramos uma assinatura com o email *${email}*.
+
+Para ter acesso ao grupo, entre em contato com @${operatorUsername} para assinar.
+    `.trim();
+  }
+
+  await bot.sendMessage(chatId, paymentMessage, {
+    parse_mode: 'Markdown',
+    reply_markup: replyMarkup
+  });
+
+  // Add instruction for after payment
+  await bot.sendMessage(chatId, `
+📌 *Após o pagamento:*
+Envie /start novamente e informe o mesmo email que usou no checkout.
+  `.trim(), { parse_mode: 'Markdown' });
+
+  return { success: true, action: 'payment_link_sent' };
 }
 
 /**
@@ -671,7 +846,30 @@ ${extraInfo}
   return { success: true, action: 'status_shown' };
 }
 
+/**
+ * Check if a message should be handled as email input
+ * @param {object} msg - Telegram message object
+ * @returns {boolean}
+ */
+function shouldHandleAsEmailInput(msg) {
+  // Only private chats
+  if (msg.chat.type !== 'private') return false;
+
+  // Only text messages
+  if (!msg.text) return false;
+
+  // Ignore commands
+  if (msg.text.startsWith('/')) return false;
+
+  // Check if user is in waiting_email state
+  const state = getConversationState(msg.from.id);
+  return state === 'waiting_email';
+}
+
 module.exports = {
   handleStartCommand,
-  handleStatusCommand
+  handleStatusCommand,
+  handleEmailInput,
+  shouldHandleAsEmailInput,
+  getConversationState
 };

@@ -21,7 +21,7 @@ const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
-const { handleStartCommand, handleStatusCommand } = require('./handlers/startCommand');
+const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
 
 // Validate config
 validateConfig();
@@ -118,6 +118,9 @@ app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
           await handleStartCommand(msg);
         } else if (msg.text === '/status') {
           await handleStatusCommand(msg);
+        } else if (shouldHandleAsEmailInput(msg)) {
+          // Handle email verification flow (MP payment before /start)
+          await handleEmailInput(msg);
         }
       }
 
