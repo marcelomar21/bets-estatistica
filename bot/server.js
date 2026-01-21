@@ -173,7 +173,8 @@ function setupScheduler() {
   const { runTrackResults } = require('./jobs/trackResults');
   const { runReminders } = require('./jobs/reminders');
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
-  const { runTrialReminders } = require('./jobs/membership/trial-reminders');
+  // DISABLED: Trial reminders não fazem sentido no fluxo MP (usuário já assinou)
+  // const { runTrialReminders } = require('./jobs/membership/trial-reminders');
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
   const { runReconciliation } = require('./jobs/membership/reconciliation');
@@ -205,16 +206,16 @@ function setupScheduler() {
     }
   }, { timezone: TZ });
 
-  // Trial reminders + Link reminders - 09:00 São Paulo
+  // Link reminders - 09:00 São Paulo
   cron.schedule('0 9 * * *', async () => {
-    // Story 16.5: Trial reminders first
-    logger.info('[scheduler] Running trial-reminders job');
-    try {
-      await withExecutionLogging('trial-reminders', runTrialReminders);
-      logger.info('[scheduler] trial-reminders complete');
-    } catch (err) {
-      logger.error('[scheduler] trial-reminders failed', { error: err.message });
-    }
+    // DISABLED: Trial reminders não fazem sentido no fluxo MP (usuário já assinou)
+    // logger.info('[scheduler] Running trial-reminders job');
+    // try {
+    //   await withExecutionLogging('trial-reminders', runTrialReminders);
+    //   logger.info('[scheduler] trial-reminders complete');
+    // } catch (err) {
+    //   logger.error('[scheduler] trial-reminders failed', { error: err.message });
+    // }
 
     // Link reminders (follow-up após requestLinks das 08:00)
     logger.info('[scheduler] Running reminders job');
