@@ -76,7 +76,7 @@ describe('memberEvents', () => {
     });
     getTrialDays.mockResolvedValue({
       success: true,
-      data: 7,
+      data: { days: 7, source: 'mock' },
     });
   });
 

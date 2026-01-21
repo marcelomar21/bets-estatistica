@@ -52,7 +52,7 @@ jest.mock('../../bot/services/memberService', () => ({
   createTrialMember: jest.fn(),
   canRejoinGroup: jest.fn(),
   reactivateMember: jest.fn(),
-  getTrialDays: jest.fn().mockResolvedValue({ success: true, data: 7 }),
+  getTrialDays: jest.fn().mockResolvedValue({ success: true, data: { days: 7, source: 'mock' } }),
 }));
 
 jest.mock('../../bot/services/metricsService', () => ({

@@ -49,6 +49,17 @@ jest.mock('../../../bot/services/metricsService', () => ({
   }),
 }));
 
+jest.mock('../../../bot/services/memberService', () => ({
+  getTrialDays: jest.fn().mockResolvedValue({
+    success: true,
+    data: { days: 7, source: 'mock' },
+  }),
+  generatePaymentLink: jest.fn().mockReturnValue({
+    success: true,
+    data: { url: 'https://pay.test.com/checkout', hasAffiliate: false, affiliateCode: null },
+  }),
+}));
+
 const {
   runTrialReminders,
   getMembersNeedingTrialReminder,
@@ -65,17 +76,20 @@ describe('trial-reminders job', () => {
 
   describe('getMembersNeedingTrialReminder', () => {
     it('should return members with trial ending in 1-3 days', async () => {
+      // With 7-day trial, members who started 4-6 days ago will have 1-3 days remaining
+      // Use start of today for consistent calculations
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       const mockMembers = [
-        { id: 'member-1', telegram_id: 111, status: 'trial', trial_ends_at: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 'member-2', telegram_id: 222, status: 'trial', trial_ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() },
-        { id: 'member-3', telegram_id: 333, status: 'trial', trial_ends_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() },
+        { id: 'member-1', telegram_id: 111, status: 'trial', trial_started_at: new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString() }, // 1 day left
+        { id: 'member-2', telegram_id: 222, status: 'trial', trial_started_at: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString() }, // 2 days left
+        { id: 'member-3', telegram_id: 333, status: 'trial', trial_started_at: new Date(today.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString() }, // 3 days left
       ];
 
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: mockMembers,
           error: null,
         }),
@@ -93,8 +107,7 @@ describe('trial-reminders job', () => {
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: [],
           error: null,
         }),
@@ -111,8 +124,7 @@ describe('trial-reminders job', () => {
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: null,
           error: { message: 'Connection failed' },
         }),
@@ -286,8 +298,7 @@ describe('trial-reminders job', () => {
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: [],
           error: null,
         }),
@@ -299,16 +310,16 @@ describe('trial-reminders job', () => {
     });
 
     it('should process members and return counts', async () => {
+      // Member started trial 5 days ago, with 7-day trial = 2 days left
       const mockMembers = [
-        { id: 'member-1', telegram_id: 111, status: 'trial', trial_ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() },
+        { id: 'member-1', telegram_id: 111, status: 'trial', trial_started_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString() },
       ];
 
       // Mock members query
       const mockMembersChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: mockMembers,
           error: null,
         }),
@@ -352,8 +363,7 @@ describe('trial-reminders job', () => {
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        gte: jest.fn().mockReturnThis(),
-        lte: jest.fn().mockResolvedValue({
+        not: jest.fn().mockResolvedValue({
           data: [],
           error: null,
         }),

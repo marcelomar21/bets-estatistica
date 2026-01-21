@@ -12,6 +12,7 @@ require('dotenv').config();
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 const { getSuccessRate } = require('../../services/metricsService');
+const { getTrialDays } = require('../../services/memberService');
 const {
   hasNotificationToday,
   registerNotification,
@@ -31,27 +32,25 @@ let trialRemindersRunning = false;
 
 /**
  * Get members needing trial reminder
- * Returns members whose trial ends in 1-3 days (day 5, 6, 7 of 7-day trial)
- * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
+ * Returns members whose trial ends in 1-3 days
+ * Calculates trial_ends_at dynamically from trial_started_at + TRIAL_DAYS
+ * @returns {Promise<{success: boolean, data?: {members: Array, trialDays: number}, error?: object}>}
  */
 async function getMembersNeedingTrialReminder() {
   try {
+    // Get trial days from system_config
+    const trialDaysResult = await getTrialDays();
+    const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Members with trial ending in 1-3 days
-    // Day 5 of trial = 3 days remaining
-    // Day 6 of trial = 2 days remaining
-    // Day 7 of trial = 1 day remaining (last day)
-    const minDate = new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000); // +1 dia (tomorrow)
-    const maxDate = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000 - 1); // +3 dias (end of day)
-
+    // Get all trial members with trial_started_at
     const { data: members, error } = await supabase
       .from('members')
       .select('*')
       .eq('status', 'trial')
-      .gte('trial_ends_at', minDate.toISOString())
-      .lte('trial_ends_at', maxDate.toISOString());
+      .not('trial_started_at', 'is', null);
 
     if (error) {
       logger.error('[membership:trial-reminders] getMembersNeedingTrialReminder: database error', {
@@ -60,11 +59,40 @@ async function getMembersNeedingTrialReminder() {
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    logger.debug('[membership:trial-reminders] getMembersNeedingTrialReminder: found members', {
-      count: members?.length || 0,
+    // Filter members whose trial ends in 1-3 days
+    const membersNeedingReminder = (members || []).filter(member => {
+      // Skip if no valid trial_started_at
+      if (!member.trial_started_at) {
+        return false;
+      }
+
+      const trialStartedAt = new Date(member.trial_started_at);
+      if (isNaN(trialStartedAt.getTime())) {
+        logger.warn('[membership:trial-reminders] Invalid trial_started_at', {
+          memberId: member.id,
+          trial_started_at: member.trial_started_at,
+        });
+        return false;
+      }
+
+      const trialEndsAt = new Date(trialStartedAt.getTime() + trialDays * 24 * 60 * 60 * 1000);
+      const msRemaining = trialEndsAt.getTime() - today.getTime();
+      const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
+
+      // Add computed trial_ends_at to member object for later use
+      member.trial_ends_at = trialEndsAt.toISOString();
+
+      // Return true if 1-3 days remaining
+      return daysRemaining >= 1 && daysRemaining <= 3;
     });
 
-    return { success: true, data: { members: members || [] } };
+    logger.debug('[membership:trial-reminders] getMembersNeedingTrialReminder: found members', {
+      total: members?.length || 0,
+      needingReminder: membersNeedingReminder.length,
+      trialDays,
+    });
+
+    return { success: true, data: { members: membersNeedingReminder, trialDays } };
   } catch (err) {
     logger.error('[membership:trial-reminders] getMembersNeedingTrialReminder: unexpected error', {
       error: err.message,

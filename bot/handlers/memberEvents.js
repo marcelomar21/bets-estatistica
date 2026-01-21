@@ -179,7 +179,7 @@ async function processNewMember(user) {
   // New member - create trial (1.5)
   // Read trial days from system_config (set via /trial command)
   const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data : 7;
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
   const createResult = await createTrialMember({ telegramId, telegramUsername: username }, trialDays);
 
   if (createResult.success) {
@@ -242,7 +242,7 @@ async function sendWelcomeMessage(telegramId, firstName, memberId) {
 
   // Read trial days from system_config (set via /trial command)
   const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data : 7;
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Format message (4.3)
