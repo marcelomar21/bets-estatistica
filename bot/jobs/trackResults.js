@@ -9,16 +9,20 @@
  * - Tech-Spec: Avaliar resultados com LLM (gpt-4o-mini)
  *
  * Run: node bot/jobs/trackResults.js
- * Cron: every 5 minutes
+ * Cron: hourly 13-23h São Paulo
  */
 require('dotenv').config();
 
 const logger = require('../../lib/logger');
+const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
 const { markBetResult } = require('../services/betService');
 const { trackingResultAlert, trackingSummaryAlert } = require('../services/alertService');
 const { evaluateBetsWithLLM } = require('../services/resultEvaluator');
 const { getSuccessRateForDays } = require('../services/metricsService');
+
+// FootyStats API
+const FOOTYSTATS_API_URL = 'https://api.football-data-api.com/match';
 
 // How long after kickoff to start checking (2 hours)
 const CHECK_DELAY_MS = 2 * 60 * 60 * 1000;
@@ -104,6 +108,106 @@ async function getMatchRawData(matchId) {
 }
 
 /**
+ * Fetch updated match data from FootyStats API
+ * @param {number} matchId - Match ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function fetchMatchFromAPI(matchId) {
+  const apiKey = config.apis.footystatsApiKey;
+  if (!apiKey) {
+    return { success: false, error: { code: 'NO_API_KEY', message: 'FOOTYSTATS_API_KEY not configured' } };
+  }
+
+  try {
+    const url = `${FOOTYSTATS_API_URL}?key=${apiKey}&match_id=${matchId}`;
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'BetsEstatistica/1.0' },
+    });
+
+    if (!response.ok) {
+      return { success: false, error: { code: 'API_ERROR', message: `HTTP ${response.status}` } };
+    }
+
+    const data = await response.json();
+
+    // FootyStats returns { success: true, data: {...} } or similar
+    const matchData = data.data || data;
+
+    if (!matchData || !matchData.status) {
+      return { success: false, error: { code: 'INVALID_RESPONSE', message: 'No match data in response' } };
+    }
+
+    return { success: true, data: matchData };
+  } catch (err) {
+    return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Update match data in database with fresh API data
+ * @param {number} matchId - Match ID
+ * @param {object} apiData - Data from FootyStats API
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function updateMatchFromAPI(matchId, apiData) {
+  const { error } = await supabase
+    .from('league_matches')
+    .update({
+      status: apiData.status,
+      home_score: apiData.homeGoalCount ?? apiData.home_score ?? null,
+      away_score: apiData.awayGoalCount ?? apiData.away_score ?? null,
+      raw_match: apiData,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('match_id', matchId);
+
+  if (error) {
+    logger.error('Failed to update match from API', { matchId, error: error.message });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  logger.info('Match updated from API', {
+    matchId,
+    status: apiData.status,
+    score: `${apiData.homeGoalCount ?? '?'}-${apiData.awayGoalCount ?? '?'}`,
+  });
+  return { success: true };
+}
+
+/**
+ * Refresh match data from API if status is incomplete
+ * @param {number} matchId - Match ID
+ * @param {string} currentStatus - Current status in DB
+ * @returns {Promise<object|null>} Updated match data or null
+ */
+async function refreshMatchIfNeeded(matchId, currentStatus) {
+  // Only refresh if current status is incomplete
+  if (isMatchComplete(currentStatus)) {
+    return null; // Already complete, no refresh needed
+  }
+
+  logger.info('Fetching updated match data from API', { matchId, currentStatus });
+
+  const apiResult = await fetchMatchFromAPI(matchId);
+  if (!apiResult.success) {
+    logger.warn('Failed to fetch match from API', { matchId, error: apiResult.error });
+    return null;
+  }
+
+  // Update database with fresh data
+  await updateMatchFromAPI(matchId, apiResult.data);
+
+  // Return the fresh data
+  return {
+    match_id: matchId,
+    home_team_name: apiResult.data.home_name,
+    away_team_name: apiResult.data.away_name,
+    raw_match: apiResult.data,
+    status: apiResult.data.status,
+  };
+}
+
+/**
  * Main job - usa LLM para avaliar resultados em batch por jogo
  */
 async function runTrackResults() {
@@ -135,10 +239,19 @@ async function runTrackResults() {
 
   // Processar cada jogo (1 chamada LLM por jogo)
   for (const [matchId, matchBets] of betsByMatch) {
-    const matchData = await getMatchRawData(matchId);
+    let matchData = await getMatchRawData(matchId);
 
+    // Se jogo não está completo, busca atualização da API
     if (!matchData || !isMatchComplete(matchData.status)) {
-      logger.debug('Match not complete', { matchId, status: matchData?.status });
+      const refreshedData = await refreshMatchIfNeeded(matchId, matchData?.status);
+      if (refreshedData) {
+        matchData = refreshedData;
+      }
+    }
+
+    // Verificar novamente após refresh
+    if (!matchData || !isMatchComplete(matchData.status)) {
+      logger.debug('Match still not complete after API check', { matchId, status: matchData?.status });
       continue;
     }
 
