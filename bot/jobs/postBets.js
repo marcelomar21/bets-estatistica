@@ -25,6 +25,41 @@ const pendingConfirmations = new Map();
 // Confirmation timeout in ms (15 minutes)
 const CONFIRMATION_TIMEOUT_MS = 15 * 60 * 1000;
 
+/**
+ * Check if there's already a pending confirmation
+ * Prevents multiple /postar from creating duplicate posts
+ * @returns {boolean}
+ */
+function hasPendingConfirmation() {
+  return pendingConfirmations.size > 0;
+}
+
+/**
+ * Get info about pending confirmation for user feedback
+ * @returns {object|null}
+ */
+function getPendingConfirmationInfo() {
+  if (pendingConfirmations.size === 0) return null;
+  const [confirmationId, data] = pendingConfirmations.entries().next().value;
+  return { confirmationId, messageId: data.messageId };
+}
+
+/**
+ * Cancel all pending confirmations (emergency stop)
+ * Clears timeouts and resolves promises as cancelled
+ * @returns {number} Number of confirmations cancelled
+ */
+function cancelAllPendingConfirmations() {
+  const count = pendingConfirmations.size;
+  for (const [confirmationId, data] of pendingConfirmations.entries()) {
+    clearTimeout(data.timeoutId);
+    data.resolve({ confirmed: false, autoPosted: false, cancelled: true });
+    logger.info('Cancelled pending confirmation', { confirmationId });
+  }
+  pendingConfirmations.clear();
+  return count;
+}
+
 // Message templates for variety (Story 3.6)
 const MESSAGE_TEMPLATES = [
   {
@@ -550,4 +585,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation };
+module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations };

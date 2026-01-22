@@ -6,7 +6,7 @@ const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
 const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManualBet, getOverviewStats, swapPostedBet, getBetsReadyForPosting, getActiveBetsForRepost, promoverAposta, removerAposta, getFilaStatus, getOddsHistory } = require('../services/betService');
 const { runEnrichment } = require('../jobs/enrichOdds');
-const { runPostBets } = require('../jobs/postBets');
+const { runPostBets, hasPendingConfirmation, getPendingConfirmationInfo } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
@@ -2007,6 +2007,20 @@ async function handleHelpCommand(bot, msg) {
  */
 async function handlePostarCommand(bot, msg) {
   logger.info('Received /postar command', { chatId: msg.chat.id, userId: msg.from?.id });
+
+  // Check if there's already a pending confirmation to prevent duplicate posts
+  if (hasPendingConfirmation()) {
+    const pendingInfo = getPendingConfirmationInfo();
+    logger.warn('Blocked /postar - confirmation already pending', { pendingInfo });
+    await bot.sendMessage(
+      msg.chat.id,
+      `⚠️ *Já existe uma postagem aguardando confirmação!*\n\n` +
+      `Use os botões ✅/❌ na mensagem anterior para confirmar ou cancelar.\n\n` +
+      `_Se não encontrar a mensagem, aguarde 15 minutos para o timeout._`,
+      { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
+    );
+    return;
+  }
 
   // Send "working" message
   const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Executando postagem... Aguarde.');
