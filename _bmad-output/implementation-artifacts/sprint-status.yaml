@@ -41,169 +41,27 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # ========================================
-  # Epic 1: Infraestrutura Supabase + Bot Básico
+  # ARCHIVED EPICS (1-14, 16, 18)
+  # Story files moved to: archive/epic-X/
+  # Full history in: epics-completed.md
   # ========================================
-  epic-1: done
-  1-1-configurar-projeto-supabase: done
-  1-2-migrar-schema-para-supabase: done
-  1-3-adicionar-campos-status-suggested-bets: done
-  1-4-criar-lib-supabase-js: done
-  1-5-criar-lib-logger-js: done
-  1-6-criar-bot-telegram-basico: done
-  1-7-configurar-deploy-render: done
-  epic-1-retrospective: done
-
+  # Epic 1: ARCHIVED (no story files)
+  # Epic 2: ARCHIVED (no story files)
+  # Epic 3: ARCHIVED (no story files)
+  # Epic 4: ARCHIVED (no story files)
+  # Epic 5: ARCHIVED (no story files)
+  # Epic 6: ARCHIVED (no story files)
+  # Epic 7: ARCHIVED -> archive/epic-7/ (2 files)
+  # Epic 8: ARCHIVED -> archive/epic-8/ (7 files)
+  # Epic 9: ARCHIVED (no story files)
+  # Epic 10: ARCHIVED (no story files)
+  # Epic 11: ARCHIVED -> archive/epic-11/ (3 files)
+  # Epic 12: ARCHIVED -> archive/epic-12/ (7 files)
+  # Epic 13: ARCHIVED (no story files)
+  # Epic 14: ARCHIVED -> archive/epic-14/ (9 files)
+  # Epic 16: ARCHIVED -> archive/epic-16/ (10 files)
+  # Epic 18: ARCHIVED -> archive/epic-18/ (4 files)
   # ========================================
-  # Epic 2: Fluxo de Coleta de Links (Grupo Admin)
-  # ========================================
-  epic-2: done
-  2-1-criar-job-pedido-links: done
-  2-2-formatar-pedido-link: done
-  2-3-detectar-resposta-com-link: done
-  2-4-validar-link-casa-apostas: done
-  2-5-salvar-link-bd: done
-  2-6-enviar-lembretes: done
-  2-7-confirmar-recebimento: done
-  epic-2-retrospective: done
-
-  # ========================================
-  # Epic 3: Postagem no Grupo Público
-  # ========================================
-  epic-3: done
-  3-1-criar-job-postagem-publica: done
-  3-2-formatar-mensagem-aposta: done
-  3-3-incluir-deep-link-mensagem: done
-  3-4-validar-requisitos-antes-postar: done
-  3-5-fallback-odds-via-grupo-admin: done
-  3-6-variar-texto-mensagens: done
-  3-7-exibir-taxa-acerto: done
-  3-8-registrar-message-id-telegram: done
-  epic-3-retrospective: done
-
-  # ========================================
-  # Epic 4: Integração de Odds (The Odds API)
-  # ========================================
-  epic-4: done
-  4-1-criar-bot-services-odds-service-js: done
-  4-2-mapear-mercados-para-the-odds-api: done
-  4-3-associar-odds-apostas: done
-  4-4-marcar-apostas-com-odds-insuficiente: done
-  4-5-manter-3-apostas-ativas-com-reposicao: done
-  4-6-cachear-odds-5-minutos: done
-  epic-4-retrospective: done
-
-  # ========================================
-  # Epic 5: Tracking de Resultados & Métricas
-  # ========================================
-  epic-5: done
-  5-1-criar-job-tracking-resultados: done
-  5-2-detectar-fim-jogo: done
-  5-3-comparar-resultado-com-aposta: done
-  5-4-atualizar-status-automaticamente: done
-  5-5-calcular-taxa-acerto-30-dias: done
-  5-6-calcular-taxa-acerto-all-time: done
-  5-7-alertar-operador-falhas-criticas: done
-  5-8-comando-status-operador: done
-  5-9-comando-retry-reprocessar: done
-  epic-5-retrospective: done
-
-  # ========================================
-  # Epic 6: Refinamento da Geração de Apostas
-  # ========================================
-  epic-6: done
-  6-1-gerar-apenas-safe-bets: done
-  6-2-salvar-apostas-com-status-inicial: done
-  6-3-filtrar-jogos-proximos-menos-2-dias: done
-  6-4-migrar-agent-db-js-supabase: done
-  epic-6-retrospective: done
-
-  # ========================================
-  # Epic 7: Bug Fixes Críticos
-  # ========================================
-  epic-7: done
-  7-1-implementar-repostagem-apostas-ativas: done
-  7-2-corrigir-matching-odds: done
-  7-3-adicionar-logs-debug-matching-odds: done
-  epic-7-retrospective: done
-
-  # ========================================
-  # Epic 8: Admin Tools - Gestão de Apostas
-  # ========================================
-  epic-8: done
-  8-1-comando-apostas-listar-disponiveis: done
-  8-2-comando-ajustar-odd: done
-  8-3-comando-adicionar-link: done
-  8-4-comando-adicionar-aposta-manual: done
-  8-5-comando-atualizar-forcar-refresh: done
-  8-6-comando-postar-forcar-postagem: done
-  epic-8-retrospective: done
-
-  # ========================================
-  # Epic 9: Monitoramento e Alertas
-  # ========================================
-  epic-9: done
-  9-1-monitorar-health-check: done
-  9-2-alertar-operador-falha-postagem: done
-  9-3-alertar-erro-api: done
-  epic-9-retrospective: done
-
-  # ========================================
-  # Epic 10: Melhorias de Produto
-  # ========================================
-  epic-10: done
-  10-1-copy-dinamico-llm: done
-  10-2-cache-copies-llm: done
-  10-3-adicionar-novas-ligas: done
-  epic-10-retrospective: done
-
-  # ========================================
-  # Epic 11: Infraestrutura e DevOps
-  # ========================================
-  epic-11: done
-  11-1-simplificar-estrutura-pastas: done
-  11-2-configurar-cicd-github-actions: done
-  11-3-criar-testes-unitarios-criticos: done
-  11-4-validar-calculo-metricas: done
-  epic-11-retrospective: done
-
-  # ========================================
-  # Epic 12: Correções e Ferramentas Admin v2
-  # ========================================
-  epic-12: done
-  12-1-corrigir-bug-coluna-notes: done
-  12-2-corrigir-overview-object-object: done
-  12-3-ajustar-health-check: done
-  12-4-restaurar-filtro-2-dias-elegibilidade: done
-  12-5-implementar-comando-filtrar: done
-  12-6-implementar-comando-simular: done
-  12-7-aprimorar-comando-overview: done
-  epic-12-retrospective: done
-
-  # ========================================
-  # Epic 13: Gestão de Elegibilidade de Apostas
-  # ========================================
-  epic-13: done
-  13-1-atualizar-modelo-dados-elegibilidade: done
-  13-2-implementar-comando-promover: done
-  13-3-implementar-comando-remover: done
-  13-4-implementar-comando-status-elegibilidade: done
-  13-5-atualizar-logica-selecao-job: done
-  epic-13-retrospective: done
-
-  # ========================================
-  # Epic 14: UX Admin e Visibilidade
-  # ========================================
-  epic-14: done
-  14-1-corrigir-bug-link-duplicado: done
-  14-2-criar-modulo-warns-jobwarn-js: done
-  14-3-integrar-warns-job-postagem: done
-  14-4-padronizar-ordenacao-data-odds: done
-  14-5-implementar-agrupamento-por-dia: done
-  14-6-adicionar-paginacao-todos-comandos: done
-  14-7-criar-tabela-odds-update-history: done
-  14-8-registrar-mudancas-odds-historico: done
-  14-9-implementar-comando-atualizados: done
-  epic-14-retrospective: done
 
   # ========================================
   # Epic 15: Agente de Scraping para Odds (Betano)
@@ -220,26 +78,6 @@ development_status:
   epic-15-retrospective: optional
 
   # ========================================
-  # Epic 16: Gestão de Membros e Pagamentos Cakto (COMPLETO v2)
-  # Reaberto em 2026-01-18: Migration faltante + Portão de Entrada
-  # Fechado em 2026-01-18: Story 16.9 implementada
-  # Reaberto em 2026-01-18: Story 16.10 (gap identificado em teste E2E)
-  # Ver: sprint-change-proposal-2026-01-18.md
-  # ========================================
-  epic-16: done
-  16-1-criar-infraestrutura-membros-state-machine: done
-  16-2-criar-webhook-server-event-sourcing: done
-  16-3-implementar-processamento-assincrono-webhooks: done
-  16-4-implementar-deteccao-entrada-sistema-trial: done
-  16-5-implementar-notificacoes-cobranca: done
-  16-6-implementar-remocao-automatica-inadimplentes: done
-  16-7-implementar-comandos-admin-gestao-membros: done
-  16-8-implementar-reconciliacao-cakto: done
-  16-9-implementar-portao-entrada-bot: done
-  16-10-reativar-membro-removido-apos-pagamento: done
-  epic-16-retrospective: done
-
-  # ========================================
   # Epic 17: Refatoracao e Debito Tecnico (PRIORIDADE)
   # ========================================
   epic-17: backlog
@@ -249,14 +87,3 @@ development_status:
   17-4-implementar-validacao-padronizada-input: backlog
   17-5-consolidar-utilitarios-compartilhados: backlog
   epic-17-retrospective: optional
-
-  # ========================================
-  # Epic 18: Sistema de Afiliados (Extensão Epic 16)
-  # Novo epic criado em 2026-01-19 para programa de afiliados
-  # Ver: prd-afiliados.md, epics-afiliados.md
-  # ========================================
-  epic-18: done
-  18-1-tracking-afiliados-entrada: done
-  18-2-logica-expiracao-atribuicao: done
-  18-3-link-pagamento-dinamico-tracking: done
-  epic-18-retrospective: done

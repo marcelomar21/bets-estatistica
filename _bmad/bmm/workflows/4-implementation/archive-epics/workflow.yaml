@@ -1,6 +1,6 @@
 # Archive Epics - Manage Epic Lifecycle
 name: archive-epics
-description: "Archive completed epics to a separate file, keeping the main epics.md lean and focused on active work. Supports bi-modal operation: Archive (move completed epics) and Status (view epic completion status)."
+description: "Full epic and tech-spec archiving: moves completed epics to epics-completed.md, relocates story files to archive/epic-X/, tech-specs to archive/tech-specs/, and cleans sprint-status.yaml. Keeps workspace lean and context-efficient for AI agents."
 author: "BMad"
 
 # Critical variables from config
@@ -19,7 +19,11 @@ instructions: "{installed_path}/instructions.md"
 # Inputs
 variables:
   epics_file: "{planning_artifacts}/epics.md"
-  epics_completed_file: "{planning_artifacts}/epics-completed.md"
+  epics_completed_file: "{output_folder}/archive/epics-completed.md"
+  implementation_artifacts: "{output_folder}/implementation-artifacts"
+  sprint_status_file: "{output_folder}/implementation-artifacts/sprint-status.yaml"
+  archive_folder: "{output_folder}/archive"
+  tech_specs_folder: "{output_folder}/archive/tech-specs"
 
 # Smart input file references
 input_file_patterns:
@@ -28,10 +32,18 @@ input_file_patterns:
     whole: "{planning_artifacts}/epics.md"
     load_strategy: "FULL_LOAD"
   epics_completed:
-    description: "Archive file for completed epics"
-    whole: "{planning_artifacts}/epics-completed.md"
+    description: "Archive file for completed epics (in archive root)"
+    whole: "{output_folder}/archive/epics-completed.md"
     load_strategy: "FULL_LOAD"
     optional: true
+  sprint_status:
+    description: "Sprint status tracking file"
+    whole: "{output_folder}/implementation-artifacts/sprint-status.yaml"
+    load_strategy: "FULL_LOAD"
+  implementation_artifacts:
+    description: "Directory containing story files and tech specs"
+    whole: "{output_folder}/implementation-artifacts"
+    load_strategy: "DIRECTORY_SCAN"
 
 # Standalone so IDE commands get generated
 standalone: true

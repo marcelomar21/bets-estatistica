@@ -35,4 +35,4 @@ name,description,module,path
 "workflow-status","Lightweight status checker - answers """"what should I do now?"""" for any agent. Reads YAML status file for workflow tracking. Use workflow-init for new projects.","bmm","_bmad/bmm/workflows/workflow-status/workflow.yaml"
 "prd","PRD tri-modal workflow - Create, Validate, or Edit comprehensive PRDs","bmm","_bmad/bmm/workflows/2-plan-workflows/prd/workflow.md"
 "quick-spec","Conversational spec engineering - ask questions, investigate code, produce implementation-ready tech-spec.","bmm","_bmad/bmm/workflows/bmad-quick-flow/quick-spec/workflow.md"
-"archive-epics","Archive completed epics to epics-completed.md, keeping epics.md lean and focused on active work. Bi-modal: Archive or Status.","bmm","_bmad/bmm/workflows/4-implementation/archive-epics/workflow.yaml"
+"archive-epics","Full epic archiving: moves completed epics to archive/epics-completed.md, relocates story files to archive/epic-X/, and cleans sprint-status.yaml. Keeps workspace lean and context-efficient for AI agents.","bmm","_bmad/bmm/workflows/4-implementation/archive-epics/workflow.yaml"

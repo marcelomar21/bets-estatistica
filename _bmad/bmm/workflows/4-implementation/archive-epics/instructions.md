@@ -2,7 +2,7 @@
 
 <critical>The workflow execution engine is governed by: {project-root}/_bmad/core/tasks/workflow.xml</critical>
 <critical>You MUST have already loaded and processed: {project-root}/_bmad/bmm/workflows/4-implementation/archive-epics/workflow.yaml</critical>
-<critical>Modes: A (Archive), S (Status)</critical>
+<critical>Modes: A (Archive Epics), S (Status), T (Archive Tech-Specs)</critical>
 
 <workflow>
 
@@ -10,13 +10,14 @@
   <output>
 ## Archive Epics - Epic Lifecycle Management
 
-This workflow helps keep your epics.md file lean by archiving completed epics to a separate file.
+This workflow helps keep your workspace lean by archiving completed epics and tech-specs.
 
 **Select mode:**
-- **A** - Archive: Move completed epics to epics-completed.md
+- **A** - Archive Epics: Move completed epics to epics-completed.md
 - **S** - Status: View which epics are complete vs active
+- **T** - Archive Tech-Specs: Move tech-spec files to archive/tech-specs/
   </output>
-  <ask>Select mode (A/S):</ask>
+  <ask>Select mode (A/S/T):</ask>
 
   <check if="mode == A or mode == a">
     <action>Jump to Step 10</action>
@@ -26,7 +27,11 @@ This workflow helps keep your epics.md file lean by archiving completed epics to
     <action>Jump to Step 20</action>
   </check>
 
-  <output>Invalid selection. Please choose A or S.</output>
+  <check if="mode == T or mode == t">
+    <action>Jump to Step 30</action>
+  </check>
+
+  <output>Invalid selection. Please choose A, S, or T.</output>
   <action>Repeat Step 0</action>
 </step>
 
@@ -123,10 +128,11 @@ Choice:</ask>
 </step>
 
 <step n="13" goal="Execute archive operation">
+  <action>Ensure {archive_folder} exists (create if not)</action>
   <action>Check if {epics_completed_file} exists</action>
 
   <check if="epics_completed_file does not exist">
-    <action>Create new epics-completed.md with:</action>
+    <action>Create new epics-completed.md in {archive_folder} with:</action>
     - Frontmatter with status: archived, archivedAt: today
     - Overview section explaining this is the archive
     - Copy Requirements Inventory section from epics.md (keep reference)
@@ -140,7 +146,7 @@ Choice:</ask>
 
   <action>Update epics.md frontmatter:</action>
   - Update epicCount to reflect remaining epics
-  - Add completedEpicsFile: epics-completed.md
+  - Add completedEpicsFile: archive/epics-completed.md
   - Update activeEpics array
 
   <action>Update epics-completed.md frontmatter:</action>
@@ -150,11 +156,11 @@ Choice:</ask>
   <action>Continue to Step 14</action>
 </step>
 
-<step n="14" goal="Report results">
+<step n="14" goal="Report epics.md archive results">
   <output>
-## Archive Complete
+## Epic Archive Complete
 
-**Archived {{archived_count}} epic(s):**
+**Archived {{archived_count}} epic(s) from epics.md:**
 {{#each archived_epics}}
 - Epic {{number}}: {{title}}
 {{/each}}
@@ -167,8 +173,141 @@ Choice:</ask>
 - Before: {{lines_before}} lines
 - After: {{lines_after}} lines
 - Reduction: {{reduction_percent}}%
+  </output>
+  <action>Continue to Step 15</action>
+</step>
 
-**Tip:** The Requirements Inventory is preserved in both files for reference.
+<!-- ========================= -->
+<!-- ARTIFACT ARCHIVING -->
+<!-- ========================= -->
+
+<step n="15" goal="Identify story files for archived epics">
+  <output>
+## Archiving Implementation Artifacts
+
+Now let's archive the story files and clean up sprint-status.yaml.
+  </output>
+
+  <action>For each archived epic, scan {implementation_artifacts} for matching files:</action>
+  - Story files: Pattern `{epic_number}-*.md` (e.g., `16-1-xxx.md`, `16-2-xxx.md`)
+  - Retrospective files: Pattern `epic-{epic_number}-retro*.md` or `epic-{epic_number}-retrospective*.md`
+  - Validation reports: Pattern `validation-report-{epic_number}-*.md`
+
+  <action>Build list of files to move per epic</action>
+
+  <output>
+### Files to Archive
+
+{{#each archived_epics}}
+**Epic {{number}}:**
+{{#each files}}
+- {{filename}}
+{{/each}}
+{{#if no_files}}
+- (no story files found)
+{{/if}}
+{{/each}}
+
+**Total files to move:** {{total_files}}
+  </output>
+
+  <ask>
+Proceed with moving files to archive folder?
+- **Y** - Yes, move files to archive/epic-X/
+- **N** - No, skip artifact archiving
+
+Choice:</ask>
+
+  <check if="choice == N or choice == n">
+    <output>Artifact archiving skipped. Epic content archived in epics-completed.md only.</output>
+    <action>Jump to Step 18</action>
+  </check>
+
+  <action>Continue to Step 16</action>
+</step>
+
+<step n="16" goal="Create archive folders and move files">
+  <action>For each archived epic:</action>
+
+  1. Create folder: `{output_folder}/archive/epic-{{epic_number}}/`
+  2. Move all identified files from `{implementation_artifacts}/` to the archive folder
+  3. Preserve file names (no renaming needed)
+
+  <output>
+### Moving Files...
+
+{{#each archived_epics}}
+📁 Created: `archive/epic-{{number}}/`
+{{#each moved_files}}
+  ✓ Moved: {{filename}}
+{{/each}}
+{{/each}}
+  </output>
+
+  <action>Continue to Step 17</action>
+</step>
+
+<step n="17" goal="Clean sprint-status.yaml">
+  <action>Read {sprint_status_file}</action>
+  <action>For each archived epic:</action>
+
+  1. Find the epic section block (from `# Epic {number}:` comment to next `# Epic` or end)
+  2. Remove the entire block including:
+     - Epic status line: `epic-{number}: done`
+     - All story status lines: `{number}-X-story-name: done`
+     - Retrospective line: `epic-{number}-retrospective: done`
+     - Section comments
+
+  <action>Write updated sprint-status.yaml</action>
+
+  <output>
+### Sprint Status Cleaned
+
+**Removed entries for:**
+{{#each archived_epics}}
+- Epic {{number}} ({{story_count}} stories + retrospective)
+{{/each}}
+
+**sprint-status.yaml:**
+- Before: {{lines_before}} lines
+- After: {{lines_after}} lines
+- Removed: {{lines_removed}} lines
+  </output>
+
+  <action>Continue to Step 18</action>
+</step>
+
+<step n="18" goal="Final report">
+  <output>
+## Archive Complete ✅
+
+### Summary
+
+**Epics Archived:** {{archived_count}}
+{{#each archived_epics}}
+- Epic {{number}}: {{title}}
+{{/each}}
+
+**Files Updated:**
+| File | Action |
+|------|--------|
+| `epics.md` | Removed {{archived_count}} epic(s) |
+| `archive/epics-completed.md` | Added {{archived_count}} epic(s) |
+| `sprint-status.yaml` | Removed {{total_entries_removed}} entries |
+
+**Artifacts Moved:**
+| Destination | Files |
+|-------------|-------|
+{{#each archived_epics}}
+| `archive/epic-{{number}}/` | {{file_count}} files |
+{{/each}}
+
+**Context Reduction:**
+- epics.md: {{epics_reduction}}% smaller
+- sprint-status.yaml: {{sprint_reduction}}% smaller
+- implementation-artifacts/: {{artifacts_reduction}}% fewer files
+
+**Tip:** Archived content is preserved in `{output_folder}/archive/epic-X/` for reference.
   </output>
   <action>Exit workflow</action>
 </step>
@@ -209,7 +348,7 @@ Run `/bmad:bmm:workflows:create-epics-and-stories` to create it first.
 No active epics found.
 {{/if}}
 
-### Archived Epics (in epics-completed.md)
+### Archived Epics (in archive/epics-completed.md)
 {{#if archived_epics}}
 | Epic | Title | Stories | Archived |
 |------|-------|---------|----------|
@@ -247,6 +386,83 @@ Choice:</ask>
     <action>Jump to Step 20</action>
   </check>
 
+  <action>Exit workflow</action>
+</step>
+
+<!-- ========================= -->
+<!-- TECH-SPEC ARCHIVE MODE (T) -->
+<!-- ========================= -->
+
+<step n="30" goal="Scan for tech-spec files">
+  <action>Scan {implementation_artifacts} for tech-spec files:</action>
+  - Pattern: `tech-spec-*.md`
+
+  <check if="no tech-spec files found">
+    <output>
+**No tech-spec files found in implementation-artifacts.**
+
+All tech-specs are already archived or none exist.
+    </output>
+    <action>Exit workflow</action>
+  </check>
+
+  <output>
+## Tech-Spec Files Found
+
+**Location:** {implementation_artifacts}
+
+**Files:**
+{{#each tech_spec_files}}
+- {{filename}}
+{{/each}}
+
+**Total:** {{tech_spec_count}} file(s)
+  </output>
+
+  <ask>
+Move these files to archive/tech-specs/?
+- **Y** - Yes, archive tech-specs
+- **N** - No, cancel
+
+Choice:</ask>
+
+  <check if="choice == N or choice == n">
+    <output>Tech-spec archiving cancelled.</output>
+    <action>Exit workflow</action>
+  </check>
+
+  <action>Continue to Step 31</action>
+</step>
+
+<step n="31" goal="Archive tech-spec files">
+  <action>Create folder: `{output_folder}/archive/tech-specs/` (if not exists)</action>
+  <action>Move all tech-spec-*.md files to archive/tech-specs/</action>
+
+  <output>
+### Moving Tech-Spec Files...
+
+📁 Created: `archive/tech-specs/`
+{{#each moved_files}}
+  ✓ Moved: {{filename}}
+{{/each}}
+  </output>
+
+  <action>Continue to Step 32</action>
+</step>
+
+<step n="32" goal="Report tech-spec archive results">
+  <output>
+## Tech-Spec Archive Complete ✅
+
+**Archived {{tech_spec_count}} tech-spec file(s):**
+{{#each tech_spec_files}}
+- {{filename}}
+{{/each}}
+
+**Destination:** `{output_folder}/archive/tech-specs/`
+
+**Tip:** Tech-specs are preserved for reference. They can be consulted when implementing related features.
+  </output>
   <action>Exit workflow</action>
 </step>
 
