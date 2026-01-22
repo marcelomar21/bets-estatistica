@@ -40,7 +40,7 @@ jest.mock('../../bot/services/memberService', () => ({
 }));
 
 jest.mock('../../bot/services/metricsService', () => ({
-  getSuccessRate: jest.fn(),
+  getSuccessRateForDays: jest.fn(),
 }));
 
 const {
@@ -59,7 +59,7 @@ const {
   reactivateMember,
   getTrialDays,
 } = require('../../bot/services/memberService');
-const { getSuccessRate } = require('../../bot/services/metricsService');
+const { getSuccessRateForDays } = require('../../bot/services/metricsService');
 
 describe('memberEvents', () => {
   let mockBot;
@@ -70,9 +70,9 @@ describe('memberEvents', () => {
       sendMessage: jest.fn().mockResolvedValue({ message_id: 12345 }),
     };
     getBot.mockReturnValue(mockBot);
-    getSuccessRate.mockResolvedValue({
+    getSuccessRateForDays.mockResolvedValue({
       success: true,
-      data: { rate30Days: 72.5 },
+      data: { rate: 72.5 },
     });
     getTrialDays.mockResolvedValue({
       success: true,
@@ -306,8 +306,8 @@ describe('memberEvents', () => {
       });
     });
 
-    test('usa valor default quando getSuccessRate falha', async () => {
-      getSuccessRate.mockResolvedValue({
+    test('usa valor default quando getSuccessRateForDays falha', async () => {
+      getSuccessRateForDays.mockResolvedValue({
         success: false,
         error: { code: 'DB_ERROR' },
       });

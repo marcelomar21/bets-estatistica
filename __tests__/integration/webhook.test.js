@@ -56,9 +56,9 @@ jest.mock('../../bot/services/memberService', () => ({
 }));
 
 jest.mock('../../bot/services/metricsService', () => ({
-  getSuccessRate: jest.fn().mockResolvedValue({
+  getSuccessRateForDays: jest.fn().mockResolvedValue({
     success: true,
-    data: { rate30Days: 72.5 },
+    data: { rate: 72.5 },
   }),
 }));
 

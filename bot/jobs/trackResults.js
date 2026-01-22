@@ -16,8 +16,9 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { supabase } = require('../../lib/supabase');
 const { markBetResult } = require('../services/betService');
-const { trackingResultAlert } = require('../services/alertService');
+const { trackingResultAlert, trackingSummaryAlert } = require('../services/alertService');
 const { evaluateBetsWithLLM } = require('../services/resultEvaluator');
+const { getSuccessRateForDays } = require('../services/metricsService');
 
 // How long after kickoff to start checking (2 hours)
 const CHECK_DELAY_MS = 2 * 60 * 60 * 1000;
@@ -239,6 +240,19 @@ async function runTrackResults() {
     unknown: unknownCount,
     errors: errorCount,
   });
+
+  // Enviar alerta de resumo para admin se houve resultados
+  if (tracked > 0) {
+    try {
+      const rate7Days = await getSuccessRateForDays(7);
+      await trackingSummaryAlert(
+        { tracked, success: successCount, failure: failureCount, unknown: unknownCount },
+        rate7Days.success ? rate7Days.data : null
+      );
+    } catch (alertErr) {
+      logger.warn('Failed to send tracking summary alert', { error: alertErr.message });
+    }
+  }
 
   return { tracked, success: successCount, failure: failureCount, unknown: unknownCount, errors: errorCount };
 }

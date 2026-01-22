@@ -204,8 +204,9 @@ function setupScheduler() {
 
   const TZ = 'America/Sao_Paulo';
 
-  // Track results - 02:00 São Paulo (pega jogos noturnos que terminam após meia-noite)
-  cron.schedule('0 2 * * *', async () => {
+  // Track results - a cada hora entre 13h e 23h (horário São Paulo)
+  // Avalia apostas de jogos finalizados e envia resumo no admin
+  cron.schedule('0 13-23 * * *', async () => {
     logger.info('[scheduler] Running track-results job');
     try {
       await withExecutionLogging('track-results', runTrackResults);

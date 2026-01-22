@@ -289,6 +289,38 @@ ${alertsList}
   return sendToAdmin(text);
 }
 
+/**
+ * Send tracking summary alert to admin group
+ * Shows results tracked and 7-day success rate
+ * @param {object} results - { tracked, success, failure, unknown }
+ * @param {object} rate7Days - { rate, successCount, total } or null
+ */
+async function trackingSummaryAlert(results, rate7Days) {
+  const { tracked, success, failure, unknown } = results;
+
+  if (tracked === 0) {
+    return { success: true, skipped: true };
+  }
+
+  const rateText = rate7Days?.rate !== null
+    ? `${rate7Days.rate.toFixed(1)}% (${rate7Days.successCount}/${rate7Days.total})`
+    : 'N/A';
+
+  const text = `
+📊 *RESULTADOS ATUALIZADOS*
+
+🎯 *Avaliados agora:* ${tracked}
+   ✅ Acertos: ${success}
+   ❌ Erros: ${failure}${unknown > 0 ? `\n   ❓ Inconclusivos: ${unknown}` : ''}
+
+📈 *Taxa últimos 7 dias:* ${rateText}
+
+🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+  `.trim();
+
+  return sendToAdmin(text);
+}
+
 module.exports = {
   apiErrorAlert,
   dbErrorAlert,
@@ -296,6 +328,7 @@ module.exports = {
   requestLinksAlert,
   confirmLinkReceived,
   trackingResultAlert,
+  trackingSummaryAlert,
   postingFailureAlert,
   healthCheckAlert,
   webhookProcessingAlert,

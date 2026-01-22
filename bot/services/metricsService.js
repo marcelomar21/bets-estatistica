@@ -190,8 +190,50 @@ function formatStatsMessage(stats) {
   return parts.join('\n');
 }
 
+/**
+ * Get success rate for last N days
+ * @param {number} days - Number of days to look back
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getSuccessRateForDays(days) {
+  try {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select('id, bet_result')
+      .in('bet_result', ['success', 'failure'])
+      .gte('result_updated_at', startDate.toISOString());
+
+    if (error) {
+      logger.error(`Failed to fetch ${days}-day stats`, { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const successCount = data?.filter(b => b.bet_result === 'success').length || 0;
+    const total = data?.length || 0;
+    const rate = total > 0 ? (successCount / total) * 100 : null;
+
+    return {
+      success: true,
+      data: {
+        successCount,
+        failureCount: total - successCount,
+        total,
+        rate,
+        days,
+      },
+    };
+  } catch (err) {
+    logger.error(`Error calculating ${days}-day success rate`, { error: err.message });
+    return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   getSuccessRate,
+  getSuccessRateForDays,
   getDetailedStats,
   formatStatsMessage,
 };

@@ -13,7 +13,7 @@ const {
   reactivateMember,
   getTrialDays
 } = require('../services/memberService');
-const { getSuccessRate } = require('../services/metricsService');
+const { getSuccessRateForDays } = require('../services/metricsService');
 const { registerNotification } = require('../services/notificationService');
 
 /**
@@ -233,11 +233,11 @@ async function processNewMember(user) {
 async function sendWelcomeMessage(telegramId, firstName, memberId) {
   const bot = getBot();
 
-  // Get success rate for message (4.2)
-  const metricsResult = await getSuccessRate();
+  // Get success rate for message (últimos 7 dias)
+  const metricsResult = await getSuccessRateForDays(7);
   let successRateText = 'N/A';
-  if (metricsResult.success && metricsResult.data.rate30Days !== null) {
-    successRateText = metricsResult.data.rate30Days.toFixed(1);
+  if (metricsResult.success && metricsResult.data.rate !== null) {
+    successRateText = metricsResult.data.rate.toFixed(1);
   }
 
   // Read trial days from system_config (set via /trial command)
@@ -254,7 +254,7 @@ Você tem *${trialDays} dias grátis* para experimentar nossas apostas.
 📊 *O que você recebe:*
 • 3 apostas diárias com análise estatística
 • Horários: 10h, 15h e 22h
-• Taxa de acerto histórica: *${successRateText}%*
+• Taxa de acerto (7 dias): *${successRateText}%*
 
 💰 Após o trial, continue por apenas *R$50/mês*.
 
