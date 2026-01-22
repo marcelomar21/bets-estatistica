@@ -76,86 +76,94 @@ app.get('/reset-webhook', async (req, res) => {
 
 /**
  * Telegram webhook endpoint
+ * IMPORTANT: Responds 200 immediately to prevent Telegram retries,
+ * then processes the update asynchronously.
  */
-app.post(`/webhook/${config.telegram.botToken}`, async (req, res) => {
-  try {
-    const update = req.body;
-    const bot = getBot();
+app.post(`/webhook/${config.telegram.botToken}`, (req, res) => {
+  // Respond immediately to prevent Telegram webhook retries (60s timeout)
+  res.sendStatus(200);
 
-    // Process message
-    if (update.message) {
-      const msg = update.message;
-
-      // DEBUG: Log all messages from public group to diagnose new_chat_members issue
-      if (msg.chat.id.toString() === config.telegram.publicGroupId) {
-        logger.info('[webhook:debug] Message from public group', {
-          chatId: msg.chat.id,
-          hasNewChatMembers: !!msg.new_chat_members,
-          newChatMembersCount: msg.new_chat_members?.length || 0,
-          messageType: msg.new_chat_members ? 'new_chat_members' : (msg.text ? 'text' : 'other'),
-          configuredPublicGroupId: config.telegram.publicGroupId
-        });
-      }
-
-      // DEBUG: Log new_chat_members from ANY chat to see if event arrives at all
-      if (msg.new_chat_members) {
-        logger.info('[webhook:debug] new_chat_members event received', {
-          chatId: msg.chat.id,
-          chatTitle: msg.chat.title,
-          configuredPublicGroupId: config.telegram.publicGroupId,
-          match: msg.chat.id.toString() === config.telegram.publicGroupId,
-          members: msg.new_chat_members.map(u => ({ id: u.id, username: u.username, is_bot: u.is_bot }))
-        });
-      }
-
-      // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
-      if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
-        await handleNewChatMembers(msg);
-      }
-
-      // Story 16.9: Handle /start command in private chats (Gate Entry)
-      if (msg.chat.type === 'private' && msg.text) {
-        if (msg.text.startsWith('/start')) {
-          await handleStartCommand(msg);
-        } else if (msg.text === '/status') {
-          await handleStatusCommand(msg);
-        } else if (shouldHandleAsEmailInput(msg)) {
-          // Handle email verification flow (MP payment before /start)
-          await handleEmailInput(msg);
-        }
-      }
-
-      // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
-      if (msg.chat.id.toString() === config.telegram.adminGroupId) {
-        await handleAdminMessage(bot, msg);
-      }
-    }
-
-    // Story 16.7: Process callback queries (inline keyboard buttons)
-    if (update.callback_query) {
-      const callbackQuery = update.callback_query;
-      // Only handle from admin group
-      if (callbackQuery.message?.chat?.id?.toString() === config.telegram.adminGroupId) {
-        const data = callbackQuery.data || '';
-
-        // Handle post confirmation callbacks
-        if (data.startsWith('postbets_confirm:') || data.startsWith('postbets_cancel:')) {
-          const [actionFull, confirmationId] = data.split(':');
-          const action = actionFull.replace('postbets_', ''); // 'confirm' or 'cancel'
-          await handlePostConfirmation(action, confirmationId, callbackQuery);
-        } else {
-          // Handle removal callbacks (existing)
-          await handleRemovalCallback(bot, callbackQuery);
-        }
-      }
-    }
-
-    res.sendStatus(200);
-  } catch (err) {
-    logger.error('Webhook error', { error: err.message });
-    res.sendStatus(200); // Always respond 200 to avoid retries
-  }
+  // Process update asynchronously
+  processWebhookUpdate(req.body).catch(err => {
+    logger.error('Webhook processing error', { error: err.message });
+  });
 });
+
+/**
+ * Process webhook update asynchronously
+ * Extracted to allow immediate 200 response
+ */
+async function processWebhookUpdate(update) {
+  const bot = getBot();
+
+  // Process message
+  if (update.message) {
+    const msg = update.message;
+
+    // DEBUG: Log all messages from public group to diagnose new_chat_members issue
+    if (msg.chat.id.toString() === config.telegram.publicGroupId) {
+      logger.info('[webhook:debug] Message from public group', {
+        chatId: msg.chat.id,
+        hasNewChatMembers: !!msg.new_chat_members,
+        newChatMembersCount: msg.new_chat_members?.length || 0,
+        messageType: msg.new_chat_members ? 'new_chat_members' : (msg.text ? 'text' : 'other'),
+        configuredPublicGroupId: config.telegram.publicGroupId
+      });
+    }
+
+    // DEBUG: Log new_chat_members from ANY chat to see if event arrives at all
+    if (msg.new_chat_members) {
+      logger.info('[webhook:debug] new_chat_members event received', {
+        chatId: msg.chat.id,
+        chatTitle: msg.chat.title,
+        configuredPublicGroupId: config.telegram.publicGroupId,
+        match: msg.chat.id.toString() === config.telegram.publicGroupId,
+        members: msg.new_chat_members.map(u => ({ id: u.id, username: u.username, is_bot: u.is_bot }))
+      });
+    }
+
+    // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
+    if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
+      await handleNewChatMembers(msg);
+    }
+
+    // Story 16.9: Handle /start command in private chats (Gate Entry)
+    if (msg.chat.type === 'private' && msg.text) {
+      if (msg.text.startsWith('/start')) {
+        await handleStartCommand(msg);
+      } else if (msg.text === '/status') {
+        await handleStatusCommand(msg);
+      } else if (shouldHandleAsEmailInput(msg)) {
+        // Handle email verification flow (MP payment before /start)
+        await handleEmailInput(msg);
+      }
+    }
+
+    // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
+    if (msg.chat.id.toString() === config.telegram.adminGroupId) {
+      await handleAdminMessage(bot, msg);
+    }
+  }
+
+  // Story 16.7: Process callback queries (inline keyboard buttons)
+  if (update.callback_query) {
+    const callbackQuery = update.callback_query;
+    // Only handle from admin group
+    if (callbackQuery.message?.chat?.id?.toString() === config.telegram.adminGroupId) {
+      const data = callbackQuery.data || '';
+
+      // Handle post confirmation callbacks
+      if (data.startsWith('postbets_confirm:') || data.startsWith('postbets_cancel:')) {
+        const [actionFull, confirmationId] = data.split(':');
+        const action = actionFull.replace('postbets_', ''); // 'confirm' or 'cancel'
+        await handlePostConfirmation(action, confirmationId, callbackQuery);
+      } else {
+        // Handle removal callbacks (existing)
+        await handleRemovalCallback(bot, callbackQuery);
+      }
+    }
+  }
+}
 
 /**
  * Setup webhook

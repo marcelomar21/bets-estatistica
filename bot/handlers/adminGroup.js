@@ -11,7 +11,7 @@ const { generateBetCopy, clearBetCache } = require('../services/copyService');
 const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
-const { getLatestExecutions, formatResult } = require('../services/jobExecutionService');
+const { getLatestExecutions, formatResult, withExecutionLogging } = require('../services/jobExecutionService');
 
 // Regex to match "ID: link" pattern
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
@@ -2026,7 +2026,8 @@ async function handlePostarCommand(bot, msg) {
   const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Executando postagem... Aguarde.');
 
   try {
-    const result = await runPostBets();
+    // Log execution to job_executions table for visibility
+    const result = await withExecutionLogging('post-bets-manual', () => runPostBets());
 
     // Delete "working" message
     try {
@@ -2084,7 +2085,8 @@ async function handleAtualizarOddsCommand(bot, msg) {
   const workingMsg = await bot.sendMessage(msg.chat.id, '⏳ Atualizando odds... Aguarde.');
 
   try {
-    const result = await runEnrichment();
+    // Log execution to job_executions table for visibility
+    const result = await withExecutionLogging('enrich-odds-manual', () => runEnrichment());
 
     // Delete "working" message
     try {
