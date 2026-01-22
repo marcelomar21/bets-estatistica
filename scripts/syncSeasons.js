@@ -40,6 +40,9 @@ const TARGET_LEAGUES = [
   'italy serie a',
   'germany bundesliga',
   'france ligue 1',
+  // Europe - UEFA competitions
+  'europe uefa champions league',
+  'europe uefa europa league',
   // Brazil - Serie A + Estaduais
   'brazil serie a',
   'brazil mineiro 1',
