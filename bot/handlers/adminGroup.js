@@ -8,7 +8,7 @@ const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManual
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets, hasPendingConfirmation, getPendingConfirmationInfo } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
-const { getSuccessRate, getDetailedStats } = require('../services/metricsService');
+const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats } = require('../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
 const { getLatestExecutions, formatResult, withExecutionLogging } = require('../services/jobExecutionService');
@@ -722,9 +722,9 @@ async function handleSimularCommand(bot, msg, arg) {
     // Get success rate
     let successRate = null;
     try {
-      const rateResult = await getSuccessRate();
+      const rateResult = await getSuccessRateForDays(30);
       if (rateResult.success) {
-        successRate = rateResult.data.rate30d;
+        successRate = rateResult.data.rate;
       }
     } catch (e) {
       logger.debug('Could not get success rate for preview');
@@ -1469,7 +1469,7 @@ async function handleMetricasCommand(bot, msg) {
 
   // Get both success rate and detailed stats
   const [rateResult, detailsResult] = await Promise.all([
-    getSuccessRate(),
+    getSuccessRateStats(),
     getDetailedStats(),
   ]);
 

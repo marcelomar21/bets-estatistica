@@ -11,7 +11,7 @@ require('dotenv').config();
 
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
-const { getSuccessRate } = require('../../services/metricsService');
+const { getSuccessRateForDays } = require('../../services/metricsService');
 const { getTrialDays } = require('../../services/memberService');
 const {
   hasNotificationToday,
@@ -160,12 +160,12 @@ async function sendTrialReminder(member) {
     affiliateCode: linkResult.data.affiliateCode
   });
 
-  // Get success rate for message
+  // Get success rate for message (all-time)
   let successRate = null;
   try {
-    const rateResult = await getSuccessRate();
-    if (rateResult.success && rateResult.data?.rateAllTime) {
-      successRate = rateResult.data.rateAllTime;
+    const rateResult = await getSuccessRateForDays(null);
+    if (rateResult.success && rateResult.data?.rate) {
+      successRate = rateResult.data.rate;
     }
   } catch (err) {
     logger.warn('[membership:trial-reminders] sendTrialReminder: failed to get success rate', {

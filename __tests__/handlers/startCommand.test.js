@@ -50,7 +50,7 @@ const {
   linkTelegramId,
   getTrialDays
 } = require('../../bot/services/memberService');
-const { getSuccessRate } = require('../../bot/services/metricsService');
+const { getSuccessRateForDays } = require('../../bot/services/metricsService');
 
 describe('Start Command Handler', () => {
   let mockBot;
@@ -81,9 +81,9 @@ describe('Start Command Handler', () => {
     supabase.from = jest.fn().mockReturnValue(mockSupabaseFrom);
 
     // Mock metrics
-    getSuccessRate.mockResolvedValue({
+    getSuccessRateForDays.mockResolvedValue({
       success: true,
-      data: { rate30Days: 72.5 }
+      data: { rate: 72.5 }
     });
 
     // Mock getTrialDays

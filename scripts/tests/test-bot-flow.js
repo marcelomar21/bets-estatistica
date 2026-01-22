@@ -7,7 +7,7 @@ require('dotenv').config();
 const { testConnection: testSupabase } = require('../lib/supabase');
 const { testConnection: testTelegram } = require('../bot/telegram');
 const { getSports } = require('../bot/services/oddsService');
-const { getSuccessRate } = require('../bot/services/metricsService');
+const { getSuccessRateForDays } = require('../../bot/services/metricsService');
 const { getEligibleBets } = require('../bot/services/betService');
 
 async function runTests() {
@@ -65,10 +65,10 @@ async function runTests() {
   // Test 5: Metrics Service
   console.log('\n5️⃣  Testing Metrics Service...');
   try {
-    const metricsResult = await getSuccessRate();
+    const metricsResult = await getSuccessRateForDays(30);
     results.metrics = metricsResult.success;
     if (metricsResult.success) {
-      const rate = metricsResult.data?.rate30Days;
+      const rate = metricsResult.data?.rate;
       console.log(`   ✅ Metrics OK (30-day rate: ${rate !== null ? rate.toFixed(1) + '%' : 'N/A'})`);
     } else {
       console.log(`   ❌ Metrics: ${metricsResult.error?.message}`);

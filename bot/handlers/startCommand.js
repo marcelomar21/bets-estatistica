@@ -26,7 +26,7 @@ const {
   linkTelegramId,
   getTrialDays
 } = require('../services/memberService');
-const { getSuccessRate } = require('../services/metricsService');
+const { getSuccessRateForDays } = require('../services/metricsService');
 
 /**
  * In-memory conversation state for email verification flow
@@ -568,10 +568,10 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   }
 
   // Get success rate for welcome message (fallback to 71.29% if not available)
-  const metricsResult = await getSuccessRate();
+  const metricsResult = await getSuccessRateForDays(30);
   let successRateText = '71.29';
-  if (metricsResult.success && metricsResult.data.rate30Days !== null) {
-    successRateText = metricsResult.data.rate30Days.toFixed(1);
+  if (metricsResult.success && metricsResult.data.rate !== null) {
+    successRateText = metricsResult.data.rate.toFixed(1);
   }
 
   // Determine days remaining

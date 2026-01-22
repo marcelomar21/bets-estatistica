@@ -18,7 +18,7 @@ jest.mock('../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
-const { formatStatsMessage, getSuccessRate, getDetailedStats } = require('../../bot/services/metricsService');
+const { formatStatsMessage, getSuccessRateStats, getSuccessRateForDays, getDetailedStats } = require('../../bot/services/metricsService');
 const { supabase } = require('../../lib/supabase');
 
 describe('metricsService', () => {
@@ -98,74 +98,67 @@ describe('metricsService', () => {
     });
   });
 
-  describe('getSuccessRate', () => {
-    test('retorna stats corretas com dados válidos', async () => {
-      // Mock all-time query (now uses bet_result)
-      const mockAllTimeData = [
+  describe('getSuccessRateForDays', () => {
+    test('retorna stats corretas para N dias', async () => {
+      const mockData = [
         { id: 1, bet_result: 'success' },
-        { id: 2, bet_result: 'success' },
-        { id: 3, bet_result: 'failure' },
+        { id: 2, bet_result: 'failure' },
+        { id: 3, bet_result: 'success' },
       ];
 
-      // Mock recent (30 days) query (now uses bet_result)
-      const mockRecentData = [
-        { id: 1, bet_result: 'success', result_updated_at: new Date().toISOString() },
-        { id: 2, bet_result: 'failure', result_updated_at: new Date().toISOString() },
-      ];
-
-      // Setup mock chain for all-time query
-      const allTimeSelectMock = jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({ data: mockAllTimeData, error: null }),
-      });
-
-      // Setup mock chain for recent query
-      const recentSelectMock = jest.fn().mockReturnValue({
-        in: jest.fn().mockReturnValue({
-          gte: jest.fn().mockResolvedValue({ data: mockRecentData, error: null }),
-        }),
-      });
-
-      // First call returns all-time, second call returns recent
-      let callCount = 0;
-      supabase.from.mockImplementation(() => ({
-        select: jest.fn().mockImplementation((fields) => {
-          callCount++;
-          if (callCount === 1) {
-            return {
-              in: jest.fn().mockResolvedValue({ data: mockAllTimeData, error: null }),
-            };
-          } else {
-            return {
-              in: jest.fn().mockReturnValue({
-                gte: jest.fn().mockResolvedValue({ data: mockRecentData, error: null }),
-              }),
-            };
-          }
-        }),
-      }));
-
-      const result = await getSuccessRate();
-
-      expect(result.success).toBe(true);
-      expect(result.data.allTime.success).toBe(2);
-      expect(result.data.allTime.total).toBe(3);
-      expect(result.data.allTime.rate).toBeCloseTo(66.67, 1);
-      expect(result.data.last30Days.success).toBe(1);
-      expect(result.data.last30Days.total).toBe(2);
-      expect(result.data.last30Days.rate).toBe(50);
-    });
-
-    test('retorna erro quando falha query de all-time', async () => {
       supabase.from.mockReturnValue({
         select: jest.fn().mockReturnValue({
-          in: jest.fn().mockResolvedValue({
-            data: null,
-            error: { message: 'Database error' }
+          in: jest.fn().mockReturnValue({
+            gte: jest.fn().mockResolvedValue({ data: mockData, error: null }),
           }),
         }),
       });
 
-      const result = await getSuccessRate();
+      const result = await getSuccessRateForDays(7);
+
+      expect(result.success).toBe(true);
+      expect(result.data.successCount).toBe(2);
+      expect(result.data.failureCount).toBe(1);
+      expect(result.data.total).toBe(3);
+      expect(result.data.rate).toBeCloseTo(66.67, 1);
+      expect(result.data.days).toBe(7);
+    });
+
+    test('retorna stats all-time quando days é null', async () => {
+      const mockData = [
+        { id: 1, bet_result: 'success' },
+        { id: 2, bet_result: 'success' },
+        { id: 3, bet_result: 'failure' },
+        { id: 4, bet_result: 'failure' },
+      ];
+
+      // All-time query does NOT call .gte()
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: mockData, error: null }),
+        }),
+      });
+
+      const result = await getSuccessRateForDays(null);
+
+      expect(result.success).toBe(true);
+      expect(result.data.successCount).toBe(2);
+      expect(result.data.failureCount).toBe(2);
+      expect(result.data.total).toBe(4);
+      expect(result.data.rate).toBe(50);
+      expect(result.data.days).toBeNull();
+    });
+
+    test('retorna erro quando query falha', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockReturnValue({
+            gte: jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+          }),
+        }),
+      });
+
+      const result = await getSuccessRateForDays(30);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('DB_ERROR');
@@ -180,30 +173,53 @@ describe('metricsService', () => {
         }),
       });
 
-      // For all-time call
+      const result = await getSuccessRateForDays(7);
+
+      expect(result.success).toBe(true);
+      expect(result.data.total).toBe(0);
+      expect(result.data.rate).toBeNull();
+    });
+  });
+
+  describe('getSuccessRateStats', () => {
+    test('retorna stats combinadas (30 dias + all-time)', async () => {
+      const mock30DayData = [
+        { id: 1, bet_result: 'success' },
+        { id: 2, bet_result: 'failure' },
+      ];
+      const mockAllTimeData = [
+        { id: 1, bet_result: 'success' },
+        { id: 2, bet_result: 'success' },
+        { id: 3, bet_result: 'failure' },
+      ];
+
+      // Track calls to handle different queries
       let callCount = 0;
       supabase.from.mockImplementation(() => ({
-        select: jest.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return {
-              in: jest.fn().mockResolvedValue({ data: [], error: null }),
-            };
-          } else {
-            return {
-              in: jest.fn().mockReturnValue({
-                gte: jest.fn().mockResolvedValue({ data: [], error: null }),
-              }),
-            };
-          }
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockImplementation(() => {
+            callCount++;
+            // First call is 30-day (has .gte), second is all-time (no .gte)
+            if (callCount === 1) {
+              return { gte: jest.fn().mockResolvedValue({ data: mock30DayData, error: null }) };
+            } else {
+              return Promise.resolve({ data: mockAllTimeData, error: null });
+            }
+          }),
         }),
       }));
 
-      const result = await getSuccessRate();
+      const result = await getSuccessRateStats();
 
       expect(result.success).toBe(true);
-      expect(result.data.allTime.rate).toBeNull();
-      expect(result.data.last30Days.rate).toBeNull();
+      expect(result.data.last30Days.success).toBe(1);
+      expect(result.data.last30Days.total).toBe(2);
+      expect(result.data.last30Days.rate).toBe(50);
+      expect(result.data.allTime.success).toBe(2);
+      expect(result.data.allTime.total).toBe(3);
+      expect(result.data.allTime.rate).toBeCloseTo(66.67, 1);
+      expect(result.data.rate30Days).toBe(50);
+      expect(result.data.rateAllTime).toBeCloseTo(66.67, 1);
     });
   });
 

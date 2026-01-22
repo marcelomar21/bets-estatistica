@@ -1,6 +1,6 @@
 /**
  * Metrics Service - Calculate success rates and statistics
- * 
+ *
  * Stories covered:
  * - 5.5: Calcular taxa de acerto (últimos 30 dias)
  * - 5.6: Calcular taxa de acerto histórica (all-time)
@@ -9,77 +9,99 @@ const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 
 /**
- * Get success rate statistics
+ * Get success rate for last N days (or all-time if days is null)
  *
  * FORMULA: rate = (success / total) * 100
  * - Only counts bets with bet_result 'success' or 'failure'
- * - Does NOT count: bet_result 'pending' or 'cancelled'
+ * - Does NOT count: bet_result 'pending', 'cancelled', or 'unknown'
+ * - Uses result_updated_at for date filtering
  *
- * 30-day filter: Uses result_updated_at field (not created_at or telegram_posted_at)
- * This ensures we measure when the result was known, not when the bet was created.
- *
+ * @param {number|null} days - Number of days to look back (null = all-time)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getSuccessRate() {
+async function getSuccessRateForDays(days = null) {
   try {
-    // Get all time stats
-    const { data: allTimeData, error: allTimeError } = await supabase
+    let query = supabase
       .from('suggested_bets')
       .select('id, bet_result')
       .in('bet_result', ['success', 'failure']);
 
-    if (allTimeError) {
-      logger.error('Failed to fetch all-time stats', { error: allTimeError.message });
-      return { success: false, error: { code: 'DB_ERROR', message: allTimeError.message } };
+    // Apply date filter only if days is specified
+    if (days !== null) {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      query = query.gte('result_updated_at', startDate.toISOString());
     }
 
-    const allTimeSuccess = allTimeData?.filter(b => b.bet_result === 'success').length || 0;
-    const allTimeTotal = allTimeData?.length || 0;
-    const allTimeRate = allTimeTotal > 0 ? (allTimeSuccess / allTimeTotal) * 100 : null;
+    const { data, error } = await query;
 
-    // Get last 30 days stats
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const { data: recentData, error: recentError } = await supabase
-      .from('suggested_bets')
-      .select('id, bet_result, result_updated_at')
-      .in('bet_result', ['success', 'failure'])
-      .gte('result_updated_at', thirtyDaysAgo.toISOString());
-
-    if (recentError) {
-      logger.error('Failed to fetch 30-day stats', { error: recentError.message });
-      return { success: false, error: { code: 'DB_ERROR', message: recentError.message } };
+    if (error) {
+      const label = days !== null ? `${days}-day` : 'all-time';
+      logger.error(`Failed to fetch ${label} stats`, { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    const recentSuccess = recentData?.filter(b => b.bet_result === 'success').length || 0;
-    const recentTotal = recentData?.length || 0;
-    const recentRate = recentTotal > 0 ? (recentSuccess / recentTotal) * 100 : null;
+    const successCount = data?.filter(b => b.bet_result === 'success').length || 0;
+    const total = data?.length || 0;
+    const rate = total > 0 ? (successCount / total) * 100 : null;
+
+    return {
+      success: true,
+      data: {
+        successCount,
+        failureCount: total - successCount,
+        total,
+        rate,
+        days, // null = all-time
+      },
+    };
+  } catch (err) {
+    const label = days !== null ? `${days}-day` : 'all-time';
+    logger.error(`Error calculating ${label} success rate`, { error: err.message });
+    return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get full success rate stats (30 days + all-time)
+ * Used by /metricas command for detailed display
+ *
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getSuccessRateStats() {
+  try {
+    const [thirtyDayResult, allTimeResult] = await Promise.all([
+      getSuccessRateForDays(30),
+      getSuccessRateForDays(null),
+    ]);
+
+    if (!thirtyDayResult.success) return thirtyDayResult;
+    if (!allTimeResult.success) return allTimeResult;
 
     const stats = {
       allTime: {
-        success: allTimeSuccess,
-        total: allTimeTotal,
-        rate: allTimeRate,
+        success: allTimeResult.data.successCount,
+        total: allTimeResult.data.total,
+        rate: allTimeResult.data.rate,
       },
       last30Days: {
-        success: recentSuccess,
-        total: recentTotal,
-        rate: recentRate,
+        success: thirtyDayResult.data.successCount,
+        total: thirtyDayResult.data.total,
+        rate: thirtyDayResult.data.rate,
       },
       // Convenience accessors
-      rateAllTime: allTimeRate,
-      rate30Days: recentRate,
+      rateAllTime: allTimeResult.data.rate,
+      rate30Days: thirtyDayResult.data.rate,
     };
 
     logger.info('Success rate calculated', {
-      allTimeRate: allTimeRate?.toFixed(1),
-      recentRate: recentRate?.toFixed(1),
+      allTimeRate: allTimeResult.data.rate?.toFixed(1),
+      recentRate: thirtyDayResult.data.rate?.toFixed(1),
     });
 
     return { success: true, data: stats };
   } catch (err) {
-    logger.error('Error calculating success rate', { error: err.message });
+    logger.error('Error calculating success rate stats', { error: err.message });
     return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
   }
 }
@@ -162,7 +184,7 @@ async function getDetailedStats() {
  * - 0 total → shows "Ainda não há resultados registrados"
  * - Rate uses toFixed(1) for 1 decimal place
  *
- * @param {object} stats - Stats object from getSuccessRate
+ * @param {object} stats - Stats object from getSuccessRateStats
  * @returns {string} - Formatted Markdown string for Telegram
  */
 function formatStatsMessage(stats) {
@@ -190,50 +212,9 @@ function formatStatsMessage(stats) {
   return parts.join('\n');
 }
 
-/**
- * Get success rate for last N days
- * @param {number} days - Number of days to look back
- * @returns {Promise<{success: boolean, data?: object, error?: object}>}
- */
-async function getSuccessRateForDays(days) {
-  try {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    const { data, error } = await supabase
-      .from('suggested_bets')
-      .select('id, bet_result')
-      .in('bet_result', ['success', 'failure'])
-      .gte('result_updated_at', startDate.toISOString());
-
-    if (error) {
-      logger.error(`Failed to fetch ${days}-day stats`, { error: error.message });
-      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
-    }
-
-    const successCount = data?.filter(b => b.bet_result === 'success').length || 0;
-    const total = data?.length || 0;
-    const rate = total > 0 ? (successCount / total) * 100 : null;
-
-    return {
-      success: true,
-      data: {
-        successCount,
-        failureCount: total - successCount,
-        total,
-        rate,
-        days,
-      },
-    };
-  } catch (err) {
-    logger.error(`Error calculating ${days}-day success rate`, { error: err.message });
-    return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
-  }
-}
-
 module.exports = {
-  getSuccessRate,
   getSuccessRateForDays,
+  getSuccessRateStats,
   getDetailedStats,
   formatStatsMessage,
 };

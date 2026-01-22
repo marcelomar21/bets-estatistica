@@ -2,7 +2,7 @@
  * Metrics Validation Script
  * Story 11.4: Validar Cálculo de Métricas
  *
- * Validates that getSuccessRate() and getDetailedStats() calculations match
+ * Validates that getSuccessRateStats() and getDetailedStats() calculations match
  * manual calculations from raw database data.
  *
  * Usage: npm run validate-metrics
@@ -10,7 +10,7 @@
 require('dotenv').config();
 
 const { supabase } = require('../lib/supabase');
-const { getSuccessRate, getDetailedStats } = require('../bot/services/metricsService');
+const { getSuccessRateStats, getDetailedStats } = require('../bot/services/metricsService');
 
 /**
  * Calculate metrics manually from raw data
@@ -139,11 +139,11 @@ async function validateMetrics() {
 
   // 3. Get system metrics
   console.log('3. Getting metrics from system...');
-  const rateResult = await getSuccessRate();
+  const rateResult = await getSuccessRateStats();
   const detailsResult = await getDetailedStats();
 
   if (!rateResult.success) {
-    console.error('ERROR: getSuccessRate failed:', rateResult.error);
+    console.error('ERROR: getSuccessRateStats failed:', rateResult.error);
     return false;
   }
 
