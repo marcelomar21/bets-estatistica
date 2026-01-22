@@ -512,21 +512,45 @@ async function registrarPostagem(betId) {
 }
 
 /**
- * Mark bet result (success or failure)
+ * Mark bet result (success, failure, or unknown)
+ * BACKWARD COMPATIBLE: aceita boolean (won) ou string (result)
  * IMPORTANTE: Atualiza bet_result, NÃO bet_status
+ *
  * @param {number} betId - Bet ID
- * @param {boolean} won - Whether bet won
+ * @param {boolean|string} resultOrWon - boolean (true=success, false=failure) ou string ('success'|'failure'|'unknown')
+ * @param {string} reason - Justificativa da LLM (opcional)
  * @returns {Promise<{success: boolean, error?: object}>}
  */
-async function markBetResult(betId, won) {
+async function markBetResult(betId, resultOrWon, reason = null) {
   try {
-    const result = won ? 'success' : 'failure';
+    // Backward compatibility: converter boolean para string
+    let result;
+    if (typeof resultOrWon === 'boolean') {
+      result = resultOrWon ? 'success' : 'failure';
+    } else {
+      result = resultOrWon;
+    }
+
+    // Validar resultado
+    const validResults = ['success', 'failure', 'unknown', 'cancelled'];
+    if (!validResults.includes(result)) {
+      logger.error('Invalid bet result', { betId, result });
+      return { success: false, error: { code: 'INVALID_RESULT', message: `Invalid result: ${result}` } };
+    }
+
+    const updateData = {
+      bet_result: result,
+      result_updated_at: new Date().toISOString(),
+    };
+
+    // Só atualizar reason se fornecido (não sobrescrever com null)
+    if (reason !== null) {
+      updateData.result_reason = reason;
+    }
+
     const { error } = await supabase
       .from('suggested_bets')
-      .update({
-        bet_result: result,
-        result_updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', betId);
 
     if (error) {
@@ -534,7 +558,7 @@ async function markBetResult(betId, won) {
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    logger.info('Bet result updated', { betId, result });
+    logger.info('Bet result updated', { betId, result, hasReason: !!reason });
     return { success: true };
   } catch (err) {
     logger.error('Error updating bet result', { betId, error: err.message });

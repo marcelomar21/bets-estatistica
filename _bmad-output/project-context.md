@@ -145,6 +145,7 @@ function determineStatus(currentStatus, odds, deepLink) {
 pending → success
        ↘ failure
        ↘ cancelled
+       ↘ unknown
 ```
 
 **Resultados válidos:**
@@ -152,6 +153,10 @@ pending → success
 - `success` - Jogo terminou, aposta ganhou
 - `failure` - Jogo terminou, aposta perdeu
 - `cancelled` - Cancelada manualmente
+- `unknown` - LLM não conseguiu avaliar (dados insuficientes)
+
+**Coluna adicional:**
+- `result_reason` - Justificativa da LLM para o resultado
 
 ---
 
