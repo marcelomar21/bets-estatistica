@@ -8,7 +8,7 @@ const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, createManual
 const { runEnrichment } = require('../jobs/enrichOdds');
 const { runPostBets, hasPendingConfirmation, getPendingConfirmationInfo } = require('../jobs/postBets');
 const { generateBetCopy, clearBetCache } = require('../services/copyService');
-const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats } = require('../services/metricsService');
+const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats, getAllPairStats, categorizeMarket } = require('../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../utils/formatters');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, appendToNotes, getTrialDays, setTrialDays, kickMemberFromGroup, markMemberAsRemoved } = require('../services/memberService');
 const { getLatestExecutions, formatResult, withExecutionLogging } = require('../services/jobExecutionService');
@@ -85,6 +85,18 @@ const REMOVAL_TIMEOUT_MS = 60000;
 
 // Constants for /metricas formatting
 const MAX_MARKET_NAME_LENGTH = 25;
+
+/**
+ * Retorna emoji indicador baseado na taxa de acerto
+ * @param {number|null} rate - Taxa de acerto (0-100) ou null se sem dados
+ * @returns {string} - Emoji indicador
+ */
+function getRateIndicator(rate) {
+  if (rate == null) return '⚪';
+  if (rate > 70) return '🟢';
+  if (rate >= 50) return '🟡';
+  return '🔴';
+}
 
 /**
  * Validate if URL is from a valid bookmaker
@@ -187,6 +199,13 @@ async function handleApostasCommand(bot, msg, page = 1) {
     return;
   }
 
+  // Buscar estatísticas de pares mercado/liga
+  const pairStatsResult = await getAllPairStats();
+  if (!pairStatsResult.success) {
+    logger.warn('Failed to fetch pair stats, continuing without', { error: pairStatsResult.error?.message });
+  }
+  const pairStats = pairStatsResult.success ? pairStatsResult.data : {};
+
   let bets = result.data;
 
   if (bets.length === 0) {
@@ -235,7 +254,8 @@ async function handleApostasCommand(bot, msg, page = 1) {
   };
 
   // Story 14.5: Format single bet for day grouping
-  const formatBetForList = (bet) => {
+  // Story XX: Add pair stats display
+  const formatBetForList = (bet, pairStats) => {
     const kickoff = new Date(bet.kickoffTime);
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
@@ -247,11 +267,26 @@ async function handleApostasCommand(bot, msg, page = 1) {
     const linkDisplay = bet.hasLink ? '🔗' : '❌';
     const statusLabel = getStatusLabel(bet.betStatus);
 
+    // Taxa do par mercado/liga
+    const league = bet.country && bet.leagueName
+      ? `${bet.country} - ${bet.leagueName}`
+      : null;
+    const category = categorizeMarket(bet.betMarket);
+    const pairKey = league ? `${league}|${category}` : null;
+    const stats = pairKey ? pairStats[pairKey] : null;
+
+    const indicator = getRateIndicator(stats?.rate ?? null);
+    const rateDisplay = stats && stats.rate != null
+      ? `${league} | ${category}: ${stats.rate.toFixed(1)}% (${stats.wins}/${stats.total})`
+      : `${league || 'Liga desconhecida'} | ${category}: -- (< 3)`;
+
     return [
       `🆔 *#${bet.id}* │ ${statusLabel}`,
       `⚽ ${bet.homeTeamName} x ${bet.awayTeamName}`,
       `🕐 ${timeStr} │ 🎯 ${bet.betMarket}`,
       `${oddsDisplay} │ ${linkDisplay}`,
+      `${indicator} *% par mercado/liga*`,
+      rateDisplay,
       '', // Empty line between bets
     ].join('\n');
   };
@@ -260,7 +295,7 @@ async function handleApostasCommand(bot, msg, page = 1) {
   const lines = [`📋 *APOSTAS DISPONÍVEIS*`, `Página ${currentPage} de ${totalPages} • Total: ${bets.length}`, ''];
 
   // Add day-grouped bets
-  const groupedContent = formatBetListWithDays(displayBets, formatBetForList);
+  const groupedContent = formatBetListWithDays(displayBets, (bet) => formatBetForList(bet, pairStats));
   lines.push(groupedContent);
 
   // Navigation hints

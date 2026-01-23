@@ -212,9 +212,86 @@ function formatStatsMessage(stats) {
   return parts.join('\n');
 }
 
+/**
+ * Categoriza mercado de aposta em categoria agregada
+ * Categorias: Gols, Escanteios, Cartões, BTTS, Outros
+ *
+ * @param {string} market - Nome do mercado (ex: "Ambas Marcam", "Over 2.5 Gols")
+ * @returns {string} - Categoria do mercado
+ */
+function categorizeMarket(market) {
+  const m = (market || '').toLowerCase();
+  if (m.includes('escanteio') || m.includes('corner')) return 'Escanteios';
+  if (m.includes('cartõ') || m.includes('cartao') || m.includes('cartoe') || m.includes('card')) return 'Cartões';
+  // BTTS: requer "ambas" ou "btts" - evita falso positivo com "marcam" isolado
+  if (m.includes('ambas') || m.includes('btts')) return 'BTTS';
+  if (m.includes('gol') || m.includes('goal')) return 'Gols';
+  return 'Outros';
+}
+
+/**
+ * Busca estatísticas de acerto para todos os pares liga/categoria
+ * Usado pelo /apostas para exibir taxa histórica
+ *
+ * @returns {Promise<{success: boolean, data?: Object.<string, {rate: number, wins: number, total: number}>, error?: object}>}
+ */
+async function getAllPairStats() {
+  try {
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        bet_market,
+        bet_result,
+        league_matches!inner (
+          league_seasons!inner (league_name, country)
+        )
+      `)
+      .in('bet_result', ['success', 'failure']);
+
+    if (error) {
+      logger.error('Failed to fetch pair stats', { error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const pairs = {};
+    for (const bet of data || []) {
+      const leagueInfo = bet.league_matches?.league_seasons;
+      if (!leagueInfo || !leagueInfo.country || !leagueInfo.league_name) continue;
+
+      const league = `${leagueInfo.country} - ${leagueInfo.league_name}`;
+      const category = categorizeMarket(bet.bet_market);
+      const key = `${league}|${category}`;
+
+      if (!pairs[key]) pairs[key] = { wins: 0, total: 0 };
+      pairs[key].total++;
+      if (bet.bet_result === 'success') pairs[key].wins++;
+    }
+
+    // Calcular rate e filtrar mínimo 3 apostas
+    const stats = {};
+    for (const [key, v] of Object.entries(pairs)) {
+      if (v.total >= 3) {
+        stats[key] = {
+          rate: (v.wins / v.total) * 100,
+          wins: v.wins,
+          total: v.total
+        };
+      }
+    }
+
+    logger.debug('Pair stats calculated', { pairsCount: Object.keys(stats).length });
+    return { success: true, data: stats };
+  } catch (err) {
+    logger.error('Error calculating pair stats', { error: err.message });
+    return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   getSuccessRateForDays,
   getSuccessRateStats,
   getDetailedStats,
   formatStatsMessage,
+  categorizeMarket,
+  getAllPairStats,
 };

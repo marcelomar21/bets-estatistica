@@ -18,7 +18,7 @@ jest.mock('../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
-const { formatStatsMessage, getSuccessRateStats, getSuccessRateForDays, getDetailedStats } = require('../../bot/services/metricsService');
+const { formatStatsMessage, getSuccessRateStats, getSuccessRateForDays, getDetailedStats, categorizeMarket, getAllPairStats } = require('../../bot/services/metricsService');
 const { supabase } = require('../../lib/supabase');
 
 describe('metricsService', () => {
@@ -269,6 +269,143 @@ describe('metricsService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  describe('categorizeMarket', () => {
+    test('categoriza mercados de gols corretamente', () => {
+      expect(categorizeMarket('Over 2.5 Gols')).toBe('Gols');
+      expect(categorizeMarket('Under 1.5 Gols')).toBe('Gols');
+      expect(categorizeMarket('Total Goals Over 3.5')).toBe('Gols');
+      expect(categorizeMarket('OVER 2.5 GOLS')).toBe('Gols');
+    });
+
+    test('categoriza mercados BTTS corretamente', () => {
+      expect(categorizeMarket('Ambas Marcam')).toBe('BTTS');
+      expect(categorizeMarket('Ambas Equipes Marcam')).toBe('BTTS');
+      expect(categorizeMarket('BTTS - Sim')).toBe('BTTS');
+      expect(categorizeMarket('btts')).toBe('BTTS');
+    });
+
+    test('categoriza mercados de escanteios corretamente', () => {
+      expect(categorizeMarket('Mais de 9 Escanteios')).toBe('Escanteios');
+      expect(categorizeMarket('Total Corners Over 10.5')).toBe('Escanteios');
+      expect(categorizeMarket('ESCANTEIOS ACIMA DE 8')).toBe('Escanteios');
+    });
+
+    test('categoriza mercados de cartões corretamente', () => {
+      expect(categorizeMarket('Cartões Amarelos Over 3.5')).toBe('Cartões');
+      expect(categorizeMarket('Total de Cartoes')).toBe('Cartões');
+      expect(categorizeMarket('Yellow Cards Over 4.5')).toBe('Cartões');
+    });
+
+    test('retorna Outros para mercados não reconhecidos', () => {
+      expect(categorizeMarket('Resultado Final')).toBe('Outros');
+      expect(categorizeMarket('Handicap Asiático')).toBe('Outros');
+      expect(categorizeMarket('')).toBe('Outros');
+    });
+
+    test('trata null e undefined sem erro', () => {
+      expect(categorizeMarket(null)).toBe('Outros');
+      expect(categorizeMarket(undefined)).toBe('Outros');
+    });
+
+    test('não confunde padrões sobrepostos (F3 fix)', () => {
+      // "marcam" isolado não deve triggar BTTS sem "ambas"
+      expect(categorizeMarket('Gols Marcam')).toBe('Gols');
+      // "ambas" deve triggar BTTS
+      expect(categorizeMarket('Ambas Marcam Gols')).toBe('BTTS');
+    });
+  });
+
+  describe('getAllPairStats', () => {
+    test('retorna stats agrupadas por liga/categoria', async () => {
+      const mockData = [
+        { bet_market: 'Over 2.5 Gols', bet_result: 'success', league_matches: { league_seasons: { league_name: 'Premier League', country: 'England' } } },
+        { bet_market: 'Over 1.5 Gols', bet_result: 'success', league_matches: { league_seasons: { league_name: 'Premier League', country: 'England' } } },
+        { bet_market: 'Under 2.5 Gols', bet_result: 'failure', league_matches: { league_seasons: { league_name: 'Premier League', country: 'England' } } },
+        { bet_market: 'Ambas Marcam', bet_result: 'success', league_matches: { league_seasons: { league_name: 'La Liga', country: 'Spain' } } },
+      ];
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: mockData, error: null }),
+        }),
+      });
+
+      const result = await getAllPairStats();
+
+      expect(result.success).toBe(true);
+      // England - Premier League | Gols: 3 apostas (2 success, 1 failure) = 66.7%
+      expect(result.data['England - Premier League|Gols']).toEqual({
+        rate: expect.closeTo(66.67, 1),
+        wins: 2,
+        total: 3,
+      });
+      // Spain - La Liga | BTTS: só 1 aposta, não aparece (mínimo 3)
+      expect(result.data['Spain - La Liga|BTTS']).toBeUndefined();
+    });
+
+    test('filtra pares com menos de 3 apostas', async () => {
+      const mockData = [
+        { bet_market: 'Over 2.5 Gols', bet_result: 'success', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Italy' } } },
+        { bet_market: 'Over 1.5 Gols', bet_result: 'failure', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Italy' } } },
+      ];
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: mockData, error: null }),
+        }),
+      });
+
+      const result = await getAllPairStats();
+
+      expect(result.success).toBe(true);
+      expect(Object.keys(result.data).length).toBe(0);
+    });
+
+    test('ignora apostas sem dados de liga', async () => {
+      const mockData = [
+        { bet_market: 'Over 2.5 Gols', bet_result: 'success', league_matches: { league_seasons: null } },
+        { bet_market: 'Over 1.5 Gols', bet_result: 'success', league_matches: null },
+      ];
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: mockData, error: null }),
+        }),
+      });
+
+      const result = await getAllPairStats();
+
+      expect(result.success).toBe(true);
+      expect(Object.keys(result.data).length).toBe(0);
+    });
+
+    test('retorna erro quando query falha', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+        }),
+      });
+
+      const result = await getAllPairStats();
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('DB_ERROR');
+    });
+
+    test('retorna objeto vazio quando não há dados', async () => {
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      });
+
+      const result = await getAllPairStats();
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({});
     });
   });
 });

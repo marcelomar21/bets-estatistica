@@ -357,7 +357,8 @@ async function getAvailableBets() {
         league_matches!inner (
           home_team_name,
           away_team_name,
-          kickoff_time
+          kickoff_time,
+          league_seasons!inner (league_name, country)
         )
       `)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
@@ -385,6 +386,8 @@ async function getAvailableBets() {
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
+      leagueName: bet.league_matches.league_seasons?.league_name || null,
+      country: bet.league_matches.league_seasons?.country || null,
       hasLink: !!bet.deep_link,
     }));
 
