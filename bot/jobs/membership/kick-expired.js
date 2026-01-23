@@ -1,15 +1,22 @@
 /**
- * Job: Kick Defaulted Members
+ * Job: Process Inadimplente Members (Warnings + Kicks)
  * Story 16.6: Implementar Remocao Automatica de Inadimplentes
- * Tech-Spec: Migração MP - Simplified
+ * Tech-Spec: Migração MP - With grace period
  *
- * Removes:
- * - Inadimplente members (payment failed after being active)
+ * Processes:
+ * - Members in grace period: sends daily kick warning
+ * - Members past grace period: kicks from group
+ *
+ * Grace period: config.membership.gracePeriodDays (default 2 days)
+ *
+ * Flow:
+ * 1. Payment rejected → status='inadimplente', inadimplente_at=NOW()
+ * 2. Day 1-2: Daily warning notification
+ * 3. Day 3+: Kicked from group
  *
  * Note: With Mercado Pago, trial expiration is handled via webhooks.
  * When MP cancels a subscription (trial not converted), the webhook
  * handler (handleSubscriptionCancelled) processes the removal.
- * This job only handles inadimplente members as a safety net.
  *
  * Run: node bot/jobs/membership/kick-expired.js
  * Schedule: 00:01 BRT daily
@@ -23,6 +30,7 @@ const {
   sendPrivateMessage,
   getCheckoutLink,
   formatFarewellMessage,
+  sendKickWarningNotification,
 } = require('../../services/notificationService');
 const {
   kickMemberFromGroup,
@@ -40,11 +48,11 @@ const CONFIG = {
 let kickExpiredRunning = false;
 
 /**
- * Get members marked as inadimplente (defaulted)
- * These are members who had payment failures/cancellations
+ * Get all members marked as inadimplente (defaulted)
+ * Returns all inadimplente members for processing (warnings + kicks)
  * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
  */
-async function getInadimplenteMembers() {
+async function getAllInadimplenteMembers() {
   try {
     const { data: members, error } = await supabase
       .from('members')
@@ -52,23 +60,50 @@ async function getInadimplenteMembers() {
       .eq('status', 'inadimplente');
 
     if (error) {
-      logger.error('[membership:kick-expired] getInadimplenteMembers: database error', {
+      logger.error('[membership:kick-expired] getAllInadimplenteMembers: database error', {
         error: error.message,
       });
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    logger.debug('[membership:kick-expired] getInadimplenteMembers: found members', {
+    logger.debug('[membership:kick-expired] getAllInadimplenteMembers: found members', {
       count: members?.length || 0,
     });
 
     return { success: true, data: { members: members || [] } };
   } catch (err) {
-    logger.error('[membership:kick-expired] getInadimplenteMembers: unexpected error', {
+    logger.error('[membership:kick-expired] getAllInadimplenteMembers: unexpected error', {
       error: err.message,
     });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
   }
+}
+
+/**
+ * Calculate days remaining in grace period for a member
+ * @param {object} member - Member object with inadimplente_at
+ * @returns {number} Days remaining (0 or negative means kick)
+ */
+function calculateDaysRemaining(member) {
+  const gracePeriodDays = config.membership?.gracePeriodDays || 2;
+  const inadimplenteAt = member.inadimplente_at || member.updated_at;
+  const inadimplenteDate = new Date(inadimplenteAt);
+  const now = new Date();
+
+  // Calculate days since inadimplente
+  const daysSinceInadimplente = Math.floor((now - inadimplenteDate) / (24 * 60 * 60 * 1000));
+
+  // Days remaining = grace period - days since inadimplente
+  return gracePeriodDays - daysSinceInadimplente;
+}
+
+/**
+ * Check if member should be kicked (past grace period)
+ * @param {object} member - Member object
+ * @returns {boolean} true if should be kicked
+ */
+function shouldKickMember(member) {
+  return calculateDaysRemaining(member) <= 0;
 }
 
 /**
@@ -208,29 +243,55 @@ async function runKickExpired() {
 }
 
 /**
- * Internal processor - handles the actual kick processing
- * @returns {Promise<{success: boolean, kicked: number, alreadyRemoved: number, failed: number}>}
+ * Internal processor - handles warnings and kicks
+ * - Members still in grace period: send daily warning
+ * - Members past grace period: kick from group
+ * @returns {Promise<{success: boolean, kicked: number, warned: number, alreadyRemoved: number, failed: number}>}
  */
 async function _runKickExpiredInternal() {
   const startTime = Date.now();
   const today = new Date().toISOString().split('T')[0];
-  logger.info('[membership:kick-expired] Starting', { date: today });
+  const gracePeriodDays = config.membership?.gracePeriodDays || 2;
+  logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays });
 
   let kicked = 0;
+  let warned = 0;
   let alreadyRemoved = 0;
   let failed = 0;
 
   try {
-    // Process inadimplente members (payment failures after being active)
-    // Note: Trial expirations are now handled via MP webhook (subscription_cancelled)
-    const inadimplenteResult = await getInadimplenteMembers();
+    // Get ALL inadimplente members
+    const inadimplenteResult = await getAllInadimplenteMembers();
 
-    if (inadimplenteResult.success && inadimplenteResult.data.members.length > 0) {
-      logger.info('[membership:kick-expired] Processing inadimplente members', {
-        count: inadimplenteResult.data.members.length,
+    if (!inadimplenteResult.success) {
+      logger.error('[membership:kick-expired] Failed to get inadimplente members', {
+        error: inadimplenteResult.error,
       });
+      return { success: false, kicked, warned, alreadyRemoved, failed, error: inadimplenteResult.error?.message };
+    }
 
-      for (const member of inadimplenteResult.data.members) {
+    const members = inadimplenteResult.data.members;
+
+    if (members.length === 0) {
+      logger.info('[membership:kick-expired] No inadimplente members to process');
+      return { success: true, kicked, warned, alreadyRemoved, failed };
+    }
+
+    logger.info('[membership:kick-expired] Processing inadimplente members', {
+      count: members.length,
+    });
+
+    for (const member of members) {
+      const daysRemaining = calculateDaysRemaining(member);
+
+      if (shouldKickMember(member)) {
+        // Past grace period - KICK
+        logger.info('[membership:kick-expired] Kicking member (grace period exceeded)', {
+          memberId: member.id,
+          daysRemaining,
+          inadimplente_at: member.inadimplente_at,
+        });
+
         const result = await processMemberKick(member, 'payment_failed');
 
         if (result.success) {
@@ -240,23 +301,43 @@ async function _runKickExpiredInternal() {
         } else {
           failed++;
         }
+      } else {
+        // Still in grace period - WARN
+        logger.info('[membership:kick-expired] Sending warning to member', {
+          memberId: member.id,
+          daysRemaining,
+          inadimplente_at: member.inadimplente_at,
+        });
+
+        const warnResult = await sendKickWarningNotification(member, daysRemaining);
+
+        if (warnResult.success) {
+          if (!warnResult.data?.skipped) {
+            warned++;
+          }
+        } else {
+          logger.warn('[membership:kick-expired] Failed to send warning', {
+            memberId: member.id,
+            error: warnResult.error,
+          });
+          // Don't count as failed - warning is best effort
+        }
       }
-    } else {
-      logger.info('[membership:kick-expired] No inadimplente members to process');
     }
 
     const duration = Date.now() - startTime;
     logger.info('[membership:kick-expired] Complete', {
       kicked,
+      warned,
       alreadyRemoved,
       failed,
       durationMs: duration,
     });
 
-    return { success: true, kicked, alreadyRemoved, failed };
+    return { success: true, kicked, warned, alreadyRemoved, failed };
   } catch (err) {
     logger.error('[membership:kick-expired] Unexpected error', { error: err.message });
-    return { success: false, kicked, alreadyRemoved, failed, error: err.message };
+    return { success: false, kicked, warned, alreadyRemoved, failed, error: err.message };
   }
 }
 
@@ -275,7 +356,9 @@ if (require.main === module) {
 
 module.exports = {
   runKickExpired,
-  getInadimplenteMembers,
+  getAllInadimplenteMembers,
+  calculateDaysRemaining,
+  shouldKickMember,
   processMemberKick,
   CONFIG,
 };

@@ -499,6 +499,203 @@ _Link válido por 24h (uso único)_`;
   };
 }
 
+/**
+ * Format payment rejected notification message
+ * @param {object} member - Member object
+ * @param {string} rejectionReason - Reason code from MP (e.g., 'cc_rejected_high_risk')
+ * @returns {string} Formatted message
+ */
+function formatPaymentRejectedNotification(member, rejectionReason) {
+  const operatorUsername = getOperatorUsername();
+
+  // Map rejection reasons to user-friendly messages
+  const rejectionMessages = {
+    'cc_rejected_high_risk': 'alto risco detectado pelo banco',
+    'cc_rejected_insufficient_amount': 'saldo insuficiente',
+    'cc_rejected_bad_filled_card_number': 'número do cartão incorreto',
+    'cc_rejected_bad_filled_date': 'data de validade incorreta',
+    'cc_rejected_bad_filled_security_code': 'código de segurança incorreto',
+    'cc_rejected_blacklist': 'cartão não autorizado',
+    'cc_rejected_call_for_authorize': 'necessário autorizar com o banco',
+    'cc_rejected_card_disabled': 'cartão desativado',
+    'cc_rejected_duplicated_payment': 'pagamento duplicado',
+    'cc_rejected_max_attempts': 'limite de tentativas excedido',
+    'cc_rejected_other_reason': 'recusado pelo banco'
+  };
+
+  const reasonText = rejectionMessages[rejectionReason] || 'recusado pelo banco';
+
+  return `⚠️ *Pagamento Recusado*
+
+Seu pagamento da assinatura foi recusado: _${reasonText}_
+
+*Como resolver:*
+1. Acesse sua conta do Mercado Pago
+2. Vá em [Assinaturas](https://www.mercadopago.com.br/subscriptions)
+3. Atualize o meio de pagamento
+
+Se você não tem conta no Mercado Pago, entre em contato para cancelarmos a assinatura atual e você assinar novamente.
+
+Dúvidas? @${operatorUsername}`;
+}
+
+/**
+ * Send payment rejected notification to member
+ * @param {object} member - Member object with telegram_id
+ * @param {string} rejectionReason - Reason code from MP
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function sendPaymentRejectedNotification(member, rejectionReason) {
+  const { id: memberId, telegram_id: telegramId, email } = member;
+
+  if (!telegramId) {
+    logger.warn('[notificationService] sendPaymentRejectedNotification: no telegram_id', { memberId, email });
+    return {
+      success: false,
+      error: { code: 'NO_TELEGRAM_ID', message: 'Member does not have telegram_id' }
+    };
+  }
+
+  // Check if already notified today
+  const hasResult = await hasNotificationToday(memberId, 'payment_rejected');
+  if (hasResult.success && hasResult.data.hasNotification) {
+    logger.debug('[notificationService] sendPaymentRejectedNotification: already notified today', { memberId });
+    return {
+      success: true,
+      data: { skipped: true, reason: 'already_notified_today' }
+    };
+  }
+
+  const message = formatPaymentRejectedNotification(member, rejectionReason);
+  const sendResult = await sendPrivateMessage(telegramId, message);
+
+  if (!sendResult.success) {
+    logger.warn('[notificationService] sendPaymentRejectedNotification: failed', {
+      memberId,
+      telegramId,
+      error: sendResult.error
+    });
+    return sendResult;
+  }
+
+  // Register notification
+  await registerNotification(memberId, 'payment_rejected', 'telegram', sendResult.data.messageId);
+
+  logger.info('[notificationService] sendPaymentRejectedNotification: success', {
+    memberId,
+    telegramId,
+    rejectionReason,
+    messageId: sendResult.data.messageId
+  });
+
+  return {
+    success: true,
+    data: { messageId: sendResult.data.messageId }
+  };
+}
+
+/**
+ * Format kick warning message for inadimplente members
+ * Shows days remaining before being kicked from group
+ * @param {object} member - Member object
+ * @param {number} daysRemaining - Days remaining before kick (1 or 2)
+ * @param {string} checkoutUrl - Checkout URL for payment
+ * @returns {string} Formatted message
+ */
+function formatKickWarning(member, daysRemaining, checkoutUrl) {
+  const operatorUsername = getOperatorUsername();
+
+  if (daysRemaining <= 1) {
+    return `🚨 *ÚLTIMO AVISO*
+
+Seu pagamento está pendente e você será *removido amanhã*.
+
+Regularize agora para manter seu acesso:
+[PAGAR AGORA](${checkoutUrl})
+
+Ou atualize o meio de pagamento em:
+[Minhas Assinaturas](https://www.mercadopago.com.br/subscriptions)
+
+Dúvidas? @${operatorUsername}`;
+  }
+
+  return `⚠️ *Pagamento Pendente*
+
+Seu pagamento não foi processado.
+
+Você será removido do grupo em *${daysRemaining} dias* se não regularizar.
+
+[PAGAR AGORA](${checkoutUrl})
+
+Ou atualize o meio de pagamento em:
+[Minhas Assinaturas](https://www.mercadopago.com.br/subscriptions)
+
+Dúvidas? @${operatorUsername}`;
+}
+
+/**
+ * Send kick warning notification to inadimplente member
+ * Sends daily reminder during grace period
+ * @param {object} member - Member object with telegram_id
+ * @param {number} daysRemaining - Days remaining before kick
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function sendKickWarningNotification(member, daysRemaining) {
+  const { id: memberId, telegram_id: telegramId, email } = member;
+
+  if (!telegramId) {
+    logger.warn('[notificationService] sendKickWarningNotification: no telegram_id', { memberId, email });
+    return {
+      success: false,
+      error: { code: 'NO_TELEGRAM_ID', message: 'Member does not have telegram_id' }
+    };
+  }
+
+  // Check if already notified today
+  const hasResult = await hasNotificationToday(memberId, 'kick_warning');
+  if (hasResult.success && hasResult.data.hasNotification) {
+    logger.debug('[notificationService] sendKickWarningNotification: already notified today', { memberId });
+    return {
+      success: true,
+      data: { skipped: true, reason: 'already_notified_today' }
+    };
+  }
+
+  // Get checkout URL
+  const checkoutResult = getCheckoutLink();
+  if (!checkoutResult.success) {
+    logger.warn('[notificationService] sendKickWarningNotification: no checkout URL', { memberId });
+    return checkoutResult;
+  }
+
+  const message = formatKickWarning(member, daysRemaining, checkoutResult.data.checkoutUrl);
+  const sendResult = await sendPrivateMessage(telegramId, message);
+
+  if (!sendResult.success) {
+    logger.warn('[notificationService] sendKickWarningNotification: failed', {
+      memberId,
+      telegramId,
+      error: sendResult.error
+    });
+    return sendResult;
+  }
+
+  // Register notification
+  await registerNotification(memberId, 'kick_warning', 'telegram', sendResult.data.messageId);
+
+  logger.info('[notificationService] sendKickWarningNotification: success', {
+    memberId,
+    telegramId,
+    daysRemaining,
+    messageId: sendResult.data.messageId
+  });
+
+  return {
+    success: true,
+    data: { messageId: sendResult.data.messageId, daysRemaining }
+  };
+}
+
 module.exports = {
   hasNotificationToday,
   registerNotification,
@@ -513,4 +710,10 @@ module.exports = {
   formatFarewellMessage,
   // Story 16.10: Reactivation notification
   sendReactivationNotification,
+  // Payment rejected notification
+  formatPaymentRejectedNotification,
+  sendPaymentRejectedNotification,
+  // Kick warning notification
+  formatKickWarning,
+  sendKickWarningNotification,
 };

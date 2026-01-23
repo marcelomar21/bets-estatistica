@@ -128,15 +128,49 @@ async function handleSubscriptionCreated(payload) {
   }
 
   const email = subscription.payer_email;
-  if (!email) {
-    logger.warn('[webhookProcessors] handleSubscriptionCreated: subscription without email', { subscriptionId });
-    return { success: false, error: { code: 'MISSING_EMAIL', message: 'Missing email' } };
-  }
+  const payerId = subscription.payer_id?.toString();
 
   // Extrair cupom de afiliado
   const couponCode = mercadoPagoService.extractCouponCode(subscription);
 
   const memberService = getMemberService();
+
+  // Se não tem email, tentar vincular por payer_id (membro já criado via payment R$0)
+  if (!email) {
+    logger.info('[webhookProcessors] handleSubscriptionCreated: no email, trying to link by payer_id', {
+      subscriptionId,
+      payerId
+    });
+
+    if (payerId) {
+      const payerResult = await memberService.getMemberByPayerId(payerId);
+      if (payerResult.success) {
+        // Membro encontrado por payer_id - vincular subscription
+        const member = payerResult.data;
+        const updateResult = await memberService.updateSubscriptionData(member.id, {
+          subscriptionId,
+          payerId,
+          couponCode
+        });
+
+        if (updateResult.success) {
+          logger.info('[webhookProcessors] handleSubscriptionCreated: linked subscription to member by payer_id', {
+            memberId: member.id,
+            subscriptionId,
+            payerId
+          });
+          return { success: true, data: { memberId: member.id, action: 'linked_by_payer_id' } };
+        }
+      }
+    }
+
+    // Não conseguiu vincular - marcar como skipped para não ficar falhando
+    logger.warn('[webhookProcessors] handleSubscriptionCreated: could not link subscription (no email, payer_id not found)', {
+      subscriptionId,
+      payerId
+    });
+    return { success: true, data: { skipped: true, reason: 'no_email_no_payer_match' } };
+  }
 
   // Verificar se já existe membro com esse email
   const existingResult = await memberService.getMemberByEmail(email);
@@ -201,24 +235,26 @@ async function handleSubscriptionCreated(payload) {
 // ============================================
 // HANDLER: Pagamento Aprovado (trial → ativo, ou renovação)
 // ============================================
-async function handlePaymentApproved(payload) {
+async function handlePaymentApproved(payload, paymentData = null) {
   const paymentId = payload.data?.id;
   if (!paymentId) {
     logger.warn('[webhookProcessors] handlePaymentApproved: missing payment ID');
     return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
   }
 
-  // Buscar detalhes do pagamento no MP
-  const paymentResult = await mercadoPagoService.getPayment(paymentId);
-  if (!paymentResult.success) {
-    logger.error('[webhookProcessors] handlePaymentApproved: failed to fetch payment', {
-      paymentId,
-      error: paymentResult.error
-    });
-    return { success: false, error: paymentResult.error };
+  // Usar dados já obtidos ou buscar via API
+  let payment = paymentData;
+  if (!payment) {
+    const paymentResult = await mercadoPagoService.getPayment(paymentId);
+    if (!paymentResult.success) {
+      logger.error('[webhookProcessors] handlePaymentApproved: failed to fetch payment', {
+        paymentId,
+        error: paymentResult.error
+      });
+      return { success: false, error: paymentResult.error };
+    }
+    payment = paymentResult.data;
   }
-
-  const payment = paymentResult.data;
 
   // Verificar se pagamento foi aprovado
   if (payment.status !== 'approved') {
@@ -465,30 +501,34 @@ async function handlePaymentApproved(payload) {
 // ============================================
 // HANDLER: Pagamento Rejeitado
 // ============================================
-async function handlePaymentRejected(payload) {
+async function handlePaymentRejected(payload, paymentData = null) {
   const paymentId = payload.data?.id;
   if (!paymentId) {
     logger.warn('[webhookProcessors] handlePaymentRejected: missing payment ID');
     return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
   }
 
-  // Buscar detalhes do pagamento no MP
-  const paymentResult = await mercadoPagoService.getPayment(paymentId);
-  if (!paymentResult.success) {
-    logger.error('[webhookProcessors] handlePaymentRejected: failed to fetch payment', {
-      paymentId,
-      error: paymentResult.error
-    });
-    return { success: false, error: paymentResult.error };
+  // Usar dados já obtidos ou buscar via API
+  let payment = paymentData;
+  if (!payment) {
+    const paymentResult = await mercadoPagoService.getPayment(paymentId);
+    if (!paymentResult.success) {
+      logger.error('[webhookProcessors] handlePaymentRejected: failed to fetch payment', {
+        paymentId,
+        error: paymentResult.error
+      });
+      return { success: false, error: paymentResult.error };
+    }
+    payment = paymentResult.data;
   }
-
-  const payment = paymentResult.data;
   const memberService = getMemberService();
+  const { sendPaymentRejectedNotification } = require('./notificationService');
 
   // Buscar membro
-  // subscription_id está em point_of_interaction para pagamentos de assinatura MP
+  // subscription_id pode estar em diferentes lugares dependendo do tipo de payment
   const subscriptionId = payment.point_of_interaction?.transaction_data?.subscription_id ||
-                         payment.metadata?.preapproval_id;
+                         payment.metadata?.preapproval_id ||
+                         payment.preapproval_id; // authorized_payment tem preapproval_id direto
   let member = null;
 
   if (subscriptionId) {
@@ -507,10 +547,13 @@ async function handlePaymentRejected(payload) {
 
   if (!member) {
     logger.info('[webhookProcessors] handlePaymentRejected: member not found, ignoring', {
-      paymentId
+      paymentId,
+      subscriptionId
     });
     return { success: true, data: { skipped: true, reason: 'member_not_found' } };
   }
+
+  const rejectionReason = payment.status_detail || payment.rejection_code || 'unknown';
 
   // Só marca como inadimplente se já era ativo
   // (trial com falha será cancelado pelo MP automaticamente)
@@ -528,10 +571,19 @@ async function handlePaymentRejected(payload) {
     logger.warn('[webhookProcessors] Member marked as defaulted - payment rejected', {
       memberId: member.id,
       paymentId,
-      reason: payment.status_detail
+      reason: rejectionReason
     });
 
-    return { success: true, data: { memberId: member.id, action: 'marked_defaulted' } };
+    // Enviar notificação ao membro
+    const notifyResult = await sendPaymentRejectedNotification(member, rejectionReason);
+    if (!notifyResult.success && notifyResult.error?.code !== 'NO_TELEGRAM_ID') {
+      logger.warn('[webhookProcessors] handlePaymentRejected: failed to send notification', {
+        memberId: member.id,
+        error: notifyResult.error
+      });
+    }
+
+    return { success: true, data: { memberId: member.id, action: 'marked_defaulted', notified: notifyResult.success } };
   }
 
   logger.info('[webhookProcessors] handlePaymentRejected: member not active, ignoring', {
@@ -663,19 +715,49 @@ async function processWebhookEvent({ event_type, payload }) {
         return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
       }
 
-      const paymentResult = await mercadoPagoService.getPayment(paymentId);
+      // Para subscription_authorized_payment, tentar authorized_payments primeiro, fallback para payments
+      // Para payment, usar payments diretamente
+      let paymentResult;
+      let payment;
+
+      if (event_type === 'subscription_authorized_payment') {
+        // Tentar endpoint de authorized_payments primeiro
+        paymentResult = await mercadoPagoService.getAuthorizedPayment(paymentId);
+
+        if (paymentResult.success) {
+          // authorized_payment tem estrutura diferente - o status real está em payment.status
+          const authorizedPayment = paymentResult.data;
+          payment = {
+            ...authorizedPayment,
+            // Usar o status do payment interno se disponível, senão mapear status do authorized_payment
+            status: authorizedPayment.payment?.status || (authorizedPayment.status === 'processed' ? 'approved' : authorizedPayment.status),
+            preapproval_id: authorizedPayment.preapproval_id
+          };
+        } else if (paymentResult.error?.code === 'AUTHORIZED_PAYMENT_NOT_FOUND') {
+          // Fallback: tentar como payment normal
+          logger.debug('[webhookProcessors] authorized_payment not found, trying as regular payment', { paymentId });
+          paymentResult = await mercadoPagoService.getPayment(paymentId);
+          if (paymentResult.success) {
+            payment = paymentResult.data;
+          }
+        }
+      } else {
+        paymentResult = await mercadoPagoService.getPayment(paymentId);
+        if (paymentResult.success) {
+          payment = paymentResult.data;
+        }
+      }
+
       if (!paymentResult.success) {
         return { success: false, error: paymentResult.error };
       }
 
-      const payment = paymentResult.data;
-
       if (payment.status === 'approved') {
-        return await handlePaymentApproved(payload);
+        return await handlePaymentApproved(payload, payment);
       }
 
       if (payment.status === 'rejected') {
-        return await handlePaymentRejected(payload);
+        return await handlePaymentRejected(payload, payment);
       }
 
       logger.info('[webhookProcessors] Ignoring payment event', {

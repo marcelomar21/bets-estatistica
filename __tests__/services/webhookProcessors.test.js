@@ -30,6 +30,7 @@ jest.mock('../../bot/services/notificationService', () => ({
   sendReactivationNotification: jest.fn(),
   sendPrivateMessage: jest.fn(),
   formatFarewellMessage: jest.fn().mockReturnValue('Mensagem de despedida'),
+  sendPaymentRejectedNotification: jest.fn().mockResolvedValue({ success: true }),
 }));
 
 // Mock logger

@@ -72,6 +72,8 @@ const {
   formatTrialReminder,
   formatRenewalReminder,
   sendReactivationNotification,
+  formatKickWarning,
+  sendKickWarningNotification,
 } = require('../../bot/services/notificationService');
 const { getBot } = require('../../bot/telegram');
 
@@ -558,6 +560,115 @@ describe('notificationService', () => {
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('CONFIG_MISSING');
       expect(generatePaymentLink).toHaveBeenCalledWith(member);
+    });
+  });
+
+  // ============================================
+  // Grace Period: formatKickWarning
+  // ============================================
+  describe('formatKickWarning', () => {
+    it('should format warning for 2 days remaining', () => {
+      const member = { id: 1, telegram_username: 'testuser' };
+      const message = formatKickWarning(member, 2, 'https://checkout.example.com');
+
+      expect(message).toContain('⚠️ *Pagamento Pendente*');
+      expect(message).toContain('*2 dias*');
+      expect(message).toContain('[PAGAR AGORA]');
+      expect(message).toContain('mercadopago.com.br/subscriptions');
+    });
+
+    it('should format last warning for 1 day remaining', () => {
+      const member = { id: 1, telegram_username: 'testuser' };
+      const message = formatKickWarning(member, 1, 'https://checkout.example.com');
+
+      expect(message).toContain('🚨 *ÚLTIMO AVISO*');
+      expect(message).toContain('*removido amanhã*');
+      expect(message).toContain('[PAGAR AGORA]');
+    });
+
+    it('should include operator username from config', () => {
+      const member = { id: 1, telegram_username: 'testuser' };
+      const message = formatKickWarning(member, 2, 'https://checkout.example.com');
+
+      expect(message).toContain('Dúvidas? @');
+    });
+  });
+
+  // ============================================
+  // Grace Period: sendKickWarningNotification
+  // ============================================
+  describe('sendKickWarningNotification', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('should send kick warning notification successfully', async () => {
+      const mockBot = {
+        sendMessage: jest.fn().mockResolvedValue({ message_id: 2001 }),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      // Mock hasNotificationToday returning false
+      const mockSelectChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+
+      // Mock registerNotification
+      const mockInsertChain = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: { id: 'notif-456' }, error: null }),
+      };
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return mockSelectChain;
+        return mockInsertChain;
+      });
+
+      const member = { id: 1, telegram_id: 123456789, email: 'test@example.com' };
+      const result = await sendKickWarningNotification(member, 2);
+
+      expect(result.success).toBe(true);
+      expect(result.data.messageId).toBe(2001);
+      expect(result.data.daysRemaining).toBe(2);
+      expect(mockBot.sendMessage).toHaveBeenCalledWith(
+        123456789,
+        expect.stringContaining('Pagamento Pendente'),
+        { parse_mode: 'Markdown' }
+      );
+    });
+
+    it('should skip if already notified today', async () => {
+      // Mock hasNotificationToday returning true
+      const mockSelectChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({ data: [{ id: 1 }], error: null }),
+      };
+      supabase.from.mockReturnValue(mockSelectChain);
+
+      const member = { id: 1, telegram_id: 123456789, email: 'test@example.com' };
+      const result = await sendKickWarningNotification(member, 2);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(result.data.reason).toBe('already_notified_today');
+    });
+
+    it('should return error when member has no telegram_id', async () => {
+      const member = { id: 1, telegram_id: null, email: 'test@example.com' };
+      const result = await sendKickWarningNotification(member, 2);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NO_TELEGRAM_ID');
     });
   });
 });

@@ -457,7 +457,8 @@ async function renewMemberSubscription(memberId) {
         .update({
           status: 'ativo',
           last_payment_at: now.toISOString(),
-          subscription_ends_at: subscriptionEndsAt.toISOString()
+          subscription_ends_at: subscriptionEndsAt.toISOString(),
+          inadimplente_at: null // Clear grace period tracking
         })
         .eq('id', memberId)
         .eq('status', currentStatus) // Optimistic lock
@@ -664,9 +665,13 @@ async function markMemberAsDefaulted(memberId) {
     }
 
     // Update with optimistic locking
+    // Set inadimplente_at for grace period tracking
     const { data, error } = await supabase
       .from('members')
-      .update({ status: 'inadimplente' })
+      .update({
+        status: 'inadimplente',
+        inadimplente_at: new Date().toISOString()
+      })
       .eq('id', memberId)
       .eq('status', currentStatus) // Optimistic lock
       .select()
@@ -1878,6 +1883,42 @@ async function getMemberBySubscription(subscriptionId) {
 }
 
 /**
+ * Get member by Mercado Pago payer ID
+ * @param {string} payerId - MP payer ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getMemberByPayerId(payerId) {
+  try {
+    if (!payerId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'payerId is required' }
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('mp_payer_id', payerId.toString())
+      .maybeSingle();
+
+    if (error) {
+      logger.error('[memberService] getMemberByPayerId: database error', { payerId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    if (!data) {
+      return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Member not found' } };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] getMemberByPayerId: unexpected error', { payerId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Create a trial member from Mercado Pago subscription
  * MP manages the trial period (7 days free, then charges automatically)
  * @param {object} memberData - Member data from MP
@@ -2111,6 +2152,7 @@ module.exports = {
 
   // Tech-Spec: Migração Mercado Pago
   getMemberBySubscription,
+  getMemberByPayerId,
   createTrialMemberMP,
   updateSubscriptionData,
   linkTelegramId,

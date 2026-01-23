@@ -3,6 +3,7 @@
  */
 const { alertAdmin, sendToAdmin } = require('../telegram');
 const logger = require('../../lib/logger');
+const config = require('../../lib/config');
 
 // Debounce cache for webhook alerts (prevents flooding)
 const webhookAlertCache = new Map();
@@ -210,7 +211,7 @@ ${emoji} *RESULTADO: ${result}*
  * @param {string} reason - Reason for failure (optional)
  */
 async function postingFailureAlert(period, detectedAt, reason = null) {
-  const operatorUsername = process.env.TELEGRAM_OPERATOR_USERNAME || 'marcelomendes';
+  const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   const reasonText = reason ? `\n📋 Motivo: ${reason}` : '';
 

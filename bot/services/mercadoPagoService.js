@@ -79,6 +79,56 @@ async function getSubscription(subscriptionId) {
 }
 
 /**
+ * Fetch authorized payment details from Mercado Pago (for subscription payments)
+ * @param {string|number} authorizedPaymentId - Authorized Payment ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getAuthorizedPayment(authorizedPaymentId) {
+  try {
+    if (!authorizedPaymentId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'authorizedPaymentId is required' }
+      };
+    }
+
+    const response = await axios.get(
+      `${MP_API_URL}/authorized_payments/${authorizedPaymentId}`,
+      { headers: getHeaders(), timeout: 10000 }
+    );
+
+    logger.debug('[mercadoPago] getAuthorizedPayment: success', {
+      authorizedPaymentId,
+      status: response.data?.status
+    });
+
+    return { success: true, data: response.data };
+  } catch (err) {
+    const statusCode = err.response?.status;
+    const message = err.response?.data?.message || err.message;
+
+    if (statusCode === 404) {
+      logger.warn('[mercadoPago] getAuthorizedPayment: not found', { authorizedPaymentId });
+      return {
+        success: false,
+        error: { code: 'AUTHORIZED_PAYMENT_NOT_FOUND', message: `Authorized payment ${authorizedPaymentId} not found` }
+      };
+    }
+
+    logger.error('[mercadoPago] getAuthorizedPayment: API error', {
+      authorizedPaymentId,
+      statusCode,
+      message
+    });
+
+    return {
+      success: false,
+      error: { code: 'MP_API_ERROR', message, statusCode }
+    };
+  }
+}
+
+/**
  * Fetch payment details from Mercado Pago
  * @param {string|number} paymentId - Payment ID
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
@@ -117,6 +167,57 @@ async function getPayment(paymentId) {
 
     logger.error('[mercadoPago] getPayment: API error', {
       paymentId,
+      statusCode,
+      message
+    });
+
+    return {
+      success: false,
+      error: { code: 'MP_API_ERROR', message, statusCode }
+    };
+  }
+}
+
+/**
+ * Fetch customer (payer) details from Mercado Pago
+ * Used to get email when subscription doesn't have payer_email
+ * @param {string|number} customerId - Customer/Payer ID
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getCustomer(customerId) {
+  try {
+    if (!customerId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'customerId is required' }
+      };
+    }
+
+    const response = await axios.get(
+      `${MP_API_URL}/v1/customers/${customerId}`,
+      { headers: getHeaders(), timeout: 10000 }
+    );
+
+    logger.debug('[mercadoPago] getCustomer: success', {
+      customerId,
+      email: response.data?.email
+    });
+
+    return { success: true, data: response.data };
+  } catch (err) {
+    const statusCode = err.response?.status;
+    const message = err.response?.data?.message || err.message;
+
+    if (statusCode === 404) {
+      logger.warn('[mercadoPago] getCustomer: not found', { customerId });
+      return {
+        success: false,
+        error: { code: 'CUSTOMER_NOT_FOUND', message: `Customer ${customerId} not found` }
+      };
+    }
+
+    logger.error('[mercadoPago] getCustomer: API error', {
+      customerId,
       statusCode,
       message
     });
@@ -212,7 +313,9 @@ function mapPaymentMethod(mpMethod) {
 
 module.exports = {
   getSubscription,
+  getAuthorizedPayment,
   getPayment,
+  getCustomer,
   cancelSubscription,
   extractCouponCode,
   mapPaymentMethod

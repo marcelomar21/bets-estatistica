@@ -39,6 +39,7 @@ jest.mock('../../../lib/config', () => ({
     membership: {
       checkoutUrl: 'https://checkout.example.com',
       subscriptionPrice: 'R$50/mes',
+      gracePeriodDays: 2,
     },
     telegram: {
       publicGroupId: '-100123456789',
@@ -52,7 +53,9 @@ jest.mock('../../../bot/services/alertService', () => ({
 
 const {
   runKickExpired,
-  getInadimplenteMembers,
+  getAllInadimplenteMembers,
+  calculateDaysRemaining,
+  shouldKickMember,
   processMemberKick,
   CONFIG,
 } = require('../../../bot/jobs/membership/kick-expired');
@@ -69,7 +72,7 @@ describe('kick-expired job', () => {
   // Note: getExpiredTrialMembers was removed in MP migration
   // Trial expiration is now handled by MP webhooks (subscription_cancelled)
 
-  describe('getInadimplenteMembers', () => {
+  describe('getAllInadimplenteMembers', () => {
     it('should return members with inadimplente status', async () => {
       const mockMembers = [
         { id: 'member-1', telegram_id: 111, status: 'inadimplente' },
@@ -85,7 +88,7 @@ describe('kick-expired job', () => {
       };
       supabase.from.mockReturnValue(mockChain);
 
-      const result = await getInadimplenteMembers();
+      const result = await getAllInadimplenteMembers();
 
       expect(result.success).toBe(true);
       expect(result.data.members.length).toBe(2);
@@ -102,7 +105,7 @@ describe('kick-expired job', () => {
       };
       supabase.from.mockReturnValue(mockChain);
 
-      const result = await getInadimplenteMembers();
+      const result = await getAllInadimplenteMembers();
 
       expect(result.success).toBe(true);
       expect(result.data.members.length).toBe(0);
@@ -118,10 +121,76 @@ describe('kick-expired job', () => {
       };
       supabase.from.mockReturnValue(mockChain);
 
-      const result = await getInadimplenteMembers();
+      const result = await getAllInadimplenteMembers();
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('DB_ERROR');
+    });
+  });
+
+  describe('calculateDaysRemaining', () => {
+    it('should return 2 days remaining when inadimplente today', () => {
+      const now = new Date();
+      const member = { inadimplente_at: now.toISOString() };
+
+      const result = calculateDaysRemaining(member);
+
+      expect(result).toBe(2); // gracePeriodDays = 2
+    });
+
+    it('should return 1 day remaining when inadimplente 1 day ago', () => {
+      const oneDayAgo = new Date();
+      oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+      const member = { inadimplente_at: oneDayAgo.toISOString() };
+
+      const result = calculateDaysRemaining(member);
+
+      expect(result).toBe(1);
+    });
+
+    it('should return 0 or negative when past grace period', () => {
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const member = { inadimplente_at: threeDaysAgo.toISOString() };
+
+      const result = calculateDaysRemaining(member);
+
+      expect(result).toBeLessThanOrEqual(0);
+    });
+
+    it('should use updated_at as fallback when inadimplente_at is null', () => {
+      const now = new Date();
+      const member = { inadimplente_at: null, updated_at: now.toISOString() };
+
+      const result = calculateDaysRemaining(member);
+
+      expect(result).toBe(2);
+    });
+  });
+
+  describe('shouldKickMember', () => {
+    it('should return false when member is still in grace period', () => {
+      const now = new Date();
+      const member = { inadimplente_at: now.toISOString() };
+
+      expect(shouldKickMember(member)).toBe(false);
+    });
+
+    it('should return true when member is past grace period', () => {
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      const member = { inadimplente_at: threeDaysAgo.toISOString() };
+
+      expect(shouldKickMember(member)).toBe(true);
+    });
+
+    it('should return true when exactly at grace period boundary', () => {
+      const twoDaysAgo = new Date();
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      const member = { inadimplente_at: twoDaysAgo.toISOString() };
+
+      // At exactly 2 days, daysRemaining = 0, should kick
+      expect(shouldKickMember(member)).toBe(true);
     });
   });
 
@@ -405,7 +474,7 @@ describe('kick-expired job', () => {
     });
 
     it('should process only inadimplente members (trial handled by MP webhooks)', async () => {
-      // Mock getInadimplenteMembers
+      // Mock getAllInadimplenteMembers
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
