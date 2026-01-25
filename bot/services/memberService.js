@@ -5,6 +5,7 @@
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
+const { validateMemberId, validateTelegramId } = require('../../lib/validators');
 
 /**
  * Valid status values for members
@@ -60,11 +61,17 @@ function canTransition(currentStatus, newStatus) {
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getMemberById(memberId) {
+  // Validate input
+  const validation = validateMemberId(memberId);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
   try {
     const { data, error } = await supabase
       .from('members')
       .select('*')
-      .eq('id', memberId)
+      .eq('id', validation.value)
       .single();
 
     if (error) {
@@ -92,11 +99,17 @@ async function getMemberById(memberId) {
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function getMemberByTelegramId(telegramId) {
+  // Validate input
+  const validation = validateTelegramId(telegramId);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
   try {
     const { data, error } = await supabase
       .from('members')
       .select('*')
-      .eq('telegram_id', telegramId)
+      .eq('telegram_id', validation.value)
       .single();
 
     if (error) {

@@ -84,6 +84,6 @@ development_status:
   17-1-refatorar-admingroup-em-modulos: backlog
   17-2-adicionar-testes-integracao-membership: backlog
   17-3-documentar-environment-variables: done
-  17-4-implementar-validacao-padronizada-input: backlog
+  17-4-implementar-validacao-padronizada-input: done
   17-5-consolidar-utilitarios-compartilhados: done
   epic-17-retrospective: optional
