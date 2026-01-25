@@ -12,6 +12,13 @@
 
 const { sendToAdmin } = require('../telegram');
 const logger = require('../../lib/logger');
+const {
+  formatDateBR,
+  formatTime,
+  getDateKey,
+  getTodayKey,
+  getTomorrowKey,
+} = require('../../lib/utils');
 
 // ============================================
 // Helper Functions
@@ -47,49 +54,21 @@ function getNextPostTime() {
 }
 
 /**
- * Format date as DD/MM
- * @param {Date} date
- * @returns {string}
- */
-function formatDate(date) {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month}`;
-}
-
-/**
- * Format time as HH:MM
- * @param {Date} date
- * @returns {string}
- */
-function formatTime(date) {
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-}
-
-/**
  * Get day label (HOJE/AMANHA/date) based on BRT
  * @param {Date} matchDate
  * @returns {string}
  */
 function getDayLabel(matchDate) {
-  const now = new Date();
-  // Get efficient date strings YYYY-MM-DD in BRT
-  const todayStr = now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-  const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowStr = tomorrowDate.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const matchDayStr = getDateKey(matchDate);
+  const formattedDate = formatDateBR(matchDate);
 
-  // matchDate is usually UTC from DB, convert to BRT day string
-  const matchDayStr = matchDate.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
-
-  if (matchDayStr === todayStr) {
-    return `HOJE - ${formatDate(matchDate)}`;
+  if (matchDayStr === getTodayKey()) {
+    return `HOJE - ${formattedDate}`;
   }
-  if (matchDayStr === tomorrowStr) {
-    return `AMANHA - ${formatDate(matchDate)}`;
+  if (matchDayStr === getTomorrowKey()) {
+    return `AMANHA - ${formattedDate}`;
   }
-  return formatDate(matchDate);
+  return formattedDate;
 }
 
 /**

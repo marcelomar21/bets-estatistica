@@ -6,12 +6,9 @@ require('dotenv').config();
 const { supabase } = require('../lib/supabase');
 const { getBot } = require('../bot/telegram');
 const { config } = require('../lib/config');
+const { sleep } = require('../lib/utils');
 
 const RATE_LIMIT_MS = 100;
-
-async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 async function run() {
   const bot = getBot();

@@ -9,12 +9,9 @@ require('dotenv').config();
 const { supabase } = require('../lib/supabase');
 const { getBot } = require('../bot/telegram');
 const { config } = require('../lib/config');
+const { sleep } = require('../lib/utils');
 
 const RATE_LIMIT_MS = 100; // 10 req/s para API do Telegram
-
-async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 async function checkMemberInGroup(bot, chatId, telegramId) {
   try {
