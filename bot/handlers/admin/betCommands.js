@@ -10,6 +10,7 @@ const { getAllPairStats, categorizeMarket } = require('../../services/metricsSer
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../../utils/formatters');
 
 // Regex patterns
+// TODO: Add unit tests for edge cases (unicode, escaped quotes, etc.) - see Story 17.2
 const LINK_PATTERN = /^(\d+):\s*(https?:\/\/\S+)/i;
 const ODDS_PATTERN = /^\/odds?\s+(\d+)\s+([\d.,]+)/i;
 const APOSTAS_PATTERN = /^\/apostas(?:\s+(\d+))?$/i;
