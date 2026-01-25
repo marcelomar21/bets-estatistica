@@ -9,24 +9,67 @@
 /**
  * Create a chainable mock query builder that mimics Supabase's query interface.
  * All chainable methods return the builder itself, allowing method chaining.
+ * Tracks query parameters to allow different responses based on filters.
  *
  * @param {*} defaultData - Default data to return from single/maybeSingle methods
- * @returns {Object} Chainable mock query builder
+ * @param {Object} options - Configuration options
+ * @param {Object} options.dataByFilter - Map of filter conditions to data responses
+ *   Example: { 'email:test@example.com': userData, 'id:123': otherData }
+ * @returns {Object} Chainable mock query builder with query tracking
  *
  * @example
  * const builder = createMockQueryBuilder({ id: 1, name: 'test' });
  * // Use in mock: mockSupabase.from.mockReturnValue(builder);
+ *
+ * @example
+ * // With filter-based responses:
+ * const builder = createMockQueryBuilder(null, {
+ *   dataByFilter: {
+ *     'email:user1@test.com': { id: 1, email: 'user1@test.com' },
+ *     'email:user2@test.com': { id: 2, email: 'user2@test.com' },
+ *   }
+ * });
  */
-function createMockQueryBuilder(defaultData = null) {
+function createMockQueryBuilder(defaultData = null, options = {}) {
+  const { dataByFilter = {} } = options;
   const chainable = {};
-  const methods = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'not', 'is', 'in', 'order', 'limit'];
+  
+  // Track applied filters for conditional responses
+  chainable._filters = [];
+  chainable._dataByFilter = dataByFilter;
+  
+  const methods = ['select', 'insert', 'update', 'delete', 'upsert', 'neq', 'gt', 'gte', 'lt', 'lte', 'not', 'is', 'in', 'order', 'limit'];
 
   methods.forEach(method => {
     chainable[method] = jest.fn().mockReturnValue(chainable);
   });
 
-  chainable.single = jest.fn().mockResolvedValue({ data: defaultData, error: null });
-  chainable.maybeSingle = jest.fn().mockResolvedValue({ data: defaultData, error: null });
+  // eq method tracks the filter condition
+  chainable.eq = jest.fn().mockImplementation((field, value) => {
+    chainable._filters.push({ field, value });
+    return chainable;
+  });
+
+  // Helper to get data based on current filters
+  const getFilteredData = () => {
+    for (const filter of chainable._filters) {
+      const key = `${filter.field}:${filter.value}`;
+      if (dataByFilter[key] !== undefined) {
+        return dataByFilter[key];
+      }
+    }
+    return defaultData;
+  };
+
+  chainable.single = jest.fn().mockImplementation(() => {
+    const data = getFilteredData();
+    return Promise.resolve({ data, error: null });
+  });
+  
+  chainable.maybeSingle = jest.fn().mockImplementation(() => {
+    const data = getFilteredData();
+    return Promise.resolve({ data, error: null });
+  });
 
   return chainable;
 }
