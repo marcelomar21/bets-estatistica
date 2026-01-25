@@ -18,6 +18,9 @@ const queryCommands = require('./queryCommands');
 const callbackHandlers = require('./callbackHandlers');
 const removalState = require('./removalState');
 
+// NOTE: Using spread operator for exports. If multiple modules export the same name,
+// the last one wins silently. All handler/pattern names are unique by design.
+// Run `node -e "const m = require('./bot/handlers/admin'); console.log(Object.keys(m).length)"` to verify.
 module.exports = {
   // Bet Commands
   ...betCommands,
