@@ -17,7 +17,9 @@ const SIMULAR_PATTERN = /^\/simular(?:\s+(novo|\d+))?$/i;
 const ATUALIZADOS_PATTERN = /^\/atualizados(?:\s+(\d+))?$/i;
 const HELP_PATTERN = /^\/help$/i;
 
-// Constants for /metricas formatting
+// Pagination and formatting constants
+const PAGE_SIZE = 10;
+const MAX_HISTORY_RECORDS = 500;
 const MAX_MARKET_NAME_LENGTH = 25;
 
 /**
@@ -528,8 +530,7 @@ function formatHistoryItem(item) {
 async function handleAtualizadosCommand(bot, msg, page = 1) {
   logger.info('[admin:query] Received /atualizados command', { chatId: msg.chat.id, page });
 
-  const PAGE_SIZE = 10;
-  const MAX_HISTORY_RECORDS = 500; // Limite seguro para evitar timeout
+  // Uses module-level PAGE_SIZE and MAX_HISTORY_RECORDS constants
 
   // Validar página e logar se inválida
   if (page < 1 || !Number.isInteger(page)) {
