@@ -184,7 +184,7 @@ async function handleApostasCommand(bot, msg, page = 1) {
   };
 
   // Story 14.5: Format single bet for day grouping
-  // Story XX: Add pair stats display
+  // Story 14.5: Add pair stats display with market/league rate
   const formatBetForList = (bet, pairStats) => {
     const kickoff = new Date(bet.kickoffTime);
     const timeStr = kickoff.toLocaleTimeString('pt-BR', {
