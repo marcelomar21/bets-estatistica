@@ -817,18 +817,3 @@ describe('Webhook Processing Flow Integration Tests', () => {
     });
   });
 });
-
-// ============================================
-// EXECUTION TIME TEST
-// ============================================
-describe('Execution Time', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  test('all tests complete within 30 seconds', () => {
-    // This is a meta-test that will fail if overall test suite takes too long
-    // Jest has its own timeout handling, but this documents the requirement
-    expect(true).toBe(true);
-  });
-});
