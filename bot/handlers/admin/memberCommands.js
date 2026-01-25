@@ -4,7 +4,7 @@
  */
 const logger = require('../../../lib/logger');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, getTrialDays, setTrialDays } = require('../../services/memberService');
-const { getPendingRemovals, getRemovalTimeoutMs } = require('./callbackHandlers');
+const { addPendingRemoval, REMOVAL_TIMEOUT_MS } = require('./removalState');
 
 // Regex patterns
 const MEMBROS_PATTERN = /^\/membros$/i;
@@ -391,29 +391,6 @@ async function handleRemoverMembroCommand(bot, msg, identifier, motivo) {
     // Create unique callback data ID
     const callbackId = `remove_${member.id}_${Date.now()}`;
 
-    // Get pending removals map
-    const pendingRemovals = getPendingRemovals();
-    const REMOVAL_TIMEOUT_MS = getRemovalTimeoutMs();
-
-    // Store pending removal data
-    const timeoutId = setTimeout(() => {
-      if (pendingRemovals.has(callbackId)) {
-        pendingRemovals.delete(callbackId);
-        logger.debug('[admin:member] Pending removal expired', { callbackId });
-      }
-    }, REMOVAL_TIMEOUT_MS);
-
-    pendingRemovals.set(callbackId, {
-      memberId: member.id,
-      telegramId: member.telegram_id,
-      displayName,
-      motivo: motivo || 'manual_removal',
-      operator: operatorUsername,
-      chatId: msg.chat.id,
-      messageId: null, // Will be set after sending
-      timeoutId
-    });
-
     // Send confirmation message with inline keyboard
     const confirmMsg = await bot.sendMessage(
       msg.chat.id,
@@ -423,7 +400,7 @@ async function handleRemoverMembroCommand(bot, msg, identifier, motivo) {
       `📊 Status: ${member.status}\n` +
       `📅 Membro desde: ${joinDate}\n\n` +
       `${motivo ? `📝 Motivo: ${motivo}\n\n` : ''}` +
-      `_Expira em 60 segundos_`,
+      `_Expira em ${REMOVAL_TIMEOUT_MS / 1000} segundos_`,
       {
         reply_to_message_id: msg.message_id,
         parse_mode: 'Markdown',
@@ -436,11 +413,16 @@ async function handleRemoverMembroCommand(bot, msg, identifier, motivo) {
       }
     );
 
-    // Update with message ID for later editing
-    const pendingData = pendingRemovals.get(callbackId);
-    if (pendingData) {
-      pendingData.messageId = confirmMsg.message_id;
-    }
+    // Store pending removal data with auto-cleanup timeout
+    addPendingRemoval(callbackId, {
+      memberId: member.id,
+      telegramId: member.telegram_id,
+      displayName,
+      motivo: motivo || 'manual_removal',
+      operator: operatorUsername,
+      chatId: msg.chat.id,
+      messageId: confirmMsg.message_id
+    });
 
     logger.info('[admin:member] Removal confirmation sent', { callbackId, memberId: member.id });
   } catch (err) {

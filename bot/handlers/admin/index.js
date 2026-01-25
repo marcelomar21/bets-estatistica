@@ -8,6 +8,7 @@
  * - actionCommands.js: /postar, /atualizar, /trocar, /adicionar
  * - queryCommands.js: /overview, /metricas, /status, /simular, /atualizados, /help
  * - callbackHandlers.js: Inline keyboard callbacks
+ * - removalState.js: State management for pending removals
  */
 
 const betCommands = require('./betCommands');
@@ -15,6 +16,7 @@ const memberCommands = require('./memberCommands');
 const actionCommands = require('./actionCommands');
 const queryCommands = require('./queryCommands');
 const callbackHandlers = require('./callbackHandlers');
+const removalState = require('./removalState');
 
 module.exports = {
   // Bet Commands
@@ -30,5 +32,8 @@ module.exports = {
   ...queryCommands,
 
   // Callback Handlers
-  ...callbackHandlers
+  ...callbackHandlers,
+
+  // Removal State (for testing/debugging)
+  ...removalState
 };

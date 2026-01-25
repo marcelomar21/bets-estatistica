@@ -5,26 +5,7 @@
 const logger = require('../../../lib/logger');
 const { config } = require('../../../lib/config');
 const { kickMemberFromGroup, markMemberAsRemoved, appendToNotes } = require('../../services/memberService');
-
-// Story 16.7: ADR-003 - Pending removals with auto-cleanup 60s
-const pendingRemovals = new Map();
-const REMOVAL_TIMEOUT_MS = 60000;
-
-/**
- * Get pending removals map (for other modules to add pending removals)
- * @returns {Map} - The pending removals Map
- */
-function getPendingRemovals() {
-  return pendingRemovals;
-}
-
-/**
- * Get removal timeout constant
- * @returns {number} - Timeout in milliseconds
- */
-function getRemovalTimeoutMs() {
-  return REMOVAL_TIMEOUT_MS;
-}
+const { consumePendingRemoval } = require('./removalState');
 
 /**
  * Handle callback queries for member removal confirmation (Story 16.7)
@@ -46,10 +27,12 @@ async function handleRemovalCallback(bot, callbackQuery) {
   }
 
   const fullCallbackId = callbackId;
-  const pendingData = pendingRemovals.get(fullCallbackId);
 
   // Answer callback query to remove loading state
   await bot.answerCallbackQuery(callbackQuery.id);
+
+  // Get and consume pending removal (atomic operation)
+  const pendingData = consumePendingRemoval(fullCallbackId);
 
   // Check if removal expired
   if (!pendingData) {
@@ -63,10 +46,6 @@ async function handleRemovalCallback(bot, callbackQuery) {
     );
     return true;
   }
-
-  // Clear timeout
-  clearTimeout(pendingData.timeoutId);
-  pendingRemovals.delete(fullCallbackId);
 
   const operatorUsername = from?.username || from?.id?.toString() || 'unknown';
 
@@ -159,7 +138,5 @@ async function handleRemovalCallback(bot, callbackQuery) {
 }
 
 module.exports = {
-  handleRemovalCallback,
-  getPendingRemovals,
-  getRemovalTimeoutMs
+  handleRemovalCallback
 };
