@@ -2,8 +2,8 @@
  * Admin Action Commands
  * Handles /postar, /atualizar, /trocar, /adicionar commands
  */
-const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
+const { isValidBookmakerUrl } = require('../../../lib/utils');
 const { createManualBet, swapPostedBet } = require('../../services/betService');
 const { runEnrichment } = require('../../jobs/enrichOdds');
 const { runPostBets, hasPendingConfirmation, getPendingConfirmationInfo } = require('../../jobs/postBets');
@@ -15,21 +15,6 @@ const ATUALIZAR_ODDS_PATTERN = /^\/atualizar(\s+odds)?$/i;
 const TROCAR_PATTERN = /^\/trocar\s+(\d+)\s+(\d+)$/i;
 const ADICIONAR_PATTERN = /^\/adicionar\s+"([^"]+)"\s+"([^"]+)"\s+([\d.,]+)(?:\s+(https?:\/\/\S+))?$/i;
 const ADICIONAR_HELP_PATTERN = /^\/adicionar$/i;
-
-/**
- * Validate if URL is from a valid bookmaker
- * @param {string} url - URL to validate
- * @returns {boolean}
- */
-function isValidBookmakerUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const validDomains = config.betting.validBookmakerDomains;
-    return validDomains.some(domain => parsed.hostname.includes(domain));
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Handle /postar command - Force posting (Story 8.6)
@@ -286,7 +271,5 @@ module.exports = {
   ATUALIZAR_ODDS_PATTERN,
   TROCAR_PATTERN,
   ADICIONAR_PATTERN,
-  ADICIONAR_HELP_PATTERN,
-  // Helpers (exported for testing)
-  isValidBookmakerUrl
+  ADICIONAR_HELP_PATTERN
 };

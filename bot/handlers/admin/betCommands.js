@@ -4,6 +4,7 @@
  */
 const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
+const { isValidBookmakerUrl } = require('../../../lib/utils');
 const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, promoverAposta, removerAposta, getFilaStatus } = require('../../services/betService');
 const { getAllPairStats, categorizeMarket } = require('../../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../../utils/formatters');
@@ -28,21 +29,6 @@ function getRateIndicator(rate) {
   if (rate > 70) return '🟢';
   if (rate >= 50) return '🟡';
   return '🔴';
-}
-
-/**
- * Validate if URL is from a valid bookmaker
- * @param {string} url - URL to validate
- * @returns {boolean}
- */
-function isValidBookmakerUrl(url) {
-  try {
-    const parsed = new URL(url);
-    const validDomains = config.betting.validBookmakerDomains;
-    return validDomains.some(domain => parsed.hostname.includes(domain));
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -712,6 +698,5 @@ module.exports = {
   REMOVER_PATTERN,
   FILA_PATTERN,
   // Helpers (exported for testing)
-  isValidBookmakerUrl,
   getRateIndicator
 };
