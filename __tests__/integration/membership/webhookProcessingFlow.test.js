@@ -141,9 +141,16 @@ function setupMultiTableMock(tableData) {
 // ============================================
 
 describe('Webhook Processing Flow Integration Tests', () => {
+  // Store module references for isolated imports
+  let webhookProcessors;
+
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.resetModules();
+    // Use isolateModules to ensure fresh module state for each test
+    // This properly resets module state, unlike jest.resetModules() with top-level imports
+    jest.isolateModules(() => {
+      webhookProcessors = require('../../../bot/services/webhookProcessors');
+    });
   });
 
   // ============================================
