@@ -38,68 +38,77 @@ function getRateIndicator(rate) {
  * Handle /odds command to set manual odds
  */
 async function handleOddsCommand(bot, msg, betId, oddsValue) {
-  // Parse odds value (handle both 1.85 and 1,85)
-  const odds = parseFloat(oddsValue.replace(',', '.'));
+  try {
+    // Parse odds value (handle both 1.85 and 1,85)
+    const odds = parseFloat(oddsValue.replace(',', '.'));
 
-  if (isNaN(odds) || odds < 1) {
-    await bot.sendMessage(
-      msg.chat.id,
-      `❌ Odds inválida: ${oddsValue}\nUse um valor decimal, ex: 1.85 ou 2,10`,
-      { reply_to_message_id: msg.message_id }
-    );
-    return;
-  }
-
-  // Find bet using betService
-  const betResult = await getBetById(betId);
-
-  if (!betResult.success) {
-    await bot.sendMessage(
-      msg.chat.id,
-      `❌ Aposta #${betId} não encontrada.`,
-      { reply_to_message_id: msg.message_id }
-    );
-    return;
-  }
-
-  const bet = betResult.data;
-  const previousOdds = bet.odds;
-
-  // Update bet with manual odds using betService
-  // Story 14.8: Passar jobName para registro no historico
-  const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`, 'manual_admin_/odds');
-
-  if (!updateResult.success) {
-    logger.error('[admin:bet] Failed to save manual odds', { betId, error: updateResult.error.message });
-    await bot.sendMessage(
-      msg.chat.id,
-      `❌ Erro ao salvar odds: ${updateResult.error.message}`,
-      { reply_to_message_id: msg.message_id }
-    );
-    return;
-  }
-
-  // Confirm with previous value (Story 8.2)
-  const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
-  const oddsChange = previousOdds
-    ? `📊 ${previousOdds.toFixed(2)} → ${odds.toFixed(2)}`
-    : `📊 Odds: ${odds.toFixed(2)}`;
-
-  // Check if auto-promoted
-  const promotedMsg = updateResult.promoted
-    ? `\n\n🚀 *Auto-promovida para PRONTA!*`
-    : `\n\n_Agora envie o link: \`${betId}: URL\`_`;
-
-  await bot.sendMessage(
-    msg.chat.id,
-    `✅ *Odd atualizada!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${oddsChange}${promotedMsg}`,
-    {
-      reply_to_message_id: msg.message_id,
-      parse_mode: 'Markdown',
+    if (isNaN(odds) || odds < 1) {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Odds inválida: ${oddsValue}\nUse um valor decimal, ex: 1.85 ou 2,10`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
     }
-  );
 
-  logger.info('[admin:bet] Manual odds saved', { betId, previousOdds, newOdds: odds });
+    // Find bet using betService
+    const betResult = await getBetById(betId);
+
+    if (!betResult.success) {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Aposta #${betId} não encontrada.`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
+    }
+
+    const bet = betResult.data;
+    const previousOdds = bet.odds;
+
+    // Update bet with manual odds using betService
+    // Story 14.8: Passar jobName para registro no historico
+    const updateResult = await updateBetOdds(betId, odds, `Odds manual via admin: ${odds}`, 'manual_admin_/odds');
+
+    if (!updateResult.success) {
+      logger.error('[admin:bet] Failed to save manual odds', { betId, error: updateResult.error.message });
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Erro ao salvar odds: ${updateResult.error.message}`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
+    }
+
+    // Confirm with previous value (Story 8.2)
+    const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
+    const oddsChange = previousOdds
+      ? `📊 ${previousOdds.toFixed(2)} → ${odds.toFixed(2)}`
+      : `📊 Odds: ${odds.toFixed(2)}`;
+
+    // Check if auto-promoted
+    const promotedMsg = updateResult.promoted
+      ? `\n\n🚀 *Auto-promovida para PRONTA!*`
+      : `\n\n_Agora envie o link: \`${betId}: URL\`_`;
+
+    await bot.sendMessage(
+      msg.chat.id,
+      `✅ *Odd atualizada!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${oddsChange}${promotedMsg}`,
+      {
+        reply_to_message_id: msg.message_id,
+        parse_mode: 'Markdown',
+      }
+    );
+
+    logger.info('[admin:bet] Manual odds saved', { betId, previousOdds, newOdds: odds });
+  } catch (err) {
+    logger.error('[admin:bet] Unexpected error in handleOddsCommand', { betId, error: err.message });
+    await bot.sendMessage(
+      msg.chat.id,
+      `❌ Erro inesperado: ${err.message}`,
+      { reply_to_message_id: msg.message_id }
+    ).catch(() => {}); // Ignore send errors
+  }
 }
 
 /**
@@ -241,78 +250,87 @@ async function handleApostasCommand(bot, msg, page = 1) {
  * Handle link update - shared logic for "ID: URL" pattern and "/link ID URL" command (Story 8.3)
  */
 async function handleLinkUpdate(bot, msg, betId, deepLink) {
-  logger.info('[admin:bet] Link received', { betId, link: deepLink.substring(0, 50) });
+  try {
+    logger.info('[admin:bet] Link received', { betId, link: deepLink.substring(0, 50) });
 
-  // Validate URL
-  if (!isValidBookmakerUrl(deepLink)) {
+    // Validate URL
+    if (!isValidBookmakerUrl(deepLink)) {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Link inválido. Use links de casas conhecidas (Bet365, Betano, etc).\n\nRecebido: ${deepLink}`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
+    }
+
+    // Find bet using betService
+    const betResult = await getBetById(betId);
+
+    if (!betResult.success) {
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Aposta #${betId} não encontrada.`,
+        { reply_to_message_id: msg.message_id }
+      );
+      logger.warn('[admin:bet] Bet not found for link', { betId });
+      return;
+    }
+
+    const bet = betResult.data;
+
+    // If already posted, don't allow changes
+    if (bet.betStatus === 'posted') {
+      await bot.sendMessage(
+        msg.chat.id,
+        `🔒 Aposta #${betId} já foi publicada. Link não pode ser alterado.`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
+    }
+
+    // If already has link and status is ready, warn but allow update
+    if (bet.deepLink && bet.betStatus === 'ready') {
+      await bot.sendMessage(
+        msg.chat.id,
+        `⚠️ Aposta #${betId} já tinha link. Atualizando...`,
+        { reply_to_message_id: msg.message_id }
+      );
+    }
+
+    // Update bet with link using betService
+    const updateResult = await updateBetLink(betId, deepLink);
+
+    if (!updateResult.success) {
+      logger.error('[admin:bet] Failed to save link', { betId, error: updateResult.error.message });
+      await bot.sendMessage(
+        msg.chat.id,
+        `❌ Erro ao salvar link: ${updateResult.error.message}`,
+        { reply_to_message_id: msg.message_id }
+      );
+      return;
+    }
+
+    // Confirm receipt with match details
+    const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
+    const statusMsg = updateResult.promoted
+      ? `🚀 *Auto-promovida para PRONTA!*`
+      : `⚠️ Aguardando odds >= 1.60 para ficar pronta`;
+
     await bot.sendMessage(
       msg.chat.id,
-      `❌ Link inválido. Use links de casas conhecidas (Bet365, Betano, etc).\n\nRecebido: ${deepLink}`,
-      { reply_to_message_id: msg.message_id }
+      `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${statusMsg}`,
+      { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
     );
-    return;
-  }
 
-  // Find bet using betService
-  const betResult = await getBetById(betId);
-
-  if (!betResult.success) {
+    logger.info('[admin:bet] Link saved successfully', { betId });
+  } catch (err) {
+    logger.error('[admin:bet] Unexpected error in handleLinkUpdate', { betId, error: err.message });
     await bot.sendMessage(
       msg.chat.id,
-      `❌ Aposta #${betId} não encontrada.`,
+      `❌ Erro inesperado: ${err.message}`,
       { reply_to_message_id: msg.message_id }
-    );
-    logger.warn('[admin:bet] Bet not found for link', { betId });
-    return;
+    ).catch(() => {}); // Ignore send errors
   }
-
-  const bet = betResult.data;
-
-  // If already posted, don't allow changes
-  if (bet.betStatus === 'posted') {
-    await bot.sendMessage(
-      msg.chat.id,
-      `🔒 Aposta #${betId} já foi publicada. Link não pode ser alterado.`,
-      { reply_to_message_id: msg.message_id }
-    );
-    return;
-  }
-
-  // If already has link and status is ready, warn but allow update
-  if (bet.deepLink && bet.betStatus === 'ready') {
-    await bot.sendMessage(
-      msg.chat.id,
-      `⚠️ Aposta #${betId} já tinha link. Atualizando...`,
-      { reply_to_message_id: msg.message_id }
-    );
-  }
-
-  // Update bet with link using betService
-  const updateResult = await updateBetLink(betId, deepLink);
-
-  if (!updateResult.success) {
-    logger.error('[admin:bet] Failed to save link', { betId, error: updateResult.error.message });
-    await bot.sendMessage(
-      msg.chat.id,
-      `❌ Erro ao salvar link: ${updateResult.error.message}`,
-      { reply_to_message_id: msg.message_id }
-    );
-    return;
-  }
-
-  // Confirm receipt with match details
-  const match = `${bet.homeTeamName} vs ${bet.awayTeamName}`;
-  const statusMsg = updateResult.promoted
-    ? `🚀 *Auto-promovida para PRONTA!*`
-    : `⚠️ Aguardando odds >= 1.60 para ficar pronta`;
-
-  await bot.sendMessage(
-    msg.chat.id,
-    `✅ *Link salvo!*\n\n🏟️ ${match}\n🎯 ${bet.betMarket}\n${statusMsg}`,
-    { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
-  );
-
-  logger.info('[admin:bet] Link saved successfully', { betId });
 }
 
 /**
