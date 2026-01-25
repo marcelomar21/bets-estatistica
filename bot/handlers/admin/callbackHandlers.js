@@ -23,7 +23,12 @@ async function handleRemovalCallback(bot, callbackQuery) {
 
   // Handle non-removal callbacks
   if (!callbackId.startsWith('remove_')) {
-    return false; // Not a removal callback, let other handlers process
+    // Not a removal callback - log for debugging and let other handlers process
+    logger.debug('[admin:callback] Unknown callback type, skipping', {
+      action,
+      callbackId: callbackId.substring(0, 50) // Truncate for safety
+    });
+    return false;
   }
 
   const fullCallbackId = callbackId;
