@@ -1,14 +1,9 @@
 /**
- * Callback Handlers Module - Inline keyboard callback processing
- * Story 17.1: Refatorar adminGroup.js em Módulos por Domínio
- *
- * Handles:
- * - Member removal confirmations
- * - Pending removal state management
+ * Admin Callback Handlers
+ * Handles inline keyboard callbacks for admin commands
  */
-
-const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
+const { config } = require('../../../lib/config');
 const { kickMemberFromGroup, markMemberAsRemoved, appendToNotes } = require('../../services/memberService');
 
 // Story 16.7: ADR-003 - Pending removals with auto-cleanup 60s
@@ -16,38 +11,27 @@ const pendingRemovals = new Map();
 const REMOVAL_TIMEOUT_MS = 60000;
 
 /**
- * Add a pending removal with auto-cleanup timeout
- * @param {string} callbackId - Unique callback ID
- * @param {object} data - Removal data (memberId, telegramId, displayName, motivo)
- * @param {object} bot - Telegram bot instance
- * @param {object} msg - Original message for timeout cleanup
+ * Get pending removals map (for other modules to add pending removals)
+ * @returns {Map} - The pending removals Map
  */
-function addPendingRemoval(callbackId, data, bot, msg) {
-  // Set timeout for auto-cleanup
-  const timeoutId = setTimeout(async () => {
-    pendingRemovals.delete(callbackId);
-    try {
-      await bot.editMessageText(
-        '⏰ Confirmação expirada. Use o comando novamente.',
-        {
-          chat_id: msg.chat.id,
-          message_id: msg.message_id,
-          parse_mode: 'Markdown'
-        }
-      );
-    } catch (err) {
-      logger.warn('[admin:callback] Timeout cleanup failed', { error: err.message });
-    }
-  }, REMOVAL_TIMEOUT_MS);
-
-  pendingRemovals.set(callbackId, { ...data, timeoutId });
+function getPendingRemovals() {
+  return pendingRemovals;
 }
 
 /**
- * Handle removal confirmation callback
- * @param {object} bot - Telegram bot instance
- * @param {object} callbackQuery - Callback query from Telegram
- * @returns {Promise<boolean>} - True if handled, false if not a removal callback
+ * Get removal timeout constant
+ * @returns {number} - Timeout in milliseconds
+ */
+function getRemovalTimeoutMs() {
+  return REMOVAL_TIMEOUT_MS;
+}
+
+/**
+ * Handle callback queries for member removal confirmation (Story 16.7)
+ * AC5: Process confirm/cancel button clicks
+ * @param {TelegramBot} bot - Bot instance
+ * @param {object} callbackQuery - Telegram callback query object
+ * @returns {boolean} - True if handled, false otherwise
  */
 async function handleRemovalCallback(bot, callbackQuery) {
   const { data, message, from } = callbackQuery;
@@ -176,7 +160,6 @@ async function handleRemovalCallback(bot, callbackQuery) {
 
 module.exports = {
   handleRemovalCallback,
-  addPendingRemoval,
-  pendingRemovals,
-  REMOVAL_TIMEOUT_MS,
+  getPendingRemovals,
+  getRemovalTimeoutMs
 };
