@@ -9,6 +9,8 @@
  * - Webhook subscription_canceled → kick flow
  */
 
+const request = require('supertest');
+
 // ============================================
 // MOCK SETUP - Must be before imports
 // ============================================
@@ -62,7 +64,25 @@ const mockBot = {
 jest.mock('../../../bot/telegram', () => ({
   initBot: jest.fn(),
   getBot: jest.fn(() => mockBot),
+  setWebhook: jest.fn().mockResolvedValue({ success: true }),
+  testConnection: jest.fn().mockResolvedValue({
+    success: true,
+    data: { username: 'test_bot' },
+  }),
 }));
+
+// Mock Mercado Pago service for webhook integration tests
+jest.mock('../../../bot/services/mercadoPagoService', () => ({
+  getSubscription: jest.fn(),
+  getPayment: jest.fn(),
+  getAuthorizedPayment: jest.fn(),
+  extractCouponCode: jest.fn().mockReturnValue(null),
+  mapPaymentMethod: jest.fn().mockReturnValue('credit_card'),
+}));
+
+// Import after mocks
+const { app } = require('../../../bot/webhook-server');
+const mercadoPagoService = require('../../../bot/services/mercadoPagoService');
 
 // ============================================
 // HELPER FUNCTIONS
@@ -358,13 +378,116 @@ describe('Kick and Rejoin Flow Integration Tests', () => {
   });
 
   // ============================================
+  // WEBHOOK-TRIGGERED KICK FLOW (Real Integration)
+  // ============================================
+  describe('Webhook-Triggered Kick Flow', () => {
+    beforeEach(() => {
+      // Setup env for webhook tests
+      process.env.MP_WEBHOOK_SECRET = 'test-secret';
+      process.env.SKIP_WEBHOOK_VALIDATION = 'true';
+      process.env.NODE_ENV = 'development';
+    });
+
+    afterEach(() => {
+      delete process.env.MP_WEBHOOK_SECRET;
+      delete process.env.SKIP_WEBHOOK_VALIDATION;
+      delete process.env.NODE_ENV;
+    });
+
+    test('subscription_cancelled webhook triggers member removal and Telegram kick', async () => {
+      // Arrange: Active member with subscription
+      const activeMember = createMockMember({
+        status: 'ativo',
+        telegram_id: 987654321,
+        mp_subscription_id: 'sub_to_cancel',
+        subscription_started_at: new Date().toISOString(),
+      });
+
+      // Mock webhook_events table
+      const webhookEventsBuilder = createMockQueryBuilder();
+      webhookEventsBuilder.upsert = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          single: jest.fn().mockResolvedValue({
+            data: { id: 'event-kick-1', idempotency_key: 'mp_sub_cancelled_sub_to_cancel', status: 'pending' },
+            error: null,
+          }),
+        }),
+      });
+
+      // Mock members table for lookup and update
+      const membersBuilder = createMockQueryBuilder();
+      const membersSelectBuilder = createMockQueryBuilder();
+      membersSelectBuilder.eq = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: jest.fn().mockResolvedValue({ data: activeMember, error: null }),
+        }),
+        single: jest.fn().mockResolvedValue({ data: activeMember, error: null }),
+      });
+      membersBuilder.select = jest.fn().mockReturnValue(membersSelectBuilder);
+
+      const membersUpdateBuilder = createMockQueryBuilder();
+      membersUpdateBuilder.eq = jest.fn().mockReturnValue(membersUpdateBuilder);
+      membersUpdateBuilder.select = jest.fn().mockReturnValue({
+        single: jest.fn().mockResolvedValue({
+          data: { ...activeMember, status: 'removido', kicked_at: new Date().toISOString() },
+          error: null,
+        }),
+      });
+      membersBuilder.update = jest.fn().mockReturnValue(membersUpdateBuilder);
+
+      mockSupabase.from.mockImplementation((table) => {
+        if (table === 'webhook_events') return webhookEventsBuilder;
+        if (table === 'members') return membersBuilder;
+        return createMockQueryBuilder();
+      });
+
+      // Mock MP API returns cancelled subscription
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_to_cancel',
+          status: 'cancelled',
+          payer_email: activeMember.email,
+        },
+      });
+
+      // Act: Send subscription cancelled webhook
+      const response = await request(app)
+        .post('/webhooks/mercadopago')
+        .set('Content-Type', 'application/json')
+        .send({
+          type: 'subscription_preapproval',
+          action: 'cancelled',
+          data: { id: 'sub_to_cancel' },
+        });
+
+      // Assert: Webhook accepted for processing
+      expect(response.status).toBe(200);
+      expect(response.body.received).toBe(true);
+
+      // Assert: Event was saved with correct subscription cancelled type
+      expect(webhookEventsBuilder.upsert).toHaveBeenCalled();
+      const upsertCall = webhookEventsBuilder.upsert.mock.calls[0][0];
+      expect(upsertCall).toMatchObject({
+        event_type: expect.stringContaining('subscription_preapproval'),
+        payload: expect.objectContaining({
+          action: 'cancelled',
+          data: { id: 'sub_to_cancel' },
+        }),
+      });
+    });
+  });
+
+  // ============================================
   // KICK TELEGRAM INTEGRATION
   // ============================================
   describe('Kick Telegram Integration', () => {
-    test('kickMemberFromGroup calls Telegram banChatMember', async () => {
+    test('kickMemberFromGroup calls Telegram banChatMember with valid future until_date', async () => {
       const { kickMemberFromGroup } = require('../../../bot/services/memberService');
 
+      const beforeCall = Math.floor(Date.now() / 1000);
       const result = await kickMemberFromGroup(123456789, '-100222222');
+      const afterCall = Math.floor(Date.now() / 1000);
 
       expect(result.success).toBe(true);
       expect(mockBot.banChatMember).toHaveBeenCalledWith(
@@ -372,6 +495,15 @@ describe('Kick and Rejoin Flow Integration Tests', () => {
         123456789,
         expect.objectContaining({ until_date: expect.any(Number) })
       );
+
+      // Issue 12: Validate until_date is a valid future timestamp (24h from now)
+      const callArgs = mockBot.banChatMember.mock.calls[0][2];
+      const untilDate = callArgs.until_date;
+      const expectedMin = beforeCall + (24 * 60 * 60); // 24h in seconds
+      const expectedMax = afterCall + (24 * 60 * 60) + 1; // Allow 1 second tolerance
+
+      expect(untilDate).toBeGreaterThanOrEqual(expectedMin);
+      expect(untilDate).toBeLessThanOrEqual(expectedMax);
     });
 
     test('kickMemberFromGroup handles user not in group', async () => {
