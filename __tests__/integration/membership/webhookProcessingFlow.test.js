@@ -612,6 +612,11 @@ describe('Webhook Processing Flow Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('removed');
+      // Verify member was banned from the group
+      expect(mockBot.banChatMember).toHaveBeenCalledWith(
+        '-100222222', // publicGroupId from config mock
+        activeMember.telegram_id
+      );
     });
 
     test('trial member is removed as trial_not_converted', async () => {
@@ -672,6 +677,11 @@ describe('Webhook Processing Flow Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('removed');
+      // Verify trial member was banned from the group on cancellation
+      expect(mockBot.banChatMember).toHaveBeenCalledWith(
+        '-100222222', // publicGroupId from config mock
+        trialMember.telegram_id
+      );
     });
 
     test('already removed member is skipped', async () => {
