@@ -615,7 +615,8 @@ describe('Webhook Processing Flow Integration Tests', () => {
       // Verify member was banned from the group
       expect(mockBot.banChatMember).toHaveBeenCalledWith(
         '-100222222', // publicGroupId from config mock
-        activeMember.telegram_id
+        activeMember.telegram_id,
+        expect.objectContaining({ until_date: expect.any(Number) })
       );
     });
 
@@ -680,7 +681,8 @@ describe('Webhook Processing Flow Integration Tests', () => {
       // Verify trial member was banned from the group on cancellation
       expect(mockBot.banChatMember).toHaveBeenCalledWith(
         '-100222222', // publicGroupId from config mock
-        trialMember.telegram_id
+        trialMember.telegram_id,
+        expect.objectContaining({ until_date: expect.any(Number) })
       );
     });
 
