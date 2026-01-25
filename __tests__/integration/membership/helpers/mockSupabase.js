@@ -89,7 +89,27 @@ function createMockSupabase() {
   };
 }
 
+/**
+ * Validate that a timestamp is approximately N hours in the future.
+ * Used to verify until_date in banChatMember calls.
+ *
+ * @param {number} timestamp - Unix timestamp to validate
+ * @param {number} hoursFromNow - Expected hours from now (default: 24)
+ * @param {number} toleranceSecs - Allowed tolerance in seconds (default: 5)
+ *
+ * @example
+ * const callArgs = mockBot.banChatMember.mock.calls[0][2];
+ * expectFutureTimestamp(callArgs.until_date, 24);
+ */
+function expectFutureTimestamp(timestamp, hoursFromNow = 24, toleranceSecs = 5) {
+  const now = Math.floor(Date.now() / 1000);
+  const expected = now + (hoursFromNow * 60 * 60);
+  expect(timestamp).toBeGreaterThanOrEqual(expected - toleranceSecs);
+  expect(timestamp).toBeLessThanOrEqual(expected + toleranceSecs);
+}
+
 module.exports = {
   createMockQueryBuilder,
   createMockSupabase,
+  expectFutureTimestamp,
 };

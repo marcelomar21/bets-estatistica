@@ -183,7 +183,6 @@ describe('Webhook Processing Flow Integration Tests', () => {
       });
 
       // Setup multi-table mocks
-      let callCount = 0;
       mockSupabase.from.mockImplementation((table) => {
         const builder = createMockQueryBuilder();
 
@@ -192,11 +191,11 @@ describe('Webhook Processing Flow Integration Tests', () => {
           selectBuilder.eq = jest.fn().mockImplementation(() => {
             const innerBuilder = createMockQueryBuilder();
             innerBuilder.eq = jest.fn().mockReturnValue(innerBuilder);
-            // Return trial member first, then active
-            innerBuilder.single = jest.fn().mockResolvedValue({
-              data: callCount++ < 2 ? trialMember : activeMember,
-              error: null,
-            });
+            // Return trial member first two times, then active
+            innerBuilder.single = jest.fn()
+              .mockResolvedValueOnce({ data: trialMember, error: null })
+              .mockResolvedValueOnce({ data: trialMember, error: null })
+              .mockResolvedValue({ data: activeMember, error: null });
             return innerBuilder;
           });
           builder.select = jest.fn().mockReturnValue(selectBuilder);
@@ -311,23 +310,22 @@ describe('Webhook Processing Flow Integration Tests', () => {
         },
       });
 
-      // First call returns inadimplente, rest return recovered
-      let callCount = 0;
+      // First calls return inadimplente, rest return recovered
       mockSupabase.from.mockImplementation((table) => {
         const builder = createMockQueryBuilder();
 
         if (table === 'members') {
           const selectBuilder = createMockQueryBuilder();
           selectBuilder.eq = jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: callCount++ < 2 ? inadimplenteMember : recoveredMember,
-              error: null,
-            }),
+            single: jest.fn()
+              .mockResolvedValueOnce({ data: inadimplenteMember, error: null })
+              .mockResolvedValueOnce({ data: inadimplenteMember, error: null })
+              .mockResolvedValue({ data: recoveredMember, error: null }),
             eq: jest.fn().mockReturnValue({
-              single: jest.fn().mockResolvedValue({
-                data: callCount++ < 2 ? inadimplenteMember : recoveredMember,
-                error: null,
-              }),
+              single: jest.fn()
+                .mockResolvedValueOnce({ data: inadimplenteMember, error: null })
+                .mockResolvedValueOnce({ data: inadimplenteMember, error: null })
+                .mockResolvedValue({ data: recoveredMember, error: null }),
             }),
           });
           builder.select = jest.fn().mockReturnValue(selectBuilder);

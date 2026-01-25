@@ -431,11 +431,10 @@ describe('Membership Flow Integration Tests', () => {
       // Assert: Webhook accepted
       expect(response.status).toBe(200);
 
-      // Assert: If processing sends welcome message, verify it was called
-      // Note: The actual message sending depends on webhook processor implementation
-      // This assertion verifies the mockBot is properly configured for integration
-      expect(mockBot.sendMessage).toBeDefined();
-      expect(typeof mockBot.sendMessage).toBe('function');
+      // Assert: sendMessage was NOT called during webhook acceptance phase
+      // The actual welcome message is sent asynchronously by the webhook processor,
+      // not during the HTTP request/response cycle tested here
+      expect(mockBot.sendMessage).not.toHaveBeenCalled();
     });
 
     test('should create new active member if not exists', async () => {
@@ -759,10 +758,10 @@ describe('Membership Flow Integration Tests', () => {
       // Assert: Webhook accepted
       expect(response.status).toBe(200);
 
-      // Assert: banChatMember function is available for kick operation
-      // The actual kick is performed by the webhook processor, this verifies integration setup
-      expect(mockBot.banChatMember).toBeDefined();
-      expect(typeof mockBot.banChatMember).toBe('function');
+      // Assert: banChatMember was NOT called during webhook acceptance phase
+      // The actual kick is performed asynchronously by the webhook processor,
+      // not during the HTTP request/response cycle tested here
+      expect(mockBot.banChatMember).not.toHaveBeenCalled();
     });
   });
 
