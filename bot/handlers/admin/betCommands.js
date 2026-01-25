@@ -696,7 +696,6 @@ module.exports = {
   FILTRAR_PATTERN,
   PROMOVER_PATTERN,
   REMOVER_PATTERN,
-  FILA_PATTERN,
-  // Helpers (exported for testing)
-  getRateIndicator
+  FILA_PATTERN
+  // Note: getRateIndicator is internal helper, not exported
 };
