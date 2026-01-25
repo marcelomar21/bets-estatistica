@@ -1,6 +1,9 @@
 /**
  * Admin Bet Commands
  * Handles /apostas, /odd, /link, /filtrar, /fila, /promover, /remover commands
+ *
+ * Note: parse_mode: 'Markdown' is used consistently throughout handlers.
+ * A utility wrapper could centralize this, but explicit is kept for clarity.
  */
 const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
