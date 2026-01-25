@@ -478,7 +478,7 @@ function formatDayLabelForHistory(day) {
   const yesterdayDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const yesterdayStr = yesterdayDate.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).split(' ')[0];
 
-  const [_year, month, dayNum] = day.split('-');
+  const [, month, dayNum] = day.split('-');
   const formattedDate = `${dayNum}/${month}`;
 
   if (day === todayStr) {
