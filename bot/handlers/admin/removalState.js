@@ -3,10 +3,15 @@
  * Story 17.1: Extraído para resolver dependência circular entre memberCommands e callbackHandlers
  *
  * Gerencia o estado de remoções pendentes (confirmações com botões inline)
+ *
+ * ⚠️ NOTA: Este state é mantido em memória. Se o bot reiniciar enquanto há
+ * confirmações pendentes, elas serão perdidas. O TTL de 60s minimiza o impacto,
+ * mas usuários podem ficar com botões órfãos após restart.
  */
 const logger = require('../../../lib/logger');
 
 // Story 16.7: ADR-003 - Pending removals with auto-cleanup 60s
+// NOTE: In-memory state - lost on restart. TTL of 60s mitigates impact.
 const pendingRemovals = new Map();
 const REMOVAL_TIMEOUT_MS = 60000;
 
@@ -41,6 +46,15 @@ function addPendingRemoval(callbackId, data) {
   }, REMOVAL_TIMEOUT_MS);
 
   pendingRemovals.set(callbackId, { ...data, timeoutId });
+
+  // Warn if there are many pending removals (possible memory leak or stuck confirmations)
+  if (pendingRemovals.size > 10) {
+    logger.warn('[admin:removal-state] High number of pending removals', {
+      count: pendingRemovals.size,
+      note: 'In-memory state - will be lost on restart'
+    });
+  }
+
   return timeoutId;
 }
 
