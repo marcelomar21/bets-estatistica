@@ -13,7 +13,7 @@
 // MOCK SETUP
 // ============================================
 
-const { createMockQueryBuilder } = require('./helpers/mockSupabase');
+const { createMockQueryBuilder, expectFutureTimestamp } = require('./helpers/mockSupabase');
 
 const mockSupabase = {
   from: jest.fn(() => createMockQueryBuilder()),
@@ -458,17 +458,16 @@ describe('Webhook Processing Flow Integration Tests', () => {
         },
       });
 
-      let callCount = 0;
       mockSupabase.from.mockImplementation((table) => {
         const builder = createMockQueryBuilder();
 
         if (table === 'members') {
           const selectBuilder = createMockQueryBuilder();
           selectBuilder.eq = jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: callCount++ < 2 ? activeMember : inadimplenteMember,
-              error: null,
-            }),
+            single: jest.fn()
+              .mockResolvedValueOnce({ data: activeMember, error: null })
+              .mockResolvedValueOnce({ data: activeMember, error: null })
+              .mockResolvedValue({ data: inadimplenteMember, error: null }),
             eq: jest.fn().mockReturnValue({
               single: jest.fn().mockResolvedValue({ data: activeMember, error: null }),
             }),
@@ -616,6 +615,9 @@ describe('Webhook Processing Flow Integration Tests', () => {
         activeMember.telegram_id,
         expect.objectContaining({ until_date: expect.any(Number) })
       );
+      // Validate until_date is a valid future timestamp (24h from now)
+      const callArgs = mockBot.banChatMember.mock.calls[0][2];
+      expectFutureTimestamp(callArgs.until_date, 24);
     });
 
     test('trial member is removed as trial_not_converted', async () => {
@@ -682,6 +684,9 @@ describe('Webhook Processing Flow Integration Tests', () => {
         trialMember.telegram_id,
         expect.objectContaining({ until_date: expect.any(Number) })
       );
+      // Validate until_date is a valid future timestamp (24h from now)
+      const callArgs = mockBot.banChatMember.mock.calls[0][2];
+      expectFutureTimestamp(callArgs.until_date, 24);
     });
 
     test('already removed member is skipped', async () => {
