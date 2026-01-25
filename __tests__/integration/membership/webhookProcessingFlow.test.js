@@ -13,19 +13,7 @@
 // MOCK SETUP
 // ============================================
 
-const createMockQueryBuilder = (defaultData = null) => {
-  const chainable = {};
-  const methods = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'not', 'is', 'in', 'order', 'limit'];
-
-  methods.forEach(method => {
-    chainable[method] = jest.fn().mockReturnValue(chainable);
-  });
-
-  chainable.single = jest.fn().mockResolvedValue({ data: defaultData, error: null });
-  chainable.maybeSingle = jest.fn().mockResolvedValue({ data: defaultData, error: null });
-
-  return chainable;
-};
+const { createMockQueryBuilder } = require('./helpers/mockSupabase');
 
 const mockSupabase = {
   from: jest.fn(() => createMockQueryBuilder()),
