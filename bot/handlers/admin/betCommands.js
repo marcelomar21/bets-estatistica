@@ -19,6 +19,9 @@ const PROMOVER_PATTERN = /^\/promover(?:\s+(\d+))?$/i;
 const REMOVER_PATTERN = /^\/remover(?:\s+(\d+))?$/i;
 const FILA_PATTERN = /^\/fila(?:\s+(\d+))?$/i;
 
+// Valid filter types for /filtrar command
+const VALID_FILTER_TYPES = ['sem_odds', 'sem_link', 'com_link', 'com_odds', 'prontas'];
+
 /**
  * Retorna emoji indicador baseado na taxa de acerto
  * @param {number|null} rate - Taxa de acerto (0-100) ou null se sem dados
@@ -397,7 +400,7 @@ Filtra apostas por critério específico.
     default:
       await bot.sendMessage(
         msg.chat.id,
-        `❌ Filtro desconhecido: ${filterType}\n\nUse \`/filtrar\` para ver opções.`,
+        `❌ Filtro desconhecido: ${filterType}\n\nFiltros válidos: ${VALID_FILTER_TYPES.join(', ')}\nUse \`/filtrar\` para ver ajuda.`,
         { reply_to_message_id: msg.message_id, parse_mode: 'Markdown' }
       );
       return;
@@ -696,6 +699,8 @@ module.exports = {
   FILTRAR_PATTERN,
   PROMOVER_PATTERN,
   REMOVER_PATTERN,
-  FILA_PATTERN
+  FILA_PATTERN,
+  // Constants
+  VALID_FILTER_TYPES
   // Note: getRateIndicator is internal helper, not exported
 };
