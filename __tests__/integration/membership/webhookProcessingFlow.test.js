@@ -213,7 +213,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
       });
 
       // Import and call processor
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_123' },
@@ -274,7 +274,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_renewal' },
@@ -343,7 +343,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_recover' },
@@ -420,7 +420,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_reactivate' },
@@ -496,7 +496,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentRejected } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentRejected } = webhookProcessors;
 
       const result = await handlePaymentRejected({
         data: { id: 'pay_rejected' },
@@ -539,7 +539,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentRejected } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentRejected } = webhookProcessors;
 
       const result = await handlePaymentRejected({
         data: { id: 'pay_trial_rejected' },
@@ -604,7 +604,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handleSubscriptionCancelled } = require('../../../bot/services/webhookProcessors');
+      const { handleSubscriptionCancelled } = webhookProcessors;
 
       const result = await handleSubscriptionCancelled({
         data: { id: 'sub_cancelled' },
@@ -664,7 +664,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handleSubscriptionCancelled } = require('../../../bot/services/webhookProcessors');
+      const { handleSubscriptionCancelled } = webhookProcessors;
 
       const result = await handleSubscriptionCancelled({
         data: { id: 'sub_trial_cancelled' },
@@ -706,7 +706,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handleSubscriptionCancelled } = require('../../../bot/services/webhookProcessors');
+      const { handleSubscriptionCancelled } = webhookProcessors;
 
       const result = await handleSubscriptionCancelled({
         data: { id: 'sub_already_removed' },
@@ -723,7 +723,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
   // ============================================
   describe('Error Handling', () => {
     test('handles missing payment ID gracefully', async () => {
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: {}, // Missing id
@@ -734,7 +734,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
     });
 
     test('handles missing subscription ID gracefully', async () => {
-      const { handleSubscriptionCancelled } = require('../../../bot/services/webhookProcessors');
+      const { handleSubscriptionCancelled } = webhookProcessors;
 
       const result = await handleSubscriptionCancelled({
         data: {}, // Missing id
@@ -750,7 +750,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         error: { code: 'MP_API_ERROR', message: 'Payment not found' },
       });
 
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_not_found' },
@@ -794,7 +794,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         return builder;
       });
 
-      const { handlePaymentApproved } = require('../../../bot/services/webhookProcessors');
+      const { handlePaymentApproved } = webhookProcessors;
 
       const result = await handlePaymentApproved({
         data: { id: 'pay_orphan' },
