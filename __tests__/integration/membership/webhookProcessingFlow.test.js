@@ -573,17 +573,16 @@ describe('Webhook Processing Flow Integration Tests', () => {
         },
       });
 
-      let callCount = 0;
       mockSupabase.from.mockImplementation((table) => {
         const builder = createMockQueryBuilder();
 
         if (table === 'members') {
           const selectBuilder = createMockQueryBuilder();
           selectBuilder.eq = jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: callCount++ < 2 ? activeMember : removedMember,
-              error: null,
-            }),
+            single: jest.fn()
+              .mockResolvedValueOnce({ data: activeMember, error: null })
+              .mockResolvedValueOnce({ data: activeMember, error: null })
+              .mockResolvedValue({ data: removedMember, error: null }),
             eq: jest.fn().mockReturnValue({
               single: jest.fn().mockResolvedValue({ data: activeMember, error: null }),
             }),
@@ -642,17 +641,16 @@ describe('Webhook Processing Flow Integration Tests', () => {
         },
       });
 
-      let callCount = 0;
       mockSupabase.from.mockImplementation((table) => {
         const builder = createMockQueryBuilder();
 
         if (table === 'members') {
           const selectBuilder = createMockQueryBuilder();
           selectBuilder.eq = jest.fn().mockReturnValue({
-            single: jest.fn().mockResolvedValue({
-              data: callCount++ < 2 ? trialMember : removedMember,
-              error: null,
-            }),
+            single: jest.fn()
+              .mockResolvedValueOnce({ data: trialMember, error: null })
+              .mockResolvedValueOnce({ data: trialMember, error: null })
+              .mockResolvedValue({ data: removedMember, error: null }),
             eq: jest.fn().mockReturnValue({
               single: jest.fn().mockResolvedValue({ data: trialMember, error: null }),
             }),
