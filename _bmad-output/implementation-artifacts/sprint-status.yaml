@@ -80,10 +80,10 @@ development_status:
   # ========================================
   # Epic 17: Refatoracao e Debito Tecnico (PRIORIDADE)
   # ========================================
-  epic-17: backlog
+  epic-17: in-progress
   17-1-refatorar-admingroup-em-modulos: backlog
   17-2-adicionar-testes-integracao-membership: backlog
-  17-3-documentar-environment-variables: backlog
+  17-3-documentar-environment-variables: done
   17-4-implementar-validacao-padronizada-input: backlog
   17-5-consolidar-utilitarios-compartilhados: backlog
   epic-17-retrospective: optional
