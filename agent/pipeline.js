@@ -17,7 +17,6 @@ require('dotenv').config();
 
 const path = require('path');
 const { spawn } = require('child_process');
-const { Pool } = require('pg');
 
 // ROOT_DIR is the project root (parent of agent/)
 const ROOT_DIR = path.join(__dirname, '..');
@@ -38,17 +37,8 @@ const DEFAULT_RETRY_DELAY_MS = 5_000;
 const DEFAULT_COMMAND_RETRIES = 1;
 const ANALYSIS_WINDOW_FALLBACK_HOURS = Number(process.env.MAIN_AGENT_WINDOW_HOURS || 168);
 
-const pool = new Pool({
-  host: process.env.HOST || process.env.PGHOST || 'localhost',
-  port: process.env.PGPORT ? Number(process.env.PGPORT) : 5432,
-  database: process.env.PGDATABASE || 'bets_stats',
-  user: process.env.PGUSER || 'bets',
-  password: process.env.PGPASSWORD || 'bets_pass_123',
-  ssl:
-    process.env.PGSSL === 'true'
-      ? { rejectUnauthorized: process.env.PGSSL_REJECT_UNAUTHORIZED === 'true' }
-      : false,
-});
+const { getPool } = require('../lib/db');
+const pool = getPool();
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

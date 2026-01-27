@@ -10,6 +10,7 @@ const { ToolMessage, HumanMessage } = require('@langchain/core/messages');
 const { StructuredOutputParser } = require('@langchain/core/output_parsers');
 const { z } = require('zod');
 
+const { config } = require('../../lib/config');
 const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
 const { runQuery, closePool, getPool } = require('../db');
@@ -941,7 +942,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
 
   const llmConfig = {
     apiKey: ensureApiKey(),
-    model: process.env.AGENT_MODEL || 'gpt-5.1-2025-11-13',
+    model: config.llm.heavyModel,
     timeout: Number(process.env.AGENT_TIMEOUT_MS ?? 180000),
   };
   if (process.env.AGENT_TEMPERATURE !== undefined) {
@@ -1204,7 +1205,7 @@ const processMatch = async (matchId) => {
       tool_outputs_text: toolOutputsText || null,
     },
     agent: {
-      model: process.env.AGENT_MODEL || 'gpt-5-nano',
+      model: config.llm.heavyModel,
       prompt_messages: agentResult.initialMessages,
       final_message: agentResult.finalMessage,
       tool_executions: agentResult.toolExecutions,

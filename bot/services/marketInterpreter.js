@@ -65,13 +65,15 @@ const UNSUPPORTED_MARKETS = [
   'offsides', 'impedimentos',
 ];
 
+const { config } = require('../../lib/config');
+
 /**
  * Initialize OpenAI client
  */
 function getOpenAI() {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
-    modelName: 'gpt-4o-mini', // Cheaper and fast
+    modelName: config.llm.lightModel,
     temperature: 0,
     maxTokens: 200,
   });

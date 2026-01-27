@@ -16,10 +16,12 @@ const CACHE_MAX_SIZE = 200;
 /**
  * Initialize OpenAI client
  */
+const { config } = require('../../lib/config');
+
 function getOpenAI() {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
-    modelName: 'gpt-4o-mini',
+    modelName: config.llm.lightModel,
     temperature: 0.2, // Baixa para extração precisa de dados
     maxTokens: 200,
   });

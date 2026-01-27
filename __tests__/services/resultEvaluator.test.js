@@ -23,7 +23,7 @@ jest.mock('../../lib/config', () => ({
       openaiApiKey: 'test-api-key',
     },
     llm: {
-      resultEvaluatorModel: 'gpt-4o-mini',
+      resultEvaluatorModel: 'gpt-5.2',
     },
   },
 }));
