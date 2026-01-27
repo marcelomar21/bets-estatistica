@@ -30,13 +30,26 @@ const parseSeasonIdsArg = () => {
 
 const seasonIdsFilter = parseSeasonIdsArg();
 
-function toTimestamp(dateUnix) {
+function isPlaceholderDate(dateUnix) {
+  if (!dateUnix) return false;
+  const ms = Number(dateUnix) * 1000;
+  if (Number.isNaN(ms)) return false;
+  const d = new Date(ms);
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
+function toTimestamp(dateUnix, matchStatus) {
   if (!dateUnix || Number.isNaN(dateUnix)) {
     return null;
   }
 
   const ms = Number(dateUnix) * 1000;
   if (Number.isNaN(ms)) {
+    return null;
+  }
+
+  // Midnight UTC + incomplete = placeholder date from API (real time not yet defined)
+  if (matchStatus !== 'complete' && isPlaceholderDate(dateUnix)) {
     return null;
   }
 
@@ -104,7 +117,7 @@ async function loadFile(filePath) {
         match.game_week ?? null,
         match.roundID || null,
         match.date_unix || null,
-        toTimestamp(match.date_unix),
+        toTimestamp(match.date_unix, match.status),
         match.stadium_name || null,
         JSON.stringify(match),
       ];
@@ -114,6 +127,10 @@ async function loadFile(filePath) {
     }
 
     await client.query('COMMIT');
+    const placeholders = matches.filter((m) => m.status !== 'complete' && isPlaceholderDate(m.date_unix)).length;
+    if (placeholders > 0) {
+      console.log(`  ⚠ ${placeholders} partidas com data placeholder (kickoff_time = NULL)`);
+    }
     console.log(`Arquivo ${path.basename(filePath)} importado (${upserts} partidas).`);
     return upserts;
   } catch (err) {
