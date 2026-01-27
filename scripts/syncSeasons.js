@@ -66,10 +66,20 @@ function isExcluded(name) {
          lower.includes('summer series');
 }
 
-function toTimestamp(dateUnix) {
+function isPlaceholderDate(dateUnix) {
+  if (!dateUnix) return false;
+  const ms = Number(dateUnix) * 1000;
+  if (Number.isNaN(ms)) return false;
+  const d = new Date(ms);
+  return d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
+function toTimestamp(dateUnix, matchStatus) {
   if (!dateUnix || Number.isNaN(dateUnix)) return null;
   const ms = Number(dateUnix) * 1000;
-  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+  if (Number.isNaN(ms)) return null;
+  if (matchStatus !== 'complete' && isPlaceholderDate(dateUnix)) return null;
+  return new Date(ms).toISOString();
 }
 
 async function fetchLeagues() {
@@ -160,10 +170,15 @@ async function countSeasonMatches(seasonId) {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      'SELECT COUNT(*) as count FROM league_matches WHERE season_id = $1',
+      `SELECT COUNT(*) as count,
+              COUNT(*) FILTER (WHERE kickoff_time IS NULL AND status != 'complete') as placeholders
+       FROM league_matches WHERE season_id = $1`,
       [seasonId]
     );
-    return parseInt(result.rows[0].count, 10);
+    return {
+      count: parseInt(result.rows[0].count, 10),
+      placeholders: parseInt(result.rows[0].placeholders, 10),
+    };
   } finally {
     client.release();
   }
@@ -253,7 +268,7 @@ async function upsertMatches(seasonId, matches) {
         match.game_week ?? null,
         match.roundID || null,
         match.date_unix || null,
-        toTimestamp(match.date_unix),
+        toTimestamp(match.date_unix, match.status),
         match.stadium_name || null,
         JSON.stringify(match),
       ]);
@@ -305,19 +320,23 @@ async function main() {
 
     for (const season of activeSeasons) {
       try {
-        const existing = await countSeasonMatches(season.season_id);
-        if (existing > 0) {
+        const { count: existing, placeholders } = await countSeasonMatches(season.season_id);
+        if (existing > 0 && placeholders === 0) {
           console.log(`   ⏭️  ${season.league_name} ${season.year}: ${existing} jogos já no banco`);
           totalMatches += existing;
           skipped++;
           continue;
         }
 
-        console.log(`   📡 Buscando: ${season.league_name} ${season.year}...`);
+        if (existing > 0 && placeholders > 0) {
+          console.log(`   🔄 ${season.league_name} ${season.year}: ${existing} jogos, ${placeholders} com data placeholder — re-buscando...`);
+        } else {
+          console.log(`   📡 Buscando: ${season.league_name} ${season.year}...`);
+        }
         const matches = await fetchSeasonMatches(season.season_id, `${season.league_name} ${season.year}`);
         const saved = await upsertMatches(season.season_id, matches);
         totalMatches += saved;
-        console.log(`      ✅ ${saved} jogos salvos no banco`);
+        console.log(`      ✅ ${saved} jogos atualizados no banco`);
       } catch (err) {
         errors++;
         const msg = err.response?.data?.message || err.message;
