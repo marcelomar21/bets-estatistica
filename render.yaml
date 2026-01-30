@@ -14,6 +14,7 @@ services:
     name: bets-bot
     runtime: node
     plan: free
+    nodeVersion: "20"
     buildCommand: npm install
     startCommand: node bot/server.js
     healthCheckPath: /health
@@ -29,6 +30,7 @@ services:
     name: bets-webhook
     runtime: node
     plan: free
+    nodeVersion: "20"
     buildCommand: npm install
     startCommand: node bot/webhook-server.js
     healthCheckPath: /health
