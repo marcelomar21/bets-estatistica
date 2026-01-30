@@ -2,6 +2,9 @@
   "name": "bets-estatistica",
   "version": "1.0.0",
   "main": "bot/server.js",
+  "engines": {
+    "node": ">=18.0.0 <21.0.0"
+  },
   "scripts": {
     "start": "node bot/server.js",
     "dev": "node bot/index.js",
