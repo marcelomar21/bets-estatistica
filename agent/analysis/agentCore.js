@@ -55,7 +55,6 @@ const safeBetSchema = baseBetSchema
 const valueBetSchema = baseBetSchema.extend({
   angle: z
     .enum(['vitoria', 'handicap', 'gols', 'cartoes', 'escanteios', 'especial'])
-    .optional()
     .describe('Identifique o ângulo principal da aposta de valor.'),
 });
 

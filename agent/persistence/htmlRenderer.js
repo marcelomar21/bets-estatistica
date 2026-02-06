@@ -185,7 +185,6 @@ const renderHtmlReport = (payload) => {
         display: flex;
         flex-direction: column;
         gap: 28px;
-        page-break-inside: avoid;
       }
       header h1 {
         font-size: 2.4rem;
@@ -270,6 +269,15 @@ const renderHtmlReport = (payload) => {
         color: #94a3b8;
         font-style: italic;
       }
+      .analysis, .bets, .context {
+        page-break-inside: auto;
+      }
+      .analysis p, .bet-item, .info-grid {
+        page-break-inside: avoid;
+      }
+      h2 {
+        page-break-after: avoid;
+      }
       @media print {
         * {
           -webkit-print-color-adjust: exact;
@@ -300,7 +308,6 @@ const renderHtmlReport = (payload) => {
       </section>
 
       ${renderBetSection('Apostas Seguras', safeBets)}
-      ${renderBetSection('Oportunidades', opportunityBets)}
     </article>
   </body>
 </html>`;
