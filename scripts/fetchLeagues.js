@@ -38,6 +38,7 @@ const TARGET_LEAGUES = [
   'brazil mineiro 1',
   'brazil carioca 1',
   'brazil paulista a1',
+  'brazil paranaense 1',
   'brazil copa do nordeste',
 ];
 
