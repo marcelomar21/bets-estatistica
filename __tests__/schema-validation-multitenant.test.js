@@ -13,9 +13,16 @@
 const { supabase } = require('../lib/supabase');
 
 // Helper: check if migration 019 has been applied (groups table exists)
+// Returns false when Supabase is not configured (CI without secrets)
 async function isMigration019Applied() {
-  const { error } = await supabase.from('groups').select('id').limit(1);
-  return !error || !error.message.match(/Could not find.*in the schema cache/i);
+  try {
+    const { error } = await supabase.from('groups').select('id').limit(1);
+    if (!error) return true;
+    // Table not found = migration not applied; any other error = Supabase unavailable
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 // Helper: skip test with clear message when migration not applied

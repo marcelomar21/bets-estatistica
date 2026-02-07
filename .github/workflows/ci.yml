@@ -56,6 +56,9 @@ jobs:
 
       - name: Run tests
         run: npm test
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
   deploy:
     name: Deploy to Render
