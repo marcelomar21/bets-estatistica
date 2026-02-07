@@ -1,10 +1,10 @@
 ---
 project_name: 'bets-estatistica'
 user_name: 'Marcelomendes'
-date: '2026-01-17'
-sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules', 'membership_rules']
+date: '2026-02-05'
+sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules', 'membership_rules', 'multitenant_rules']
 status: 'complete'
-rule_count: 42
+rule_count: 52
 optimized_for_llm: true
 ---
 
@@ -18,8 +18,11 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 
 | Technology | Version | Notes |
 |------------|---------|-------|
-| Node.js | 20+ | Runtime obrigatório |
-| JavaScript | ES2022 | CommonJS modules |
+| Node.js | 20+ | Runtime obrigatório (bots) |
+| JavaScript | ES2022 | CommonJS modules (bots) |
+| TypeScript | 5.x | Admin panel (Next.js) |
+| Next.js | 14+ | Admin panel (App Router) |
+| Supabase Auth | latest | Autenticação admin panel |
 | LangChain | 1.1.x | Manter versão existente |
 | OpenAI | GPT-5.1 | Via LangChain |
 | Zod | 4.x | Validação de schemas |
@@ -27,12 +30,11 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 | @supabase/supabase-js | latest | Database client |
 | node-telegram-bot-api | latest | Bot framework |
 | node-cron | latest | Job scheduling |
-| express | ^4.18 | Webhook server (Cakto) |
-| express-rate-limit | ^7.x | Rate limiting |
-| helmet | ^7.x | Security headers |
+| Tailwind CSS | 3.x | Styling admin panel |
 
-**Remover:**
-- ❌ puppeteer - não mais necessário
+**Repositórios:**
+- `bets-estatistica/` - Bots + Backend (Node.js)
+- `admin-panel/` - Admin Panel (Next.js)
 
 ---
 
@@ -209,13 +211,110 @@ function canTransition(currentStatus, newStatus) {
 | `MEMBER_NOT_FOUND` | Membro não existe no banco |
 | `MEMBER_ALREADY_EXISTS` | Telegram ID já cadastrado |
 | `INVALID_MEMBER_STATUS` | Transição de estado inválida |
-| `CAKTO_API_ERROR` | Erro na API do Cakto |
+| `MP_API_ERROR` | Erro na API do Mercado Pago |
 | `WEBHOOK_INVALID_SIGNATURE` | HMAC do webhook inválido |
 | `WEBHOOK_DUPLICATE` | Evento já processado (idempotency) |
+| `TENANT_NOT_FOUND` | Grupo não encontrado |
+| `UNAUTHORIZED_TENANT` | Tentativa de acessar outro grupo |
 
 ---
 
-## Webhook Processing Pattern
+## Multi-Tenant Rules (CRÍTICO)
+
+### Isolamento por group_id
+
+```javascript
+// ✅ TODA query que envolve dados de grupo DEVE filtrar por group_id
+const members = await supabase
+  .from('members')
+  .select('*')
+  .eq('group_id', groupId);
+
+// ❌ NUNCA fazer query sem filtro de grupo
+const members = await supabase
+  .from('members')
+  .select('*');  // VAZAMENTO DE DADOS!
+```
+
+### Middleware de Tenant (Admin Panel)
+
+```typescript
+// middleware/tenant.ts - OBRIGATÓRIO em toda API Route
+export async function withTenant(req) {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: 'UNAUTHORIZED', groupFilter: null };
+  }
+
+  const { data: adminUser } = await supabase
+    .from('admin_users')
+    .select('role, group_id')
+    .eq('id', user.id)
+    .single();
+
+  if (adminUser.role === 'super_admin') {
+    return {
+      user,
+      role: 'super_admin',
+      groupFilter: null  // Vê TUDO
+    };
+  }
+
+  return {
+    user,
+    role: 'group_admin',
+    groupFilter: adminUser.group_id  // Só seu grupo
+  };
+}
+```
+
+### Uso em API Routes
+
+```typescript
+// ✅ SEMPRE usar withTenant em rotas com dados por grupo
+export async function GET(req) {
+  const { error, groupFilter } = await withTenant(req);
+
+  if (error) {
+    return NextResponse.json({ success: false, error }, { status: 401 });
+  }
+
+  let query = supabase.from('members').select('*');
+
+  // 🔒 CRÍTICO: Sempre filtrar se não for super_admin
+  if (groupFilter) {
+    query = query.eq('group_id', groupFilter);
+  }
+
+  const { data } = await query;
+  return NextResponse.json({ success: true, data });
+}
+```
+
+### Tabelas com group_id
+
+| Tabela | group_id | Notas |
+|--------|----------|-------|
+| `groups` | É a própria PK | Tabela de tenants |
+| `members` | ✅ FK | Filtrar sempre |
+| `admin_users` | ✅ FK (null = super) | RLS |
+| `suggested_bets` | ✅ Após distribuição | Pool global → distribuído |
+| `bot_health` | ✅ FK | Status por bot |
+| `league_matches` | ❌ | Dados globais |
+| `game_analysis` | ❌ | Dados globais |
+
+### Checklist de Code Review Multi-tenant
+
+- [ ] API Route usa `withTenant()`?
+- [ ] Tratou erro de autenticação?
+- [ ] Query aplica `.eq('group_id', groupFilter)` quando necessário?
+- [ ] RLS está configurado na tabela?
+- [ ] Não tem query sem filtro em tabelas com group_id?
+
+---
+
+## Webhook Processing Pattern (Mercado Pago)
 
 ```javascript
 // ✅ SEMPRE processar webhooks de forma assíncrona
@@ -224,26 +323,33 @@ function canTransition(currentStatus, newStatus) {
 // 3. Responder 200 IMEDIATAMENTE
 // 4. Processar via job async
 
-app.post('/webhooks/cakto', validateSignature, async (req, res) => {
-  const { event_id, event_type, data } = req.body;
+// Next.js API Route
+export async function POST(req) {
+  const body = await req.json();
+  const signature = req.headers.get('x-signature');
+
+  // Validar HMAC
+  if (!validateMPSignature(body, signature)) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+  }
 
   // Salvar imediatamente (idempotente)
   await supabase.from('webhook_events').insert({
-    idempotency_key: event_id,
-    event_type,
-    payload: data,
+    idempotency_key: body.id,
+    event_type: body.type,
+    payload: body.data,
     status: 'pending'
   });
 
   // Responder rápido
-  res.status(200).json({ received: true });
-});
+  return NextResponse.json({ received: true });
+}
 
 // ❌ NUNCA processar síncrono
-app.post('/webhook', async (req, res) => {
-  await processPayment(req.body);  // ERRADO - bloqueia
-  res.send('ok');
-});
+export async function POST(req) {
+  await processPayment(body);  // ERRADO - bloqueia
+  return NextResponse.json({ ok: true });
+}
 ```
 
 ---
@@ -460,60 +566,102 @@ scripts/                   # ETL e manutenção
 
 ## Environment Variables
 
+### Bots (bets-estatistica)
+
 ```bash
 # Supabase
 SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
 
-# Telegram
+# Telegram (por bot - cada bot tem seu próprio)
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ADMIN_GROUP_ID=
 TELEGRAM_PUBLIC_GROUP_ID=
+
+# Multi-tenant (NOVO)
+GROUP_ID=  # UUID do grupo que este bot atende
 
 # APIs
 THE_ODDS_API_KEY=
 OPENAI_API_KEY=
 FOOTYSTATS_API_KEY=
 
-# Cakto Integration
-CAKTO_API_URL=https://api.cakto.com.br
-CAKTO_CLIENT_ID=
-CAKTO_CLIENT_SECRET=
-CAKTO_WEBHOOK_SECRET=
-CAKTO_WEBHOOK_PORT=3001
-CAKTO_PRODUCT_ID=
-
 # Config
 NODE_ENV=production
 TZ=America/Sao_Paulo
 ```
 
+### Admin Panel (admin-panel)
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_KEY=
+
+# Mercado Pago
+MERCADO_PAGO_ACCESS_TOKEN=
+MERCADO_PAGO_WEBHOOK_SECRET=
+
+# Render API (para deploy de bots)
+RENDER_API_KEY=
+RENDER_BLUEPRINT_ID=
+
+# Config
+NODE_ENV=production
+```
+
 ---
 
-## New Membership Files
+## Multi-tenant File Structure
+
+### Bots (bets-estatistica) - Adaptações
 
 ```
 bot/
-├── webhook-server.js           # Express server :3001 (Cakto)
-├── handlers/
-│   └── caktoWebhook.js         # Valida HMAC, salva evento
 ├── jobs/
+│   ├── postBets.js             # [ADAPTAR] Filtrar por GROUP_ID
+│   ├── healthCheck.js          # [ADAPTAR] Pingar bot_health
 │   └── membership/
-│       ├── index.js            # Registra jobs
-│       ├── trial-reminders.js  # 09:00 BRT
-│       ├── kick-expired.js     # 00:01 BRT
-│       ├── renewal-reminders.js # 10:00 BRT
-│       ├── process-webhooks.js # */30s
-│       └── reconciliation.js   # 03:00 BRT
+│       ├── trial-reminders.js  # [ADAPTAR] Por grupo
+│       └── kick-expired.js     # [ADAPTAR] Por grupo
 └── services/
-    ├── memberService.js        # CRUD + state machine
-    └── caktoService.js         # OAuth + API
+    └── memberService.js        # [ADAPTAR] Filtrar por GROUP_ID
 
 lib/
-└── lock.js                     # Distributed lock via Supabase
+└── config.js                   # [ADAPTAR] Carregar GROUP_ID do env
 
 sql/migrations/
-└── 005_membership_tables.sql   # members, member_notifications, webhook_events
+└── 010_multitenant.sql         # Novas tabelas: groups, admin_users, bot_pool, bot_health
+```
+
+### Admin Panel (admin-panel) - Novo
+
+```
+admin-panel/
+├── src/
+│   ├── app/
+│   │   ├── (public)/login/     # Login Supabase Auth
+│   │   ├── (auth)/             # Rotas protegidas
+│   │   │   ├── dashboard/
+│   │   │   ├── groups/         # Super Admin only
+│   │   │   ├── members/
+│   │   │   ├── bets/
+│   │   │   └── bots/
+│   │   └── api/
+│   │       ├── groups/
+│   │       ├── members/
+│   │       ├── bets/
+│   │       ├── bots/
+│   │       └── webhooks/mercadopago/
+│   ├── components/
+│   ├── lib/
+│   │   ├── supabase.ts
+│   │   ├── mercadopago.ts
+│   │   └── render.ts
+│   └── middleware/
+│       └── tenant.ts           # withTenant() OBRIGATÓRIO
+└── middleware.ts               # Auth redirect
 ```
 
 ---
@@ -521,30 +669,45 @@ sql/migrations/
 ## Monitoramento & Infraestrutura
 
 ### Hosting
-- **Bot:** Render.com (`bets-bot-giga.onrender.com`)
+- **Bots:** Render.com (1 serviço por bot/influencer)
+- **Admin Panel:** Vercel
 - **Database:** Supabase (PostgreSQL)
 - **Pipeline:** GitHub Actions (daily-pipeline.yml, 06:00 BRT)
 
-### UptimeRobot (Externo)
-- **URL:** `bets-bot-giga.onrender.com`
-- **Intervalo:** 5 minutos
-- **Função:** Detecta se bot caiu (heartbeat externo)
-- **Dashboard:** https://dashboard.uptimerobot.com/monitors
+### Health Check Multi-tenant
 
-### Health Check (Interno)
-- **Arquivo:** `bot/jobs/healthCheck.js`
-- **Intervalo:** 5 minutos (cron)
-- **Função:** Verifica conexão com DB, alerta no Telegram se falhar
-- **NÃO faz:** Verificar stuck bets, posting schedule (redundante com `/status` e `jobFailureAlert`)
+```javascript
+// Cada bot pinga sua entrada em bot_health a cada 60s
+async function heartbeat() {
+  await supabase
+    .from('bot_health')
+    .upsert({
+      group_id: process.env.GROUP_ID,
+      last_heartbeat: new Date().toISOString(),
+      status: 'online',
+      restart_requested: false
+    });
+}
+
+// Admin panel verifica: se last_heartbeat > 2 min → OFFLINE
+```
+
+### Restart Remoto
+
+```javascript
+// Admin marca restart_requested = true
+// Bot verifica no health check e faz process.exit(1)
+// Render reinicia automaticamente
+```
 
 ### Alertas Automáticos
 | Evento | Quem alerta | Canal |
 |--------|-------------|-------|
-| Bot offline | UptimeRobot | Email/Telegram |
+| Bot offline | Admin Panel (bot_health) | Telegram Super Admin |
 | DB offline | healthCheck | Telegram Admin |
 | Job falhou | jobFailureAlert | Telegram Admin |
 | Pipeline falhou | GitHub Actions | Telegram Admin |
 
 ---
 
-_Última atualização: 2026-01-20_
+_Última atualização: 2026-02-05_

@@ -1,8 +1,8 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
 status: archived
-archivedAt: "2026-01-22"
-description: "Epics 1-14 e 16 completados e arquivados"
+archivedAt: "2026-02-05"
+description: "Epics 1-14, 16, 17 completados e arquivados"
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-addendum-v2.md
@@ -11,10 +11,10 @@ inputDocuments:
   - _bmad-output/planning-artifacts/architecture.md
   - _bmad-output/project-context.md
   - docs/data-models.md
-epicCount: 15
+epicCount: 16
 ---
 
-# bets-estatistica - Epics Completados (1-14, 16)
+# bets-estatistica - Epics Completados (1-14, 16, 17)
 
 ## Overview
 
@@ -2391,3 +2391,104 @@ So that voltem ao grupo sem intervençao manual.
 8. Story 16.8 (Reconciliaçao Cakto) -> Resiliencia
 9. Story 16.9 (Portao de Entrada) -> Segurança
 10. Story 16.10 (Reativaçao Pós-Pagamento) -> UX
+
+---
+
+# ADDENDUM v6 - Refatoracao e Debito Tecnico (2026-01-18)
+
+## Origem
+
+Este epic foi criado a partir da **Retrospectiva do Epic 16** (2026-01-18), que identificou os seguintes problemas:
+
+1. **adminGroup.js com 2000+ linhas** - Arquivo monolítico difícil de manter e testar
+2. **Falta de testes de integraçao** - Apenas testes unitários existem
+3. **Funçoes duplicadas** (sleep, formatters) - Código repetido entre módulos
+4. **Validaçao de input inconsistente** - Issues C1/H1 encontrados em code review
+
+## Requirements Inventory - Addendum v6
+
+### Novos Non-Functional Requirements (Refatoraçao)
+
+- NFR-R1: Nenhum arquivo de handler deve exceder 500 linhas
+- NFR-R2: Cobertura de testes de integraçao para fluxos críticos (webhook -> kick)
+- NFR-R3: Utilitários compartilhados devem estar em lib/utils.js
+- NFR-R4: Toda funçao que recebe ID externo deve validar antes de usar
+
+### Technical Debt Items (da Retrospectiva)
+
+| ID | Severidade | Item | Origem |
+|----|------------|------|--------|
+| T4 | Alta | Refatorar adminGroup.js em módulos | Retro Epic 16 |
+| T1 | Alta | Adicionar testes de integraçao | Retro Epic 16 |
+| T2 | Media | Documentar env vars em .env.example | Retro Epic 16 |
+| A2 | Media | Padrao de validaçao de input | Retro Epic 16 |
+
+---
+
+## Epic 17: Refatoracao e Debito Tecnico (ARQUIVADO 2026-02-05)
+
+Reduzir debito tecnico identificado na retrospectiva do Epic 16, melhorando a manutentibilidade e testabilidade do código.
+
+**Valor para o Desenvolvedor:**
+- Arquivos menores e mais focados facilitam navegaçao
+- Testes de integraçao aumentam confiança em mudanças
+- Padroes consistentes reduzem bugs de validaçao
+- Código mais fácil de entender para novos contribuidores
+
+**Origem:** Retrospectiva Epic 16 (Action Items T1, T2, T4, A2)
+
+**Status Final:** COMPLETO (5/5 stories done)
+
+---
+
+### Story 17.1: Refatorar adminGroup.js em Módulos por Domínio ✅
+
+As a desenvolvedor,
+I want ter handlers de admin separados por domínio,
+So that seja mais fácil manter e testar cada funcionalidade.
+
+**Status:** DONE
+
+### Story 17.2: Adicionar Testes de Integraçao para Fluxo de Membership ✅
+
+As a desenvolvedor,
+I want ter testes de integraçao para o fluxo webhook -> processamento -> kick,
+So that tenha confiança que o sistema funciona end-to-end.
+
+**Status:** DONE
+
+### Story 17.3: Documentar Environment Variables ✅
+
+As a desenvolvedor,
+I want ter um .env.example atualizado e documentado,
+So that saiba todas as variáveis necessárias para rodar o projeto.
+
+**Status:** DONE
+
+### Story 17.4: Implementar Validaçao Padronizada de Input ✅
+
+As a desenvolvedor,
+I want ter um padrão de validaçao de input para IDs externos,
+So that evite bugs de validaçao como o C1 encontrado no code review.
+
+**Status:** DONE
+
+### Story 17.5: Consolidar Utilitários Compartilhados ✅
+
+As a desenvolvedor,
+I want ter utilitários comuns em um único lugar,
+So that nao tenha código duplicado entre módulos.
+
+**Status:** DONE
+
+---
+
+## Ordem de Implementaçao - Epic 17
+
+1. Story 17.3 (Documentar env vars) -> Quick win, independente ✅
+2. Story 17.5 (Consolidar utilitários) -> Base para refatoraçao ✅
+3. Story 17.4 (Validaçao de input) -> Padrão para novos módulos ✅
+4. Story 17.1 (Refatorar adminGroup.js) -> Principal débito técnico ✅
+5. Story 17.2 (Testes de integraçao) -> Validaçao final ✅
+
+**Arquivado em:** 2026-02-05
