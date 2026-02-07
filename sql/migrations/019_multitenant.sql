@@ -5,6 +5,8 @@
 --          This is a backward-compatible migration: existing data continues to work
 --          because new group_id columns are nullable.
 
+BEGIN;
+
 -- =====================================================
 -- 1. NEW TABLE: groups (tenants)
 -- =====================================================
@@ -12,7 +14,7 @@ CREATE TABLE IF NOT EXISTS groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR NOT NULL,
   bot_token VARCHAR,
-  telegram_group_id BIGINT,
+  telegram_group_id BIGINT UNIQUE,
   telegram_admin_group_id BIGINT,
   mp_product_id VARCHAR,
   render_service_id VARCHAR,
@@ -26,7 +28,7 @@ CREATE TABLE IF NOT EXISTS groups (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS admin_users (
   id UUID PRIMARY KEY,  -- matches Supabase Auth user id
-  email VARCHAR NOT NULL,
+  email VARCHAR NOT NULL UNIQUE,
   role VARCHAR NOT NULL CHECK (role IN ('super_admin', 'group_admin')),
   group_id UUID REFERENCES groups(id),
   created_at TIMESTAMPTZ DEFAULT now()
@@ -37,8 +39,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
 -- =====================================================
 CREATE TABLE IF NOT EXISTS bot_pool (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  bot_token VARCHAR NOT NULL,
-  bot_username VARCHAR NOT NULL,
+  bot_token VARCHAR NOT NULL UNIQUE,
+  bot_username VARCHAR NOT NULL UNIQUE,
   status VARCHAR DEFAULT 'available' CHECK (status IN ('available', 'in_use')),
   group_id UUID REFERENCES groups(id),
   created_at TIMESTAMPTZ DEFAULT now()
@@ -75,6 +77,8 @@ ALTER TABLE suggested_bets ADD COLUMN IF NOT EXISTS distributed_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_members_group_id ON members(group_id);
 CREATE INDEX IF NOT EXISTS idx_suggested_bets_group_id ON suggested_bets(group_id);
 CREATE INDEX IF NOT EXISTS idx_groups_status ON groups(status);
+CREATE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(email);
+CREATE INDEX IF NOT EXISTS idx_admin_users_group_id ON admin_users(group_id);
 
 -- ============================================
 -- 7. ROW LEVEL SECURITY (RLS) POLICIES
@@ -186,6 +190,9 @@ CREATE POLICY "members_super_admin_all" ON members
 CREATE POLICY "members_group_admin_all" ON members
   FOR ALL USING (
     group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
+  )
+  WITH CHECK (
+    group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
   );
 
 
@@ -202,6 +209,9 @@ CREATE POLICY "suggested_bets_super_admin_all" ON suggested_bets
 
 CREATE POLICY "suggested_bets_group_admin_all" ON suggested_bets
   FOR ALL USING (
+    group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
+  )
+  WITH CHECK (
     group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
   );
 
@@ -225,6 +235,12 @@ CREATE POLICY "member_notifications_group_admin_all" ON member_notifications
       SELECT id FROM members
       WHERE group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
     )
+  )
+  WITH CHECK (
+    member_id IN (
+      SELECT id FROM members
+      WHERE group_id = (SELECT group_id FROM admin_users WHERE id = auth.uid())
+    )
   );
 
 
@@ -238,3 +254,5 @@ CREATE POLICY "webhook_events_super_admin_all" ON webhook_events
   FOR ALL USING (
     (SELECT role FROM admin_users WHERE id = auth.uid()) = 'super_admin'
   );
+
+COMMIT;

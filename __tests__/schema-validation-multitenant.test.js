@@ -18,7 +18,36 @@ async function isMigration019Applied() {
   return !error || !error.message.match(/Could not find.*in the schema cache/i);
 }
 
+// Helper: skip test with clear message when migration not applied
+function skipIfNotApplied(migrationApplied) {
+  if (!migrationApplied) {
+    console.log('  ⏭ Skipped: migration 019 not yet applied');
+    return true;
+  }
+  return false;
+}
+
+// Track integration test skip status for final summary
+let integrationTestsSkipped = false;
+
 describe('Multi-tenant Schema Validation (Migration 019)', () => {
+
+  afterAll(() => {
+    if (integrationTestsSkipped) {
+      const msg = [
+        '',
+        '='.repeat(60),
+        'WARNING: Migration 019 NOT applied to database',
+        '  Integration tests were SKIPPED (not verified)',
+        '  Only static SQL validation was executed.',
+        '  Apply migration to run full validation:',
+        '    psql -f sql/migrations/019_multitenant.sql',
+        '='.repeat(60),
+        ''
+      ].join('\n');
+      console.warn(msg);
+    }
+  });
 
   // ============================================
   // NEW TABLES EXIST
@@ -27,13 +56,13 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
   describe('New Tables Exist', () => {
     let migrationApplied;
-    beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
+    beforeAll(async () => {
+      migrationApplied = await isMigration019Applied();
+      if (!migrationApplied) integrationTestsSkipped = true;
+    });
 
     test.each(NEW_TABLES)('table "%s" should exist', async (tableName) => {
-      if (!migrationApplied) {
-        console.log(`Skipping - migration 019 not yet applied to database`);
-        return;
-      }
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from(tableName)
         .select('*')
@@ -60,7 +89,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have all required columns', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('groups')
         .select('id, name, bot_token, telegram_group_id, telegram_admin_group_id, mp_product_id, render_service_id, checkout_url, status, created_at')
@@ -70,7 +99,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('should reject invalid status values', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { error } = await supabase
         .from('groups')
         .insert({ name: '__test_invalid_status__', status: 'banana' });
@@ -85,7 +114,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     test.each(['creating', 'active', 'paused', 'inactive', 'failed'])(
       'should accept valid status "%s"',
       async (status) => {
-        if (!migrationApplied) return;
+        if (skipIfNotApplied(migrationApplied)) return;
         const { data, error } = await supabase
           .from('groups')
           .insert({ name: `__test_status_${status}__`, status })
@@ -111,7 +140,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have all required columns', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('admin_users')
         .select('id, email, role, group_id, created_at')
@@ -121,7 +150,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('should reject invalid role values', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const testId = '00000000-0000-0000-0000-000000000099';
       const { error } = await supabase
         .from('admin_users')
@@ -137,7 +166,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     test.each(['super_admin', 'group_admin'])(
       'should accept valid role "%s"',
       async (role) => {
-        if (!migrationApplied) return;
+        if (skipIfNotApplied(migrationApplied)) return;
         const testId = role === 'super_admin'
           ? '00000000-0000-0000-0000-000000000097'
           : '00000000-0000-0000-0000-000000000098';
@@ -166,7 +195,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have all required columns', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('bot_pool')
         .select('id, bot_token, bot_username, status, group_id, created_at')
@@ -176,7 +205,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('should reject invalid status values', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { error } = await supabase
         .from('bot_pool')
         .insert({ bot_token: '__test__', bot_username: '__test__', status: 'broken' });
@@ -191,7 +220,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     test.each(['available', 'in_use'])(
       'should accept valid status "%s"',
       async (status) => {
-        if (!migrationApplied) return;
+        if (skipIfNotApplied(migrationApplied)) return;
         const { data, error } = await supabase
           .from('bot_pool')
           .insert({ bot_token: `__test_${status}__`, bot_username: `__test_${status}__`, status })
@@ -217,7 +246,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have all required columns', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('bot_health')
         .select('group_id, last_heartbeat, status, restart_requested, error_message, updated_at')
@@ -235,7 +264,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have group_id column', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('members')
         .select('id, group_id')
@@ -245,7 +274,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('existing members should have group_id = NULL (backward compat)', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('members')
         .select('id, group_id')
@@ -261,7 +290,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('should have group_id column', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('suggested_bets')
         .select('id, group_id')
@@ -271,7 +300,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('should have distributed_at column', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('suggested_bets')
         .select('id, distributed_at')
@@ -281,7 +310,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('existing bets should have group_id = NULL (backward compat)', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const { data, error } = await supabase
         .from('suggested_bets')
         .select('id, group_id')
@@ -300,7 +329,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     beforeAll(async () => { migrationApplied = await isMigration019Applied(); });
 
     test('admin_users.group_id should reference groups.id', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const fakeGroupId = '00000000-0000-0000-0000-ffffffffffff';
       const testId = '00000000-0000-0000-0000-000000000096';
       const { error } = await supabase
@@ -315,7 +344,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
     });
 
     test('bot_pool.group_id should reference groups.id', async () => {
-      if (!migrationApplied) return;
+      if (skipIfNotApplied(migrationApplied)) return;
       const fakeGroupId = '00000000-0000-0000-0000-ffffffffffff';
       const { error } = await supabase
         .from('bot_pool')
@@ -422,6 +451,35 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should create index for groups status', () => {
       expect(migrationSql).toMatch(/CREATE\s+INDEX.*idx_groups_status.*ON\s+groups/i);
+    });
+
+    test('should create indexes for admin_users (email and group_id)', () => {
+      expect(migrationSql).toMatch(/CREATE\s+INDEX.*idx_admin_users_email.*ON\s+admin_users/i);
+      expect(migrationSql).toMatch(/CREATE\s+INDEX.*idx_admin_users_group_id.*ON\s+admin_users/i);
+    });
+
+    test('should wrap migration in BEGIN/COMMIT transaction', () => {
+      expect(migrationSql).toMatch(/^\s*BEGIN\s*;/im);
+      expect(migrationSql).toMatch(/COMMIT\s*;\s*$/im);
+    });
+
+    test('should have UNIQUE constraint on groups.telegram_group_id', () => {
+      expect(migrationSql).toMatch(/telegram_group_id\s+BIGINT\s+UNIQUE/i);
+    });
+
+    test('should have UNIQUE constraint on admin_users.email', () => {
+      expect(migrationSql).toMatch(/email\s+VARCHAR\s+NOT\s+NULL\s+UNIQUE/i);
+    });
+
+    test('should have UNIQUE constraints on bot_pool (bot_token and bot_username)', () => {
+      expect(migrationSql).toMatch(/bot_token\s+VARCHAR\s+NOT\s+NULL\s+UNIQUE/i);
+      expect(migrationSql).toMatch(/bot_username\s+VARCHAR\s+NOT\s+NULL\s+UNIQUE/i);
+    });
+
+    test('should have WITH CHECK on group_admin write policies', () => {
+      // members_group_admin_all, suggested_bets_group_admin_all, member_notifications_group_admin_all
+      const withCheckCount = (migrationSql.match(/WITH\s+CHECK\s*\(/gi) || []).length;
+      expect(withCheckCount).toBeGreaterThanOrEqual(3);
     });
   });
 });

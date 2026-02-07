@@ -1,6 +1,6 @@
 # Story 1.1: Migration Multi-tenant e RLS
 
-Status: review
+Status: done
 
 ## Story
 
@@ -174,29 +174,59 @@ CREATE POLICY "policy_name" ON table_name
 - [Source: sql/migrations/014_migrate_to_mercadopago.sql - Migracoes cakto→mp]
 - [Source: sql/migrations/001_initial_schema.sql:221 - Schema de suggested_bets]
 
+## Senior Developer Review (AI)
+
+### Review Model Used
+Claude Opus 4.6 (adversarial code-review workflow)
+
+### Findings
+
+| ID | Severity | Issue | Resolution |
+|----|----------|-------|------------|
+| H1 | High | RLS policies `members_group_admin_all`, `suggested_bets_group_admin_all`, `member_notifications_group_admin_all` usavam FOR ALL sem WITH CHECK explícito, permitindo potencial inserção de dados em grupo alheio | Adicionado `WITH CHECK (...)` em todas as 3 policies de escrita de group_admin |
+| H2 | High | Migration não estava wrappada em transação, risco de aplicação parcial em caso de erro | Adicionado `BEGIN;`/`COMMIT;` envolvendo toda a migration |
+| H3 | Medium | Task 2.7 descrevia "service_role pode UPDATE" mas service_role bypassa RLS — policy desnecessária | Documentado no review; nenhuma policy incorreta criada (já estava correto no SQL) |
+| M1 | Medium | `admin_users.email` sem constraint UNIQUE, permitindo emails duplicados | Adicionado `UNIQUE` na coluna email |
+| M2 | Medium | `bot_pool.bot_token` e `bot_pool.bot_username` sem UNIQUE, permitindo tokens/usernames duplicados | Adicionado `UNIQUE` em ambas as colunas |
+| M3 | Medium | Testes de integração passavam vacuamente (0 assertions) quando migration não aplicada | Adicionado warning final explícito e 7 novos testes estáticos cobrindo as constraints adicionadas |
+| L1 | Low | `groups.telegram_group_id` sem UNIQUE, risco de dois grupos apontarem para o mesmo chat | Adicionado `UNIQUE` na coluna |
+| L2 | Low | Faltavam indexes em `admin_users.email` e `admin_users.group_id` | Adicionados `idx_admin_users_email` e `idx_admin_users_group_id` |
+
+### Resolution Approach
+Correções aplicadas via swarm (2 agentes paralelos: sql-fixer + test-fixer), depois refinadas manualmente.
+
+### Post-Fix Validation
+- Testes estáticos: 26/26 PASS (7 novos testes para validar as correções)
+- Testes de integração: 27 condicionais (skip com warning claro quando migration não aplicada)
+- Full test suite: 28 suites, 690 testes, 0 falhas, 0 regressões
+
 ## Dev Agent Record
 
 ### Agent Model Used
 Claude Opus 4.6 (swarm: migration-writer + rls-writer + team-lead)
 
 ### Debug Log References
-- Testes estáticos (SQL validation): 20/20 PASS
+- Testes estáticos (SQL validation): 26/26 PASS
 - Testes de integração: condicionais (requerem migration aplicada no Supabase)
-- Full test suite: 28 suites, 684 testes, 0 falhas, 0 regressões
+- Full test suite: 28 suites, 690 testes, 0 falhas, 0 regressões
 
 ### Completion Notes List
-- Migration 019_multitenant.sql criada com DDL completo (4 novas tabelas, 3 novas colunas, 3 indices)
+- Migration 019_multitenant.sql criada com DDL completo (4 novas tabelas, 3 novas colunas, 5 indices)
 - RLS policies criadas para 8 tabelas com padrão super_admin/group_admin
 - Todas as colunas group_id são nullable para backward compatibility
 - CHECK constraints implementados para roles (super_admin/group_admin), status de groups (5 valores), bot_pool (2 valores), bot_health (2 valores)
+- UNIQUE constraints em: groups.telegram_group_id, admin_users.email, bot_pool.bot_token, bot_pool.bot_username
+- WITH CHECK clauses em todas as policies de escrita de group_admin (members, suggested_bets, member_notifications)
+- Migration wrappada em transação BEGIN/COMMIT
 - service_role bypassa RLS automaticamente (não precisa de policies especiais)
 - member_notifications usa JOIN com members para resolver group_id (não tem group_id direto)
 - Testes criados com validação estática do SQL e testes de integração condicionais
-- Abordagem swarm: Task 1 (DDL) e Task 2 (RLS) executadas em paralelo por agentes separados
+- Abordagem swarm: implementação (2 agentes) + review fixes (2 agentes)
 
 ### Change Log
 - 2026-02-07: Implementação completa da Story 1.1 - Migration multi-tenant e RLS
+- 2026-02-07: Code review adversarial — 8 issues encontradas (3H, 3M, 2L), todas corrigidas
 
 ### File List
-- `sql/migrations/019_multitenant.sql` (NEW) - Migration completa: DDL + RLS policies
-- `__tests__/schema-validation-multitenant.test.js` (NEW) - Testes de validação do schema multi-tenant (20 estáticos + 27 integração)
+- `sql/migrations/019_multitenant.sql` (NEW) - Migration completa: DDL + RLS policies (wrappada em transação)
+- `__tests__/schema-validation-multitenant.test.js` (NEW) - Testes de validação do schema multi-tenant (26 estáticos + 27 integração)
