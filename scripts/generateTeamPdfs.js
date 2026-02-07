@@ -18,7 +18,7 @@ const { resolveReportPaths, ensureDirectory, REPORTS_HTML_DIR, REPORTS_PDF_DIR }
 const TARGET_TEAMS = {
   'Flamengo':     '%Flamengo%',
   'Vasco':        '%Vasco%',
-  'Botafogo':     '%Botafogo%',
+  'Botafogo':     '%Botafogo',
   'Fluminense':   '%Fluminense%',
   'Athletico PR': '%Atl%tico PR%',
   'Coritiba':     '%Coritiba%',

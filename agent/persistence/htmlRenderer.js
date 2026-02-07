@@ -162,8 +162,8 @@ const renderHtmlReport = (payload) => {
     <title>${escapeHtml(title)} – ${escapeHtml(competition)}</title>
     <style>
       @page {
-        size: auto;
-        margin: 0;
+        size: A4;
+        margin: 10mm;
       }
       :root {
         font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -182,9 +182,12 @@ const renderHtmlReport = (payload) => {
         margin: 0 auto;
         background: #ffffff;
         padding: 36px 42px 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 28px;
+      }
+      .report > * {
+        margin-bottom: 28px;
+      }
+      .report > *:last-child {
+        margin-bottom: 0;
       }
       header h1 {
         font-size: 2.4rem;
@@ -231,18 +234,20 @@ const renderHtmlReport = (payload) => {
         list-style: none;
         padding: 0;
         margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
       }
       .bet-item {
         display: flex;
         gap: 16px;
         padding: 16px;
+        margin-bottom: 12px;
         border: 1px solid #e2e8f0;
         border-radius: 12px;
         background: #fff;
         page-break-inside: avoid;
+        break-inside: avoid;
+      }
+      .bet-item:last-child {
+        margin-bottom: 0;
       }
       .bet-index {
         width: 40px;
@@ -269,14 +274,17 @@ const renderHtmlReport = (payload) => {
         color: #94a3b8;
         font-style: italic;
       }
-      .analysis, .bets, .context {
-        page-break-inside: auto;
-      }
-      .analysis p, .bet-item, .info-grid {
+      .analysis p, .info-grid {
         page-break-inside: avoid;
+        break-inside: avoid;
       }
       h2 {
         page-break-after: avoid;
+        break-after: avoid;
+      }
+      .bets {
+        page-break-before: auto;
+        break-before: auto;
       }
       @media print {
         * {
