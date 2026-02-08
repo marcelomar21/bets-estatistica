@@ -70,7 +70,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test.each(NEW_TABLES)('table "%s" should exist', async (tableName) => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from(tableName)
         .select('*')
         .limit(1);
@@ -97,7 +97,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have all required columns', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('groups')
         .select('id, name, bot_token, telegram_group_id, telegram_admin_group_id, mp_product_id, render_service_id, checkout_url, status, created_at')
         .limit(1);
@@ -148,7 +148,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have all required columns', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('admin_users')
         .select('id, email, role, group_id, created_at')
         .limit(1);
@@ -203,7 +203,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have all required columns', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('bot_pool')
         .select('id, bot_token, bot_username, status, group_id, created_at')
         .limit(1);
@@ -254,7 +254,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have all required columns', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('bot_health')
         .select('group_id, last_heartbeat, status, restart_requested, error_message, updated_at')
         .limit(1);
@@ -272,7 +272,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have group_id column', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('members')
         .select('id, group_id')
         .limit(1);
@@ -282,7 +282,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('existing members should have group_id = NULL (backward compat)', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('members')
         .select('id, group_id')
         .is('group_id', null)
@@ -298,7 +298,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have group_id column', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('suggested_bets')
         .select('id, group_id')
         .limit(1);
@@ -308,7 +308,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('should have distributed_at column', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('suggested_bets')
         .select('id, distributed_at')
         .limit(1);
@@ -318,7 +318,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
 
     test('existing bets should have group_id = NULL (backward compat)', async () => {
       if (skipIfNotApplied(migrationApplied)) return;
-      const { data, error } = await supabase
+      const { data: _data, error } = await supabase
         .from('suggested_bets')
         .select('id, group_id')
         .is('group_id', null)
