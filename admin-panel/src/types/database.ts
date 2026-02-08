@@ -30,6 +30,10 @@ export interface BotPool {
   created_at: string;
 }
 
+export type BotPoolListItem = Omit<BotPool, 'bot_token'> & {
+  groups: { name: string } | null;
+};
+
 export interface BotHealth {
   group_id: string;
   last_heartbeat: string;
