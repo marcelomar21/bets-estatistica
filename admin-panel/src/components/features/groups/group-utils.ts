@@ -8,20 +8,4 @@ export const statusConfig: Record<Group['status'], { label: string; className: s
   failed: { label: 'Falhou', className: 'bg-red-100 text-red-800' },
 };
 
-export function formatDate(dateString: string) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(dateString));
-}
-
-export function formatDateTime(dateString: string) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(dateString));
-}
+export { formatDate, formatDateTime } from '@/lib/format-utils';

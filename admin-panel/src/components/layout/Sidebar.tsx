@@ -13,6 +13,7 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: '📊' },
   { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },
+  { name: 'Bots', href: '/bots', icon: '🤖', roles: ['super_admin'] },
 ];
 
 export interface SidebarProps {
