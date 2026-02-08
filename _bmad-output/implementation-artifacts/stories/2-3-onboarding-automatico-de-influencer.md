@@ -1,6 +1,6 @@
 # Story 2.3: Onboarding Automatico de Influencer
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -67,12 +67,9 @@ So that um novo influencer esteja operacional rapidamente.
     - Em caso de falha, registrar qual step falhou para permitir retry
     - Registrar audit log: `action = 'onboarding'`, com campos: `step`, `status`, `error`
 
-- [x] Task 2: Criar API Route POST `/api/groups/onboarding/retry` (AC: #7)
-  - [x] 2.1: Criar `admin-panel/src/app/api/groups/onboarding/retry/route.ts`
-    - Receber `group_id` e `step` para retomar de onde parou
-    - Validar que grupo existe e esta com `status = 'failed'`
-    - Re-executar o step falho e os subsequentes
-    - Seguir mesma logica de steps do Task 1
+- [x] ~~Task 2: Criar API Route POST `/api/groups/onboarding/retry`~~ (REMOVIDO — refatorado para step-by-step)
+  - Retry agora e nativo: frontend re-chama o step que falhou com o `group_id`
+  - `retry/route.ts` deletado na refatoracao step-by-step
 
 - [x] Task 3: Criar clients de integracao externa (AC: #2)
   - [x] 3.1: Criar `admin-panel/src/lib/mercadopago.ts`
@@ -127,13 +124,15 @@ So that um novo influencer esteja operacional rapidamente.
     - POST retorna erro correto quando Supabase Auth falha
     - POST marca grupo como 'failed' quando step falha
     - Endpoint protegido por `allowedRoles: ['super_admin']`
-  - [ ] 6.2: Testes para `OnboardingWizard`:
-    - Renderiza formulario com campos nome, email, bot selector
-    - Carrega lista de bots disponiveis
-    - Valida campos obrigatorios
-    - Mostra stepper de progresso durante onboarding
-    - Mostra tela de sucesso com credenciais
-    - Mostra erro e botao retry em caso de falha
+  - [x] 6.2: Testes para `OnboardingWizard` (8 test cases):
+    - Renderiza formulario com campos nome, email, bot selector, preco
+    - Mostra "Carregando bots..." enquanto bots carregam
+    - Mostra mensagem quando nao ha bots disponiveis
+    - Valida campos obrigatorios (nome, email, bot, preco)
+    - Stepper progride durante execucao sequencial dos steps
+    - Mostra tela de sucesso com credenciais (email, senha, bot, checkout_url)
+    - Mostra erro + botao retry; retry retoma do step falho
+    - Botao "Copiar Credenciais" copia texto correto para clipboard
   - [x] 6.3: Testes para clients de integracao:
     - `mercadopago.ts`: cria preference com dados corretos, trata erros
     - `render.ts`: cria servico com env vars corretas, trata erros
@@ -549,17 +548,49 @@ Claude Opus 4.6 (claude-opus-4-6)
 | `admin-panel/src/lib/__tests__/mercadopago.test.ts` | CREATED | 4 test cases for Mercado Pago client |
 | `admin-panel/src/lib/__tests__/render.test.ts` | CREATED | 5 test cases for Render client |
 
+#### Code Review Fixes (2026-02-08)
+
+| File | Action | Description |
+|------|--------|-------------|
+| `admin-panel/src/lib/fetch-utils.ts` | CREATED | Shared fetchWithRetry utility (extracted from mercadopago.ts and render.ts) |
+| `admin-panel/src/lib/mercadopago.ts` | MODIFIED | Added `price` parameter, uses shared fetchWithRetry, removed hardcoded unit_price |
+| `admin-panel/src/lib/render.ts` | MODIFIED | Removed unused RENDER_BLUEPRINT_ID validation, uses shared fetchWithRetry, added RENDER_REPO_URL validation |
+| `admin-panel/src/types/database.ts` | MODIFIED | Added `price` field to OnboardingRequest |
+| `admin-panel/src/app/api/groups/onboarding/route.ts` | MODIFIED | Added `price` to Zod schema, passes price to createCheckoutPreference |
+| `admin-panel/src/app/api/groups/onboarding/retry/route.ts` | MODIFIED | Added optional `price` to retry schema, validates price when recreating MP preference |
+| `admin-panel/src/components/features/groups/OnboardingWizard.tsx` | MODIFIED | Added price input field to form, passes price in onboarding and retry requests |
+| `admin-panel/src/app/api/__tests__/onboarding.test.ts` | MODIFIED | Fixed 10 TS cast errors (as unknown as TenantResult), added happy path test, added price validation test, added price passthrough test |
+| `admin-panel/src/lib/__tests__/mercadopago.test.ts` | MODIFIED | Updated for price parameter, verifies unit_price in body |
+| `admin-panel/src/lib/__tests__/render.test.ts` | MODIFIED | Replaced RENDER_BLUEPRINT_ID test with RENDER_REPO_URL test |
+
+#### Step-by-Step Refactor + Task 6.2 (2026-02-08)
+
+| File | Action | Description |
+|------|--------|-------------|
+| `admin-panel/src/types/database.ts` | MODIFIED | Replaced OnboardingRequest/OnboardingResult with StepRequest discriminated union type |
+| `admin-panel/src/app/api/groups/onboarding/route.ts` | REWRITTEN | Refactored from monolithic 6-step pipeline to step-by-step discriminated union handlers with idempotency |
+| `admin-panel/src/app/api/groups/onboarding/retry/route.ts` | DELETED | No longer needed — step-by-step design supports native retry |
+| `admin-panel/src/app/api/__tests__/onboarding.test.ts` | REWRITTEN | 21 tests adapted for step-by-step format with idempotency tests |
+| `admin-panel/src/components/features/groups/OnboardingWizard.tsx` | REWRITTEN | Sequential step calls via for loop, local accumulators, retry resumes from failed step |
+| `admin-panel/src/components/features/groups/OnboardingWizard.test.tsx` | CREATED | 8 test cases for OnboardingWizard UI (Task 6.2) |
+
+### Review Follow-ups (AI)
+
+- [ ] [AI-Review][MEDIUM] Stepper de progresso nao mostra atualizacao incremental em tempo real (AC #3 parcial). Requer mudanca arquitetural: implementar SSE ou ReadableStream para enviar progresso step-by-step do backend para a UI. [OnboardingWizard.tsx + onboarding/route.ts]
+- [x] [AI-Review][MEDIUM] Task 6.2 (testes OnboardingWizard) implementado — 8 testes de UI com @testing-library/react [OnboardingWizard.test.tsx]
+
 ### File List
 
 - `admin-panel/src/types/database.ts`
+- `admin-panel/src/lib/fetch-utils.ts`
 - `admin-panel/src/lib/telegram.ts`
 - `admin-panel/src/lib/mercadopago.ts`
 - `admin-panel/src/lib/render.ts`
 - `admin-panel/src/app/api/groups/onboarding/route.ts`
-- `admin-panel/src/app/api/groups/onboarding/retry/route.ts`
 - `admin-panel/src/components/features/groups/OnboardingWizard.tsx`
 - `admin-panel/src/app/(auth)/groups/new/page.tsx`
 - `admin-panel/src/app/api/__tests__/onboarding.test.ts`
+- `admin-panel/src/components/features/groups/OnboardingWizard.test.tsx`
 - `admin-panel/src/lib/__tests__/telegram.test.ts`
 - `admin-panel/src/lib/__tests__/mercadopago.test.ts`
 - `admin-panel/src/lib/__tests__/render.test.ts`

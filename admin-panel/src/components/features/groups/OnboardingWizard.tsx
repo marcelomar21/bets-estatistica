@@ -35,11 +35,21 @@ const STEPS: { key: OnboardingStep; label: string }[] = [
   { key: 'finalizing', label: 'Concluído' },
 ];
 
+async function callStep(stepPayload: Record<string, unknown>): Promise<{ success: boolean; data?: Record<string, unknown>; error?: OnboardingError }> {
+  const response = await fetch('/api/groups/onboarding', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(stepPayload),
+  });
+  return response.json();
+}
+
 export function OnboardingWizard() {
   const [wizardState, setWizardState] = useState<WizardState>('form');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [botId, setBotId] = useState('');
+  const [price, setPrice] = useState('');
   const [bots, setBots] = useState<Bot[]>([]);
   const [loadingBots, setLoadingBots] = useState(true);
   const [currentStep, setCurrentStep] = useState<OnboardingStep | null>(null);
@@ -47,6 +57,13 @@ export function OnboardingWizard() {
   const [error, setError] = useState<OnboardingError | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+
+  // Accumulated data from step responses
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [botUsername, setBotUsername] = useState<string>('');
+  const [checkoutUrl, setCheckoutUrl] = useState<string>('');
+  const [adminEmail, setAdminEmail] = useState<string>('');
+  const [tempPassword, setTempPassword] = useState<string>('');
 
   useEffect(() => {
     async function loadBots() {
@@ -76,8 +93,93 @@ export function OnboardingWizard() {
     if (!botId) {
       errors.bot_id = 'Selecione um bot';
     }
+    const parsedPrice = parseFloat(price);
+    if (!price || isNaN(parsedPrice) || parsedPrice < 1) {
+      errors.price = 'Preço deve ser pelo menos R$ 1,00';
+    }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
+  }
+
+  async function runSteps(startIndex: number, currentGroupId: string | null) {
+    const parsedPrice = parseFloat(price);
+    let gId = currentGroupId;
+    // Local accumulators (React state setters are async, can't read mid-loop)
+    let localBotUsername = botUsername;
+    let localCheckoutUrl = checkoutUrl;
+    let localAdminEmail = adminEmail;
+    let localTempPassword = tempPassword;
+
+    for (let i = startIndex; i < STEPS.length; i++) {
+      const stepKey = STEPS[i].key;
+      setCurrentStep(stepKey);
+
+      let payload: Record<string, unknown>;
+      switch (stepKey) {
+        case 'creating':
+          payload = { step: 'creating', name: name.trim(), email: email.trim(), bot_id: botId, price: parsedPrice };
+          break;
+        case 'validating_bot':
+          payload = { step: 'validating_bot', group_id: gId };
+          break;
+        case 'configuring_mp':
+          payload = { step: 'configuring_mp', group_id: gId, price: parsedPrice };
+          break;
+        case 'deploying_bot':
+          payload = { step: 'deploying_bot', group_id: gId };
+          break;
+        case 'creating_admin':
+          payload = { step: 'creating_admin', group_id: gId, email: email.trim() };
+          break;
+        case 'finalizing':
+          payload = { step: 'finalizing', group_id: gId };
+          break;
+      }
+
+      const res = await callStep(payload);
+
+      if (!res.success) {
+        setWizardState('error');
+        setError({ ...res.error!, group_id: gId || res.error?.group_id });
+        return;
+      }
+
+      // Accumulate data from step responses
+      if (stepKey === 'creating' && res.data) {
+        gId = res.data.group_id as string;
+        setGroupId(gId);
+        localBotUsername = res.data.bot_username as string;
+        setBotUsername(localBotUsername);
+      }
+      if (stepKey === 'validating_bot' && res.data) {
+        localBotUsername = res.data.bot_username as string;
+        setBotUsername(localBotUsername);
+      }
+      if (stepKey === 'configuring_mp' && res.data) {
+        localCheckoutUrl = res.data.checkout_url as string;
+        setCheckoutUrl(localCheckoutUrl);
+      }
+      if (stepKey === 'creating_admin' && res.data) {
+        localAdminEmail = res.data.admin_email as string;
+        setAdminEmail(localAdminEmail);
+        if (res.data.temp_password) {
+          localTempPassword = res.data.temp_password as string;
+          setTempPassword(localTempPassword);
+        }
+      }
+      if (stepKey === 'finalizing' && res.data) {
+        const group = res.data.group as OnboardingResult['group'];
+        setResult({
+          group,
+          checkout_url: localCheckoutUrl || group.checkout_url,
+          admin_email: localAdminEmail || email.trim(),
+          temp_password: localTempPassword,
+          bot_username: localBotUsername,
+        });
+        setWizardState('success');
+        return;
+      }
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -89,26 +191,7 @@ export function OnboardingWizard() {
     setError(null);
 
     try {
-      const response = await fetch('/api/groups/onboarding', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), bot_id: botId }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        setWizardState('error');
-        setError(data.error);
-        if (data.error?.step) {
-          setCurrentStep(data.error.step);
-        }
-        return;
-      }
-
-      setCurrentStep('finalizing');
-      setWizardState('success');
-      setResult(data.data);
+      await runSteps(0, null);
     } catch {
       setWizardState('error');
       setError({ code: 'NETWORK_ERROR', message: 'Erro de conexão. Tente novamente.' });
@@ -116,8 +199,15 @@ export function OnboardingWizard() {
   }
 
   async function handleRetry() {
-    if (!error?.step || !error?.group_id) {
+    if (!error?.step || !groupId) {
       // Reset to form for full retry
+      setWizardState('form');
+      setError(null);
+      return;
+    }
+
+    const failedStepIndex = STEPS.findIndex((s) => s.key === error.step);
+    if (failedStepIndex === -1) {
       setWizardState('form');
       setError(null);
       return;
@@ -128,26 +218,7 @@ export function OnboardingWizard() {
     setError(null);
 
     try {
-      const response = await fetch('/api/groups/onboarding/retry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ group_id: error.group_id, step: error.step }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        setWizardState('error');
-        setError(data.error);
-        if (data.error?.step) {
-          setCurrentStep(data.error.step);
-        }
-        return;
-      }
-
-      setCurrentStep('finalizing');
-      setWizardState('success');
-      setResult(data.data);
+      await runSteps(failedStepIndex, groupId);
     } catch {
       setWizardState('error');
       setError({ code: 'NETWORK_ERROR', message: 'Erro de conexão. Tente novamente.' });
@@ -239,6 +310,25 @@ export function OnboardingWizard() {
           )}
           {formErrors.bot_id && (
             <p className="mt-1 text-sm text-red-600">{formErrors.bot_id}</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-1">
+            Preço da Assinatura (R$)
+          </label>
+          <input
+            id="price"
+            type="number"
+            min="1"
+            step="0.01"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Ex: 29.90"
+          />
+          {formErrors.price && (
+            <p className="mt-1 text-sm text-red-600">{formErrors.price}</p>
           )}
         </div>
 

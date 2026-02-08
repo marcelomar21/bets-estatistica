@@ -8,7 +8,7 @@ describe('createBotService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.RENDER_API_KEY = 'test-key';
-    process.env.RENDER_BLUEPRINT_ID = 'bp-123';
+    process.env.RENDER_REPO_URL = 'https://github.com/user/bets-estatistica';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.co';
     process.env.SUPABASE_SERVICE_KEY = 'service-key';
   });
@@ -21,12 +21,12 @@ describe('createBotService', () => {
     expect(result).toEqual({ success: false, error: 'RENDER_API_KEY não configurado' });
   });
 
-  it('returns error when blueprint ID is not configured', async () => {
-    delete process.env.RENDER_BLUEPRINT_ID;
+  it('returns error when repo URL is not configured', async () => {
+    delete process.env.RENDER_REPO_URL;
 
     const result = await createBotService('group-1', 'bot-token', 'Test');
 
-    expect(result).toEqual({ success: false, error: 'RENDER_BLUEPRINT_ID não configurado' });
+    expect(result).toEqual({ success: false, error: 'RENDER_REPO_URL não configurado' });
   });
 
   it('creates service with correct data', async () => {
@@ -54,6 +54,7 @@ describe('createBotService', () => {
     );
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.repo).toBe('https://github.com/user/bets-estatistica');
     expect(body.envVars).toEqual(
       expect.arrayContaining([
         { key: 'GROUP_ID', value: 'group-uuid' },
@@ -71,7 +72,6 @@ describe('createBotService', () => {
 
     const result = await createBotService('group-1', 'token', 'Test');
 
-    // With retry, it should try 3 times
     expect(result).toEqual({ success: false, error: 'Internal error' });
   });
 

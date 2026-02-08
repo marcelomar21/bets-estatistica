@@ -1,3 +1,5 @@
+import { fetchWithRetry } from './fetch-utils';
+
 interface MercadoPagoSuccess {
   success: true;
   data: { id: string; checkout_url: string };
@@ -10,28 +12,10 @@ interface MercadoPagoError {
 
 type MercadoPagoResult = MercadoPagoSuccess | MercadoPagoError;
 
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  retries = 3,
-  delay = 1000,
-): Promise<Response> {
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      if (response.ok || response.status < 500) return response;
-      if (attempt === retries) return response;
-    } catch (err) {
-      if (attempt === retries) throw err;
-    }
-    await new Promise((resolve) => setTimeout(resolve, delay * attempt));
-  }
-  throw new Error('Max retries reached');
-}
-
 export async function createCheckoutPreference(
   groupName: string,
   groupId: string,
+  price: number,
 ): Promise<MercadoPagoResult> {
   const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
   if (!accessToken) {
@@ -53,7 +37,7 @@ export async function createCheckoutPreference(
               title: `Assinatura ${groupName}`,
               quantity: 1,
               currency_id: 'BRL',
-              unit_price: 1,
+              unit_price: price,
             },
           ],
           external_reference: groupId,

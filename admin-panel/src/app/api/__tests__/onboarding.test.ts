@@ -86,7 +86,10 @@ function createRequest(body: unknown) {
   });
 }
 
-describe('POST /api/groups/onboarding', () => {
+const VALID_BOT_ID = 'a0000000-0000-4000-a000-000000000001';
+const VALID_GROUP_ID = 'b0000000-0000-4000-b000-000000000001';
+
+describe('POST /api/groups/onboarding (step-by-step)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default: admin email check returns no existing admin
@@ -99,7 +102,7 @@ describe('POST /api/groups/onboarding', () => {
 
   it('rejects invalid JSON body', async () => {
     const mockCtx = createMockContext();
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
     const req = new NextRequest('http://localhost/api/groups/onboarding', {
       method: 'POST',
@@ -114,11 +117,11 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('rejects body with missing fields', async () => {
+  it('rejects body without step field', async () => {
     const mockCtx = createMockContext();
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    const req = createRequest({ name: 'A' }); // name too short, missing email and bot_id
+    const req = createRequest({ name: 'Test' });
     const res = await POST(req);
     const json = await res.json();
 
@@ -127,11 +130,11 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('rejects body with invalid email', async () => {
+  it('rejects creating step with missing fields', async () => {
     const mockCtx = createMockContext();
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    const req = createRequest({ name: 'Test Group', email: 'invalid', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating', name: 'A' }); // name too short, missing email, bot_id, price
     const res = await POST(req);
     const json = await res.json();
 
@@ -140,15 +143,39 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('rejects when bot is not found', async () => {
+  it('rejects creating step with invalid email', async () => {
+    const mockCtx = createMockContext();
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'invalid', bot_id: VALID_BOT_ID, price: 29.9 });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects creating step with invalid price', async () => {
+    const mockCtx = createMockContext();
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 0 });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('rejects when bot is not found (creating step)', async () => {
     const mockCtx = createMockContext({
       bot_pool: {
         single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 29.9 });
     const res = await POST(req);
     const json = await res.json();
 
@@ -156,7 +183,7 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.message).toBe('Bot não encontrado');
   });
 
-  it('rejects when bot is not available', async () => {
+  it('rejects when bot is not available (creating step)', async () => {
     const mockCtx = createMockContext({
       bot_pool: {
         single: vi.fn().mockResolvedValue({
@@ -165,9 +192,9 @@ describe('POST /api/groups/onboarding', () => {
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 29.9 });
     const res = await POST(req);
     const json = await res.json();
 
@@ -175,7 +202,7 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.message).toBe('Bot não está disponível');
   });
 
-  it('rejects when email is already in use', async () => {
+  it('rejects when email is already in use (creating step)', async () => {
     const mockCtx = createMockContext({
       bot_pool: {
         single: vi.fn().mockResolvedValue({
@@ -184,7 +211,7 @@ describe('POST /api/groups/onboarding', () => {
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
     // Admin check returns existing user
     mockAdminFrom.mockReturnValue(
@@ -193,7 +220,7 @@ describe('POST /api/groups/onboarding', () => {
       }),
     );
 
-    const req = createRequest({ name: 'Test Group', email: 'existing@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 29.9 });
     const res = await POST(req);
     const json = await res.json();
 
@@ -201,7 +228,7 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.message).toBe('Email já está em uso');
   });
 
-  it('returns error when Telegram API fails', async () => {
+  it('creating step returns group_id and bot_username', async () => {
     const mockCtx = createMockContext({
       bot_pool: {
         single: vi.fn().mockResolvedValue({
@@ -216,41 +243,77 @@ describe('POST /api/groups/onboarding', () => {
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    const req = createRequest({ step: 'creating', name: 'Test Group', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 29.9 });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.group_id).toBe('group-1');
+    expect(json.data.bot_username).toBe('mybot');
+  });
+
+  it('returns error when Telegram API fails (validating_bot step)', async () => {
+    const mockCtx = createMockContext({
+      bot_pool: {
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'bot-1', bot_token: 'token', bot_username: 'mybot' },
+          error: null,
+        }),
+      },
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
     vi.mocked(validateBotToken).mockResolvedValue({ success: false, error: 'Unauthorized' });
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'validating_bot', group_id: VALID_GROUP_ID });
     const res = await POST(req);
     const json = await res.json();
 
     expect(res.status).toBe(500);
     expect(json.error.code).toBe('ONBOARDING_FAILED');
     expect(json.error.step).toBe('validating_bot');
-    expect(json.error.group_id).toBe('group-1');
+    expect(json.error.group_id).toBe(VALID_GROUP_ID);
   });
 
-  it('returns error when Mercado Pago API fails', async () => {
+  it('validating_bot step returns bot_username on success', async () => {
     const mockCtx = createMockContext({
       bot_pool: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'bot-1', bot_token: 'token', bot_username: 'mybot', status: 'available' },
-          error: null,
-        }),
-      },
-      groups: {
-        single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', status: 'creating' },
+          data: { id: 'bot-1', bot_token: 'token', bot_username: 'mybot' },
           error: null,
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
     vi.mocked(validateBotToken).mockResolvedValue({ success: true, data: { username: 'mybot' } });
+
+    const req = createRequest({ step: 'validating_bot', group_id: VALID_GROUP_ID });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.bot_username).toBe('mybot');
+  });
+
+  it('returns error when Mercado Pago API fails (configuring_mp step)', async () => {
+    const mockCtx = createMockContext({
+      groups: {
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'group-1', name: 'Test', mp_product_id: null, checkout_url: null },
+          error: null,
+        }),
+      },
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
     vi.mocked(createCheckoutPreference).mockResolvedValue({ success: false, error: 'MP error' });
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 29.9 });
     const res = await POST(req);
     const json = await res.json();
 
@@ -259,28 +322,66 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.step).toBe('configuring_mp');
   });
 
-  it('returns error when Render API fails', async () => {
+  it('passes price to Mercado Pago (configuring_mp step)', async () => {
     const mockCtx = createMockContext({
-      bot_pool: {
-        single: vi.fn().mockResolvedValue({
-          data: { id: 'bot-1', bot_token: 'token', bot_username: 'mybot', status: 'available' },
-          error: null,
-        }),
-      },
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', status: 'creating' },
+          data: { id: 'group-1', name: 'Test Group', mp_product_id: null, checkout_url: null },
           error: null,
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    vi.mocked(validateBotToken).mockResolvedValue({ success: true, data: { username: 'mybot' } });
     vi.mocked(createCheckoutPreference).mockResolvedValue({ success: true, data: { id: 'pref-1', checkout_url: 'http://mp.com/checkout' } });
+
+    const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 49.9 });
+    await POST(req);
+
+    expect(createCheckoutPreference).toHaveBeenCalledWith('Test Group', VALID_GROUP_ID, 49.9);
+  });
+
+  it('configuring_mp is idempotent (skips if already configured)', async () => {
+    const mockCtx = createMockContext({
+      groups: {
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'group-1', name: 'Test', mp_product_id: 'pref-1', checkout_url: 'http://mp.com/checkout' },
+          error: null,
+        }),
+      },
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 29.9 });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.checkout_url).toBe('http://mp.com/checkout');
+    expect(createCheckoutPreference).not.toHaveBeenCalled();
+  });
+
+  it('returns error when Render API fails (deploying_bot step)', async () => {
+    const mockCtx = createMockContext({
+      groups: {
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'group-1', name: 'Test', render_service_id: null },
+          error: null,
+        }),
+      },
+      bot_pool: {
+        single: vi.fn().mockResolvedValue({
+          data: { bot_token: 'token' },
+          error: null,
+        }),
+      },
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
     vi.mocked(createBotService).mockResolvedValue({ success: false, error: 'Render error' });
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'deploying_bot', group_id: VALID_GROUP_ID });
     const res = await POST(req);
     const json = await res.json();
 
@@ -289,39 +390,128 @@ describe('POST /api/groups/onboarding', () => {
     expect(json.error.step).toBe('deploying_bot');
   });
 
-  it('returns error when Supabase Auth fails', async () => {
+  it('deploying_bot is idempotent (skips if already deployed)', async () => {
     const mockCtx = createMockContext({
-      bot_pool: {
-        single: vi.fn().mockResolvedValue({
-          data: { id: 'bot-1', bot_token: 'token', bot_username: 'mybot', status: 'available' },
-          error: null,
-        }),
-      },
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', status: 'creating' },
+          data: { id: 'group-1', name: 'Test', render_service_id: 'srv-1' },
           error: null,
         }),
       },
     });
-    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as TenantResult);
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    vi.mocked(validateBotToken).mockResolvedValue({ success: true, data: { username: 'mybot' } });
-    vi.mocked(createCheckoutPreference).mockResolvedValue({ success: true, data: { id: 'pref-1', checkout_url: 'http://mp.com/checkout' } });
-    vi.mocked(createBotService).mockResolvedValue({ success: true, data: { service_id: 'srv-1' } });
+    const req = createRequest({ step: 'deploying_bot', group_id: VALID_GROUP_ID });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.service_id).toBe('srv-1');
+    expect(createBotService).not.toHaveBeenCalled();
+  });
+
+  it('returns error when Supabase Auth fails (creating_admin step)', async () => {
+    const mockCtx = createMockContext();
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    // Admin check returns no existing admin for group
+    mockAdminFrom.mockReturnValue(
+      createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+      }),
+    );
 
     mockAdminAuth.admin.createUser.mockResolvedValue({
       data: { user: null },
       error: { message: 'Auth error' },
     });
 
-    const req = createRequest({ name: 'Test Group', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating_admin', group_id: VALID_GROUP_ID, email: 'test@test.com' });
     const res = await POST(req);
     const json = await res.json();
 
     expect(res.status).toBe(500);
     expect(json.error.code).toBe('ONBOARDING_FAILED');
     expect(json.error.step).toBe('creating_admin');
+  });
+
+  it('creating_admin step returns email and temp_password', async () => {
+    const mockCtx = createMockContext();
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    // Admin check returns no existing admin for group
+    mockAdminFrom.mockImplementation((table: string) => {
+      if (table === 'admin_users') {
+        return createMockQueryBuilder({
+          single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+        });
+      }
+      return createMockQueryBuilder();
+    });
+
+    mockAdminAuth.admin.createUser.mockResolvedValue({
+      data: { user: { id: 'auth-user-1' } },
+      error: null,
+    });
+
+    const req = createRequest({ step: 'creating_admin', group_id: VALID_GROUP_ID, email: 'test@test.com' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.admin_email).toBe('test@test.com');
+    expect(json.data.temp_password).toBeDefined();
+    expect(typeof json.data.temp_password).toBe('string');
+  });
+
+  it('creating_admin is idempotent (skips if admin exists)', async () => {
+    const mockCtx = createMockContext();
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    mockAdminFrom.mockReturnValue(
+      createMockQueryBuilder({
+        single: vi.fn().mockResolvedValue({ data: { id: 'existing-admin', email: 'test@test.com' }, error: null }),
+      }),
+    );
+
+    const req = createRequest({ step: 'creating_admin', group_id: VALID_GROUP_ID, email: 'test@test.com' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.admin_email).toBe('test@test.com');
+    expect(json.data.temp_password).toBeNull();
+    expect(mockAdminAuth.admin.createUser).not.toHaveBeenCalled();
+  });
+
+  it('finalizing step activates group and returns full group data', async () => {
+    const finalGroupData = {
+      id: 'group-1', name: 'Canal do João', status: 'active',
+      checkout_url: 'http://mp.com/checkout', mp_product_id: 'pref-1',
+      render_service_id: 'srv-1', created_at: '2026-01-01',
+    };
+
+    const mockCtx = createMockContext({
+      groups: {
+        single: vi.fn().mockResolvedValue({ data: finalGroupData, error: null }),
+      },
+      bot_health: {
+        single: vi.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+      },
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    const req = createRequest({ step: 'finalizing', group_id: VALID_GROUP_ID });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.group).toBeDefined();
+    expect(json.data.group.name).toBe('Canal do João');
   });
 
   it('endpoint is protected by super_admin role', async () => {
@@ -335,7 +525,7 @@ describe('POST /api/groups/onboarding', () => {
       },
     } as unknown as TenantResult);
 
-    const req = createRequest({ name: 'Test', email: 'test@test.com', bot_id: 'a0000000-0000-4000-a000-000000000001' });
+    const req = createRequest({ step: 'creating', name: 'Test', email: 'test@test.com', bot_id: VALID_BOT_ID, price: 29.9 });
     const res = await POST(req);
     const json = await res.json();
 
