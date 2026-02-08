@@ -97,7 +97,7 @@ describe('process-webhooks job', () => {
       const limitMock = jest.fn().mockImplementation(() => slowPromise);
       const orderMock = jest.fn().mockReturnValue({ limit: limitMock });
       const eqMock = jest.fn().mockReturnValue({ order: orderMock });
-      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+      const _selectMock = jest.fn().mockReturnValue({ eq: eqMock });
 
       // Stuck events - no stuck
       const ltMock = jest.fn().mockResolvedValue({ data: [], error: null });

@@ -93,7 +93,7 @@ jest.mock('../../../bot/services/mercadoPagoService', () => ({
 // Import after mocks
 const { app } = require('../../../bot/webhook-server');
 const mercadoPagoService = require('../../../bot/services/mercadoPagoService');
-const { config } = require('../../../lib/config');
+const { config: _config } = require('../../../lib/config');
 
 // ============================================
 // HELPER FUNCTIONS
@@ -124,7 +124,7 @@ function createMockMember(overrides = {}) {
 /**
  * Setup mock for specific database table
  */
-function setupMockTable(tableName, operations = {}) {
+function _setupMockTable(tableName, operations = {}) {
   const builder = createMockQueryBuilder();
 
   if (operations.select) {
@@ -204,7 +204,7 @@ describe('Membership Flow Integration Tests', () => {
         mp_subscription_id: 'sub_123',
       });
 
-      const activatedMember = {
+      const _activatedMember = {
         ...trialMember,
         status: 'ativo',
         subscription_started_at: new Date().toISOString(),

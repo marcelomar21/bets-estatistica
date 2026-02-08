@@ -65,7 +65,6 @@ const {
   getMembersNeedingTrialReminder,
   sendTrialReminder,
   getDaysRemaining,
-  CONFIG,
 } = require('../../../bot/jobs/membership/trial-reminders');
 const { getBot } = require('../../../bot/telegram');
 

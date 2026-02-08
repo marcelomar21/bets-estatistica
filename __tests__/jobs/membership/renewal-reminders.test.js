@@ -49,7 +49,6 @@ const {
   getMembersNeedingRenewalReminder,
   sendRenewalReminder,
   getDaysUntilRenewal,
-  CONFIG,
 } = require('../../../bot/jobs/membership/renewal-reminders');
 const { getBot } = require('../../../bot/telegram');
 

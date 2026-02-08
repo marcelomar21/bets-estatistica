@@ -100,7 +100,7 @@ function createMockMember(overrides = {}) {
 }
 
 // Complex mock setup for multi-table operations
-function setupMultiTableMock(tableData) {
+function _setupMultiTableMock(tableData) {
   mockSupabase.from.mockImplementation((tableName) => {
     const data = tableData[tableName];
     const builder = createMockQueryBuilder();
@@ -387,7 +387,7 @@ describe('Webhook Processing Flow Integration Tests', () => {
         if (table === 'members') {
           const selectBuilder = createMockQueryBuilder();
           // For getMemberBySubscription - returns removed member
-          selectBuilder.eq = jest.fn().mockImplementation((field, value) => {
+          selectBuilder.eq = jest.fn().mockImplementation((_field, _value) => {
             const innerBuilder = createMockQueryBuilder();
 
             // Handle optimistic locking (eq chained with eq)

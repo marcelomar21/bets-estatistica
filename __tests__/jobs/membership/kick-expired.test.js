@@ -57,7 +57,6 @@ const {
   calculateDaysRemaining,
   shouldKickMember,
   processMemberKick,
-  CONFIG,
 } = require('../../../bot/jobs/membership/kick-expired');
 const { getBot } = require('../../../bot/telegram');
 const { alertAdmin } = require('../../../bot/services/alertService');
