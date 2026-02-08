@@ -29,6 +29,9 @@ data/
 # IDE - Claude
 .claude/
 
+# Backups
+backups/
+
 # Temporary
 *.tmp
 *.temp
