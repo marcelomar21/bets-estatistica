@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { GroupCard } from './GroupCard';
-import type { Group } from '@/types/database';
+import type { GroupListItem } from '@/types/database';
 
 // Mock next/link
 vi.mock('next/link', () => ({
@@ -10,14 +10,11 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-const baseGroup: Group = {
+const baseGroup: GroupListItem = {
   id: 'uuid-1',
   name: 'Grupo Teste',
-  bot_token: null,
   telegram_group_id: null,
   telegram_admin_group_id: null,
-  mp_product_id: null,
-  render_service_id: null,
   checkout_url: null,
   status: 'active',
   created_at: '2026-01-15T10:00:00Z',

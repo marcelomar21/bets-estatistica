@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
 
+type GroupRouteContext = { params: Promise<{ groupId: string }> };
+
 const updateGroupSchema = z.object({
   name: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').optional(),
   telegram_group_id: z.number().nullable().optional(),
@@ -10,8 +12,8 @@ const updateGroupSchema = z.object({
 });
 
 export const GET = createApiHandler(
-  async (req: NextRequest, context) => {
-    const groupId = req.nextUrl.pathname.split('/').pop();
+  async (_req: NextRequest, context, routeContext) => {
+    const { groupId } = await (routeContext as GroupRouteContext).params;
 
     const { data: group, error } = await context.supabase
       .from('groups')
@@ -19,7 +21,14 @@ export const GET = createApiHandler(
       .eq('id', groupId)
       .single();
 
-    if (error || !group) {
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: error.message } },
+        { status: 500 },
+      );
+    }
+
+    if (!group) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
         { status: 404 },
@@ -32,8 +41,8 @@ export const GET = createApiHandler(
 );
 
 export const PUT = createApiHandler(
-  async (req: NextRequest, context) => {
-    const groupId = req.nextUrl.pathname.split('/').pop();
+  async (req: NextRequest, context, routeContext) => {
+    const { groupId } = await (routeContext as GroupRouteContext).params;
 
     let body: unknown;
     try {
@@ -61,7 +70,14 @@ export const PUT = createApiHandler(
       .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at')
       .single();
 
-    if (error || !group) {
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: error.message } },
+        { status: 500 },
+      );
+    }
+
+    if (!group) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found or update failed' } },
         { status: 404 },

@@ -47,7 +47,7 @@ development_status:
   1-1-migration-multi-tenant-e-rls: done
   1-2-scaffold-admin-panel-com-supabase-auth: done
   1-3-middleware-de-tenant-e-protecao-de-rotas: done
-  1-4-crud-de-grupos-e-listagem: review
+  1-4-crud-de-grupos-e-listagem: done
   epic-1-retrospective: optional
 
   # ========================================

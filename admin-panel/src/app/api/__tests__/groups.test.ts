@@ -8,12 +8,17 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+// Helper to create route context with params (Next.js 16 Promise-based params)
+function createRouteContext(params: Record<string, string>) {
+  return { params: Promise.resolve(params) };
+}
+
 // Supabase query builder mock
 function createMockQueryBuilder(overrides: {
   selectData?: unknown;
-  selectError?: { message: string } | null;
+  selectError?: { message: string; code?: string } | null;
   insertData?: unknown;
-  insertError?: { message: string } | null;
+  insertError?: { message: string; code?: string } | null;
 } = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const builder: Record<string, any> = {};
@@ -274,6 +279,47 @@ describe('POST /api/groups', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
+  it('returns 500 on non-constraint DB insert error', async () => {
+    const qb = createMockQueryBuilder({
+      insertError: { message: 'connection timeout' },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/groups/route');
+    const req = createMockRequest('POST', 'http://localhost/api/groups', {
+      name: 'New Group',
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DB_ERROR');
+  });
+
+  it('returns 400 for non-JSON body', async () => {
+    const qb = createMockQueryBuilder();
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/groups/route');
+    const req = new NextRequest(new Request('http://localhost/api/groups', {
+      method: 'POST',
+      body: 'not-json-content',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Invalid JSON body');
+  });
+
   it('creates group with optional telegram IDs', async () => {
     const newGroup = {
       ...sampleGroup,
@@ -324,8 +370,9 @@ describe('GET /api/groups/[groupId]', () => {
       'GET',
       'http://localhost/api/groups/group-uuid-1',
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await GET(req);
+    const response = await GET(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -334,10 +381,7 @@ describe('GET /api/groups/[groupId]', () => {
   });
 
   it('returns 404 for non-existent group', async () => {
-    const qb = createMockQueryBuilder({
-      selectData: null,
-      selectError: { message: 'not found' },
-    });
+    const qb = createMockQueryBuilder({ selectData: null });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -346,13 +390,37 @@ describe('GET /api/groups/[groupId]', () => {
       'GET',
       'http://localhost/api/groups/non-existent-id',
     );
+    const routeCtx = createRouteContext({ groupId: 'non-existent-id' });
 
-    const response = await GET(req);
+    const response = await GET(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(404);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 500 on database error', async () => {
+    const qb = createMockQueryBuilder({
+      selectData: null,
+      selectError: { message: 'connection refused' },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest(
+      'GET',
+      'http://localhost/api/groups/group-uuid-1',
+    );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await GET(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DB_ERROR');
   });
 
   it('returns 403 for group_admin', async () => {
@@ -364,8 +432,9 @@ describe('GET /api/groups/[groupId]', () => {
       'GET',
       'http://localhost/api/groups/group-uuid-1',
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await GET(req);
+    const response = await GET(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(403);
@@ -395,8 +464,9 @@ describe('PUT /api/groups/[groupId]', () => {
       'http://localhost/api/groups/group-uuid-1',
       { name: 'Updated Name' },
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await PUT(req);
+    const response = await PUT(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -416,8 +486,9 @@ describe('PUT /api/groups/[groupId]', () => {
       'http://localhost/api/groups/group-uuid-1',
       { status: 'invalid_status' },
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await PUT(req);
+    const response = await PUT(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(400);
@@ -426,10 +497,7 @@ describe('PUT /api/groups/[groupId]', () => {
   });
 
   it('returns 404 when group not found on update', async () => {
-    const qb = createMockQueryBuilder({
-      insertData: null,
-      insertError: { message: 'not found' },
-    });
+    const qb = createMockQueryBuilder({ insertData: null });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -439,13 +507,38 @@ describe('PUT /api/groups/[groupId]', () => {
       'http://localhost/api/groups/non-existent',
       { name: 'New Name' },
     );
+    const routeCtx = createRouteContext({ groupId: 'non-existent' });
 
-    const response = await PUT(req);
+    const response = await PUT(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(404);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 500 on database error during update', async () => {
+    const qb = createMockQueryBuilder({
+      insertData: null,
+      insertError: { message: 'connection refused' },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { PUT } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest(
+      'PUT',
+      'http://localhost/api/groups/group-uuid-1',
+      { name: 'New Name' },
+    );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await PUT(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DB_ERROR');
   });
 
   it('returns 403 for group_admin', async () => {
@@ -458,13 +551,36 @@ describe('PUT /api/groups/[groupId]', () => {
       'http://localhost/api/groups/group-uuid-1',
       { name: 'New Name' },
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await PUT(req);
+    const response = await PUT(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(403);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('returns 400 for non-JSON body', async () => {
+    const qb = createMockQueryBuilder();
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { PUT } = await import('@/app/api/groups/[groupId]/route');
+    const req = new NextRequest(new Request('http://localhost/api/groups/group-uuid-1', {
+      method: 'PUT',
+      body: 'not-json-content',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+    const response = await PUT(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Invalid JSON body');
   });
 
   it('allows updating status to valid values', async () => {
@@ -479,8 +595,9 @@ describe('PUT /api/groups/[groupId]', () => {
       'http://localhost/api/groups/group-uuid-1',
       { status: 'paused' },
     );
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
 
-    const response = await PUT(req);
+    const response = await PUT(req, routeCtx);
     const body = await response.json();
 
     expect(response.status).toBe(200);

@@ -1,6 +1,6 @@
 # Story 1.4: CRUD de Grupos e Listagem
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -459,6 +459,7 @@ Claude Opus 4.6
 ### Change Log
 
 - 2026-02-08: Implementacao completa da Story 1.4 — CRUD de Grupos e Listagem. Primeiro CRUD real do admin panel, estabelecendo patterns para futuras stories.
+- 2026-02-08: Code Review adversarial — 10 issues encontradas (3 HIGH, 4 MEDIUM, 3 LOW), todas corrigidas. Fixes: createApiHandler forward de route params (H1), diferenciacao de erros DB vs validacao (H2/M4), tipo GroupListItem para type safety (H3), shared utils para DRY (M1), error logging no auth layout (M2), null checks para Telegram IDs (M3), testes para JSON invalido (L2), fix import vi (L3), docs (L1). Testes: 116 → 121, todos passando.
 
 ### File List
 
@@ -470,7 +471,8 @@ Claude Opus 4.6
 - admin-panel/src/app/(auth)/groups/[groupId]/page.tsx (detalhes Server Component)
 - admin-panel/src/components/features/groups/GroupCard.tsx (card de grupo)
 - admin-panel/src/components/features/groups/GroupForm.tsx (formulario de grupo)
-- admin-panel/src/app/api/__tests__/groups.test.ts (19 testes API)
+- admin-panel/src/components/features/groups/group-utils.ts (statusConfig e formatDate compartilhados)
+- admin-panel/src/app/api/__tests__/groups.test.ts (24 testes API)
 - admin-panel/src/components/features/groups/GroupCard.test.tsx (9 testes)
 - admin-panel/src/components/features/groups/GroupForm.test.tsx (6 testes)
 
@@ -479,4 +481,5 @@ Claude Opus 4.6
 - admin-panel/src/components/layout/LayoutShell.tsx (prop role adicionada)
 - admin-panel/src/app/(auth)/layout.tsx (busca role do usuario)
 - admin-panel/package.json (zod adicionado como dependencia)
+- admin-panel/package-lock.json (zod dependency lock)
 - _bmad-output/implementation-artifacts/sprint-status.yaml (status atualizado)

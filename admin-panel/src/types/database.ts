@@ -11,6 +11,8 @@ export interface Group {
   created_at: string;
 }
 
+export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'checkout_url' | 'created_at'>;
+
 export interface AdminUser {
   id: string;
   email: string;
