@@ -15,13 +15,17 @@ export default async function AuthLayout({
     redirect('/login');
   }
 
-  const { data: adminUser } = await supabase
+  const { data: adminUser, error: roleError } = await supabase
     .from('admin_users')
     .select('role')
     .eq('id', user.id)
     .single();
 
-  const role = (adminUser as Pick<AdminUser, 'role'> | null)?.role;
+  if (roleError) {
+    console.error('Failed to fetch admin user role:', roleError.message);
+  }
+
+  const role = adminUser?.role as AdminUser['role'] | undefined;
 
   return (
     <LayoutShell userEmail={user.email || ''} role={role}>

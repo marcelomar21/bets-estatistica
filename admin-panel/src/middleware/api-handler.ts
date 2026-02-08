@@ -11,17 +11,20 @@ export type ApiHandlerOptions = {
   preventRoleChange?: boolean;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ApiHandler = (
   req: NextRequest,
   context: TenantContext,
+  routeContext?: any,
 ) => Promise<NextResponse>;
 
 export type PublicHandler = (
   req: NextRequest,
 ) => Promise<NextResponse>;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createApiHandler(handler: ApiHandler, options?: ApiHandlerOptions) {
-  return async (req: NextRequest) => {
+  return async (req: NextRequest, ...rest: any[]) => {
     const result = await withTenant();
 
     if (!result.success) {
@@ -57,7 +60,9 @@ export function createApiHandler(handler: ApiHandler, options?: ApiHandlerOption
     }
 
     try {
-      return await handler(req, context);
+      return rest.length > 0
+        ? await handler(req, context, rest[0])
+        : await handler(req, context);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       return NextResponse.json(

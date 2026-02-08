@@ -55,9 +55,20 @@ export const POST = createApiHandler(
       .single();
 
     if (error) {
+      const isConstraintError =
+        error.code?.startsWith('23') ||
+        /duplicate|violates|constraint/i.test(error.message);
+
+      if (isConstraintError) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: error.message } },
+          { status: 400 },
+        );
+      }
+
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: error.message } },
-        { status: 400 },
+        { success: false, error: { code: 'DB_ERROR', message: error.message } },
+        { status: 500 },
       );
     }
 

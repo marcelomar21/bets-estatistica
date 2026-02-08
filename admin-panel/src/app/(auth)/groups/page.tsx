@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-server';
 import { GroupCard } from '@/components/features/groups/GroupCard';
-import type { Group } from '@/types/database';
+import type { GroupListItem } from '@/types/database';
 
 export default async function GroupsPage() {
   const supabase = await createClient();
@@ -10,7 +10,7 @@ export default async function GroupsPage() {
     .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at')
     .order('created_at', { ascending: false });
 
-  const typedGroups = (groups ?? []) as Group[];
+  const typedGroups = (groups ?? []) as GroupListItem[];
 
   return (
     <div>

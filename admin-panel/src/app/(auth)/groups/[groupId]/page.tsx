@@ -1,25 +1,8 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-server';
-import type { Group } from '@/types/database';
-
-const statusConfig: Record<Group['status'], { label: string; className: string }> = {
-  active: { label: 'Ativo', className: 'bg-green-100 text-green-800' },
-  paused: { label: 'Pausado', className: 'bg-yellow-100 text-yellow-800' },
-  inactive: { label: 'Inativo', className: 'bg-gray-100 text-gray-800' },
-  creating: { label: 'Criando', className: 'bg-blue-100 text-blue-800' },
-  failed: { label: 'Falhou', className: 'bg-red-100 text-red-800' },
-};
-
-function formatDate(dateString: string) {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(dateString));
-}
+import type { GroupListItem } from '@/types/database';
+import { statusConfig, formatDateTime } from '@/components/features/groups/group-utils';
 
 export default async function GroupDetailPage({
   params,
@@ -39,7 +22,7 @@ export default async function GroupDetailPage({
     notFound();
   }
 
-  const typedGroup = group as Group;
+  const typedGroup = group as GroupListItem;
   const status = statusConfig[typedGroup.status];
 
   return (
@@ -69,14 +52,14 @@ export default async function GroupDetailPage({
             <dd className="mt-1 text-sm text-gray-900">{status.label}</dd>
           </div>
 
-          {typedGroup.telegram_group_id && (
+          {typedGroup.telegram_group_id !== null && (
             <div>
               <dt className="text-sm font-medium text-gray-500">Telegram Group ID</dt>
               <dd className="mt-1 text-sm text-gray-900">{typedGroup.telegram_group_id}</dd>
             </div>
           )}
 
-          {typedGroup.telegram_admin_group_id && (
+          {typedGroup.telegram_admin_group_id !== null && (
             <div>
               <dt className="text-sm font-medium text-gray-500">Telegram Admin Group ID</dt>
               <dd className="mt-1 text-sm text-gray-900">{typedGroup.telegram_admin_group_id}</dd>
@@ -101,7 +84,7 @@ export default async function GroupDetailPage({
 
           <div>
             <dt className="text-sm font-medium text-gray-500">Criado em</dt>
-            <dd className="mt-1 text-sm text-gray-900">{formatDate(typedGroup.created_at)}</dd>
+            <dd className="mt-1 text-sm text-gray-900">{formatDateTime(typedGroup.created_at)}</dd>
           </div>
         </dl>
 
