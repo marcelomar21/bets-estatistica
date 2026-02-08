@@ -3,20 +3,33 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: '📊' },
-];
-
-interface SidebarProps {
-  mobileOpen?: boolean;
-  onClose?: () => void;
+interface NavItem {
+  name: string;
+  href: string;
+  icon: string;
+  roles?: ('super_admin' | 'group_admin')[];
 }
 
-export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
+const navigation: NavItem[] = [
+  { name: 'Dashboard', href: '/dashboard', icon: '📊' },
+  { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },
+];
+
+export interface SidebarProps {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+  role?: 'super_admin' | 'group_admin';
+}
+
+export function Sidebar({ mobileOpen = false, onClose, role }: SidebarProps) {
   const pathname = usePathname();
 
-  const navItems = navigation.map((item) => {
-    const isActive = pathname === item.href;
+  const filteredNavigation = navigation.filter(
+    (item) => !item.roles || (role && item.roles.includes(role)),
+  );
+
+  const navItems = filteredNavigation.map((item) => {
+    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
     return (
       <Link
         key={item.name}
