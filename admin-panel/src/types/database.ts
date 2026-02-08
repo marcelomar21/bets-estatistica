@@ -43,6 +43,33 @@ export interface BotHealth {
   updated_at: string;
 }
 
+export interface DashboardSummary {
+  groups: { active: number; paused: number; total: number };
+  bots: { available: number; in_use: number; total: number; online: number; offline: number };
+  members: { total: number };
+}
+
+export interface DashboardGroupCard {
+  id: string;
+  name: string;
+  status: Group['status'];
+  created_at: string;
+  active_members: number;
+}
+
+export interface DashboardAlert {
+  type: 'bot_offline' | 'group_failed' | 'onboarding_completed';
+  message: string;
+  timestamp: string;
+  group_name?: string;
+}
+
+export interface DashboardData {
+  summary: DashboardSummary;
+  groups: DashboardGroupCard[];
+  alerts: DashboardAlert[];
+}
+
 export type OnboardingStep = 'creating' | 'validating_bot' | 'configuring_mp' | 'deploying_bot' | 'creating_admin' | 'finalizing';
 
 export type StepRequest =
