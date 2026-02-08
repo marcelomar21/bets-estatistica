@@ -56,8 +56,8 @@ development_status:
   epic-2: in-progress
   2-1-editar-e-gerenciar-status-de-grupos: done
   2-2-gestao-do-pool-de-bots: done
-  2-3-onboarding-automatico-de-influencer: in-progress
-  2-4-dashboard-consolidado-do-super-admin: backlog
+  2-3-onboarding-automatico-de-influencer: done
+  2-4-dashboard-consolidado-do-super-admin: done
   2-5-notificacoes-e-alertas-no-painel: backlog
   2-6-automacao-grupo-telegram-e-convites-via-mtproto: backlog
   epic-2-retrospective: optional
