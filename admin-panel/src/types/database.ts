@@ -42,3 +42,19 @@ export interface BotHealth {
   error_message: string | null;
   updated_at: string;
 }
+
+export interface OnboardingRequest {
+  name: string;
+  email: string;
+  bot_id: string;
+}
+
+export interface OnboardingResult {
+  group: Group;
+  checkout_url: string;
+  admin_email: string;
+  temp_password: string;
+  bot_username: string;
+}
+
+export type OnboardingStep = 'creating' | 'validating_bot' | 'configuring_mp' | 'deploying_bot' | 'creating_admin' | 'finalizing';
