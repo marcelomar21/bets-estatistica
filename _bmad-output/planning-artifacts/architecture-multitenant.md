@@ -66,7 +66,7 @@ _Este documento é construído colaborativamente através de descoberta passo-a-
 |------------|--------|---------|
 | Node.js 20+ CommonJS | project-context | Manter padrão existente nos bots |
 | Supabase PostgreSQL | Existente | RLS nativo disponível |
-| Next.js App Router | PRD decisão | Admin panel novo |
+| Next.js 16.x App Router | PRD decisão | Admin panel novo |
 | 1 bot = 1 processo | PRD decisão | Deploy separado no Render |
 | Mercado Pago | PRD decisão | Substituiu Cakto |
 
@@ -114,7 +114,7 @@ _Este documento é construído colaborativamente através de descoberta passo-a-
 
 | Componente | Tecnologia | Comando |
 |------------|------------|---------|
-| **Admin Panel** | Next.js 14+ App Router | `npx create-next-app@latest` |
+| **Admin Panel** | Next.js 16.x App Router | `npx create-next-app@latest` |
 | **Autenticação** | Supabase Auth | Integrado ao Next.js |
 | **Deploy Admin** | Vercel | Conectar repo |
 
@@ -137,7 +137,7 @@ npx create-next-app@latest admin-panel --typescript --tailwind --eslint --app --
 
 | Decisão | Escolha | Rationale |
 |---------|---------|-----------|
-| **Admin Framework** | Next.js App Router | API Routes integradas |
+| **Admin Framework** | Next.js 16.x App Router | API Routes integradas |
 | **Auth** | Supabase Auth | RLS nativo com JWT |
 | **Bot Deploy** | 1 processo = 1 bot | Isolamento, simplicidade |
 | **Real-time** | Não | Reload manual, menos complexidade |
@@ -193,7 +193,7 @@ CREATE TABLE groups (
   mp_product_id VARCHAR,  -- Produto no Mercado Pago
   render_service_id VARCHAR,  -- Serviço no Render
   checkout_url VARCHAR,
-  status VARCHAR DEFAULT 'active',  -- active/paused/inactive
+  status VARCHAR DEFAULT 'creating' CHECK (status IN ('creating', 'active', 'paused', 'inactive', 'failed')),  -- creating/active/paused/inactive/failed
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -677,7 +677,7 @@ Group Admin → Admin Panel UI → API Routes ────┘ (filtrado por grou
 **Decision Compatibility:**
 | Tecnologias | Status |
 |-------------|--------|
-| Next.js 14+ + Supabase Auth | ✅ Integração nativa |
+| Next.js 16.x + Supabase Auth | ✅ Integração nativa |
 | Node.js 20+ + Supabase | ✅ Já funcionando em produção |
 | Mercado Pago webhooks | ✅ Já implementado |
 | RLS + Middleware tenant | ✅ Defesa em camadas complementares |

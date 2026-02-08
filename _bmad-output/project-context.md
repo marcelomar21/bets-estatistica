@@ -21,7 +21,7 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 | Node.js | 20+ | Runtime obrigatório (bots) |
 | JavaScript | ES2022 | CommonJS modules (bots) |
 | TypeScript | 5.x | Admin panel (Next.js) |
-| Next.js | 14+ | Admin panel (App Router) |
+| Next.js | 16.x | Admin panel (App Router) |
 | Supabase Auth | latest | Autenticação admin panel |
 | LangChain | 1.1.x | Manter versão existente |
 | OpenAI | GPT-5.1 | Via LangChain |
@@ -30,7 +30,7 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 | @supabase/supabase-js | latest | Database client |
 | node-telegram-bot-api | latest | Bot framework |
 | node-cron | latest | Job scheduling |
-| Tailwind CSS | 3.x | Styling admin panel |
+| Tailwind CSS | 4.x | Styling admin panel |
 
 **Repositórios:**
 - `bets-estatistica/` - Bots + Backend (Node.js)
