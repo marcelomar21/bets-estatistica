@@ -3,9 +3,9 @@ stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step
 status: 'complete'
 completedAt: '2026-02-06'
 epicCount: 6
-storyCount: 24
-frsTotal: 58
-frsCovered: 54
+storyCount: 25
+frsTotal: 62
+frsCovered: 58
 frsDelegatedToMP: 4
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
@@ -97,6 +97,12 @@ Este documento contém o breakdown completo de épicos e stories para a platafor
 - FR52: Bot pode enviar confirmação de pagamento
 - FR53: Bot pode enviar mensagem de remoção com link pra voltar
 - FR54: Sistema pode enviar alertas pra Super Admin via Telegram
+
+**Automação Telegram**
+- FR59: Sistema pode criar grupo/supergrupo no Telegram automaticamente via MTProto (conta do founder)
+- FR60: Sistema pode adicionar bot do pool como admin do grupo Telegram criado
+- FR61: Bot Super Admin pode enviar convites de novos grupos para os founders automaticamente
+- FR62: Sistema pode enviar convite do grupo Telegram para o dono (influencer) e outras pessoas configuráveis
 
 **Segurança**
 - FR55: Sistema pode autenticar usuários via Supabase Auth
@@ -218,6 +224,10 @@ Este documento contém o breakdown completo de épicos e stories para a platafor
 - FR56: Epic 1 - Row Level Security por grupo
 - FR57: Epic 1 - Validar permissões em cada requisição
 - FR58: Epic 1 - Impedir Admin de Grupo alterar role
+- FR59: Epic 2 - Criar grupo Telegram automaticamente via MTProto
+- FR60: Epic 2 - Adicionar bot como admin do grupo Telegram
+- FR61: Epic 2 - Bot Super Admin envia convites para founders
+- FR62: Epic 2 - Enviar convite para influencer e convidados
 
 ## Epic List
 
@@ -228,12 +238,12 @@ Super Admin pode criar a infraestrutura multi-tenant, logar no painel admin e cr
 **Inclui:** Migration SQL (tabelas groups, admin_users, bot_pool, bot_health + group_id em members/suggested_bets), RLS policies, scaffold admin-panel (Next.js), Supabase Auth, middleware de tenant (withTenant)
 
 ### Epic 2: Gestão de Grupos e Onboarding de Influencer
-Super Admin pode fazer onboarding completo de um novo influencer em <=5 cliques, gerenciar pool de bots, e ver dashboard consolidado.
-**FRs cobertos:** FR3, FR4, FR26, FR27, FR28, FR33, FR35, FR36, FR37, FR38, FR49
-**NFRs endereçados:** NFR-I4, NFR-S5
+Super Admin pode fazer onboarding completo de um novo influencer em <=5 cliques, gerenciar pool de bots, ver dashboard consolidado, e automatizar criação de grupos Telegram com convites.
+**FRs cobertos:** FR3, FR4, FR26, FR27, FR28, FR33, FR35, FR36, FR37, FR38, FR49, FR59, FR60, FR61, FR62
+**NFRs endereçados:** NFR-I4, NFR-S5, NFR-I1
 **Jornada:** J1 - Marcelo faz onboarding da Bianca
-**Inclui:** Onboarding automático (MP API + Render API + Supabase Auth), pool de bots, dashboard Super Admin
-**Pre-mortem:** Onboarding é operação multi-step sem rollback. Grupo precisa de status intermediários (`creating`, `active`, `failed`). Se Render API ou MP API falhar no meio, deve ser possível retry/resume sem recriar tudo. UI deve mostrar status de cada step.
+**Inclui:** Onboarding automático (MP API + Render API + Supabase Auth + MTProto Telegram), pool de bots, dashboard Super Admin, Bot Super Admin para notificar founders
+**Pre-mortem:** Onboarding é operação multi-step sem rollback. Grupo precisa de status intermediários (`creating`, `active`, `failed`). Se Render API ou MP API falhar no meio, deve ser possível retry/resume sem recriar tudo. UI deve mostrar status de cada step. MTProto requer sessão autenticada do founder — sessão deve ser persistida e renovada. Bot Super Admin precisa que founders tenham dado `/start` previamente.
 
 ### Epic 3: Gestão de Membros e Painel do Influencer
 Influencer pode logar no painel, ver dashboard do seu grupo, listar membros com status e vencimentos, com dados completamente isolados.
@@ -343,7 +353,7 @@ So that eu possa gerenciar os tenants da plataforma.
 
 ## Epic 2: Gestão de Grupos e Onboarding de Influencer
 
-Super Admin pode fazer onboarding completo de um novo influencer em <=5 cliques, gerenciar pool de bots, e ver dashboard consolidado.
+Super Admin pode fazer onboarding completo de um novo influencer em <=5 cliques, gerenciar pool de bots, ver dashboard consolidado, e automatizar criação de grupos Telegram com convites para founders e influencer.
 
 ### Story 2.1: Editar e Gerenciar Status de Grupos
 
@@ -386,7 +396,8 @@ So that um novo influencer esteja operacional rapidamente.
 
 **Given** Super Admin acessa `/groups/new` (FR36)
 **When** preenche: nome do influencer, email, seleciona bot do pool
-**Then** sistema executa onboarding automático em sequência:
+**Then** sistema valida o token do bot selecionado via Telegram API (`getMe`) e preenche automaticamente o `bot_username` com o username retornado
+**And** sistema executa onboarding automático em sequência:
 1. Cria grupo no banco com `status = 'creating'`
 2. Cria produto no Mercado Pago via API → salva `mp_product_id` e `checkout_url` (FR49)
 3. Faz deploy do bot no Render via API → salva `render_service_id` (NFR-I4)
@@ -428,6 +439,42 @@ So that eu esteja ciente de problemas e eventos relevantes.
 **And** alertas mostram: tipo, mensagem, timestamp
 **And** alertas são persistidos no banco para histórico
 **And** audit log registra eventos críticos com retenção de 90 dias (NFR-S5)
+
+### Story 2.6: Automação de Grupo Telegram e Convites via MTProto
+
+As a **Super Admin**,
+I want que o onboarding crie automaticamente o grupo no Telegram, adicione o bot como admin e envie convites para founders e influencer,
+So that o processo de onboarding seja 100% automatizado sem passos manuais no Telegram.
+
+**Acceptance Criteria:**
+
+**Given** onboarding de um novo influencer foi iniciado (Story 2.3)
+**When** o step de criação de grupo Telegram é executado
+**Then** sistema cria um supergrupo no Telegram via MTProto usando a conta do founder (FR59)
+**And** o bot selecionado do pool é adicionado ao grupo como administrador (FR60)
+**And** o título e descrição do grupo são configurados automaticamente
+**And** `telegram_group_id` é salvo na tabela `groups`
+
+**Given** grupo Telegram foi criado com sucesso
+**When** o step de convites é executado
+**Then** Bot Super Admin (bot dedicado já autorizado pelos founders) envia mensagem com link de convite para cada founder (FR61)
+**And** sistema envia convite para o dono do grupo (influencer) via email ou Telegram (FR62)
+**And** sistema permite configurar lista de convidados adicionais por grupo
+**And** convites são links de convite do grupo (`createChatInviteLink`)
+
+**Given** MTProto requer autenticação
+**When** sistema precisa criar grupo
+**Then** usa sessão persistida da conta do founder (autenticada uma vez via code/2FA)
+**And** sessão é armazenada de forma segura e renovada automaticamente
+**And** se sessão expirar, sistema alerta founders para re-autenticar
+
+**Given** Bot Super Admin é um bot dedicado para notificações dos founders
+**When** novo grupo é criado em qualquer onboarding
+**Then** Bot Super Admin envia mensagem com: nome do grupo, link de convite, nome do influencer
+**And** founders já autorizaram o Bot Super Admin previamente (`/start`)
+**And** Bot Super Admin é separado dos bots do pool (não é associado a nenhum grupo)
+
+**Nota técnica:** MTProto (GramJS/Telethon) opera com conta de usuário real (do founder), diferente da Bot API. Requer phone number + session string persistida. A sessão deve ser criada uma única vez (setup inicial) e reutilizada em todos os onboardings.
 
 ---
 

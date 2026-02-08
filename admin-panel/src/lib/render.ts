@@ -1,0 +1,74 @@
+import { fetchWithRetry } from './fetch-utils';
+
+interface RenderSuccess {
+  success: true;
+  data: { service_id: string };
+}
+
+interface RenderError {
+  success: false;
+  error: string;
+}
+
+type RenderResult = RenderSuccess | RenderError;
+
+export async function createBotService(
+  groupId: string,
+  botToken: string,
+  groupName: string,
+): Promise<RenderResult> {
+  const apiKey = process.env.RENDER_API_KEY;
+  if (!apiKey) {
+    return { success: false, error: 'RENDER_API_KEY não configurado' };
+  }
+
+  const repoUrl = process.env.RENDER_REPO_URL;
+  if (!repoUrl) {
+    return { success: false, error: 'RENDER_REPO_URL não configurado' };
+  }
+
+  try {
+    const response = await fetchWithRetry(
+      'https://api.render.com/v1/services',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'web_service',
+          name: `bot-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          repo: repoUrl,
+          envVars: [
+            { key: 'GROUP_ID', value: groupId },
+            { key: 'TELEGRAM_BOT_TOKEN', value: botToken },
+            { key: 'SUPABASE_URL', value: process.env.NEXT_PUBLIC_SUPABASE_URL || '' },
+            { key: 'SUPABASE_SERVICE_KEY', value: process.env.SUPABASE_SERVICE_KEY || '' },
+          ],
+        }),
+      },
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { success: false, error: data.message || 'Erro ao criar serviço no Render' };
+    }
+
+    const serviceId = data.service?.id || data.id;
+    if (!serviceId) {
+      return { success: false, error: 'Render não retornou service ID' };
+    }
+
+    return {
+      success: true,
+      data: { service_id: serviceId },
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao conectar com Render',
+    };
+  }
+}

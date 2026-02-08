@@ -42,3 +42,13 @@ export interface BotHealth {
   error_message: string | null;
   updated_at: string;
 }
+
+export type OnboardingStep = 'creating' | 'validating_bot' | 'configuring_mp' | 'deploying_bot' | 'creating_admin' | 'finalizing';
+
+export type StepRequest =
+  | { step: 'creating'; name: string; email: string; bot_id: string; price: number }
+  | { step: 'validating_bot'; group_id: string }
+  | { step: 'configuring_mp'; group_id: string; price: number }
+  | { step: 'deploying_bot'; group_id: string }
+  | { step: 'creating_admin'; group_id: string; email: string }
+  | { step: 'finalizing'; group_id: string };
