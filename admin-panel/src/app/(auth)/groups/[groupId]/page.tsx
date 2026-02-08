@@ -89,13 +89,12 @@ export default async function GroupDetailPage({
         </dl>
 
         <div className="mt-6 pt-6 border-t border-gray-200">
-          <button
-            disabled
-            className="rounded-md bg-gray-100 px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed"
-            title="Funcionalidade de edicao sera implementada na Story 2.1"
+          <Link
+            href={`/groups/${typedGroup.id}/edit`}
+            className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Editar
-          </button>
+          </Link>
         </div>
       </div>
     </div>

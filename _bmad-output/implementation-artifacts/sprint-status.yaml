@@ -53,8 +53,8 @@ development_status:
   # ========================================
   # Epic 2: Gestão de Grupos e Onboarding de Influencer
   # ========================================
-  epic-2: backlog
-  2-1-editar-e-gerenciar-status-de-grupos: backlog
+  epic-2: in-progress
+  2-1-editar-e-gerenciar-status-de-grupos: done
   2-2-gestao-do-pool-de-bots: backlog
   2-3-onboarding-automatico-de-influencer: backlog
   2-4-dashboard-consolidado-do-super-admin: backlog
