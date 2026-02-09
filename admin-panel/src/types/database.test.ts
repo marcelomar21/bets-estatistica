@@ -1,4 +1,4 @@
-import type { Group, AdminUser, BotPool, BotHealth } from './database';
+import type { Group, AdminUser, BotPool, BotHealth, Member, MemberListItem } from './database';
 
 describe('Database Types', () => {
   describe('Group', () => {
@@ -255,6 +255,83 @@ describe('Database Types', () => {
       expect(health.status).toBe('offline');
       expect(health.restart_requested).toBe(true);
       expect(health.error_message).toBe('Connection lost');
+    });
+  });
+
+  describe('Member', () => {
+    it('has all required fields', () => {
+      const member: Member = {
+        id: 1,
+        telegram_id: 123456789,
+        telegram_username: 'member_test',
+        email: null,
+        status: 'trial',
+        mp_subscription_id: null,
+        mp_payer_id: null,
+        trial_started_at: null,
+        subscription_started_at: null,
+        subscription_ends_at: null,
+        payment_method: null,
+        last_payment_at: null,
+        kicked_at: null,
+        notes: null,
+        group_id: 'group-uuid-1',
+        created_at: '2026-02-09T12:00:00Z',
+        updated_at: '2026-02-09T12:00:00Z',
+      };
+      expect(member.id).toBe(1);
+      expect(member.telegram_id).toBe(123456789);
+      expect(member.status).toBe('trial');
+      expect(member.group_id).toBe('group-uuid-1');
+    });
+
+    it('status aceita todos os valores válidos da máquina de estados', () => {
+      const trialMember: Member = {
+        id: 1,
+        telegram_id: 1,
+        telegram_username: null,
+        email: null,
+        status: 'trial',
+        mp_subscription_id: null,
+        mp_payer_id: null,
+        trial_started_at: null,
+        subscription_started_at: null,
+        subscription_ends_at: null,
+        payment_method: null,
+        last_payment_at: null,
+        kicked_at: null,
+        notes: null,
+        group_id: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+      const activeMember: Member = { ...trialMember, status: 'ativo' };
+      const delinquentMember: Member = { ...trialMember, status: 'inadimplente' };
+      const removedMember: Member = { ...trialMember, status: 'removido' };
+
+      expect(trialMember.status).toBe('trial');
+      expect(activeMember.status).toBe('ativo');
+      expect(delinquentMember.status).toBe('inadimplente');
+      expect(removedMember.status).toBe('removido');
+    });
+  });
+
+  describe('MemberListItem', () => {
+    it('expõe apenas campos necessários para listagem', () => {
+      const memberListItem: MemberListItem = {
+        id: 99,
+        telegram_id: 555000,
+        telegram_username: 'list-user',
+        status: 'ativo',
+        subscription_ends_at: '2026-02-20T00:00:00Z',
+        created_at: '2026-02-01T00:00:00Z',
+        group_id: 'group-uuid-1',
+      };
+
+      expect(memberListItem.id).toBe(99);
+      expect(memberListItem.telegram_username).toBe('list-user');
+      expect(memberListItem.subscription_ends_at).toBe('2026-02-20T00:00:00Z');
+      expect(memberListItem.group_id).toBe('group-uuid-1');
     });
   });
 });

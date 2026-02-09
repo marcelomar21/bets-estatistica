@@ -36,6 +36,22 @@ describe('Sidebar', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
   });
 
+  it('renders Membros link for super_admin', () => {
+    render(<Sidebar role="super_admin" />);
+    expect(screen.getByText('Membros')).toBeInTheDocument();
+  });
+
+  it('renders Membros link for group_admin', () => {
+    render(<Sidebar role="group_admin" />);
+    expect(screen.getByText('Membros')).toBeInTheDocument();
+  });
+
+  it('oculta links restritos (Grupos, Bots) para group_admin', () => {
+    render(<Sidebar role="group_admin" />);
+    expect(screen.queryByText('Grupos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bots')).not.toBeInTheDocument();
+  });
+
   it('desktop sidebar has hidden md:flex classes', () => {
     const { container } = render(<Sidebar />);
     const desktopAside = container.querySelector('aside.hidden.md\\:flex');
