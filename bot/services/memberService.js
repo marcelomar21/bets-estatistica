@@ -28,6 +28,27 @@ const VALID_TRANSITIONS = {
 };
 
 /**
+ * Resolve group context for multi-tenant lookups/inserts.
+ * If caller omits groupId, use configured GROUP_ID from bot process.
+ * Explicit null disables tenant filtering for backward-compatible/global paths.
+ * @param {string|null|undefined} groupId
+ * @returns {string|null}
+ */
+function resolveGroupId(groupId) {
+  const configuredGroupId = config.membership?.groupId || null;
+
+  if (groupId === undefined) {
+    return configuredGroupId;
+  }
+
+  if (groupId === null || groupId === '') {
+    return null;
+  }
+
+  return groupId;
+}
+
+/**
  * Check if a status transition is valid according to the state machine
  * @param {string} currentStatus - Current member status
  * @param {string} newStatus - Desired new status
@@ -57,10 +78,12 @@ function canTransition(currentStatus, newStatus) {
 
 /**
  * Get member by internal ID
+ * Story 3.1: Added optional groupId parameter for multi-tenant context
  * @param {number} memberId - Internal member ID
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant context
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getMemberById(memberId) {
+async function getMemberById(memberId, groupId = undefined) {
   // Validate input
   const validation = validateMemberId(memberId);
   if (!validation.valid) {
@@ -68,11 +91,19 @@ async function getMemberById(memberId) {
   }
 
   try {
-    const { data, error } = await supabase
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    let query = supabase
       .from('members')
       .select('*')
-      .eq('id', validation.value)
-      .single();
+      .eq('id', validation.value);
+
+    // Story 3.1: Filter by group_id when provided (multi-tenant)
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -95,10 +126,12 @@ async function getMemberById(memberId) {
 
 /**
  * Get member by Telegram ID
+ * Story 3.1: Added optional groupId parameter for multi-tenant filtering
  * @param {number|string} telegramId - Telegram user ID
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant filtering
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getMemberByTelegramId(telegramId) {
+async function getMemberByTelegramId(telegramId, groupId = undefined) {
   // Validate input
   const validation = validateTelegramId(telegramId);
   if (!validation.valid) {
@@ -106,27 +139,78 @@ async function getMemberByTelegramId(telegramId) {
   }
 
   try {
-    const { data, error } = await supabase
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    let query = supabase
       .from('members')
       .select('*')
-      .eq('telegram_id', validation.value)
-      .single();
+      .eq('telegram_id', validation.value);
+
+    // Story 3.1: Filter by group_id when provided (multi-tenant)
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       if (error.code === 'PGRST116') {
+        const details = (error.details || '').toLowerCase();
+        const noRows = details.includes('0 rows') || !details;
+
         // No rows returned
-        return {
-          success: false,
-          error: { code: 'MEMBER_NOT_FOUND', message: `Member with telegram_id ${telegramId} not found` }
-        };
+        if (noRows) {
+          return {
+            success: false,
+            error: { code: 'MEMBER_NOT_FOUND', message: `Member with telegram_id ${telegramId} not found` }
+          };
+        }
+
+        // Backward compatible behavior: when query is intentionally global and
+        // multiple rows exist across tenants, return the first match deterministically.
+        if (!effectiveGroupId) {
+          const { data: firstMatch, error: fallbackError } = await supabase
+            .from('members')
+            .select('*')
+            .eq('telegram_id', validation.value)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (fallbackError) {
+            logger.error('[memberService] getMemberByTelegramId: fallback query failed', {
+              telegramId,
+              error: fallbackError.message
+            });
+            return { success: false, error: { code: 'DB_ERROR', message: fallbackError.message } };
+          }
+
+          if (!firstMatch) {
+            return {
+              success: false,
+              error: { code: 'MEMBER_NOT_FOUND', message: `Member with telegram_id ${telegramId} not found` }
+            };
+          }
+
+          return { success: true, data: firstMatch };
+        }
       }
-      logger.error('[memberService] getMemberByTelegramId: database error', { telegramId, error: error.message });
+
+      logger.error('[memberService] getMemberByTelegramId: database error', {
+        telegramId,
+        groupId: effectiveGroupId,
+        error: error.message
+      });
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
     return { success: true, data };
   } catch (err) {
-    logger.error('[memberService] getMemberByTelegramId: unexpected error', { telegramId, error: err.message });
+    logger.error('[memberService] getMemberByTelegramId: unexpected error', {
+      telegramId,
+      groupId: resolveGroupId(groupId),
+      error: err.message
+    });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
   }
 }
@@ -210,18 +294,22 @@ async function updateMemberStatus(memberId, newStatus) {
 
 /**
  * Create a new trial member
+ * Story 3.1: Added optional groupId parameter for multi-tenant support
  * @param {object} memberData - Member data
  * @param {number|string} memberData.telegramId - Telegram user ID
  * @param {string} [memberData.telegramUsername] - Telegram username
  * @param {string} [memberData.email] - Email address
  * @param {string} [memberData.affiliateCode] - Affiliate code from deep link (optional)
+ * @param {string} [memberData.groupId] - Group ID for multi-tenant (optional)
  * @param {number} [trialDays=7] - Number of trial days
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createTrialMember({ telegramId, telegramUsername, email, affiliateCode }, trialDays = 7) {
+async function createTrialMember({ telegramId, telegramUsername, email, affiliateCode, groupId }, trialDays = 7) {
   try {
-    // Check if member already exists
-    const existingResult = await getMemberByTelegramId(telegramId);
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    // Check if member already exists (filter by groupId if multi-tenant)
+    const existingResult = await getMemberByTelegramId(telegramId, effectiveGroupId);
 
     if (existingResult.success) {
       logger.warn('[memberService] createTrialMember: member already exists', { telegramId });
@@ -248,6 +336,11 @@ async function createTrialMember({ telegramId, telegramUsername, email, affiliat
       trial_started_at: now.toISOString(),
       trial_ends_at: trialEndsAt.toISOString()
     };
+
+    // Story 3.1: Add group_id for multi-tenant (nullable for backward compat)
+    if (effectiveGroupId) {
+      insertData.group_id = effectiveGroupId;
+    }
 
     // Story 18.1: Add affiliate tracking if code provided
     if (affiliateCode) {
@@ -289,10 +382,12 @@ async function createTrialMember({ telegramId, telegramUsername, email, affiliat
 /**
  * Get member by email address
  * Story 16.3: Added for webhook processing
+ * Story 3.1: Added optional groupId parameter for multi-tenant filtering
  * @param {string} email - Email address
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant filtering
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getMemberByEmail(email) {
+async function getMemberByEmail(email, groupId = undefined) {
   try {
     if (!email) {
       return {
@@ -301,11 +396,19 @@ async function getMemberByEmail(email) {
       };
     }
 
-    const { data, error } = await supabase
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    let query = supabase
       .from('members')
       .select('*')
-      .eq('email', email)
-      .single();
+      .eq('email', email);
+
+    // Story 3.1: Filter by group_id when provided (multi-tenant)
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -718,14 +821,17 @@ async function markMemberAsDefaulted(memberId) {
  * Create an active member directly (for payments before trial)
  * Story 16.3: Added for webhook processing
  * Tech-Spec: Migração MP - Uses mp_subscription_id and affiliate_coupon
+ * Story 3.1: Added optional groupId parameter for multi-tenant support
  * @param {object} memberData - Member data
  * @param {string} memberData.email - Email address
  * @param {object} memberData.subscriptionData - Subscription information
  * @param {string} [memberData.affiliateCoupon] - Coupon code from MP checkout (optional)
+ * @param {string} [memberData.groupId] - Group ID for multi-tenant (optional)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createActiveMember({ email, subscriptionData, affiliateCoupon }) {
+async function createActiveMember({ email, subscriptionData, affiliateCoupon, groupId }) {
   try {
+    const effectiveGroupId = resolveGroupId(groupId);
     const { subscriptionId, customerId, paymentMethod } = subscriptionData;
 
     const now = new Date();
@@ -742,6 +848,11 @@ async function createActiveMember({ email, subscriptionData, affiliateCoupon }) 
       subscription_ends_at: subscriptionEndsAt.toISOString(),
       last_payment_at: now.toISOString()
     };
+
+    // Story 3.1: Add group_id for multi-tenant (nullable for backward compat)
+    if (effectiveGroupId) {
+      insertData.group_id = effectiveGroupId;
+    }
 
     // Add affiliate coupon if provided
     if (affiliateCoupon) {
@@ -1897,10 +2008,12 @@ async function getMemberBySubscription(subscriptionId) {
 
 /**
  * Get member by Mercado Pago payer ID
+ * Story 3.1: Added optional groupId parameter for multi-tenant filtering
  * @param {string} payerId - MP payer ID
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant filtering
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getMemberByPayerId(payerId) {
+async function getMemberByPayerId(payerId, groupId = undefined) {
   try {
     if (!payerId) {
       return {
@@ -1909,11 +2022,19 @@ async function getMemberByPayerId(payerId) {
       };
     }
 
-    const { data, error } = await supabase
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    let query = supabase
       .from('members')
       .select('*')
-      .eq('mp_payer_id', payerId.toString())
-      .maybeSingle();
+      .eq('mp_payer_id', payerId.toString());
+
+    // Story 3.1: Filter by group_id when provided (multi-tenant)
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       logger.error('[memberService] getMemberByPayerId: database error', { payerId, error: error.message });
@@ -1934,21 +2055,30 @@ async function getMemberByPayerId(payerId) {
 /**
  * Create a trial member from Mercado Pago subscription
  * MP manages the trial period (7 days free, then charges automatically)
+ * Story 3.1: Added optional groupId parameter for multi-tenant support
  * @param {object} memberData - Member data from MP
  * @param {string} memberData.email - Email from MP payer
  * @param {string} memberData.subscriptionId - MP preapproval ID
  * @param {string} memberData.payerId - MP payer ID
  * @param {string} [memberData.couponCode] - Affiliate coupon used at checkout
+ * @param {string} [memberData.groupId] - Group ID for multi-tenant (optional)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function createTrialMemberMP({ email, subscriptionId, payerId, couponCode }) {
+async function createTrialMemberMP({ email, subscriptionId, payerId, couponCode, groupId }) {
   try {
+    const effectiveGroupId = resolveGroupId(groupId);
+
     const insertData = {
       email,
       status: 'trial',
       mp_subscription_id: subscriptionId,
       mp_payer_id: payerId
     };
+
+    // Story 3.1: Add group_id for multi-tenant (nullable for backward compat)
+    if (effectiveGroupId) {
+      insertData.group_id = effectiveGroupId;
+    }
 
     // Add affiliate coupon if provided
     if (couponCode) {
