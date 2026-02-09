@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import type { GroupListItem } from '@/types/database';
-import { GroupEditForm } from '@/components/features/groups/GroupEditForm';
+import { GroupEditForm, type GroupEditFormData } from '@/components/features/groups/GroupEditForm';
 
 export default function GroupEditPage() {
   const params = useParams<{ groupId: string }>();
@@ -43,7 +43,7 @@ export default function GroupEditPage() {
     fetchGroup();
   }, [groupId]);
 
-  async function handleSubmit(data: Record<string, unknown>) {
+  async function handleSubmit(data: GroupEditFormData) {
     setSubmitLoading(true);
     setError(null);
 

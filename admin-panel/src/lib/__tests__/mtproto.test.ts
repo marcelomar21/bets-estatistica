@@ -126,7 +126,12 @@ describe('mtproto', () => {
       mockGetEntity.mockResolvedValueOnce({ id: 123 });
       mockGetInputEntity.mockResolvedValueOnce({ channelId: BigInt(111) });
       mockInvoke.mockResolvedValueOnce({
-        participant: new Api.ChannelParticipantAdmin(),
+        participant: new Api.ChannelParticipantAdmin({
+          userId: 123 as unknown as import('big-integer').BigInteger,
+          promotedBy: 456 as unknown as import('big-integer').BigInteger,
+          date: Math.floor(Date.now() / 1000),
+          adminRights: new Api.ChatAdminRights({}),
+        }),
       });
 
       const client = createTelegramClient('');

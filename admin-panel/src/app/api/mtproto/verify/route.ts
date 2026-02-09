@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { Api } from 'telegram';
+import { Api, sessions } from 'telegram';
+import { computeCheck } from 'telegram/Password';
 import { createApiHandler } from '@/middleware/api-handler';
 import { encrypt } from '@/lib/encryption';
 import { logAudit } from '@/lib/audit';
@@ -87,7 +88,7 @@ export const POST = createApiHandler(
           const passwordResult = await setup.client.invoke(new Api.account.GetPassword());
           await setup.client.invoke(
             new Api.auth.CheckPassword({
-              password: await setup.client.computePasswordCheck(passwordResult, password),
+              password: await computeCheck(passwordResult, password),
             }),
           );
         } else {
@@ -96,7 +97,7 @@ export const POST = createApiHandler(
       }
 
       // Extract session string
-      const sessionString = (setup.client.session as { save: () => string }).save();
+      const sessionString = (setup.client.session as sessions.StringSession).save();
       const encryptedSession = encrypt(sessionString);
 
       // Save to database

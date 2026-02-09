@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { TelegramClient, sessions } from 'telegram';
+import { TelegramClient, sessions, Api } from 'telegram';
 
 const { StringSession } = sessions;
 import { createApiHandler } from '@/middleware/api-handler';
@@ -83,9 +83,17 @@ export const POST = createApiHandler(
         }),
       );
 
+      if (!('phoneCodeHash' in sendCodeResult)) {
+        await client.disconnect();
+        return NextResponse.json(
+          { success: false, error: { code: 'MTPROTO_SETUP_FAILED', message: 'Conta já autenticada ou código não enviado' } },
+          { status: 400 },
+        );
+      }
+
       pendingSetups.set(setupToken, {
         client,
-        phoneHash: sendCodeResult.phoneCodeHash,
+        phoneHash: (sendCodeResult as Api.auth.SentCode).phoneCodeHash,
         phoneNumber: phone_number,
         attempts: 0,
         createdAt: Date.now(),
@@ -95,7 +103,7 @@ export const POST = createApiHandler(
 
       return NextResponse.json({
         success: true,
-        data: { setup_token: setupToken, phone_hash: sendCodeResult.phoneCodeHash },
+        data: { setup_token: setupToken, phone_hash: (sendCodeResult as Api.auth.SentCode).phoneCodeHash },
       });
     } catch (err) {
       return NextResponse.json(

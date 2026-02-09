@@ -1,4 +1,5 @@
 import { TelegramClient, Api, errors, sessions } from 'telegram';
+import type { BigInteger } from 'big-integer';
 
 const { StringSession } = sessions;
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -102,7 +103,7 @@ export async function createSupergroup(
   client: TelegramClient,
   title: string,
   about: string,
-): Promise<{ groupId: number; accessHash: bigint; channel: Api.Channel }> {
+): Promise<{ groupId: number; accessHash: BigInteger; channel: Api.Channel }> {
   const result = await client.invoke(
     new Api.channels.CreateChannel({
       title,

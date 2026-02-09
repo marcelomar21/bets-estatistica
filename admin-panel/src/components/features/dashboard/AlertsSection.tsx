@@ -6,6 +6,10 @@ const alertConfig: Record<DashboardAlert['type'], { icon: string; className: str
   group_failed: { icon: '🟠', className: 'border-orange-200 bg-orange-50' },
   group_paused: { icon: '🟡', className: 'border-yellow-200 bg-yellow-50' },
   onboarding_completed: { icon: '🟢', className: 'border-green-200 bg-green-50' },
+  telegram_group_created: { icon: '🟢', className: 'border-green-200 bg-green-50' },
+  telegram_group_failed: { icon: '🔴', className: 'border-red-200 bg-red-50' },
+  telegram_notification_failed: { icon: '🟠', className: 'border-orange-200 bg-orange-50' },
+  mtproto_session_expired: { icon: '🟡', className: 'border-yellow-200 bg-yellow-50' },
 };
 
 interface AlertsSectionProps {

@@ -634,7 +634,7 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
       mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
       vi.mocked(withMtprotoSession).mockImplementation(async (_sb, fn) => fn({} as any));
-      vi.mocked(createSupergroup).mockResolvedValue({ groupId: -1001234, channel: {} as any, accessHash: BigInt(0) });
+      vi.mocked(createSupergroup).mockResolvedValue({ groupId: -1001234, channel: {} as any, accessHash: 0 as unknown as import('big-integer').BigInteger });
       vi.mocked(addBotAsAdmin).mockResolvedValue(undefined);
       vi.mocked(createInviteLink).mockResolvedValue('https://t.me/+abc');
       vi.mocked(getBotConfig).mockResolvedValue(null);
