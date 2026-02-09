@@ -41,7 +41,7 @@ export default function NotificationsPanel({
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-gray-900">Notifica\u00E7\u00F5es</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Notificações</h2>
           {unreadCount > 0 && (
             <div role="status" aria-live="polite">
               <span
@@ -65,7 +65,7 @@ export default function NotificationsPanel({
       </div>
 
       {notifications.length === 0 ? (
-        <p className="text-sm text-gray-500">Nenhuma notifica\u00E7\u00E3o</p>
+        <p className="text-sm text-gray-500">Nenhuma notificação</p>
       ) : (
         <ul className="space-y-3">
           {notifications.map((notification) => {
