@@ -4,6 +4,7 @@ import { formatDateTime } from '@/lib/format-utils';
 const alertConfig: Record<DashboardAlert['type'], { icon: string; className: string }> = {
   bot_offline: { icon: '🔴', className: 'border-red-200 bg-red-50' },
   group_failed: { icon: '🟠', className: 'border-orange-200 bg-orange-50' },
+  group_paused: { icon: '🟡', className: 'border-yellow-200 bg-yellow-50' },
   onboarding_completed: { icon: '🟢', className: 'border-green-200 bg-green-50' },
 };
 
@@ -11,6 +12,7 @@ interface AlertsSectionProps {
   alerts: DashboardAlert[];
 }
 
+/** @deprecated Use NotificationsPanel instead. Kept for Story 2.4 test compatibility. */
 export default function AlertsSection({ alerts }: AlertsSectionProps) {
   if (alerts.length === 0) {
     return (

@@ -57,8 +57,13 @@ export interface DashboardGroupCard {
   active_members: number;
 }
 
+export type NotificationType = 'bot_offline' | 'group_failed' | 'onboarding_completed' | 'group_paused' | 'integration_error';
+export type NotificationSeverity = 'info' | 'warning' | 'error' | 'success';
+
+export type DashboardAlertType = Exclude<NotificationType, 'integration_error'>;
+
 export interface DashboardAlert {
-  type: 'bot_offline' | 'group_failed' | 'onboarding_completed';
+  type: DashboardAlertType;
   message: string;
   timestamp: string;
   group_name?: string;
@@ -68,6 +73,19 @@ export interface DashboardData {
   summary: DashboardSummary;
   groups: DashboardGroupCard[];
   alerts: DashboardAlert[];
+  unread_count: number;
+}
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  severity: NotificationSeverity;
+  title: string;
+  message: string;
+  group_id: string | null;
+  metadata: Record<string, unknown>;
+  read: boolean;
+  created_at: string;
 }
 
 export type OnboardingStep = 'creating' | 'validating_bot' | 'configuring_mp' | 'deploying_bot' | 'creating_admin' | 'finalizing';

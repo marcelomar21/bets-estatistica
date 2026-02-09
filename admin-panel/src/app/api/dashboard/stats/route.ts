@@ -1,6 +1,88 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import type { DashboardSummary, DashboardGroupCard, DashboardAlert } from '@/types/database';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+const SEVERITY_MAP: Record<string, string> = {
+  bot_offline: 'error',
+  group_failed: 'error',
+  group_paused: 'warning',
+  onboarding_completed: 'success',
+  integration_error: 'error',
+};
+
+async function persistNotifications(
+  supabase: SupabaseClient,
+  alerts: DashboardAlert[],
+  groupsById: Map<string, { id: string; name: string }>,
+) {
+  if (alerts.length === 0) return;
+
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+  // Fetch recent notifications for deduplication
+  const { data: recent, error: dedupError } = await supabase
+    .from('notifications')
+    .select('type, group_id')
+    .gte('created_at', oneHourAgo);
+
+  if (dedupError) {
+    console.warn('[notifications] Failed to fetch recent for dedup, skipping insert:', dedupError.message);
+    return;
+  }
+
+  const recentSet = new Set(
+    (recent ?? []).map((n: { type: string; group_id: string | null }) =>
+      `${n.type}::${n.group_id ?? ''}`,
+    ),
+  );
+
+  // Build name-based lookup for O(1) access instead of O(N) linear scan
+  const groupsByName = new Map<string, { id: string; name: string }>();
+  for (const g of groupsById.values()) {
+    groupsByName.set(g.name, g);
+  }
+
+  const toInsert = alerts
+    .filter((alert) => {
+      const group = alert.group_name
+        ? groupsByName.get(alert.group_name)
+        : undefined;
+      const key = `${alert.type}::${group?.id ?? ''}`;
+      return !recentSet.has(key);
+    })
+    .map((alert) => {
+      const group = alert.group_name
+        ? groupsByName.get(alert.group_name)
+        : undefined;
+      return {
+        type: alert.type,
+        severity: SEVERITY_MAP[alert.type] ?? 'info',
+        title: alertTitle(alert.type),
+        message: alert.message,
+        group_id: group?.id ?? null,
+        metadata: { group_name: alert.group_name ?? null },
+      };
+    });
+
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('notifications').insert(toInsert);
+    if (error) {
+      console.warn('[notifications] Failed to persist notifications:', error.message);
+    }
+  }
+}
+
+function alertTitle(type: string): string {
+  switch (type) {
+    case 'bot_offline': return 'Bot Offline';
+    case 'group_failed': return 'Onboarding Falhou';
+    case 'group_paused': return 'Grupo Pausado';
+    case 'onboarding_completed': return 'Onboarding Concluido';
+    case 'integration_error': return 'Erro de Integração';
+    default: return 'Alerta';
+  }
+}
 
 export const GET = createApiHandler(async (_req, context) => {
   const { supabase } = context;
@@ -105,6 +187,18 @@ export const GET = createApiHandler(async (_req, context) => {
     }
   }
 
+  // Groups with paused status
+  for (const g of groups) {
+    if (g.status === 'paused') {
+      alerts.push({
+        type: 'group_paused',
+        message: `Grupo "${g.name}" esta pausado`,
+        timestamp: g.created_at,
+        group_name: g.name,
+      });
+    }
+  }
+
   // Onboarding completed alerts from audit_log (non-fatal if audit_log query failed)
   const auditLogEntries = auditLogResult.data ?? [];
   const groupsById = new Map(groups.map((g) => [g.id, g]));
@@ -124,8 +218,17 @@ export const GET = createApiHandler(async (_req, context) => {
     }
   }
 
+  // Persist alerts as notifications BEFORE querying unread count
+  await persistNotifications(supabase, alerts, groupsById);
+
+  // Get unread notification count
+  const { count: unreadCount } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('read', false);
+
   return NextResponse.json({
     success: true,
-    data: { summary, groups: groupCards, alerts },
+    data: { summary, groups: groupCards, alerts, unread_count: unreadCount ?? 0 },
   });
 });
