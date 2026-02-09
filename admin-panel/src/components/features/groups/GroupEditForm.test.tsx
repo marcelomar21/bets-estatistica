@@ -126,6 +126,7 @@ describe('GroupEditForm', () => {
       telegram_group_id: -1001234567890,
       telegram_admin_group_id: -1009876543210,
       status: 'paused',
+      additional_invitee_ids: [],
     });
   });
 

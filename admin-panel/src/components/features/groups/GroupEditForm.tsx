@@ -6,10 +6,15 @@ import type { GroupListItem } from '@/types/database';
 import { statusConfig } from './group-utils';
 
 interface GroupEditFormProps {
-  initialData: GroupListItem;
+  initialData: GroupListItem & { additional_invitee_ids?: InviteeEntry[] };
   onSubmit: (data: GroupEditFormData) => Promise<void>;
   loading: boolean;
   error: string | null;
+}
+
+export interface InviteeEntry {
+  type: 'telegram' | 'email';
+  value: string;
 }
 
 export interface GroupEditFormData {
@@ -17,6 +22,7 @@ export interface GroupEditFormData {
   telegram_group_id: number | null;
   telegram_admin_group_id: number | null;
   status: 'active' | 'paused' | 'inactive';
+  additional_invitee_ids: InviteeEntry[];
 }
 
 const editableStatuses = ['active', 'paused', 'inactive'] as const;
@@ -36,6 +42,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       ? (initialData.status as 'active' | 'paused' | 'inactive')
       : 'active',
   );
+  const [invitees, setInvitees] = useState<InviteeEntry[]>(initialData.additional_invitee_ids || []);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -52,6 +59,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       telegram_group_id: null,
       telegram_admin_group_id: null,
       status,
+      additional_invitee_ids: invitees.filter(i => i.value.trim() !== ''),
     };
 
     if (telegramGroupId.trim()) {
@@ -144,6 +152,55 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
             </option>
           ))}
         </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Convidados Adicionais (Telegram/Email)
+        </label>
+        <div className="space-y-2">
+          {invitees.map((invitee, index) => (
+            <div key={index} className="flex gap-2 items-center">
+              <select
+                value={invitee.type}
+                onChange={(e) => {
+                  const updated = [...invitees];
+                  updated[index] = { ...updated[index], type: e.target.value as 'telegram' | 'email' };
+                  setInvitees(updated);
+                }}
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="telegram">Telegram</option>
+                <option value="email">Email</option>
+              </select>
+              <input
+                type="text"
+                value={invitee.value}
+                onChange={(e) => {
+                  const updated = [...invitees];
+                  updated[index] = { ...updated[index], value: e.target.value };
+                  setInvitees(updated);
+                }}
+                placeholder={invitee.type === 'telegram' ? 'Chat ID (ex: 123456789)' : 'email@exemplo.com'}
+                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => setInvitees(invitees.filter((_, i) => i !== index))}
+                className="text-red-500 hover:text-red-700 text-sm px-2"
+              >
+                Remover
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setInvitees([...invitees, { type: 'telegram', value: '' }])}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            + Adicionar Convidado
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-3">
