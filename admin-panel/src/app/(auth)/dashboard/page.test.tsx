@@ -10,6 +10,10 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+vi.mock('@/components/features/dashboard/GroupAdminDashboard', () => ({
+  default: () => <div>Group Admin Dashboard Mock</div>,
+}));
+
 const mockDashboardData = {
   summary: {
     groups: { active: 2, paused: 1, total: 3 },
@@ -53,13 +57,19 @@ const mockNotificationsData = {
   unread_count: 1,
 };
 
+const mockMeResponse = {
+  ok: true,
+  json: () => Promise.resolve({ success: true, data: { userId: 'u1', email: 'admin@test.com', role: 'super_admin', groupId: null } }),
+};
+
 /**
  * Helper that creates a URL-aware fetch mock.
- * Routes /api/dashboard/stats and /api/notifications to their respective responses.
+ * Routes /api/me, /api/dashboard/stats, and /api/notifications to their respective responses.
  */
 function mockFetchByUrl(
   statsResponse?: { ok: boolean; json: () => Promise<unknown> },
   notificationsResponse?: { ok: boolean; json: () => Promise<unknown> },
+  meResponse?: { ok: boolean; json: () => Promise<unknown> },
 ) {
   const defaultStatsResponse = {
     ok: true,
@@ -72,6 +82,9 @@ function mockFetchByUrl(
 
   return vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes('/api/me')) {
+      return Promise.resolve((meResponse ?? mockMeResponse) as Response);
+    }
     if (url.includes('/api/notifications')) {
       return Promise.resolve((notificationsResponse ?? defaultNotificationsResponse) as Response);
     }
@@ -116,6 +129,32 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Bot offline')).toBeInTheDocument();
   });
 
+  it('renders GroupAdminDashboard for group_admin and skips super_admin fetches', async () => {
+    const groupAdminMeResponse = {
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { userId: 'u2', email: 'group@test.com', role: 'group_admin', groupId: 'g1' } }),
+    };
+
+    const fetchSpy = mockFetchByUrl(undefined, undefined, groupAdminMeResponse);
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Group Admin Dashboard Mock')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Grupos Ativos')).not.toBeInTheDocument();
+
+    const calledUrls = fetchSpy.mock.calls.map((call) => {
+      const input = call[0];
+      return typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    });
+
+    expect(calledUrls.some((url: string) => url.includes('/api/me'))).toBe(true);
+    expect(calledUrls.some((url: string) => url.includes('/api/dashboard/stats'))).toBe(false);
+    expect(calledUrls.some((url: string) => url.includes('/api/notifications'))).toBe(false);
+  });
+
   it('shows error message with retry button on API failure', async () => {
     mockFetchByUrl({
       ok: true,
@@ -135,6 +174,9 @@ describe('DashboardPage', () => {
     let statsCallCount = 0;
     const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/me')) {
+        return Promise.resolve(mockMeResponse as Response);
+      }
       if (url.includes('/api/notifications')) {
         return Promise.resolve({
           ok: true,
@@ -172,7 +214,13 @@ describe('DashboardPage', () => {
   });
 
   it('shows error on network failure', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('Network error'));
+    vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/me')) {
+        return Promise.resolve(mockMeResponse as Response);
+      }
+      return Promise.reject(new Error('Network error'));
+    });
 
     render(<DashboardPage />);
 
@@ -184,6 +232,9 @@ describe('DashboardPage', () => {
   it('shows error on HTTP error status', async () => {
     vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/me')) {
+        return Promise.resolve(mockMeResponse as Response);
+      }
       if (url.includes('/api/notifications')) {
         return Promise.resolve({
           ok: true,
