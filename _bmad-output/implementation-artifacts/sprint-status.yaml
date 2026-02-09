@@ -67,7 +67,7 @@ development_status:
   # ========================================
   epic-3: in-progress
   3-1-adaptar-registro-de-membros-para-multi-tenant: in-progress
-  3-2-login-e-dashboard-do-admin-de-grupo: backlog
+  3-2-login-e-dashboard-do-admin-de-grupo: ready-for-dev
   3-3-lista-de-membros-com-status-e-vencimentos: backlog
   3-4-visualizacao-de-membros-pelo-super-admin: backlog
   epic-3-retrospective: optional
