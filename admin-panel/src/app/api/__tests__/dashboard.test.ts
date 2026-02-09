@@ -53,12 +53,13 @@ function createDashboardMock(overrides: {
           };
         }
         // Unread count query: select('*', { count: 'exact', head: true }).eq('read', false)
-        return {
+        const unreadChain: Record<string, unknown> = {
           ...notifData,
           count: notifData.count ?? 0,
-          eq: vi.fn(() => ({ ...notifData, count: notifData.count ?? 0 })),
           gte: vi.fn(() => ({ ...notifData })),
         };
+        unreadChain.eq = vi.fn(() => unreadChain);
+        return unreadChain;
       });
       chain.insert = mockInsert;
       chain.update = vi.fn(() => ({
@@ -182,16 +183,17 @@ describe('GET /api/dashboard/stats', () => {
     expect(body.data.unread_count).toBeDefined();
   });
 
-  it('returns filtered data for group_admin (RLS-filtered)', async () => {
-    // group_admin only sees their own group via RLS
+  it('returns filtered data for group_admin (singular group + member summary)', async () => {
+    // group_admin gets singular group and member summary
     const filteredGroups = [sampleGroups[0]]; // Only g1
-    const filteredMembers = [sampleMembers[0], sampleMembers[1], sampleMembers[3]]; // Only g1 members
-    const filteredHealth = [sampleBotHealth[0]]; // Only g1 bot health
+    const filteredMembers = [
+      { ...sampleMembers[0], vencimento_at: null },
+      { ...sampleMembers[1], vencimento_at: null },
+      { ...sampleMembers[3], vencimento_at: null },
+    ]; // Only g1 members
 
     const mock = createDashboardMock({
       groups: { data: filteredGroups, error: null },
-      bot_pool: { data: [], error: null }, // bot_pool not accessible to group_admin per RLS
-      bot_health: { data: filteredHealth, error: null },
       members: { data: filteredMembers, error: null },
     });
     const context = createMockContext('group_admin', mock);
@@ -205,9 +207,11 @@ describe('GET /api/dashboard/stats', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.groups).toHaveLength(1);
-    expect(body.data.groups[0].name).toBe('Grupo Alpha');
+    expect(body.data.group).toBeDefined();
+    expect(body.data.group.name).toBe('Grupo Alpha');
     expect(body.data.summary.members.total).toBe(2); // ativo + trial (removido excluded)
+    expect(body.data.summary.members.trial).toBe(1);
+    expect(body.data.summary.members.ativo).toBe(1);
   });
 
   it('returns 401 for unauthenticated user', async () => {
@@ -231,6 +235,28 @@ describe('GET /api/dashboard/stats', () => {
   it('returns 500 on database error', async () => {
     const mock = createDashboardMock({
       groups: { data: null, error: { message: 'Connection refused' } },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DB_ERROR');
+  });
+
+  it('returns 500 when unread notifications query fails for super_admin', async () => {
+    const mock = createDashboardMock({
+      groups: { data: sampleGroups, error: null },
+      bot_pool: { data: sampleBots, error: null },
+      bot_health: { data: sampleBotHealth, error: null },
+      members: { data: sampleMembers, error: null },
+      notifications: { data: null, error: { message: 'notifications unavailable' } },
     });
     const context = createMockContext('super_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -400,6 +426,118 @@ describe('GET /api/dashboard/stats', () => {
 
     // insert should NOT have been called because the dedup detected existing notification
     expect(mock.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('returns group_admin dashboard with member summary and singular group', async () => {
+    const groupAdminGroup = { id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' };
+    const groupAdminMembers = [
+      { id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-20T00:00:00Z' },
+      { id: 'm2', group_id: 'g1', status: 'trial', vencimento_at: null },
+      { id: 'm3', group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-12T00:00:00Z' }, // vencendo em 7d
+      { id: 'm4', group_id: 'g1', status: 'removido', vencimento_at: null },
+    ];
+
+    const mock = createDashboardMock({
+      groups: { data: [groupAdminGroup], error: null },
+      bot_pool: { data: [], error: null },
+      bot_health: { data: [{ group_id: 'g1', status: 'online', last_heartbeat: '2026-02-08T10:00:00Z', error_message: null, groups: { name: 'Grupo Alpha' } }], error: null },
+      members: { data: groupAdminMembers, error: null },
+    });
+    const context = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    // group_admin gets singular 'group' instead of 'groups' array
+    expect(body.data.group).toBeDefined();
+    expect(body.data.group.id).toBe('g1');
+    expect(body.data.group.name).toBe('Grupo Alpha');
+    expect(body.data.group.status).toBe('active');
+
+    // group_admin gets member summary with breakdown
+    expect(body.data.summary.members.total).toBeDefined();
+    expect(body.data.summary.members.trial).toBeDefined();
+    expect(body.data.summary.members.ativo).toBeDefined();
+    expect(body.data.summary.members.vencendo).toBeDefined();
+
+    // Should NOT have 'groups' array for group_admin
+    expect(body.data.groups).toBeUndefined();
+  });
+
+  it('group_admin does not receive bot/group summary stats', async () => {
+    const mock = createDashboardMock({
+      groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: null }], error: null },
+    });
+    const context = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    // group_admin should NOT have groups/bots summary
+    expect(body.data.summary.groups).toBeUndefined();
+    expect(body.data.summary.bots).toBeUndefined();
+  });
+
+  it('returns 500 for group_admin when unread notifications query fails', async () => {
+    const mock = createDashboardMock({
+      groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: null }], error: null },
+      notifications: { data: null, error: { message: 'Permission denied' } },
+    });
+    const context = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('DB_ERROR');
+  });
+
+  it('builds group_admin dashboard summary for 10k members in under 3 seconds', async () => {
+    const tenThousandMembers = Array.from({ length: 10_000 }, (_, i) => {
+      if (i % 4 === 0) return { id: `m-${i}`, group_id: 'g1', status: 'trial', vencimento_at: null };
+      return { id: `m-${i}`, group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-12T00:00:00Z' };
+    });
+
+    const mock = createDashboardMock({
+      groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
+      members: { data: tenThousandMembers, error: null },
+      notifications: { data: [], error: null, count: 0 },
+    });
+    const context = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const start = performance.now();
+    const response = await GET(req);
+    const elapsedMs = performance.now() - start;
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(elapsedMs).toBeLessThan(3000);
   });
 
   it('inserts notifications when no matching alerts exist (no dedup hit)', async () => {

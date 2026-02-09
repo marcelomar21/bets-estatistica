@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
-import type { DashboardSummary, DashboardGroupCard, DashboardAlert } from '@/types/database';
+import type { DashboardSummary, DashboardGroupCard, DashboardAlert, GroupAdminDashboardData } from '@/types/database';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { TenantContext } from '@/middleware/tenant';
 
 const SEVERITY_MAP: Record<string, string> = {
   bot_offline: 'error',
@@ -84,9 +85,82 @@ function alertTitle(type: string): string {
   }
 }
 
-export const GET = createApiHandler(async (_req, context) => {
-  const { supabase } = context;
+async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter: string): Promise<NextResponse> {
+  const [groupResult, membersResult] = await Promise.all([
+    supabase
+      .from('groups')
+      .select('id, name, status, created_at')
+      .eq('id', groupFilter),
+    supabase
+      .from('members')
+      .select('id, status, vencimento_at')
+      .eq('group_id', groupFilter),
+  ]);
 
+  const dbError = groupResult.error || membersResult.error;
+  if (dbError) {
+    return NextResponse.json(
+      { success: false, error: { code: 'DB_ERROR', message: dbError.message } },
+      { status: 500 },
+    );
+  }
+
+  const group = (groupResult.data ?? [])[0] ?? null;
+  const members = membersResult.data ?? [];
+
+  const now = new Date();
+  const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const activeMembers = members.filter((m) => m.status === 'trial' || m.status === 'ativo');
+  const memberSummary = {
+    total: activeMembers.length,
+    trial: members.filter((m) => m.status === 'trial').length,
+    ativo: members.filter((m) => m.status === 'ativo').length,
+    vencendo: members.filter((m) =>
+      m.status === 'ativo' && m.vencimento_at &&
+      new Date(m.vencimento_at) <= sevenDays &&
+      new Date(m.vencimento_at) > now,
+    ).length,
+  };
+
+  // Get unread notification count
+  const { count: unreadCount, error: unreadError } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('read', false)
+    .eq('group_id', groupFilter);
+
+  if (unreadError) {
+    return NextResponse.json(
+      { success: false, error: { code: 'DB_ERROR', message: unreadError.message } },
+      { status: 500 },
+    );
+  }
+
+  const data: GroupAdminDashboardData = {
+    summary: { members: memberSummary },
+    group: group ? {
+      id: group.id,
+      name: group.name,
+      status: group.status,
+      created_at: group.created_at,
+    } : null,
+    alerts: [],
+    unread_count: unreadCount ?? 0,
+  };
+
+  return NextResponse.json({ success: true, data });
+}
+
+export const GET = createApiHandler(async (_req, context) => {
+  const { supabase, role, groupFilter } = context;
+
+  // group_admin gets a simplified dashboard with member summary
+  if (role === 'group_admin' && groupFilter) {
+    return handleGroupAdmin(supabase, groupFilter);
+  }
+
+  // super_admin: full dashboard with all groups, bots, alerts
   // Parallel queries — RLS automatically filters for group_admin
   const [groupsResult, botsResult, botHealthResult, membersResult, auditLogResult] = await Promise.all([
     supabase
@@ -222,10 +296,17 @@ export const GET = createApiHandler(async (_req, context) => {
   await persistNotifications(supabase, alerts, groupsById);
 
   // Get unread notification count
-  const { count: unreadCount } = await supabase
+  const { count: unreadCount, error: unreadError } = await supabase
     .from('notifications')
     .select('*', { count: 'exact', head: true })
     .eq('read', false);
+
+  if (unreadError) {
+    return NextResponse.json(
+      { success: false, error: { code: 'DB_ERROR', message: unreadError.message } },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json({
     success: true,

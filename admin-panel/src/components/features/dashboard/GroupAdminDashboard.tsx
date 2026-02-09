@@ -1,17 +1,19 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { DashboardData, Notification } from '@/types/database';
+import type { GroupAdminDashboardData, Notification } from '@/types/database';
+import { statusConfig } from '@/components/features/groups/group-utils';
+import type { Group } from '@/types/database';
 import StatCard from '@/components/features/dashboard/StatCard';
-import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
-import AlertsSection from '@/components/features/dashboard/AlertsSection';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
-import GroupAdminDashboard from '@/components/features/dashboard/GroupAdminDashboard';
 
-function DashboardSkeleton() {
+function GroupAdminSkeleton() {
   return (
     <div className="space-y-8">
-      {/* Stat cards skeleton */}
+      <div className="bg-white rounded-lg shadow p-6 animate-pulse">
+        <div className="h-5 bg-gray-200 rounded w-40 mb-3" />
+        <div className="h-4 bg-gray-200 rounded w-24" />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
@@ -20,21 +22,6 @@ function DashboardSkeleton() {
           </div>
         ))}
       </div>
-      {/* Group cards skeleton */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
-            <div className="h-5 bg-gray-200 rounded w-32 mb-3" />
-            <div className="h-4 bg-gray-200 rounded w-20" />
-          </div>
-        ))}
-      </div>
-      {/* Alerts skeleton */}
-      <div className="bg-white rounded-lg shadow p-6 animate-pulse">
-        <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
-        <div className="h-4 bg-gray-200 rounded w-full" />
-      </div>
-      {/* Notifications skeleton */}
       <div className="bg-white rounded-lg shadow p-6 animate-pulse">
         <div className="h-5 bg-gray-200 rounded w-32 mb-4" />
         <div className="space-y-3">
@@ -47,10 +34,8 @@ function DashboardSkeleton() {
   );
 }
 
-export default function DashboardPage() {
-  const [role, setRole] = useState<'super_admin' | 'group_admin' | null>(null);
-  const [roleResolved, setRoleResolved] = useState(false);
-  const [data, setData] = useState<DashboardData | null>(null);
+export default function GroupAdminDashboard() {
+  const [data, setData] = useState<GroupAdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -88,20 +73,17 @@ export default function DashboardPage() {
       setNotifications(json.data.notifications);
       setUnreadCount(json.data.unread_count);
     } catch {
-      /* notifications are non-critical — fail silently */
+      /* notifications are non-critical */
     }
   }, []);
 
   const handleMarkAsRead = useCallback(async (id: string) => {
-    // Check if already read
     const target = notifications.find(n => n.id === id);
     if (!target || target.read) return;
 
-    // Save previous state for rollback
     const prevNotifications = notifications;
     const prevCount = unreadCount;
 
-    // Optimistic update
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
     try {
@@ -111,89 +93,35 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch {
-      // Rollback on failure
       setNotifications(prevNotifications);
       setUnreadCount(prevCount);
     }
   }, [notifications, unreadCount]);
 
   const handleMarkAllRead = useCallback(async () => {
-    // Save previous state for rollback
     const prevNotifications = notifications;
     const prevCount = unreadCount;
 
-    // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
     try {
       await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
     } catch {
-      // Rollback on failure
       setNotifications(prevNotifications);
       setUnreadCount(prevCount);
     }
   }, [notifications, unreadCount]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function initialize() {
-      setRoleResolved(false);
-
-      try {
-        const res = await fetch('/api/me');
-        if (cancelled) return;
-
-        if (res.ok) {
-          const json = await res.json();
-          if (cancelled) return;
-
-          const fetchedRole = json?.success ? json?.data?.role : null;
-          if (fetchedRole === 'group_admin') {
-            setRole('group_admin');
-            setRoleResolved(true);
-            return;
-          }
-
-          setRole('super_admin');
-        } else {
-          setRole('super_admin');
-        }
-      } catch {
-        // If role fetch fails, fallback to super_admin view
-        setRole('super_admin');
-      }
-
-      setRoleResolved(true);
-      fetchDashboard();
-      fetchNotifications();
-    }
-
-    initialize();
-    return () => {
-      cancelled = true;
-    };
+    fetchDashboard();
+    fetchNotifications();
   }, [fetchDashboard, fetchNotifications]);
-
-  // Render GroupAdminDashboard for group_admin role
-  if (role === 'group_admin') {
-    return <GroupAdminDashboard />;
-  }
-
-  if (!roleResolved) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
-        <DashboardSkeleton />
-      </div>
-    );
-  }
 
   if (loading) {
     return (
       <div>
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
-        <DashboardSkeleton />
+        <GroupAdminSkeleton />
       </div>
     );
   }
@@ -217,33 +145,37 @@ export default function DashboardPage() {
 
   if (!data) return null;
 
+  const groupStatus = data.group?.status as Group['status'] | undefined;
+  const badge = groupStatus ? statusConfig[groupStatus] : null;
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
 
       <div className="space-y-8">
-        {/* Summary stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Grupos Ativos" value={data.summary.groups.active} subtitle={`${data.summary.groups.total} total`} icon="👥" />
-          <StatCard title="Membros Ativos" value={data.summary.members.total} icon="👤" />
-          <StatCard title="Bots em Uso" value={data.summary.bots.in_use} subtitle={`${data.summary.bots.total} total`} icon="🤖" />
-          <StatCard title="Bots Online" value={data.summary.bots.online} subtitle={data.summary.bots.offline > 0 ? `${data.summary.bots.offline} offline` : undefined} icon="📡" />
-        </div>
-
-        {/* Group cards */}
-        {data.groups.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Grupos</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {data.groups.map((group) => (
-                <GroupSummaryCard key={group.id} group={group} />
-              ))}
+        {/* Group card */}
+        {data.group && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">{data.group.name}</h2>
+                {badge && (
+                  <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Alerts (legacy — kept for Story 2.4 compatibility) */}
-        <AlertsSection alerts={data.alerts} />
+        {/* Member stat cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard title="Membros Ativos" value={data.summary.members.total} icon="👤" />
+          <StatCard title="Em Trial" value={data.summary.members.trial} icon="🕐" />
+          <StatCard title="Pagantes" value={data.summary.members.ativo} icon="💰" />
+          <StatCard title="Vencendo em 7d" value={data.summary.members.vencendo} icon="⚠️" />
+        </div>
 
         {/* Notifications */}
         <NotificationsPanel

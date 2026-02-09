@@ -85,6 +85,20 @@ export interface DashboardData {
   unread_count: number;
 }
 
+export interface GroupAdminMemberSummary {
+  total: number;
+  trial: number;
+  ativo: number;
+  vencendo: number;
+}
+
+export interface GroupAdminDashboardData {
+  summary: { members: GroupAdminMemberSummary };
+  group: Pick<DashboardGroupCard, 'id' | 'name' | 'status' | 'created_at'> | null;
+  alerts: DashboardAlert[];
+  unread_count: number;
+}
+
 export interface Notification {
   id: string;
   type: NotificationType;
