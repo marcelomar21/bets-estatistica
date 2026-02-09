@@ -26,8 +26,13 @@ dist/
 build/
 data/
 
-# IDE - Claude
-.claude/
+# IDE - Claude (track settings/config, ignore local/session data)
+.claude/settings.local.json
+.claude/projects/
+.claude/plans/
+.claude/teams/
+.claude/tasks/
+.claude/audio/
 
 # Backups
 backups/
