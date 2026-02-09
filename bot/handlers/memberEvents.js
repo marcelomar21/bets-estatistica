@@ -19,11 +19,14 @@ const { registerNotification } = require('../services/notificationService');
 /**
  * Handle new_chat_members event from Telegram
  * AC1: Detecção de Novo Membro no Grupo Público
+ * Story 3.1: Extract groupId from config for multi-tenant support
  * @param {object} msg - Telegram message with new_chat_members array
  * @returns {Promise<{processed: number, skipped: number}>}
  */
 async function handleNewChatMembers(msg) {
   const newMembers = msg.new_chat_members || [];
+  // Story 3.1: Get groupId from config (null for single-tenant)
+  const groupId = config.membership.groupId || null;
   let processed = 0;
   let skipped = 0;
 
@@ -35,8 +38,8 @@ async function handleNewChatMembers(msg) {
       continue;
     }
 
-    // Process each new member (1.3)
-    const result = await processNewMember(user);
+    // Process each new member (1.3) - Story 3.1: pass groupId
+    const result = await processNewMember(user, groupId);
     if (result.processed) {
       processed++;
     } else {
@@ -52,16 +55,18 @@ async function handleNewChatMembers(msg) {
  * Process a new member with duplicate detection logic
  * AC2: Prevenção de Duplicatas
  * Story 16.9: Updated to support Gate Entry system
+ * Story 3.1: Added groupId parameter for multi-tenant support
  * @param {object} user - Telegram user object
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant filtering
  * @returns {Promise<{processed: boolean, action?: string}>}
  */
-async function processNewMember(user) {
+async function processNewMember(user, groupId = null) {
   const { id: telegramId, username, first_name: firstName } = user;
 
-  logger.info('[membership:member-events] Processing new member', { telegramId, username, firstName });
+  logger.info('[membership:member-events] Processing new member', { telegramId, username, firstName, groupId });
 
-  // Check if member already exists (1.4)
-  const existingResult = await getMemberByTelegramId(telegramId);
+  // Check if member already exists (1.4) - Story 3.1: filter by groupId
+  const existingResult = await getMemberByTelegramId(telegramId, groupId);
 
   if (existingResult.success) {
     const member = existingResult.data;
@@ -146,7 +151,7 @@ async function processNewMember(user) {
           hoursSinceKick: rejoinResult.data?.hoursSinceKick?.toFixed(2)
         });
         // Send payment required message
-        await sendPaymentRequiredMessage(telegramId, member.id);
+        await sendPaymentRequiredMessage(telegramId, member.id, groupId);
         return { processed: true, action: 'payment_required' };
       }
     } else if (member.status === 'inadimplente') {
@@ -180,7 +185,8 @@ async function processNewMember(user) {
   // Read trial days from system_config (set via /trial command)
   const trialDaysResult = await getTrialDays();
   const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
-  const createResult = await createTrialMember({ telegramId, telegramUsername: username }, trialDays);
+  // Story 3.1: Pass groupId for multi-tenant member creation
+  const createResult = await createTrialMember({ telegramId, telegramUsername: username, groupId }, trialDays);
 
   if (createResult.success) {
     const memberId = createResult.data.id;
@@ -196,8 +202,8 @@ async function processNewMember(user) {
       action: 'created'
     });
 
-    // AC5: Send welcome message
-    await sendWelcomeMessage(telegramId, firstName, memberId);
+    // AC5: Send welcome message - Story 3.1: pass groupId for multi-tenant checkout URL
+    await sendWelcomeMessage(telegramId, firstName, memberId, groupId);
 
     logger.info('[membership:member-events] New trial member created', {
       memberId,
@@ -223,15 +229,61 @@ async function processNewMember(user) {
 }
 
 /**
+ * Resolve checkout URL considering tenant-specific group configuration.
+ * Falls back to config.membership.checkoutUrl when group lookup fails or is missing.
+ * @param {string|null} [groupId=null]
+ * @returns {Promise<string|null>}
+ */
+async function resolveCheckoutUrl(groupId = null) {
+  const fallbackCheckoutUrl = config.membership?.checkoutUrl || null;
+
+  if (!groupId) {
+    return fallbackCheckoutUrl;
+  }
+
+  try {
+    const { data: group, error } = await supabase
+      .from('groups')
+      .select('checkout_url')
+      .eq('id', groupId)
+      .single();
+
+    if (error) {
+      logger.warn('[membership:member-events] Failed to load group checkout_url, using fallback', {
+        groupId,
+        error: error.message
+      });
+      return fallbackCheckoutUrl;
+    }
+
+    if (group?.checkout_url) {
+      return group.checkout_url;
+    }
+
+    logger.warn('[membership:member-events] Group checkout_url not configured, using fallback', { groupId });
+    return fallbackCheckoutUrl;
+  } catch (err) {
+    logger.warn('[membership:member-events] Error resolving checkout_url, using fallback', {
+      groupId,
+      error: err.message
+    });
+    return fallbackCheckoutUrl;
+  }
+}
+
+/**
  * Send welcome message to new trial member
  * AC5: Mensagem de Boas-vindas
+ * Story 3.1: Added groupId parameter for multi-tenant checkout URL
  * @param {number} telegramId - Telegram user ID
  * @param {string} firstName - User's first name
  * @param {number} memberId - Internal member ID for notification tracking
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant checkout URL
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function sendWelcomeMessage(telegramId, firstName, memberId) {
+async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = null) {
   const bot = getBot();
+  const checkoutUrl = await resolveCheckoutUrl(groupId);
 
   // Get success rate for message (últimos 7 dias)
   const metricsResult = await getSuccessRateForDays(7);
@@ -246,6 +298,10 @@ async function sendWelcomeMessage(telegramId, firstName, memberId) {
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Format message (4.3)
+  const paymentCta = checkoutUrl
+    ? `💳 [ASSINAR POR R$50/MÊS](${checkoutUrl})`
+    : `💳 Para assinar, fale com @${operatorUsername}`;
+
   const message = `
 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
 
@@ -257,6 +313,7 @@ Você tem *${trialDays} dias grátis* para experimentar nossas apostas.
 • Taxa de acerto (7 dias): *${successRateText}%*
 
 💰 Após o trial, continue por apenas *R$50/mês*.
+${paymentCta}
 
 ❓ Dúvidas? Fale com @${operatorUsername}
 
@@ -409,11 +466,12 @@ async function registerReactivationJoinNotification(memberId) {
  * Send payment required message to returning removed member
  * @param {number} telegramId - Telegram user ID
  * @param {number} memberId - Internal member ID for notification tracking
+ * @param {string|null} [groupId=null] - Group ID for multi-tenant checkout URL
  * @returns {Promise<{success: boolean, error?: object}>}
  */
-async function sendPaymentRequiredMessage(telegramId, memberId = null) {
+async function sendPaymentRequiredMessage(telegramId, memberId = null, groupId = null) {
   const bot = getBot();
-  const checkoutUrl = config.membership?.checkoutUrl;
+  const checkoutUrl = await resolveCheckoutUrl(groupId);
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Issue #3: Handle missing checkout URL gracefully

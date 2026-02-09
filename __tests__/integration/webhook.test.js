@@ -142,9 +142,10 @@ describe('Webhook Integration', () => {
         });
 
       expect(response.status).toBe(200);
-      expect(getMemberByTelegramId).toHaveBeenCalledWith(12345);
+      // Story 3.1: groupId is now passed (null when not in multi-tenant config)
+      expect(getMemberByTelegramId).toHaveBeenCalledWith(12345, null);
       expect(createTrialMember).toHaveBeenCalledWith(
-        { telegramId: 12345, telegramUsername: 'newuser' },
+        { telegramId: 12345, telegramUsername: 'newuser', groupId: null },
         7
       );
     });

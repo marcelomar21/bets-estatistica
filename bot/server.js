@@ -23,6 +23,7 @@ const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminG
 const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
+const { supabase } = require('../lib/supabase');
 
 // Validate config
 validateConfig();
@@ -31,6 +32,9 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+
+// Story 3.1: Cached group chat ID for multi-tenant mode
+let cachedGroupChatId = null;
 
 // Render fornece RENDER_EXTERNAL_URL automaticamente
 // Ou você pode definir WEBHOOK_URL manualmente
@@ -101,7 +105,8 @@ async function processWebhookUpdate(update) {
     const msg = update.message;
 
     // DEBUG: Log all messages from public group to diagnose new_chat_members issue
-    if (msg.chat.id.toString() === config.telegram.publicGroupId) {
+    const debugGroupId = cachedGroupChatId || config.telegram.publicGroupId;
+    if (msg.chat.id.toString() === debugGroupId) {
       logger.info('[webhook:debug] Message from public group', {
         chatId: msg.chat.id,
         hasNewChatMembers: !!msg.new_chat_members,
@@ -123,7 +128,9 @@ async function processWebhookUpdate(update) {
     }
 
     // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
-    if (msg.new_chat_members && msg.chat.id.toString() === config.telegram.publicGroupId) {
+    // Story 3.1: Use cached group chat ID for multi-tenant, fallback to config
+    const expectedGroupChatId = cachedGroupChatId || config.telegram.publicGroupId;
+    if (msg.new_chat_members && msg.chat.id.toString() === expectedGroupChatId) {
       await handleNewChatMembers(msg);
     }
 
@@ -358,11 +365,46 @@ function setupScheduler() {
 async function start() {
   console.log('🤖 Starting GuruBet Server in WEBHOOK mode...\n');
 
+  logger.info('[server] Tenant mode', {
+    mode: config.membership.groupId ? 'multi-tenant' : 'single-tenant',
+    groupId: config.membership.groupId || null
+  });
+
   // Test connection first
   const connResult = await testConnection();
   if (!connResult.success) {
     console.error('❌ Failed to connect to Telegram:', connResult.error.message);
     process.exit(1);
+  }
+
+  // Story 3.1: Cache telegram_group_id from groups table if multi-tenant
+  if (config.membership.groupId) {
+    try {
+      const { data: group, error } = await supabase
+        .from('groups')
+        .select('telegram_group_id')
+        .eq('id', config.membership.groupId)
+        .single();
+
+      if (error) {
+        logger.error('[server] Failed to load group for multi-tenant', {
+          groupId: config.membership.groupId,
+          error: error.message
+        });
+      } else if (group && group.telegram_group_id) {
+        cachedGroupChatId = group.telegram_group_id.toString();
+        logger.info('[server] Multi-tenant: cached group chat ID', {
+          groupId: config.membership.groupId,
+          telegramGroupId: cachedGroupChatId
+        });
+      } else {
+        logger.warn('[server] Multi-tenant: group has no telegram_group_id', {
+          groupId: config.membership.groupId
+        });
+      }
+    } catch (err) {
+      logger.error('[server] Multi-tenant initialization error', { error: err.message });
+    }
   }
 
   // Setup webhook if URL provided

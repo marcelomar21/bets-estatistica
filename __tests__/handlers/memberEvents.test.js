@@ -173,8 +173,9 @@ describe('memberEvents', () => {
 
       expect(result.processed).toBe(true);
       expect(result.action).toBe('created');
+      // Story 3.1: groupId is now passed (null when not in multi-tenant config)
       expect(createTrialMember).toHaveBeenCalledWith(
-        { telegramId: 12345, telegramUsername: 'newuser' },
+        { telegramId: 12345, telegramUsername: 'newuser', groupId: null },
         7
       );
     });
