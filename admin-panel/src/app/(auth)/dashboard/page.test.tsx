@@ -25,6 +25,60 @@ const mockDashboardData = {
   ],
 };
 
+const mockNotificationsData = {
+  notifications: [
+    {
+      id: 'n1',
+      type: 'bot_offline',
+      severity: 'error',
+      title: 'Bot Offline',
+      message: 'Bot do grupo Alpha esta offline',
+      group_id: 'g1',
+      metadata: {},
+      read: false,
+      created_at: '2026-02-08T10:00:00Z',
+    },
+    {
+      id: 'n2',
+      type: 'onboarding_completed',
+      severity: 'success',
+      title: 'Onboarding OK',
+      message: 'Grupo Delta pronto',
+      group_id: 'g2',
+      metadata: {},
+      read: true,
+      created_at: '2026-02-08T09:00:00Z',
+    },
+  ],
+  unread_count: 1,
+};
+
+/**
+ * Helper that creates a URL-aware fetch mock.
+ * Routes /api/dashboard/stats and /api/notifications to their respective responses.
+ */
+function mockFetchByUrl(
+  statsResponse?: { ok: boolean; json: () => Promise<unknown> },
+  notificationsResponse?: { ok: boolean; json: () => Promise<unknown> },
+) {
+  const defaultStatsResponse = {
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: mockDashboardData }),
+  };
+  const defaultNotificationsResponse = {
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
+  };
+
+  return vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.includes('/api/notifications')) {
+      return Promise.resolve((notificationsResponse ?? defaultNotificationsResponse) as Response);
+    }
+    return Promise.resolve((statsResponse ?? defaultStatsResponse) as Response);
+  });
+}
+
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -43,10 +97,7 @@ describe('DashboardPage', () => {
   });
 
   it('renders dashboard data after loading', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ success: true, data: mockDashboardData }),
-    } as Response);
+    mockFetchByUrl();
 
     render(<DashboardPage />);
 
@@ -66,10 +117,10 @@ describe('DashboardPage', () => {
   });
 
   it('shows error message with retry button on API failure', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
+    mockFetchByUrl({
       ok: true,
       json: () => Promise.resolve({ success: false, error: { message: 'DB Error' } }),
-    } as Response);
+    });
 
     render(<DashboardPage />);
 
@@ -81,15 +132,27 @@ describe('DashboardPage', () => {
   });
 
   it('retries fetch when retry button is clicked', async () => {
-    const fetchSpy = vi.spyOn(global, 'fetch')
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ success: false, error: { message: 'Erro' } }),
-      } as Response)
-      .mockResolvedValueOnce({
+    let statsCallCount = 0;
+    const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/notifications')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
+        } as Response);
+      }
+      statsCallCount++;
+      if (statsCallCount === 1) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: false, error: { message: 'Erro' } }),
+        } as Response);
+      }
+      return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ success: true, data: mockDashboardData }),
       } as Response);
+    });
 
     render(<DashboardPage />);
 
@@ -103,7 +166,9 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // At least 2 stats calls (initial fail + retry) plus notification calls
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(statsCallCount).toBe(2);
   });
 
   it('shows error on network failure', async () => {
@@ -117,16 +182,143 @@ describe('DashboardPage', () => {
   });
 
   it('shows error on HTTP error status', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: () => Promise.reject(new Error('Invalid JSON')),
-    } as unknown as Response);
+    vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.includes('/api/notifications')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error('Invalid JSON')),
+      } as unknown as Response);
+    });
 
     render(<DashboardPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Erro HTTP 500')).toBeInTheDocument();
     });
+  });
+
+  it('fetches notifications alongside dashboard stats', async () => {
+    const fetchSpy = mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    // Verify both endpoints were called
+    const calledUrls = fetchSpy.mock.calls.map(
+      (call) => {
+        const input = call[0];
+        return typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      }
+    );
+    expect(calledUrls.some((url: string) => url.includes('/api/dashboard/stats'))).toBe(true);
+    expect(calledUrls.some((url: string) => url.includes('/api/notifications'))).toBe(true);
+  });
+
+  it('renders NotificationsPanel within the dashboard', async () => {
+    mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    // Verify the NotificationsPanel heading appears
+    expect(screen.getByText(/Notifica/)).toBeInTheDocument();
+    // Verify notification content from mock data
+    expect(screen.getByText('Bot Offline')).toBeInTheDocument();
+    expect(screen.getByText('Bot do grupo Alpha esta offline')).toBeInTheDocument();
+    expect(screen.getByText('Onboarding OK')).toBeInTheDocument();
+  });
+
+  it('mark as read updates UI optimistically', async () => {
+    mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    // Unread notification (n1) should have a "Marcar lida" button
+    const markReadButtons = screen.getAllByText('Marcar lida');
+    expect(markReadButtons.length).toBeGreaterThan(0);
+
+    // The unread notification (n1 "Bot Offline") should have border-l-4
+    const unreadItem = screen.getByText('Bot Offline').closest('li');
+    expect(unreadItem).toHaveClass('border-l-4');
+
+    // Click the "Marcar lida" button for the first unread notification
+    await userEvent.click(markReadButtons[0]);
+
+    // After clicking, the notification should become read optimistically:
+    // - border-l-4 should be removed and opacity-60 should be applied
+    await waitFor(() => {
+      const updatedItem = screen.getByText('Bot Offline').closest('li');
+      expect(updatedItem).toHaveClass('opacity-60');
+      expect(updatedItem).not.toHaveClass('border-l-4');
+    });
+
+    // The "Marcar lida" button for that notification should disappear
+    // Both notifications are now read so no "Marcar lida" buttons
+    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
+
+    // Verify fetch was called with the correct notification URL and PATCH method
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/notifications/'),
+      expect.objectContaining({ method: 'PATCH' })
+    );
+  });
+
+  it('mark all as read updates UI optimistically and calls API', async () => {
+    mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    // Should have unread notifications and "Marcar todas como lidas" button
+    const markAllButton = screen.getByText('Marcar todas como lidas');
+    expect(markAllButton).toBeInTheDocument();
+
+    // Verify there is at least one unread notification with border-l-4
+    const unreadItem = screen.getByText('Bot Offline').closest('li');
+    expect(unreadItem).toHaveClass('border-l-4');
+
+    // Click "Marcar todas como lidas"
+    await userEvent.click(markAllButton);
+
+    // After clicking, all notifications should become read optimistically:
+    // - All notifications should have opacity-60 (read state)
+    // - No more border-l-4 (unread indicator)
+    await waitFor(() => {
+      const botOfflineItem = screen.getByText('Bot Offline').closest('li');
+      expect(botOfflineItem).toHaveClass('opacity-60');
+      expect(botOfflineItem).not.toHaveClass('border-l-4');
+    });
+
+    // "Marcar todas como lidas" button should disappear when unreadCount = 0
+    expect(screen.queryByText('Marcar todas como lidas')).not.toBeInTheDocument();
+
+    // No individual "Marcar lida" buttons should remain
+    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
+
+    // Verify fetch was called with the mark-all-read endpoint
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/notifications/mark-all-read',
+      expect.objectContaining({ method: 'PATCH' })
+    );
   });
 });

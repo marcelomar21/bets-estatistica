@@ -15,6 +15,9 @@ function createDashboardMock(overrides: {
   bot_health?: { data: unknown[] | null; error: { message: string } | null };
   members?: { data: unknown[] | null; error: { message: string } | null };
   audit_log?: { data: unknown[] | null; error: { message: string } | null };
+  notifications?: { data: unknown[] | null; error: { message: string } | null; count?: number };
+  /** Recent notifications for dedup check in persistNotifications */
+  notifications_dedup?: { data: unknown[] | null; error: { message: string } | null };
 } = {}) {
   const defaults = {
     groups: { data: [], error: null },
@@ -22,13 +25,48 @@ function createDashboardMock(overrides: {
     bot_health: { data: [], error: null },
     members: { data: [], error: null },
     audit_log: { data: [], error: null },
+    notifications: { data: [], error: null, count: 0 },
+    notifications_dedup: { data: [], error: null },
   };
   const tables = { ...defaults, ...overrides };
+
+  const mockInsert = vi.fn(() => ({ error: null }));
 
   const mockFrom = vi.fn((table: string) => {
     const tableData = tables[table as keyof typeof tables] ?? { data: [], error: null };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: Record<string, any> = {};
+
+    // notifications table needs insert (persistNotifications) and count support (unread count)
+    if (table === 'notifications') {
+      const notifData = tableData as typeof tables.notifications;
+      const dedupData = tables.notifications_dedup;
+      // Differentiate select queries by inspecting the columns argument:
+      //   - select('type, group_id') => dedup query from persistNotifications
+      //   - select('*', { count: 'exact', head: true }) => unread count query
+      chain.select = vi.fn((cols: string, options?: { count?: string; head?: boolean }) => {
+        if (cols === 'type, group_id') {
+          // Dedup query: select('type, group_id').gte(...)
+          return {
+            ...dedupData,
+            gte: vi.fn(() => ({ ...dedupData })),
+          };
+        }
+        // Unread count query: select('*', { count: 'exact', head: true }).eq('read', false)
+        return {
+          ...notifData,
+          count: notifData.count ?? 0,
+          eq: vi.fn(() => ({ ...notifData, count: notifData.count ?? 0 })),
+          gte: vi.fn(() => ({ ...notifData })),
+        };
+      });
+      chain.insert = mockInsert;
+      chain.update = vi.fn(() => ({
+        eq: vi.fn(() => ({ select: vi.fn(() => ({ ...notifData })) })),
+      }));
+      return chain;
+    }
+
     chain.select = vi.fn(() => ({
       ...tableData,
       order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
@@ -44,7 +82,7 @@ function createDashboardMock(overrides: {
     return chain;
   });
 
-  return { from: mockFrom };
+  return { from: mockFrom, mockInsert };
 }
 
 function createMockContext(
@@ -139,6 +177,9 @@ describe('GET /api/dashboard/stats', () => {
     const failedAlert = body.data.alerts.find((a: { type: string }) => a.type === 'group_failed');
     expect(failedAlert).toBeDefined();
     expect(failedAlert.group_name).toBe('Grupo Gamma');
+
+    // Unread notification count
+    expect(body.data.unread_count).toBeDefined();
   });
 
   it('returns filtered data for group_admin (RLS-filtered)', async () => {
@@ -308,5 +349,92 @@ describe('GET /api/dashboard/stats', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.summary).toBeDefined();
+  });
+
+  it('includes paused groups in alerts as group_paused type', async () => {
+    const pausedGroup = [{ id: 'g2', name: 'Grupo Pausado', status: 'paused', created_at: '2026-01-02T00:00:00Z' }];
+    const mock = createDashboardMock({
+      groups: { data: pausedGroup, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const pausedAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'group_paused');
+    expect(pausedAlerts).toHaveLength(1);
+    expect(pausedAlerts[0].group_name).toBe('Grupo Pausado');
+    expect(pausedAlerts[0].message).toContain('pausado');
+  });
+
+  it('does NOT insert notifications when matching alerts already exist within 1 hour (dedup)', async () => {
+    // Simulate a bot_offline alert that already has a recent matching notification
+    const offlineHealth = [
+      { group_id: 'g1', status: 'offline', last_heartbeat: '2026-02-08T09:00:00Z', error_message: 'Timeout', groups: { name: 'Grupo Alpha' } },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: offlineHealth, error: null },
+      // Dedup query returns a matching recent notification
+      notifications_dedup: {
+        data: [{ type: 'bot_offline', group_id: 'g1' }],
+        error: null,
+      },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    expect(response.status).toBe(200);
+
+    // Wait for fire-and-forget persistNotifications to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    // insert should NOT have been called because the dedup detected existing notification
+    expect(mock.mockInsert).not.toHaveBeenCalled();
+  });
+
+  it('inserts notifications when no matching alerts exist (no dedup hit)', async () => {
+    // Simulate a bot_offline alert with NO recent matching notification
+    const offlineHealth = [
+      { group_id: 'g1', status: 'offline', last_heartbeat: '2026-02-08T09:00:00Z', error_message: 'Timeout', groups: { name: 'Grupo Alpha' } },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: offlineHealth, error: null },
+      // Dedup query returns empty — no matching recent notifications
+      notifications_dedup: {
+        data: [],
+        error: null,
+      },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    expect(response.status).toBe(200);
+
+    // Wait for fire-and-forget persistNotifications to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    // insert SHOULD have been called since no dedup match was found
+    expect(mock.mockInsert).toHaveBeenCalled();
+    const insertedRows = (mock.mockInsert.mock.calls[0] as unknown[])[0];
+    expect(insertedRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'bot_offline' }),
+      ]),
+    );
   });
 });

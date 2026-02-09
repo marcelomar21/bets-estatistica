@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import type { DashboardData } from '@/types/database';
+import type { DashboardData, Notification } from '@/types/database';
 import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
 import AlertsSection from '@/components/features/dashboard/AlertsSection';
+import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
 
 function DashboardSkeleton() {
   return (
@@ -32,6 +33,15 @@ function DashboardSkeleton() {
         <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
         <div className="h-4 bg-gray-200 rounded w-full" />
       </div>
+      {/* Notifications skeleton */}
+      <div className="bg-white rounded-lg shadow p-6 animate-pulse">
+        <div className="h-5 bg-gray-200 rounded w-32 mb-4" />
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-16 bg-gray-200 rounded w-full" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -40,6 +50,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -64,9 +76,65 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications?limit=20');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!json.success) return;
+      setNotifications(json.data.notifications);
+      setUnreadCount(json.data.unread_count);
+    } catch {
+      /* notifications are non-critical — fail silently */
+    }
+  }, []);
+
+  const handleMarkAsRead = useCallback(async (id: string) => {
+    // Check if already read
+    const target = notifications.find(n => n.id === id);
+    if (!target || target.read) return;
+
+    // Save previous state for rollback
+    const prevNotifications = notifications;
+    const prevCount = unreadCount;
+
+    // Optimistic update
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    try {
+      await fetch(`/api/notifications/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ read: true }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      // Rollback on failure
+      setNotifications(prevNotifications);
+      setUnreadCount(prevCount);
+    }
+  }, [notifications, unreadCount]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    // Save previous state for rollback
+    const prevNotifications = notifications;
+    const prevCount = unreadCount;
+
+    // Optimistic update
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    setUnreadCount(0);
+    try {
+      await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+    } catch {
+      // Rollback on failure
+      setNotifications(prevNotifications);
+      setUnreadCount(prevCount);
+    }
+  }, [notifications, unreadCount]);
+
   useEffect(() => {
     fetchDashboard();
-  }, [fetchDashboard]);
+    fetchNotifications();
+  }, [fetchDashboard, fetchNotifications]);
 
   if (loading) {
     return (
@@ -84,7 +152,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg shadow p-6 text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={fetchDashboard}
+            onClick={() => { fetchDashboard(); fetchNotifications(); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tentar Novamente
@@ -121,8 +189,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Alerts */}
+        {/* Alerts (legacy — kept for Story 2.4 compatibility) */}
         <AlertsSection alerts={data.alerts} />
+
+        {/* Notifications */}
+        <NotificationsPanel
+          notifications={notifications}
+          unreadCount={unreadCount}
+          onMarkAsRead={handleMarkAsRead}
+          onMarkAllRead={handleMarkAllRead}
+        />
       </div>
     </div>
   );
