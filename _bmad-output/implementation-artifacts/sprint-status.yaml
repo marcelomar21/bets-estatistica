@@ -76,10 +76,11 @@ development_status:
   # Epic 4: Pagamentos, Acesso Automático e Kick
   # ========================================
   epic-4: backlog
-  4-1-boas-vindas-e-registro-com-status-trial: backlog
-  4-2-webhook-mercado-pago-multi-tenant: backlog
-  4-3-acesso-instantaneo-pos-pagamento: backlog
-  4-4-kick-automatico-de-membros-expirados: backlog
+  4-1-assinatura-recorrente-mercado-pago: backlog
+  4-2-boas-vindas-e-registro-com-status-trial: backlog
+  4-3-webhook-mercado-pago-multi-tenant: backlog
+  4-4-acesso-instantaneo-pos-pagamento: backlog
+  4-5-kick-automatico-de-membros-expirados: backlog
   epic-4-retrospective: optional
 
   # ========================================
