@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
+import { validateBotToken } from '@/lib/telegram';
 
 const createBotSchema = z.object({
   bot_token: z.string().trim().min(1, 'Token é obrigatório'),
-  bot_username: z.string().trim().min(3, 'Username deve ter pelo menos 3 caracteres'),
 });
 
 export const GET = createApiHandler(
@@ -54,11 +54,19 @@ export const POST = createApiHandler(
       );
     }
 
+    const validation = await validateBotToken(parsed.data.bot_token);
+    if (!validation.success) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: validation.error } },
+        { status: 400 },
+      );
+    }
+
     const { data: bot, error } = await context.supabase
       .from('bot_pool')
       .insert({
         bot_token: parsed.data.bot_token,
-        bot_username: parsed.data.bot_username,
+        bot_username: validation.data.username,
         status: 'available',
       })
       .select('id, bot_username, status, group_id, created_at, groups(name)')

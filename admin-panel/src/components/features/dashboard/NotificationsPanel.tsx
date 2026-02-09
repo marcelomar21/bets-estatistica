@@ -14,6 +14,10 @@ const typeIcons: Record<Notification['type'], string> = {
   group_paused: '\u23F8\uFE0F',
   integration_error: '\u26A0\uFE0F',
   onboarding_completed: '\u2705',
+  telegram_group_created: '\u2705',
+  telegram_group_failed: '\u274C',
+  telegram_notification_failed: '\u26A0\uFE0F',
+  mtproto_session_expired: '\u{1F510}',
 };
 
 const severityStyles: Record<Notification['severity'], string> = {

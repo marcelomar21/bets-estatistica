@@ -32,6 +32,7 @@ const STEPS: { key: OnboardingStep; label: string }[] = [
   { key: 'configuring_mp', label: 'Config. Mercado Pago' },
   { key: 'deploying_bot', label: 'Deploy Bot' },
   { key: 'creating_admin', label: 'Criando Admin' },
+  { key: 'creating_telegram_group', label: 'Criando Grupo Telegram' },
   { key: 'finalizing', label: 'Concluído' },
 ];
 
@@ -130,6 +131,9 @@ export function OnboardingWizard() {
           break;
         case 'creating_admin':
           payload = { step: 'creating_admin', group_id: gId, email: email.trim() };
+          break;
+        case 'creating_telegram_group':
+          payload = { step: 'creating_telegram_group', group_id: gId };
           break;
         case 'finalizing':
           payload = { step: 'finalizing', group_id: gId };

@@ -11,12 +11,10 @@ interface BotFormProps {
 
 export interface BotFormData {
   bot_token: string;
-  bot_username: string;
 }
 
 export function BotForm({ onSubmit, loading, error, onCancel }: BotFormProps) {
   const [botToken, setBotToken] = useState('');
-  const [botUsername, setBotUsername] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -28,20 +26,13 @@ export function BotForm({ onSubmit, loading, error, onCancel }: BotFormProps) {
       return;
     }
 
-    if (botUsername.trim().length < 3) {
-      setValidationError('Username deve ter pelo menos 3 caracteres');
-      return;
-    }
-
     await onSubmit({
       bot_token: botToken.trim(),
-      bot_username: botUsername.trim(),
     });
   }
 
   function handleCancel() {
     setBotToken('');
-    setBotUsername('');
     setValidationError(null);
     onCancel();
   }
@@ -71,22 +62,7 @@ export function BotForm({ onSubmit, loading, error, onCancel }: BotFormProps) {
           className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           placeholder="Token do bot Telegram"
         />
-      </div>
-
-      <div>
-        <label htmlFor="bot_username" className="block text-sm font-medium text-gray-700">
-          Username *
-        </label>
-        <input
-          id="bot_username"
-          type="text"
-          required
-          minLength={3}
-          value={botUsername}
-          onChange={(e) => setBotUsername(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          placeholder="@meu_bot"
-        />
+        <p className="mt-1 text-xs text-gray-500">O username será detectado automaticamente via Telegram API</p>
       </div>
 
       <div className="flex gap-3">
@@ -95,7 +71,7 @@ export function BotForm({ onSubmit, loading, error, onCancel }: BotFormProps) {
           disabled={loading}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Adicionando...' : 'Adicionar Bot'}
+          {loading ? 'Validando...' : 'Adicionar Bot'}
         </button>
         <button
           type="button"

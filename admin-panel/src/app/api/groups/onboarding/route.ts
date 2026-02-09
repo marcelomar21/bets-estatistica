@@ -5,6 +5,9 @@ import { createApiHandler } from '@/middleware/api-handler';
 import { validateBotToken } from '@/lib/telegram';
 import { createCheckoutPreference } from '@/lib/mercadopago';
 import { createBotService } from '@/lib/render';
+import { logAudit } from '@/lib/audit';
+import { withMtprotoSession, createSupergroup, addBotAsAdmin, createInviteLink, verifyBotIsAdmin, classifyMtprotoError, MtprotoError } from '@/lib/mtproto';
+import { getBotConfig, sendFounderNotification, sendInvite } from '@/lib/super-admin-bot';
 import type { TenantContext } from '@/middleware/tenant';
 
 const creatingSchema = z.object({
@@ -37,6 +40,11 @@ const creatingAdminSchema = z.object({
   email: z.string().trim().email('Email inválido'),
 });
 
+const creatingTelegramGroupSchema = z.object({
+  step: z.literal('creating_telegram_group'),
+  group_id: z.string().uuid('ID do grupo inválido'),
+});
+
 const finalizingSchema = z.object({
   step: z.literal('finalizing'),
   group_id: z.string().uuid('ID do grupo inválido'),
@@ -48,6 +56,7 @@ const stepSchema = z.discriminatedUnion('step', [
   configuringMpSchema,
   deployingBotSchema,
   creatingAdminSchema,
+  creatingTelegramGroupSchema,
   finalizingSchema,
 ]);
 
@@ -62,7 +71,7 @@ function generateTempPassword(): string {
   return password;
 }
 
-function logAudit(
+function logOnboardingAudit(
   supabase: TenantContext['supabase'],
   userId: string,
   groupId: string,
@@ -70,15 +79,7 @@ function logAudit(
   status: string,
   error?: string,
 ) {
-  supabase.from('audit_log').insert({
-    table_name: 'groups',
-    record_id: groupId,
-    action: 'onboarding',
-    changed_by: userId,
-    changes: { step, status, ...(error ? { error } : {}) },
-  }).then(({ error: auditErr }) => {
-    if (auditErr) console.warn('[audit_log] Failed to insert onboarding audit', groupId, auditErr.message);
-  });
+  logAudit(supabase, userId, groupId, 'groups', 'onboarding', { step, status, ...(error ? { error } : {}) });
 }
 
 async function handleCreating(data: z.infer<typeof creatingSchema>, context: TenantContext) {
@@ -151,7 +152,7 @@ async function handleCreating(data: z.infer<typeof creatingSchema>, context: Ten
     .update({ group_id: group.id })
     .eq('id', bot_id);
 
-  logAudit(context.supabase, context.user.id, group.id, 'creating', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group.id, 'creating', 'success');
 
   return NextResponse.json({
     success: true,
@@ -178,7 +179,7 @@ async function handleValidatingBot(data: z.infer<typeof validatingBotSchema>, co
   const telegramResult = await validateBotToken(bot.bot_token);
   if (!telegramResult.success) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logAudit(context.supabase, context.user.id, group_id, 'validating_bot', 'error', telegramResult.error);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'validating_bot', 'error', telegramResult.error);
     return NextResponse.json(
       {
         success: false,
@@ -201,7 +202,7 @@ async function handleValidatingBot(data: z.infer<typeof validatingBotSchema>, co
       .eq('id', bot.id);
   }
 
-  logAudit(context.supabase, context.user.id, group_id, 'validating_bot', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group_id, 'validating_bot', 'success');
 
   return NextResponse.json({
     success: true,
@@ -227,7 +228,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
 
   // Idempotent: skip if already configured
   if (group.mp_product_id) {
-    logAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
     return NextResponse.json({
       success: true,
       data: { checkout_url: group.checkout_url },
@@ -237,7 +238,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
   const mpResult = await createCheckoutPreference(group.name, group_id, price);
   if (!mpResult.success) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'error', mpResult.error);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'error', mpResult.error);
     return NextResponse.json(
       {
         success: false,
@@ -257,7 +258,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
     .update({ mp_product_id: mpResult.data.id, checkout_url: mpResult.data.checkout_url })
     .eq('id', group_id);
 
-  logAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
 
   return NextResponse.json({
     success: true,
@@ -283,7 +284,7 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
 
   // Idempotent: skip if already deployed
   if (group.render_service_id) {
-    logAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'success');
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'success');
     return NextResponse.json({
       success: true,
       data: { service_id: group.render_service_id },
@@ -306,7 +307,7 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
   const renderResult = await createBotService(group_id, bot.bot_token, group.name);
   if (!renderResult.success) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', renderResult.error);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', renderResult.error);
     return NextResponse.json(
       {
         success: false,
@@ -326,7 +327,7 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
     .update({ render_service_id: renderResult.data.service_id })
     .eq('id', group_id);
 
-  logAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'success');
 
   return NextResponse.json({
     success: true,
@@ -350,7 +351,7 @@ async function handleCreatingAdmin(data: z.infer<typeof creatingAdminSchema>, co
     .single();
 
   if (existingAdmin) {
-    logAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'success');
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'success');
     return NextResponse.json({
       success: true,
       data: { admin_email: existingAdmin.email, temp_password: null },
@@ -366,7 +367,7 @@ async function handleCreatingAdmin(data: z.infer<typeof creatingAdminSchema>, co
 
   if (authError || !authUser.user) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'error', authError?.message);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'error', authError?.message);
     return NextResponse.json(
       {
         success: false,
@@ -392,7 +393,7 @@ async function handleCreatingAdmin(data: z.infer<typeof creatingAdminSchema>, co
 
   if (adminInsertError) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'error', adminInsertError.message);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'error', adminInsertError.message);
     return NextResponse.json(
       {
         success: false,
@@ -407,12 +408,214 @@ async function handleCreatingAdmin(data: z.infer<typeof creatingAdminSchema>, co
     );
   }
 
-  logAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_admin', 'success');
 
   return NextResponse.json({
     success: true,
     data: { admin_email: email, temp_password: tempPassword },
   });
+}
+
+async function handleCreatingTelegramGroup(data: z.infer<typeof creatingTelegramGroupSchema>, context: TenantContext) {
+  const { group_id } = data;
+
+  // 1. Fetch group current state
+  const { data: group, error: groupError } = await context.supabase
+    .from('groups')
+    .select('id, name, telegram_group_id, telegram_invite_link, additional_invitee_ids')
+    .eq('id', group_id)
+    .single();
+
+  if (groupError || !group) {
+    return NextResponse.json(
+      { success: false, error: { code: 'ONBOARDING_FAILED', message: 'Grupo não encontrado', step: 'creating_telegram_group', group_id } },
+      { status: 500 },
+    );
+  }
+
+  // 2. Fetch associated bot (no status filter — bot is still 'available' during onboarding,
+  //    it transitions to 'in_use' in the finalizing step)
+  const { data: bot } = await context.supabase
+    .from('bot_pool')
+    .select('bot_token, bot_username')
+    .eq('group_id', group_id)
+    .single();
+
+  if (!bot) {
+    // Config error — do NOT mark group as failed
+    return NextResponse.json(
+      { success: false, error: { code: 'BOT_NOT_ASSIGNED', message: 'Nenhum bot associado ao grupo', step: 'creating_telegram_group', group_id } },
+      { status: 400 },
+    );
+  }
+
+  // 3. GRANULAR IDEMPOTENCY
+  if (group.telegram_group_id) {
+    try {
+      const isAdmin = await withMtprotoSession(context.supabase, async (client) => {
+        return verifyBotIsAdmin(client, group.telegram_group_id!, bot.bot_username);
+      });
+
+      if (isAdmin && group.telegram_invite_link) {
+        // All done — skip
+        logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_telegram_group', 'success');
+        return NextResponse.json({
+          success: true,
+          data: { telegram_group_id: group.telegram_group_id, invite_link: group.telegram_invite_link, skipped: true },
+        });
+      }
+
+      if (!isAdmin) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'BOT_NOT_ADMIN',
+              message: 'Grupo existe mas bot não é admin. Verifique manualmente.',
+              step: 'creating_telegram_group',
+              group_id,
+            },
+          },
+          { status: 400 },
+        );
+      }
+    } catch (err) {
+      if (err instanceof MtprotoError && err.code === 'MTPROTO_SESSION_NOT_FOUND') {
+        return NextResponse.json(
+          { success: false, error: { code: err.code, message: err.message, step: 'creating_telegram_group', group_id } },
+          { status: 400 },
+        );
+      }
+      const classified = classifyMtprotoError(err);
+      return NextResponse.json(
+        { success: false, error: { code: classified.code, message: classified.message, step: 'creating_telegram_group', group_id, retryable: classified.retryable } },
+        { status: 500 },
+      );
+    }
+  }
+
+  // 4. Create full group
+  try {
+    const result = await withMtprotoSession(context.supabase, async (client) => {
+      // Create supergroup
+      const { groupId: telegramGroupId, channel } = await createSupergroup(
+        client,
+        group.name,
+        `Grupo de apostas - ${group.name}`,
+      );
+
+      // Add bot as admin
+      await addBotAsAdmin(client, channel, bot.bot_username);
+
+      // Generate invite link
+      const inviteLink = await createInviteLink(client, channel, `Convite ${group.name}`);
+
+      return { telegramGroupId, inviteLink };
+    });
+
+    // 5. Save to database
+    await context.supabase
+      .from('groups')
+      .update({
+        telegram_group_id: result.telegramGroupId,
+        telegram_invite_link: result.inviteLink,
+      })
+      .eq('id', group_id);
+
+    // 6. Notify founders via Bot Super Admin (fire-and-forget)
+    const botConfig = await getBotConfig(context.supabase);
+    if (botConfig) {
+      sendFounderNotification(
+        botConfig.bot_token,
+        botConfig.founder_chat_ids,
+        group.name,
+        group.name, // influencer name is group name in this context
+        result.inviteLink,
+      ).then(({ failed }) => {
+        // Log individual failures as notifications
+        for (const f of failed) {
+          context.supabase.from('notifications').insert({
+            type: 'telegram_notification_failed',
+            severity: 'warning',
+            title: 'Falha ao notificar founder',
+            message: `Falha ao enviar notificação para chat_id ${f.chatId}: ${f.error}`,
+            group_id,
+            metadata: { failed_chat_id: f.chatId, error: f.error },
+          }).then(() => {});
+        }
+      }).catch(() => {});
+
+      // 7. Send invites to influencer and additional invitees
+      const additionalInvitees = (group.additional_invitee_ids as Array<{ type: 'telegram' | 'email'; value: string }>) || [];
+      for (const invitee of additionalInvitees) {
+        const target = invitee.type === 'telegram'
+          ? { type: 'telegram' as const, chatId: Number(invitee.value) }
+          : { type: 'email' as const, email: invitee.value };
+        sendInvite(botConfig.bot_token, target, group.name, result.inviteLink).catch(() => {});
+      }
+    }
+
+    // 8. Create success notification
+    context.supabase.from('notifications').insert({
+      type: 'telegram_group_created',
+      severity: 'success',
+      title: 'Grupo Telegram criado',
+      message: `Grupo "${group.name}" criado com sucesso no Telegram`,
+      group_id,
+      metadata: { telegram_group_id: result.telegramGroupId, invite_link: result.inviteLink },
+    }).then(() => {});
+
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_telegram_group', 'success');
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        telegram_group_id: result.telegramGroupId,
+        invite_link: result.inviteLink,
+      },
+    });
+  } catch (err) {
+    const classified = classifyMtprotoError(err);
+
+    // Create failure notification
+    context.supabase.from('notifications').insert({
+      type: 'telegram_group_failed',
+      severity: 'error',
+      title: 'Falha ao criar grupo Telegram',
+      message: `Falha ao criar grupo "${group.name}": ${classified.message}`,
+      group_id,
+      metadata: { error_code: classified.code, error_message: classified.message, retryable: classified.retryable },
+    }).then(() => {});
+
+    // Handle session expiration notification
+    if (classified.code === 'MTPROTO_SESSION_EXPIRED') {
+      context.supabase.from('notifications').insert({
+        type: 'mtproto_session_expired',
+        severity: 'error',
+        title: 'Sessão MTProto expirada',
+        message: 'Sessão MTProto expirada. Re-autentique em /settings/telegram',
+        metadata: { reason: classified.message },
+      }).then(() => {});
+    }
+
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'creating_telegram_group', 'error', classified.message);
+
+    // Do NOT mark group as failed — this is a retryable/config error
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: classified.code,
+          message: classified.message,
+          step: 'creating_telegram_group',
+          group_id,
+          retryable: classified.retryable,
+          ...(classified.retryAfterSeconds ? { retryAfterSeconds: classified.retryAfterSeconds } : {}),
+        },
+      },
+      { status: 500 },
+    );
+  }
 }
 
 async function handleFinalizing(data: z.infer<typeof finalizingSchema>, context: TenantContext) {
@@ -443,7 +646,7 @@ async function handleFinalizing(data: z.infer<typeof finalizingSchema>, context:
     .update({ status: 'active' })
     .eq('id', group_id);
 
-  logAudit(context.supabase, context.user.id, group_id, 'finalizing', 'success');
+  logOnboardingAudit(context.supabase, context.user.id, group_id, 'finalizing', 'success');
 
   // Fetch final group state
   const { data: finalGroup } = await context.supabase
@@ -492,6 +695,8 @@ export const POST = createApiHandler(
         return handleDeployingBot(data, context);
       case 'creating_admin':
         return handleCreatingAdmin(data, context);
+      case 'creating_telegram_group':
+        return handleCreatingTelegramGroup(data, context);
       case 'finalizing':
         return handleFinalizing(data, context);
     }

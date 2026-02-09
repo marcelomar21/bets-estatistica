@@ -41,7 +41,16 @@ export async function createCheckoutPreference(
             },
           ],
           external_reference: groupId,
-          auto_return: 'approved',
+          ...(process.env.NEXT_PUBLIC_APP_URL
+            ? {
+                back_urls: {
+                  success: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
+                  failure: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
+                  pending: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
+                },
+                auto_return: 'approved',
+              }
+            : {}),
         }),
       },
     );

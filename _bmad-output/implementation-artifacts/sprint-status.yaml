@@ -53,13 +53,13 @@ development_status:
   # ========================================
   # Epic 2: Gestão de Grupos e Onboarding de Influencer
   # ========================================
-  epic-2: in-progress
+  epic-2: done
   2-1-editar-e-gerenciar-status-de-grupos: done
   2-2-gestao-do-pool-de-bots: done
   2-3-onboarding-automatico-de-influencer: done
   2-4-dashboard-consolidado-do-super-admin: done
   2-5-notificacoes-e-alertas-no-painel: done
-  2-6-automacao-grupo-telegram-e-convites-via-mtproto: backlog
+  2-6-automacao-grupo-telegram-e-convites-via-mtproto: done
   epic-2-retrospective: optional
 
   # ========================================
@@ -76,10 +76,11 @@ development_status:
   # Epic 4: Pagamentos, Acesso Automático e Kick
   # ========================================
   epic-4: backlog
-  4-1-boas-vindas-e-registro-com-status-trial: backlog
-  4-2-webhook-mercado-pago-multi-tenant: backlog
-  4-3-acesso-instantaneo-pos-pagamento: backlog
-  4-4-kick-automatico-de-membros-expirados: backlog
+  4-1-assinatura-recorrente-mercado-pago: backlog
+  4-2-boas-vindas-e-registro-com-status-trial: backlog
+  4-3-webhook-mercado-pago-multi-tenant: backlog
+  4-4-acesso-instantaneo-pos-pagamento: backlog
+  4-5-kick-automatico-de-membros-expirados: backlog
   epic-4-retrospective: optional
 
   # ========================================

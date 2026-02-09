@@ -3,7 +3,7 @@ stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step
 status: 'complete'
 completedAt: '2026-02-06'
 epicCount: 6
-storyCount: 25
+storyCount: 26
 frsTotal: 62
 frsCovered: 58
 frsDelegatedToMP: 4
@@ -554,7 +554,40 @@ So that eu possa dar suporte e monitorar a plataforma.
 
 Membro entra no grupo com status `trial` (gerenciado pelo MP), paga e recebe acesso instantâneo, ou é removido automaticamente quando assinatura expira.
 
-### Story 4.1: Boas-vindas e Registro com Status Trial
+### Story 4.1: Assinatura Recorrente via Mercado Pago
+
+As a **Super Admin**,
+I want que o onboarding crie uma assinatura recorrente (e não um pagamento avulso) no Mercado Pago,
+So that membros sejam cobrados automaticamente todo mês sem intervenção manual.
+
+**Acceptance Criteria:**
+
+**Given** o onboarding de um novo influencer (step `configuring_mp`)
+**When** o sistema configura o Mercado Pago para o grupo
+**Then** cria um **Preapproval Plan** (`/preapproval_plan`) com:
+- `reason`: "Assinatura {nome do grupo}"
+- `auto_recurring.frequency`: 1, `frequency_type`: "months"
+- `auto_recurring.transaction_amount`: preço definido no onboarding
+- `auto_recurring.currency_id`: "BRL"
+- `auto_recurring.free_trial.frequency`: 7, `frequency_type`: "days" (trial de 7 dias gerenciado pelo MP)
+**And** salva `preapproval_plan_id` na tabela `groups` (substituindo `mp_product_id`)
+**And** gera o `init_point` (URL de assinatura) como `checkout_url` do grupo
+**And** `external_reference` continua sendo o `group_id` para rastreabilidade no webhook
+**And** a URL de assinatura permite que múltiplos membros assinem o mesmo plano
+
+**Given** o sistema já usa `createCheckoutPreference()` no onboarding
+**When** esta story é implementada
+**Then** `createCheckoutPreference()` é substituída por `createSubscriptionPlan()` em `src/lib/mercadopago.ts`
+**And** o onboarding step `configuring_mp` chama a nova função
+**And** a coluna `mp_product_id` na tabela `groups` é renomeada para `mp_plan_id` (migration)
+**And** testes unitários cobrem: plano criado com sucesso, token ausente, erro da API MP
+
+**Nota técnica:** Mercado Pago tem 2 abordagens para assinaturas:
+1. **Preapproval Plan** (`/preapproval_plan`) → cria o plano (template); membros assinam via `init_point`
+2. **Preapproval** (`/preapproval`) → assinatura individual de cada membro (criada quando membro clica no link)
+O sistema cria apenas o Plan; as assinaturas individuais são gerenciadas pelo MP. Webhooks de `subscription` notificam mudanças de status.
+
+### Story 4.2: Boas-vindas e Registro com Status Trial
 
 As a **novo membro**,
 I want ser recebido no grupo e registrado como trial,
@@ -568,7 +601,7 @@ So that o sistema saiba que estou no período de experiência do MP.
 **And** bot envia DM de boas-vindas com nome do grupo e link de checkout do MP (FR50)
 **And** link de checkout é o `checkout_url` específico do grupo (assinatura com trial no MP)
 
-### Story 4.2: Webhook Mercado Pago Multi-tenant
+### Story 4.3: Webhook Mercado Pago Multi-tenant
 
 As a **sistema**,
 I want processar webhooks de pagamento e assinatura identificando o grupo correto,
@@ -588,7 +621,7 @@ So that pagamentos e mudanças de status de cada influencer sejam creditados cor
 **And** webhook duplicado (idempotency) é ignorado sem erro
 **And** se MP timeout, retry automático até 3 tentativas (NFR-R5, NFR-I5)
 
-### Story 4.3: Acesso Instantâneo Pós-Pagamento
+### Story 4.4: Acesso Instantâneo Pós-Pagamento
 
 As a **membro que pagou**,
 I want receber acesso instantâneo após pagamento,
@@ -604,7 +637,7 @@ So that eu não precise esperar para continuar no grupo.
 **And** se membro ainda está no grupo, apenas atualiza status
 **And** membro renovando tem `paid_until` estendido
 
-### Story 4.4: Kick Automático de Membros Expirados
+### Story 4.5: Kick Automático de Membros Expirados
 
 As a **sistema**,
 I want remover automaticamente membros cuja assinatura expirou no MP,

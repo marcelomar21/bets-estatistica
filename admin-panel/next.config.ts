@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ['telegram', 'node-telegram-bot-api'],
 };
 
 export default nextConfig;

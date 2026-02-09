@@ -44,7 +44,12 @@ function mockStepResponses() {
     ok: true,
     json: () => Promise.resolve({ success: true, data: { admin_email: 'test@test.com', temp_password: 'TempPass123!' } }),
   });
-  // Step 6: finalizing
+  // Step 6: creating_telegram_group
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: { telegram_invite_link: 'https://t.me/+abc123' } }),
+  });
+  // Step 7: finalizing
   mockFetch.mockResolvedValueOnce({
     ok: true,
     json: () => Promise.resolve({
@@ -178,6 +183,7 @@ describe('OnboardingWizard', () => {
     expect(screen.getByText('Config. Mercado Pago')).toBeInTheDocument();
     expect(screen.getByText('Deploy Bot')).toBeInTheDocument();
     expect(screen.getByText('Criando Admin')).toBeInTheDocument();
+    expect(screen.getByText('Criando Grupo Telegram')).toBeInTheDocument();
     expect(screen.getByText('Concluído')).toBeInTheDocument();
   });
 
@@ -267,17 +273,22 @@ describe('OnboardingWizard', () => {
       ok: true,
       json: () => Promise.resolve({ success: true, data: { checkout_url: 'http://mp.com/checkout' } }),
     });
-    // Step 4
+    // Step 4: deploying_bot
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ success: true, data: { service_id: 'srv-1' } }),
     });
-    // Step 5
+    // Step 5: creating_admin
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ success: true, data: { admin_email: 'test@test.com', temp_password: 'TempPass123!' } }),
     });
-    // Step 6
+    // Step 6: creating_telegram_group
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { telegram_invite_link: 'https://t.me/+abc123' } }),
+    });
+    // Step 7: finalizing
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({

@@ -8,6 +8,12 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+// Mock the telegram module
+const mockValidateBotToken = vi.fn();
+vi.mock('@/lib/telegram', () => ({
+  validateBotToken: (...args: unknown[]) => mockValidateBotToken(...args),
+}));
+
 // Supabase query builder mock for bots
 function createMockQueryBuilder(overrides: {
   selectData?: unknown;
@@ -211,12 +217,22 @@ describe('POST /api/bots', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    // Default: valid token
+    mockValidateBotToken.mockResolvedValue({
+      success: true,
+      data: { username: 'auto_detected_bot' },
+    });
   });
 
-  it('creates bot with status available', async () => {
+  it('creates bot with username from getMe', async () => {
+    mockValidateBotToken.mockResolvedValue({
+      success: true,
+      data: { username: 'new_bot' },
+    });
+
     const newBot = {
       id: 'bot-uuid-new',
-      bot_username: '@new_bot',
+      bot_username: 'new_bot',
       status: 'available',
       group_id: null,
       created_at: '2026-02-08T14:00:00Z',
@@ -229,7 +245,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '123456:ABC-DEF',
-      bot_username: '@new_bot',
     });
 
     const response = await POST(req);
@@ -238,52 +253,41 @@ describe('POST /api/bots', () => {
     expect(response.status).toBe(201);
     expect(body.success).toBe(true);
     expect(body.data.status).toBe('available');
+    expect(mockValidateBotToken).toHaveBeenCalledWith('123456:ABC-DEF');
     expect(qb.from).toHaveBeenCalledWith('bot_pool');
     expect(qb.insert).toHaveBeenCalledWith({
       bot_token: '123456:ABC-DEF',
-      bot_username: '@new_bot',
+      bot_username: 'new_bot',
       status: 'available',
     });
   });
 
+  it('returns 400 when token is invalid (getMe fails)', async () => {
+    mockValidateBotToken.mockResolvedValue({
+      success: false,
+      error: 'Unauthorized',
+    });
+
+    const qb = createMockQueryBuilder();
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bots/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bots', {
+      bot_token: 'invalid-token',
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Unauthorized');
+    expect(qb.insert).not.toHaveBeenCalled();
+  });
+
   it('rejects body without bot_token (validation error)', async () => {
-    const qb = createMockQueryBuilder();
-    const context = createMockContext('super_admin', qb);
-    mockWithTenant.mockResolvedValue({ success: true, context });
-
-    const { POST } = await import('@/app/api/bots/route');
-    const req = createMockRequest('POST', 'http://localhost/api/bots', {
-      bot_username: '@test',
-    });
-
-    const response = await POST(req);
-    const body = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(body.success).toBe(false);
-    expect(body.error.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('rejects username shorter than 3 chars', async () => {
-    const qb = createMockQueryBuilder();
-    const context = createMockContext('super_admin', qb);
-    mockWithTenant.mockResolvedValue({ success: true, context });
-
-    const { POST } = await import('@/app/api/bots/route');
-    const req = createMockRequest('POST', 'http://localhost/api/bots', {
-      bot_token: '123456:ABC',
-      bot_username: 'ab',
-    });
-
-    const response = await POST(req);
-    const body = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(body.success).toBe(false);
-    expect(body.error.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('rejects empty body (validation error)', async () => {
     const qb = createMockQueryBuilder();
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -297,6 +301,7 @@ describe('POST /api/bots', () => {
     expect(response.status).toBe(400);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(mockValidateBotToken).not.toHaveBeenCalled();
   });
 
   it('returns 400 on duplicate token/username (constraint error)', async () => {
@@ -312,7 +317,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: 'existing-token',
-      bot_username: '@existing_bot',
     });
 
     const response = await POST(req);
@@ -333,7 +337,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '123:ABC',
-      bot_username: '@new_bot',
     });
 
     const response = await POST(req);
@@ -351,7 +354,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '123:ABC',
-      bot_username: '@test_bot',
     });
 
     const response = await POST(req);
@@ -372,7 +374,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '123:ABC',
-      bot_username: '@test',
     });
 
     const response = await POST(req);
@@ -390,7 +391,6 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '   ',
-      bot_username: '@valid_bot',
     });
 
     const response = await POST(req);
@@ -399,12 +399,18 @@ describe('POST /api/bots', () => {
     expect(response.status).toBe(400);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(mockValidateBotToken).not.toHaveBeenCalled();
   });
 
-  it('trims whitespace from token and username before insert', async () => {
+  it('trims whitespace from token before validation and insert', async () => {
+    mockValidateBotToken.mockResolvedValue({
+      success: true,
+      data: { username: 'padded_bot' },
+    });
+
     const newBot = {
       id: 'bot-uuid-trim',
-      bot_username: '@padded_bot',
+      bot_username: 'padded_bot',
       status: 'available',
       group_id: null,
       created_at: '2026-02-08T14:00:00Z',
@@ -417,15 +423,15 @@ describe('POST /api/bots', () => {
     const { POST } = await import('@/app/api/bots/route');
     const req = createMockRequest('POST', 'http://localhost/api/bots', {
       bot_token: '  123:ABC  ',
-      bot_username: '  @padded_bot  ',
     });
 
     const response = await POST(req);
 
     expect(response.status).toBe(201);
+    expect(mockValidateBotToken).toHaveBeenCalledWith('123:ABC');
     expect(qb.insert).toHaveBeenCalledWith({
       bot_token: '123:ABC',
-      bot_username: '@padded_bot',
+      bot_username: 'padded_bot',
       status: 'available',
     });
   });
@@ -449,5 +455,23 @@ describe('POST /api/bots', () => {
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.message).toBe('Invalid JSON body');
+  });
+
+  it('does not call validateBotToken when Zod validation fails', async () => {
+    const qb = createMockQueryBuilder();
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bots/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bots', {
+      bot_token: '',
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(mockValidateBotToken).not.toHaveBeenCalled();
   });
 });
