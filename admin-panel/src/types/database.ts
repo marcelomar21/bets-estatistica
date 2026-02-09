@@ -43,6 +43,33 @@ export interface BotHealth {
   updated_at: string;
 }
 
+export interface Member {
+  id: number;
+  telegram_id: number;
+  telegram_username: string | null;
+  email: string | null;
+  status: 'trial' | 'ativo' | 'inadimplente' | 'removido';
+  mp_subscription_id: string | null;
+  mp_payer_id: string | null;
+  trial_started_at: string | null;
+  subscription_started_at: string | null;
+  subscription_ends_at: string | null;
+  payment_method: string | null;
+  last_payment_at: string | null;
+  kicked_at: string | null;
+  notes: string | null;
+  group_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MemberListItem = Pick<
+  Member,
+  'id' | 'telegram_id' | 'telegram_username' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
+> & {
+  groups?: { name: string } | null;
+};
+
 export interface DashboardSummary {
   groups: { active: number; paused: number; total: number };
   bots: { available: number; in_use: number; total: number; online: number; offline: number };
