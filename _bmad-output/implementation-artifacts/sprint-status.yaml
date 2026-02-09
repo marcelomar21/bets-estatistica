@@ -65,8 +65,8 @@ development_status:
   # ========================================
   # Epic 3: Gestão de Membros e Painel do Influencer
   # ========================================
-  epic-3: backlog
-  3-1-adaptar-registro-de-membros-para-multi-tenant: backlog
+  epic-3: in-progress
+  3-1-adaptar-registro-de-membros-para-multi-tenant: ready-for-dev
   3-2-login-e-dashboard-do-admin-de-grupo: backlog
   3-3-lista-de-membros-com-status-e-vencimentos: backlog
   3-4-visualizacao-de-membros-pelo-super-admin: backlog
