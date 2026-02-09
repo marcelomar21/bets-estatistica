@@ -38,10 +38,9 @@ vi.mock('telegram', () => ({
       }
     },
   },
-}));
-
-vi.mock('telegram/sessions', () => ({
-  StringSession: vi.fn().mockImplementation((s: string) => ({ _session: s })),
+  sessions: {
+    StringSession: vi.fn().mockImplementation((s: string) => ({ _session: s })),
+  },
 }));
 
 vi.mock('@/lib/encryption', () => ({

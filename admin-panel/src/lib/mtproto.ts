@@ -1,5 +1,6 @@
-import { TelegramClient, Api, errors } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+import { TelegramClient, Api, errors, sessions } from 'telegram';
+
+const { StringSession } = sessions;
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { decrypt } from '@/lib/encryption';
 

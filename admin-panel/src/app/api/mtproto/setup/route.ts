@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+import { TelegramClient, sessions } from 'telegram';
+
+const { StringSession } = sessions;
 import { createApiHandler } from '@/middleware/api-handler';
 import { logAudit } from '@/lib/audit';
 
