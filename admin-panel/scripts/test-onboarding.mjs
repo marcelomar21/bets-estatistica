@@ -1,16 +1,46 @@
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const SUPA_URL = 'https://vqrcuttvcgmozabsqqja.supabase.co';
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxcmN1dHR2Y2dtb3phYnNxcWphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MDE2NzcsImV4cCI6MjA4NTM3NzY3N30.fdgOdp9NxCHUTs5aY_nH4TvpBSz-sjxB4ieVd4zHRd4';
+// Load env vars from .env.local
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = resolve(__dirname, '..', '.env.local');
+const envContent = readFileSync(envPath, 'utf-8');
+const env = Object.fromEntries(
+  envContent.split('\n')
+    .filter(line => line && !line.startsWith('#'))
+    .map(line => line.split('='))
+    .filter(parts => parts.length >= 2)
+    .map(([key, ...vals]) => [key.trim(), vals.join('=').trim()]),
+);
 
-const BASE = 'http://localhost:3000';
+const SUPA_URL = env.NEXT_PUBLIC_SUPABASE_URL;
+const ANON_KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const BASE = process.env.BASE_URL || 'http://localhost:3000';
+
+if (!SUPA_URL || !ANON_KEY) {
+  console.error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local');
+  process.exit(1);
+}
+
+// Pass email/password as CLI args or env vars
+const EMAIL = process.env.TEST_EMAIL || 'super@admin.test';
+const PASSWORD = process.env.TEST_PASSWORD;
+if (!PASSWORD) {
+  console.error('Set TEST_PASSWORD env var. Usage: TEST_PASSWORD=xxx node scripts/test-onboarding.mjs');
+  process.exit(1);
+}
+
+// Extract Supabase ref from URL for cookie name
+const supaRef = new URL(SUPA_URL).hostname.split('.')[0];
 
 async function main() {
   // 1. Get auth token
   const supabase = createClient(SUPA_URL, ANON_KEY);
   const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
-    email: 'super@admin.test',
-    password: 'Admin123!',
+    email: EMAIL,
+    password: PASSWORD,
   });
   if (authErr) { console.error('Auth failed:', authErr.message); process.exit(1); }
   console.log('✅ Authenticated');
@@ -26,7 +56,7 @@ async function main() {
 
   const headers = {
     'Content-Type': 'application/json',
-    'Cookie': `sb-vqrcuttvcgmozabsqqja-auth-token=${cookieValue}`,
+    'Cookie': `sb-${supaRef}-auth-token=${cookieValue}`,
   };
 
   // Check bots
