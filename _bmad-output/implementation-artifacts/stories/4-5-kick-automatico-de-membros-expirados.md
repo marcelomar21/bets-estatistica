@@ -1,6 +1,6 @@
 # Story 4.5: Kick Automático de Membros Expirados
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -347,6 +347,7 @@ Nenhum debug log necessário — implementação direta sem bloqueios.
 
 ### Completion Notes List
 
+- **Review fixes (Code Review):** Corrigidos todos os achados HIGH/MEDIUM da revisão adversarial: (1) job não aborta mais imediatamente quando resolução de grupo falha, (2) auditoria de kick agora cobre fluxos sem `telegram_id` e `USER_NOT_IN_GROUP`, (3) falha de `markMemberAsRemoved()` após kick não é mais mascarada como sucesso, (4) fallback para `config.telegram.publicGroupId` foi bloqueado em modo multi-tenant (`GROUP_ID` definido), (5) testes expandidos para cobrir cenários críticos.
 - **Task 1 (Multi-tenant):** Adicionada função `resolveGroupData(groupId)` que busca dados do grupo (telegram_group_id, checkout_url, name) do banco. `getAllInadimplenteMembers()` agora filtra por `group_id` quando `GROUP_ID` está configurado. `_runKickExpiredInternal()` resolve grupo antes do loop e passa `groupData` para `processMemberKick()`. Fallback single-tenant mantido quando `GROUP_ID` não está definido.
 - **Task 2 (Checkout URL dinâmico):** `processMemberKick()` agora usa `groupData.checkout_url` para a DM de despedida em vez do config estático. Fallback para `config.membership.checkoutUrl` via `getCheckoutLink()` quando grupo não tem checkout_url.
 - **Task 3 (Audit log):** Após kick bem-sucedido, `registerMemberEvent(memberId, 'kick', { reason, groupId, groupName })` é chamado. Logging com prefixo `[membership:kick-expired]` inclui groupId.
@@ -354,9 +355,32 @@ Nenhum debug log necessário — implementação direta sem bloqueios.
 
 ### Change Log
 
+- **2026-02-10:** Fix(review): correções pós-code-review aplicadas no job `kick-expired` e testes (`story45` + suíte legada) para eliminar achados críticos/altos.
 - **2026-02-10:** Story 4.5 implementada — Adaptação do job kick-expired para multi-tenant. Filtro por group_id, resolução de telegram_group_id e checkout_url do grupo, audit log via registerMemberEvent, 18 novos testes. Nenhum arquivo novo de produção criado (apenas adaptação de existente). 1 novo arquivo de teste.
 
 ### File List
 
-- `bot/jobs/membership/kick-expired.js` — Modificado: adicionada resolveGroupData(), filtro multi-tenant em getAllInadimplenteMembers(), groupData param em processMemberKick(), audit log via registerMemberEvent, import de registerMemberEvent
-- `__tests__/jobs/membership/kick-expired.story45.test.js` — Novo: 18 testes cobrindo fluxo multi-tenant da Story 4.5
+- `bot/jobs/membership/kick-expired.js` — Modificado: hardening pós-review (chat ID seguro em multi-tenant, auditoria em todos os fluxos de remoção, falha explícita em inconsistência kick sem update DB, melhoria de tratamento de falha na resolução de grupo)
+- `__tests__/jobs/membership/kick-expired.story45.test.js` — Modificado: novos cenários críticos (audit em fluxos alternativos, falha DB pós-kick, bloqueio de fallback inseguro multi-tenant, validação de continuidade com erro de resolução de grupo)
+- `__tests__/jobs/membership/kick-expired.test.js` — Modificado: ajustes de mocks para o novo contrato de auditoria e manutenção da suíte legada
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+Marcelomendes
+
+### Date
+
+2026-02-10
+
+### Outcome
+
+Approved
+
+### Summary of Fixes Applied
+
+- Corrigido risco de kick no grupo errado: em modo multi-tenant, não há fallback para `config.telegram.publicGroupId`.
+- Corrigida inconsistência de estado: kick com falha no update DB agora retorna erro e alerta admin.
+- Corrigida lacuna de auditoria: eventos de kick agora são registrados também nos fluxos sem `telegram_id` e `USER_NOT_IN_GROUP`.
+- Corrigida cobertura de testes: adicionados testes para os cenários críticos acima.

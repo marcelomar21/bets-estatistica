@@ -150,6 +150,72 @@ function shouldKickMember(member) {
 }
 
 /**
+ * Resolve chat ID for kick operation
+ * Multi-tenant mode (GROUP_ID set): requires group.telegram_group_id from DB
+ * Single-tenant mode: falls back to config.telegram.publicGroupId
+ * @param {object|null} groupData - Resolved group data from DB
+ * @returns {{success: boolean, data?: {chatId: string|number}, error?: object}}
+ */
+function resolveKickChatId(groupData) {
+  const configuredGroupId = config.membership?.groupId || null;
+  const isMultiTenant = Boolean(configuredGroupId);
+
+  if (groupData?.telegram_group_id) {
+    return { success: true, data: { chatId: groupData.telegram_group_id } };
+  }
+
+  if (!isMultiTenant) {
+    const fallbackChatId = config.telegram?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
+    if (fallbackChatId) {
+      return { success: true, data: { chatId: fallbackChatId } };
+    }
+  }
+
+  return {
+    success: false,
+    error: {
+      code: 'GROUP_CHAT_ID_MISSING',
+      message: isMultiTenant
+        ? `Missing telegram_group_id for GROUP_ID=${configuredGroupId}`
+        : 'Group ID not configured',
+    },
+  };
+}
+
+/**
+ * Register kick audit event and return normalized result
+ * @param {string} memberId - Internal member UUID
+ * @param {string} reason - Kick reason
+ * @param {object|null} groupData - Resolved group data
+ * @param {object} extraPayload - Additional audit fields
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function registerKickAuditEvent(memberId, reason, groupData, extraPayload = {}) {
+  const eventPayload = {
+    reason,
+    groupId: groupData?.id || config.membership?.groupId || null,
+    groupName: groupData?.name || null,
+    ...extraPayload,
+  };
+
+  const eventResult = await registerMemberEvent(memberId, 'kick', eventPayload);
+  if (!eventResult?.success) {
+    logger.error('[membership:kick-expired] processMemberKick: failed to register audit event', {
+      memberId,
+      reason,
+      groupId: eventPayload.groupId,
+      error: eventResult?.error,
+    });
+    return {
+      success: false,
+      error: eventResult?.error || { code: 'AUDIT_LOG_FAILED', message: 'Failed to register kick audit event' },
+    };
+  }
+
+  return { success: true };
+}
+
+/**
  * Process a single member kick
  * Sends farewell message and kicks from group
  *
@@ -165,6 +231,7 @@ function shouldKickMember(member) {
  */
 async function processMemberKick(member, reason, groupData) {
   const { id: memberId, telegram_id: telegramId, telegram_username: username } = member;
+  const configuredGroupId = config.membership?.groupId || null;
 
   // If no telegram_id, just mark as removed in DB
   if (!telegramId) {
@@ -172,13 +239,37 @@ async function processMemberKick(member, reason, groupData) {
       memberId,
     });
     const removeResult = await markMemberAsRemoved(memberId, reason);
-    if (removeResult.success) {
-      return { success: true, data: { skipped: true, reason: 'no_telegram_id' } };
+    if (!removeResult.success) {
+      return removeResult;
     }
-    return removeResult;
+
+    const auditResult = await registerKickAuditEvent(memberId, reason, groupData, {
+      skipped: true,
+      skippedReason: 'no_telegram_id',
+    });
+    if (!auditResult.success) {
+      return { success: false, error: auditResult.error };
+    }
+
+    return { success: true, data: { skipped: true, reason: 'no_telegram_id' } };
   }
 
-  // 1. Send farewell message
+  // 1. Resolve chat ID for kick
+  const chatResult = resolveKickChatId(groupData);
+  if (!chatResult.success) {
+    logger.error('[membership:kick-expired] processMemberKick: no group chat ID available', {
+      memberId,
+      configuredGroupId,
+      hasGroupData: Boolean(groupData),
+    });
+    await alertAdmin(
+      `ERRO DE CONFIGURACAO: Nenhum group chat ID disponivel.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.\nGROUP_ID: ${configuredGroupId || 'n/a'}`
+    );
+    return { success: false, error: chatResult.error };
+  }
+  const chatId = chatResult.data.chatId;
+
+  // 2. Send farewell message (best effort)
   // Story 4.5: Use group's checkout_url (multi-tenant) or fall back to config
   const checkoutUrl = groupData?.checkout_url || null;
   const fallbackResult = !checkoutUrl ? getCheckoutLink() : null;
@@ -202,19 +293,7 @@ async function processMemberKick(member, reason, groupData) {
     // Continue without farewell message
   }
 
-  // 2. Kick from group
-  // Story 4.5: Use group's telegram_group_id (multi-tenant) or fall back to config
-  const chatId = groupData?.telegram_group_id
-    || config.telegram?.publicGroupId
-    || process.env.TELEGRAM_PUBLIC_GROUP_ID;
-
-  if (!chatId) {
-    logger.error('[membership:kick-expired] processMemberKick: no group chat ID available');
-    await alertAdmin(
-      `ERRO DE CONFIGURACAO: Nenhum group chat ID disponivel.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.`
-    );
-    return { success: false, error: { code: 'CONFIG_MISSING', message: 'Group ID not configured' } };
-  }
+  // 3. Kick from group
 
   const kickResult = await kickMemberFromGroup(telegramId, chatId);
 
@@ -226,6 +305,21 @@ async function processMemberKick(member, reason, groupData) {
         telegramId,
       });
       const removeResult = await markMemberAsRemoved(memberId, reason);
+      if (!removeResult.success) {
+        logger.error('[membership:kick-expired] processMemberKick: failed to mark already-removed member in DB', {
+          memberId,
+          error: removeResult.error,
+        });
+        return { success: false, error: removeResult.error };
+      }
+
+      const auditResult = await registerKickAuditEvent(memberId, reason, groupData, {
+        alreadyNotInGroup: true,
+      });
+      if (!auditResult.success) {
+        return { success: false, error: auditResult.error };
+      }
+
       return { success: false, error: { code: 'USER_NOT_IN_GROUP' }, data: removeResult.data };
     }
 
@@ -252,23 +346,37 @@ async function processMemberKick(member, reason, groupData) {
     return { success: false, error: kickResult.error };
   }
 
-  // 3. Mark as removed in DB
+  // 4. Mark as removed in DB
   const removeResult = await markMemberAsRemoved(memberId, reason);
 
   if (!removeResult.success) {
     logger.error('[membership:kick-expired] processMemberKick: kick succeeded but DB update failed', {
       memberId,
       error: removeResult.error,
-      note: 'Member was kicked from Telegram. Will be marked as removed on next run.',
+      note: 'Member was kicked from Telegram but not marked as removed.',
     });
+    await alertAdmin(
+      `ERRO CRITICO: membro kickado no Telegram mas nao atualizado no banco.\n\nMembro: ${username ? `@${username}` : memberId}\nErro: ${removeResult.error?.code || 'UNKNOWN'}`
+    );
+    return {
+      success: false,
+      error: {
+        code: 'REMOVE_AFTER_KICK_FAILED',
+        message: removeResult.error?.message || 'Failed to mark member as removed after successful kick',
+      },
+    };
   }
 
-  // 4. Audit log (Story 4.5: AC1)
-  await registerMemberEvent(memberId, 'kick', {
-    reason,
-    groupId: groupData?.id || null,
-    groupName: groupData?.name || null,
+  // 5. Audit log (Story 4.5: AC1)
+  const auditResult = await registerKickAuditEvent(memberId, reason, groupData, {
+    untilDate: kickResult.data?.until_date || null,
   });
+  if (!auditResult.success) {
+    await alertAdmin(
+      `ERRO DE AUDITORIA: kick executado, mas evento nao foi registrado.\n\nMembro: ${username ? `@${username}` : memberId}`
+    );
+    return { success: false, error: auditResult.error };
+  }
 
   logger.info('[membership:kick-expired] processMemberKick: member kicked successfully', {
     memberId,
@@ -317,13 +425,16 @@ async function _runKickExpiredInternal() {
   let warned = 0;
   let alreadyRemoved = 0;
   let failed = 0;
+  let blockedByMissingGroup = 0;
 
   try {
     // Story 4.5: Resolve group data for multi-tenant
     let groupData = null;
+    let groupResolutionFailed = false;
     if (groupId) {
       const groupResult = await resolveGroupData(groupId);
       if (!groupResult.success) {
+        groupResolutionFailed = true;
         logger.error('[membership:kick-expired] Failed to resolve group, aborting', {
           groupId,
           error: groupResult.error,
@@ -331,14 +442,14 @@ async function _runKickExpiredInternal() {
         await alertAdmin(
           `ERRO: Grupo ${groupId} nao encontrado no banco.\n\nJob kick-expired abortado. Verifique a configuracao GROUP_ID.`
         );
-        return { success: false, kicked, warned, alreadyRemoved, failed, error: groupResult.error?.message };
+      } else {
+        groupData = groupResult.data;
+        logger.info('[membership:kick-expired] Group resolved', {
+          groupId: groupData.id,
+          groupName: groupData.name,
+          telegramGroupId: groupData.telegram_group_id,
+        });
       }
-      groupData = groupResult.data;
-      logger.info('[membership:kick-expired] Group resolved', {
-        groupId: groupData.id,
-        groupName: groupData.name,
-        telegramGroupId: groupData.telegram_group_id,
-      });
     }
 
     // Get inadimplente members (filtered by group_id if multi-tenant)
@@ -355,7 +466,15 @@ async function _runKickExpiredInternal() {
 
     if (members.length === 0) {
       logger.info('[membership:kick-expired] No inadimplente members to process');
-      return { success: true, kicked, warned, alreadyRemoved, failed };
+      return {
+        success: !groupResolutionFailed,
+        kicked,
+        warned,
+        alreadyRemoved,
+        failed,
+        blockedByMissingGroup,
+        error: groupResolutionFailed ? `Failed to resolve group ${groupId}` : undefined,
+      };
     }
 
     logger.info('[membership:kick-expired] Processing inadimplente members', {
@@ -367,6 +486,16 @@ async function _runKickExpiredInternal() {
       const daysRemaining = calculateDaysRemaining(member);
 
       if (shouldKickMember(member)) {
+        if (groupId && !groupData) {
+          blockedByMissingGroup++;
+          failed++;
+          logger.error('[membership:kick-expired] Cannot kick member: group could not be resolved', {
+            memberId: member.id,
+            configuredGroupId: groupId,
+          });
+          continue;
+        }
+
         // Past grace period - KICK
         logger.info('[membership:kick-expired] Kicking member (grace period exceeded)', {
           memberId: member.id,
@@ -413,10 +542,19 @@ async function _runKickExpiredInternal() {
       warned,
       alreadyRemoved,
       failed,
+      blockedByMissingGroup,
       durationMs: duration,
     });
 
-    return { success: true, kicked, warned, alreadyRemoved, failed };
+    return {
+      success: !groupResolutionFailed,
+      kicked,
+      warned,
+      alreadyRemoved,
+      failed,
+      blockedByMissingGroup,
+      error: groupResolutionFailed ? `Failed to resolve group ${groupId}` : undefined,
+    };
   } catch (err) {
     logger.error('[membership:kick-expired] Unexpected error', { error: err.message });
     return { success: false, kicked, warned, alreadyRemoved, failed, error: err.message };

@@ -253,11 +253,11 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       expect(registerMemberEvent).toHaveBeenCalledWith(
         'member-1',
         'kick',
-        {
+        expect.objectContaining({
           reason: 'payment_failed',
           groupId: 'group-uuid-123',
           groupName: 'Grupo VIP',
-        }
+        })
       );
     });
 
@@ -297,6 +297,14 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('USER_NOT_IN_GROUP');
       expect(markMemberAsRemoved).toHaveBeenCalledWith('member-1', 'payment_failed');
+      expect(registerMemberEvent).toHaveBeenCalledWith(
+        'member-1',
+        'kick',
+        expect.objectContaining({
+          reason: 'payment_failed',
+          alreadyNotInGroup: true,
+        })
+      );
     });
 
     it('should handle BOT_NO_PERMISSION — alert admin, do NOT mark as removed', async () => {
@@ -311,6 +319,53 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       expect(result.error.code).toBe('BOT_NO_PERMISSION');
       expect(alertAdmin).toHaveBeenCalledWith(expect.stringContaining('ERRO PERSISTENTE'));
       expect(markMemberAsRemoved).not.toHaveBeenCalled();
+    });
+
+    it('should fail when DB update fails after successful kick', async () => {
+      markMemberAsRemoved.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'DB_ERROR', message: 'DB down' },
+      });
+
+      const result = await processMemberKick(baseMember, 'payment_failed', mockGroupData);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('REMOVE_AFTER_KICK_FAILED');
+      expect(alertAdmin).toHaveBeenCalledWith(expect.stringContaining('ERRO CRITICO'));
+      expect(registerMemberEvent).not.toHaveBeenCalled();
+    });
+
+    it('should not use publicGroupId fallback in multi-tenant when group is unresolved', async () => {
+      mockConfig.membership.groupId = 'group-uuid-123';
+
+      const result = await processMemberKick(baseMember, 'payment_failed', null);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('GROUP_CHAT_ID_MISSING');
+      expect(kickMemberFromGroup).not.toHaveBeenCalled();
+      expect(alertAdmin).toHaveBeenCalledWith(expect.stringContaining('ERRO DE CONFIGURACAO'));
+    });
+
+    it('should register audit event when member has no telegram_id but is marked removed', async () => {
+      const memberWithoutTelegram = {
+        ...baseMember,
+        telegram_id: null,
+      };
+
+      const result = await processMemberKick(memberWithoutTelegram, 'payment_failed', mockGroupData);
+
+      expect(result.success).toBe(true);
+      expect(result.data.skipped).toBe(true);
+      expect(markMemberAsRemoved).toHaveBeenCalledWith('member-1', 'payment_failed');
+      expect(registerMemberEvent).toHaveBeenCalledWith(
+        'member-1',
+        'kick',
+        expect.objectContaining({
+          reason: 'payment_failed',
+          skipped: true,
+          skippedReason: 'no_telegram_id',
+        })
+      );
     });
   });
 
@@ -358,7 +413,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       expect(supabase.from).toHaveBeenCalledWith('members');
     });
 
-    it('should abort if group resolution fails', async () => {
+    it('should report failure if group resolution fails but still check members', async () => {
       mockConfig.membership.groupId = 'nonexistent-group';
 
       const mockGroupChain = {
@@ -370,12 +425,27 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         }),
       };
 
-      supabase.from.mockReturnValue(mockGroupChain);
+      let eqCount = 0;
+      const mockMembersChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn(function () {
+          eqCount++;
+          if (eqCount >= 2) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return this;
+        }),
+      };
+
+      supabase.from
+        .mockReturnValueOnce(mockGroupChain)
+        .mockReturnValueOnce(mockMembersChain);
 
       const result = await runKickExpired();
 
       expect(result.success).toBe(false);
       expect(alertAdmin).toHaveBeenCalledWith(expect.stringContaining('nao encontrado'));
+      expect(supabase.from).toHaveBeenCalledWith('members');
     });
 
     it('should work in single-tenant mode (no GROUP_ID)', async () => {
@@ -453,11 +523,15 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         'https://mp.com/checkout/group123'
       );
       expect(markMemberAsRemoved).toHaveBeenCalledWith('member-expired', 'payment_failed');
-      expect(registerMemberEvent).toHaveBeenCalledWith('member-expired', 'kick', {
-        reason: 'payment_failed',
-        groupId: 'group-uuid-123',
-        groupName: 'Grupo VIP',
-      });
+      expect(registerMemberEvent).toHaveBeenCalledWith(
+        'member-expired',
+        'kick',
+        expect.objectContaining({
+          reason: 'payment_failed',
+          groupId: 'group-uuid-123',
+          groupName: 'Grupo VIP',
+        })
+      );
     });
 
     it('should send warning for inadimplente within grace period, NOT kick', async () => {
