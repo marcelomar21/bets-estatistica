@@ -371,7 +371,11 @@ describe('webhookProcessors - Mercado Pago', () => {
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('reactivated');
       expect(reactivateRemovedMember).toHaveBeenCalled();
-      expect(sendReactivationNotification).toHaveBeenCalledWith(123456789, 'uuid-4');
+      expect(sendReactivationNotification).toHaveBeenCalledWith(
+        123456789,
+        'uuid-4',
+        '-1001234567890'
+      );
     });
 
     it('should skip non-approved payments', async () => {

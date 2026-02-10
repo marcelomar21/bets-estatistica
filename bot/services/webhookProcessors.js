@@ -33,6 +33,16 @@ function getNotificationService() {
   return _notificationService;
 }
 
+// Story 4.4: Lazy load sendPaymentConfirmation from memberEvents
+let _sendPaymentConfirmation = null;
+function getSendPaymentConfirmation() {
+  if (!_sendPaymentConfirmation) {
+    const { sendPaymentConfirmation } = require('../handlers/memberEvents');
+    _sendPaymentConfirmation = sendPaymentConfirmation;
+  }
+  return _sendPaymentConfirmation;
+}
+
 // Lazy load telegram bot to send admin notifications
 let _bot = null;
 function getBot() {
@@ -641,6 +651,26 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
+    // Story 4.4: Send DM confirmation for new member (AC1)
+    if (activateResult.data.telegram_id) {
+      try {
+        const sendPaymentConfirmation = getSendPaymentConfirmation();
+        await sendPaymentConfirmation(
+          activateResult.data.telegram_id,
+          createResult.data.id,
+          activateResult.data.subscription_ends_at,
+          group?.name
+        );
+        logger.info('[webhook:payment] DM confirmação enviada', { memberId: createResult.data.id, telegramId: activateResult.data.telegram_id });
+      } catch (dmErr) {
+        logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+          memberId: createResult.data.id,
+          telegramId: activateResult.data.telegram_id,
+          error: dmErr.message
+        });
+      }
+    }
+
     // AC8: Notify admin group (multi-tenant)
     await notifyAdminPayment({
       email,
@@ -678,6 +708,24 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
+    // Story 4.4: Send DM confirmation (AC1, AC2)
+    try {
+      const sendPaymentConfirmation = getSendPaymentConfirmation();
+      await sendPaymentConfirmation(
+        member.telegram_id,
+        member.id,
+        activateResult.data.subscription_ends_at,
+        group?.name
+      );
+      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+    } catch (dmErr) {
+      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+        memberId: member.id,
+        telegramId: member.telegram_id,
+        error: dmErr.message
+      });
+    }
+
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
@@ -705,6 +753,24 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       paymentId,
       groupId
     });
+
+    // Story 4.4: Send DM confirmation for renewal (AC5)
+    try {
+      const sendPaymentConfirmation = getSendPaymentConfirmation();
+      await sendPaymentConfirmation(
+        member.telegram_id,
+        member.id,
+        renewResult.data.subscription_ends_at,
+        group?.name
+      );
+      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+    } catch (dmErr) {
+      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+        memberId: member.id,
+        telegramId: member.telegram_id,
+        error: dmErr.message
+      });
+    }
 
     await notifyAdminPayment({
       email: member.email,
@@ -738,6 +804,24 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
+    // Story 4.4: Send DM confirmation for recovery (AC6)
+    try {
+      const sendPaymentConfirmation = getSendPaymentConfirmation();
+      await sendPaymentConfirmation(
+        member.telegram_id,
+        member.id,
+        activateResult.data.subscription_ends_at,
+        group?.name
+      );
+      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+    } catch (dmErr) {
+      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+        memberId: member.id,
+        telegramId: member.telegram_id,
+        error: dmErr.message
+      });
+    }
+
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
@@ -763,16 +847,80 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       return { success: false, error: reactivateResult.error };
     }
 
-    // Enviar convite do grupo se tiver telegram_id
+    // Story 4.4: Check group membership and handle re-add (AC3)
     if (member.telegram_id) {
-      const notificationService = getNotificationService();
-      try {
-        await notificationService.sendReactivationNotification(member.telegram_id, member.id);
-      } catch (err) {
-        logger.warn('[webhookProcessors] handlePaymentApproved: reactivation notification failed', {
+      // Keep legacy fallback only when no tenant was resolved (single-tenant mode).
+      const groupTelegramId = group?.telegram_group_id || (!groupId ? config.telegram.publicGroupId : null);
+
+      if (!groupTelegramId) {
+        logger.warn('[webhook:payment] Missing telegram group for reactivation flow', {
           memberId: member.id,
-          error: err.message
+          groupId: groupId || null
         });
+      } else {
+        try {
+          const bot = getBot();
+          let isInGroup = false;
+
+          try {
+            const chatMember = await bot.getChatMember(groupTelegramId, member.telegram_id);
+            isInGroup = ['member', 'administrator', 'creator'].includes(chatMember.status);
+          } catch (checkErr) {
+            logger.warn('[webhook:payment] Could not check group membership', {
+              telegramId: member.telegram_id, error: checkErr.message
+            });
+            isInGroup = false; // Assume not in group
+          }
+
+          if (isInGroup) {
+            // AC4: Member still in group — just send DM confirmation
+            try {
+              const sendPaymentConfirmation = getSendPaymentConfirmation();
+              await sendPaymentConfirmation(
+                member.telegram_id,
+                member.id,
+                reactivateResult.data.subscription_ends_at,
+                group?.name
+              );
+              logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+            } catch (dmErr) {
+              logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+                memberId: member.id,
+                telegramId: member.telegram_id,
+                error: dmErr.message
+              });
+            }
+          } else {
+            // AC3: Member NOT in group — unban + send reactivation notification with invite link
+            try {
+              await bot.unbanChatMember(groupTelegramId, member.telegram_id, { only_if_banned: true });
+              logger.info('[webhook:payment] User unbanned for reactivation', { memberId: member.id, telegramId: member.telegram_id });
+            } catch (unbanErr) {
+              logger.warn('[webhook:payment] Failed to unban user (may not be banned)', {
+                memberId: member.id, error: unbanErr.message
+              });
+            }
+
+            const notificationService = getNotificationService();
+            try {
+              await notificationService.sendReactivationNotification(
+                member.telegram_id,
+                member.id,
+                groupTelegramId
+              );
+              logger.info('[webhook:payment] Reactivation notification enviada', { memberId: member.id, telegramId: member.telegram_id });
+            } catch (notifErr) {
+              logger.warn('[webhook:payment] Reactivation notification failed', {
+                memberId: member.id, error: notifErr.message
+              });
+            }
+          }
+        } catch (readdErr) {
+          // Re-add failing should NOT revert member activation
+          logger.warn('[webhook:payment] Re-add process failed', {
+            memberId: member.id, error: readdErr.message
+          });
+        }
       }
     }
 

@@ -397,6 +397,47 @@ describe('notificationService', () => {
       );
     });
 
+    it('should use explicit groupTelegramId when provided', async () => {
+      const mockBot = {
+        createChatInviteLink: jest.fn().mockResolvedValue({
+          invite_link: 'https://t.me/+abc123xyz',
+        }),
+        sendMessage: jest.fn().mockResolvedValue({ message_id: 1001 }),
+      };
+      getBot.mockReturnValue(mockBot);
+
+      const mockUpdateChain = {
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      };
+
+      const mockInsertChain = {
+        insert: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'notif-123' },
+          error: null,
+        }),
+      };
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return mockUpdateChain;
+        }
+        return mockInsertChain;
+      });
+
+      const result = await sendReactivationNotification(123456789, 'member-uuid', '-1007777777777');
+
+      expect(result.success).toBe(true);
+      expect(mockBot.createChatInviteLink).toHaveBeenCalledWith('-1007777777777', {
+        member_limit: 1,
+        expire_date: expect.any(Number),
+      });
+    });
+
     it('should return error when groupId is not configured', async () => {
       const { config } = require('../../lib/config');
       const originalGroupId = config.telegram.publicGroupId;

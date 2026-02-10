@@ -33,6 +33,7 @@ const {
   VALID_TRANSITIONS,
   canTransition,
   getMemberById,
+  renewMemberSubscription,
   getMemberByTelegramId,
   updateMemberStatus,
   createTrialMember,
@@ -513,6 +514,90 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.daysRemaining).toBe(0);
+    });
+  });
+
+  // ============================================
+  // renewMemberSubscription
+  // ============================================
+  describe('renewMemberSubscription', () => {
+    test('estende assinatura ativa a partir de subscription_ends_at atual quando estiver no futuro', async () => {
+      const currentEndsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+      const mockMember = {
+        id: 1,
+        status: 'ativo',
+        subscription_ends_at: currentEndsAt.toISOString(),
+      };
+      const updatedMember = {
+        ...mockMember,
+        subscription_ends_at: new Date(currentEndsAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const getSingleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      const updateSingleMock = jest.fn().mockResolvedValue({ data: updatedMember, error: null });
+      const updateSelectMock = jest.fn().mockReturnValue({ single: updateSingleMock });
+      const updateEqMock = jest.fn().mockReturnValue({ select: updateSelectMock });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEqMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getSelectMock };
+        }
+        return { update: updateMock };
+      });
+
+      const result = await renewMemberSubscription(1);
+
+      expect(result.success).toBe(true);
+      const updatePayload = updateMock.mock.calls[0][0];
+      expect(new Date(updatePayload.subscription_ends_at).toISOString())
+        .toBe(new Date(currentEndsAt.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    });
+
+    test('quando assinatura já expirou, renova a partir de agora (+30 dias)', async () => {
+      const pastEndsAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      const mockMember = {
+        id: 2,
+        status: 'ativo',
+        subscription_ends_at: pastEndsAt.toISOString(),
+      };
+
+      const getSingleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
+      const getEqMock = jest.fn().mockReturnValue({ single: getSingleMock });
+      const getSelectMock = jest.fn().mockReturnValue({ eq: getEqMock });
+
+      const updateSingleMock = jest.fn().mockResolvedValue({
+        data: { ...mockMember, subscription_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+        error: null
+      });
+      const updateSelectMock = jest.fn().mockReturnValue({ single: updateSingleMock });
+      const updateEqMock = jest.fn().mockReturnValue({ select: updateSelectMock });
+      const updateMock = jest.fn().mockReturnValue({ eq: updateEqMock });
+
+      let callCount = 0;
+      supabase.from.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { select: getSelectMock };
+        }
+        return { update: updateMock };
+      });
+
+      const nowBefore = Date.now();
+      const result = await renewMemberSubscription(2);
+      const nowAfter = Date.now();
+
+      expect(result.success).toBe(true);
+      const renewedAt = new Date(updateMock.mock.calls[0][0].subscription_ends_at).getTime();
+      const minExpected = nowBefore + 29 * 24 * 60 * 60 * 1000;
+      const maxExpected = nowAfter + 31 * 24 * 60 * 60 * 1000;
+      expect(renewedAt).toBeGreaterThanOrEqual(minExpected);
+      expect(renewedAt).toBeLessThanOrEqual(maxExpected);
     });
   });
 
