@@ -9,7 +9,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'active',
@@ -20,7 +20,7 @@ describe('Database Types', () => {
       expect(group.bot_token).toBeNull();
       expect(group.telegram_group_id).toBeNull();
       expect(group.telegram_admin_group_id).toBeNull();
-      expect(group.mp_product_id).toBeNull();
+      expect(group.mp_plan_id).toBeNull();
       expect(group.render_service_id).toBeNull();
       expect(group.checkout_url).toBeNull();
       expect(group.status).toBe('active');
@@ -34,7 +34,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'creating',
@@ -50,7 +50,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'active',
@@ -66,7 +66,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'paused',
@@ -82,7 +82,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'inactive',
@@ -98,7 +98,7 @@ describe('Database Types', () => {
         bot_token: null,
         telegram_group_id: null,
         telegram_admin_group_id: null,
-        mp_product_id: null,
+        mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
         status: 'failed',
@@ -114,7 +114,7 @@ describe('Database Types', () => {
         bot_token: 'bot-token-123',
         telegram_group_id: -1001234567890,
         telegram_admin_group_id: -1009876543210,
-        mp_product_id: 'mp-prod-001',
+        mp_plan_id: 'mp-plan-001',
         render_service_id: 'srv-abc123',
         checkout_url: 'https://checkout.example.com',
         status: 'active',
@@ -123,7 +123,7 @@ describe('Database Types', () => {
       expect(group.bot_token).toBe('bot-token-123');
       expect(group.telegram_group_id).toBe(-1001234567890);
       expect(group.telegram_admin_group_id).toBe(-1009876543210);
-      expect(group.mp_product_id).toBe('mp-prod-001');
+      expect(group.mp_plan_id).toBe('mp-plan-001');
       expect(group.render_service_id).toBe('srv-abc123');
       expect(group.checkout_url).toBe('https://checkout.example.com');
     });

@@ -69,14 +69,14 @@ development_status:
   3-1-adaptar-registro-de-membros-para-multi-tenant: done
   3-2-login-e-dashboard-do-admin-de-grupo: done
   3-3-lista-de-membros-com-status-e-vencimentos: done
-  3-4-visualizacao-de-membros-pelo-super-admin: backlog
+  3-4-visualizacao-de-membros-pelo-super-admin: done
   epic-3-retrospective: optional
 
   # ========================================
   # Epic 4: Pagamentos, Acesso Automático e Kick
   # ========================================
-  epic-4: backlog
-  4-1-assinatura-recorrente-mercado-pago: backlog
+  epic-4: in-progress
+  4-1-assinatura-recorrente-mercado-pago: done
   4-2-boas-vindas-e-registro-com-status-trial: backlog
   4-3-webhook-mercado-pago-multi-tenant: backlog
   4-4-acesso-instantaneo-pos-pagamento: backlog

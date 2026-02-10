@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { createApiHandler } from '@/middleware/api-handler';
 import { validateBotToken } from '@/lib/telegram';
-import { createCheckoutPreference } from '@/lib/mercadopago';
+import { createSubscriptionPlan } from '@/lib/mercadopago';
 import { createBotService } from '@/lib/render';
 import { logAudit } from '@/lib/audit';
 import { withMtprotoSession, createSupergroup, addBotAsAdmin, createInviteLink, verifyBotIsAdmin, classifyMtprotoError, MtprotoError } from '@/lib/mtproto';
@@ -215,7 +215,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
 
   const { data: group } = await context.supabase
     .from('groups')
-    .select('id, name, mp_product_id, checkout_url')
+    .select('id, name, mp_plan_id, checkout_url')
     .eq('id', group_id)
     .single();
 
@@ -227,7 +227,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
   }
 
   // Idempotent: skip if already configured
-  if (group.mp_product_id) {
+  if (group.mp_plan_id) {
     logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
     return NextResponse.json({
       success: true,
@@ -235,7 +235,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
     });
   }
 
-  const mpResult = await createCheckoutPreference(group.name, group_id, price);
+  const mpResult = await createSubscriptionPlan(group.name, group_id, price);
   if (!mpResult.success) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
     logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'error', mpResult.error);
@@ -253,16 +253,35 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
     );
   }
 
-  await context.supabase
+  const { error: savePlanError } = await context.supabase
     .from('groups')
-    .update({ mp_product_id: mpResult.data.id, checkout_url: mpResult.data.checkout_url })
+    .update({ mp_plan_id: mpResult.data.planId, checkout_url: mpResult.data.checkoutUrl })
     .eq('id', group_id);
+
+  if (savePlanError) {
+    await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
+    const recoveryMessage = `Plano criado no MP (${mpResult.data.planId}), mas falhou ao salvar no DB: ${savePlanError.message}`;
+    console.error('[onboarding:configuring_mp]', recoveryMessage);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'error', recoveryMessage);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'ONBOARDING_FAILED',
+          message: `Plano criado no Mercado Pago (planId: ${mpResult.data.planId}), mas falhou ao salvar no banco`,
+          step: 'configuring_mp',
+          group_id,
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   logOnboardingAudit(context.supabase, context.user.id, group_id, 'configuring_mp', 'success');
 
   return NextResponse.json({
     success: true,
-    data: { checkout_url: mpResult.data.checkout_url },
+    data: { checkout_url: mpResult.data.checkoutUrl },
   });
 }
 
@@ -651,7 +670,7 @@ async function handleFinalizing(data: z.infer<typeof finalizingSchema>, context:
   // Fetch final group state
   const { data: finalGroup } = await context.supabase
     .from('groups')
-    .select('id, name, status, checkout_url, mp_product_id, render_service_id, created_at')
+    .select('id, name, status, checkout_url, mp_plan_id, render_service_id, created_at')
     .eq('id', group_id)
     .single();
 

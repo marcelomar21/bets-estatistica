@@ -8,7 +8,7 @@ vi.mock('@/lib/telegram', () => ({
 }));
 
 vi.mock('@/lib/mercadopago', () => ({
-  createCheckoutPreference: vi.fn(),
+  createSubscriptionPlan: vi.fn(),
 }));
 
 vi.mock('@/lib/render', () => ({
@@ -64,7 +64,7 @@ vi.mock('@/lib/super-admin-bot', () => ({
 
 import { POST } from '../groups/onboarding/route';
 import { validateBotToken } from '@/lib/telegram';
-import { createCheckoutPreference } from '@/lib/mercadopago';
+import { createSubscriptionPlan } from '@/lib/mercadopago';
 import { createBotService } from '@/lib/render';
 import { withMtprotoSession, createSupergroup, addBotAsAdmin, createInviteLink, verifyBotIsAdmin, classifyMtprotoError, MtprotoError } from '@/lib/mtproto';
 import { getBotConfig, sendFounderNotification } from '@/lib/super-admin-bot';
@@ -331,14 +331,14 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     const mockCtx = createMockContext({
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', mp_product_id: null, checkout_url: null },
+          data: { id: 'group-1', name: 'Test', mp_plan_id: null, checkout_url: null },
           error: null,
         }),
       },
     });
     mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    vi.mocked(createCheckoutPreference).mockResolvedValue({ success: false, error: 'MP error' });
+    vi.mocked(createSubscriptionPlan).mockResolvedValue({ success: false, error: 'MP error' });
 
     const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 29.9 });
     const res = await POST(req);
@@ -353,26 +353,26 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     const mockCtx = createMockContext({
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test Group', mp_product_id: null, checkout_url: null },
+          data: { id: 'group-1', name: 'Test Group', mp_plan_id: null, checkout_url: null },
           error: null,
         }),
       },
     });
     mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    vi.mocked(createCheckoutPreference).mockResolvedValue({ success: true, data: { id: 'pref-1', checkout_url: 'http://mp.com/checkout' } });
+    vi.mocked(createSubscriptionPlan).mockResolvedValue({ success: true, data: { planId: 'plan-1', checkoutUrl: 'http://mp.com/checkout' } });
 
     const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 49.9 });
     await POST(req);
 
-    expect(createCheckoutPreference).toHaveBeenCalledWith('Test Group', VALID_GROUP_ID, 49.9);
+    expect(createSubscriptionPlan).toHaveBeenCalledWith('Test Group', VALID_GROUP_ID, 49.9);
   });
 
   it('configuring_mp is idempotent (skips if already configured)', async () => {
     const mockCtx = createMockContext({
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', mp_product_id: 'pref-1', checkout_url: 'http://mp.com/checkout' },
+          data: { id: 'group-1', name: 'Test', mp_plan_id: 'plan-1', checkout_url: 'http://mp.com/checkout' },
           error: null,
         }),
       },
@@ -386,7 +386,55 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     expect(res.status).toBe(200);
     expect(json.success).toBe(true);
     expect(json.data.checkout_url).toBe('http://mp.com/checkout');
-    expect(createCheckoutPreference).not.toHaveBeenCalled();
+    expect(createSubscriptionPlan).not.toHaveBeenCalled();
+  });
+
+  it('returns error and includes planId when MP succeeds but DB save fails (configuring_mp step)', async () => {
+    const groupsSelectBuilder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'group-1', name: 'Test Group', mp_plan_id: null, checkout_url: null },
+        error: null,
+      }),
+    });
+    const groupsUpdateFailBuilder = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB write failed' } }),
+    };
+    const groupsStatusBuilder = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    const groupBuilders = [groupsSelectBuilder, groupsUpdateFailBuilder, groupsStatusBuilder];
+
+    const mockCtx = {
+      user: { id: 'user-123', email: 'admin@test.com' },
+      role: 'super_admin' as const,
+      groupFilter: null,
+      supabase: {
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'groups') {
+            const builder = groupBuilders.shift();
+            return builder ?? createMockQueryBuilder();
+          }
+          return createMockQueryBuilder();
+        }),
+      },
+    };
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    vi.mocked(createSubscriptionPlan).mockResolvedValue({
+      success: true,
+      data: { planId: 'plan-123', checkoutUrl: 'http://mp.com/checkout' },
+    });
+
+    const req = createRequest({ step: 'configuring_mp', group_id: VALID_GROUP_ID, price: 29.9 });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('ONBOARDING_FAILED');
+    expect(json.error.message).toContain('planId: plan-123');
   });
 
   it('returns error when Render API fails (deploying_bot step)', async () => {
@@ -517,7 +565,7 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
   it('finalizing step activates group and returns full group data', async () => {
     const finalGroupData = {
       id: 'group-1', name: 'Canal do João', status: 'active',
-      checkout_url: 'http://mp.com/checkout', mp_product_id: 'pref-1',
+      checkout_url: 'http://mp.com/checkout', mp_plan_id: 'plan-1',
       render_service_id: 'srv-1', created_at: '2026-01-01',
     };
 
