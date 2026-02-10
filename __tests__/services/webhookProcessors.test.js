@@ -3,10 +3,30 @@
  * Tech-Spec: Migração Cakto → Mercado Pago
  */
 
+// Mock supabase (Story 4.3: needed for group resolution and webhook_events tracking)
+jest.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+          }),
+          single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      }),
+    }),
+  },
+}));
+
 // Mock mercadoPagoService
 jest.mock('../../bot/services/mercadoPagoService', () => ({
   getSubscription: jest.fn(),
   getPayment: jest.fn(),
+  getAuthorizedPayment: jest.fn(),
   extractCouponCode: jest.fn(),
   mapPaymentMethod: jest.fn()
 }));
@@ -15,6 +35,7 @@ jest.mock('../../bot/services/mercadoPagoService', () => ({
 jest.mock('../../bot/services/memberService', () => ({
   getMemberByEmail: jest.fn(),
   getMemberBySubscription: jest.fn(),
+  getMemberByPayerId: jest.fn(),
   createTrialMemberMP: jest.fn(),
   updateSubscriptionData: jest.fn(),
   activateMember: jest.fn(),
@@ -70,6 +91,7 @@ const {
 } = require('../../bot/services/webhookProcessors');
 
 const mercadoPagoService = require('../../bot/services/mercadoPagoService');
+const { supabase } = require('../../lib/supabase');
 const {
   getMemberByEmail,
   getMemberBySubscription,
@@ -125,12 +147,14 @@ describe('webhookProcessors - Mercado Pago', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('created');
-      expect(createTrialMemberMP).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        subscriptionId: 'sub_123',
-        payerId: '12345',
-        couponCode: null
-      });
+      expect(createTrialMemberMP).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          subscriptionId: 'sub_123',
+          payerId: '12345',
+          couponCode: null,
+        })
+      );
     });
 
     it('should update existing member subscription data', async () => {
@@ -439,12 +463,183 @@ describe('webhookProcessors - Mercado Pago', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('created_active');
-      expect(createTrialMemberMP).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        subscriptionId: 'sub_new',
-        payerId: 'payer123',
-        couponCode: null
+      expect(createTrialMemberMP).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          subscriptionId: 'sub_new',
+          payerId: 'payer123',
+          couponCode: null,
+        })
+      );
+    });
+
+    it('should fallback to global email lookup and validate tenant when scoped lookup fails', async () => {
+      const payload = {
+        data: { id: 'pay_fallback_global_email' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_fallback_global_email',
+          status: 'approved',
+          payer: { id: 12345, email: 'fallback@example.com' },
+          metadata: { preapproval_id: 'sub_fallback' },
+          payment_method_id: 'credit_card'
+        }
       });
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_fallback',
+          preapproval_plan_id: 'plan_xyz',
+          status: 'authorized'
+        }
+      });
+
+      const mockGroup = {
+        id: 'group-uuid-123',
+        name: 'Grupo Premium',
+        status: 'active',
+        mp_plan_id: 'plan_xyz'
+      };
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+            }),
+            single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+          }),
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+        }),
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      getMemberByEmail
+        .mockResolvedValueOnce({
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND' }
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            id: 'uuid-global',
+            status: 'trial',
+            email: 'fallback@example.com',
+            group_id: 'group-uuid-123',
+            mp_subscription_id: 'sub_fallback'
+          }
+        });
+
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('cartao_recorrente');
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-global', status: 'ativo' }
+      });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.action).toBe('activated');
+      expect(getMemberByEmail).toHaveBeenNthCalledWith(1, 'fallback@example.com', 'group-uuid-123');
+      expect(getMemberByEmail).toHaveBeenNthCalledWith(2, 'fallback@example.com', null);
+    });
+
+    it('should reject global email fallback when member belongs to another tenant', async () => {
+      const payload = {
+        data: { id: 'pay_tenant_mismatch' }
+      };
+
+      mercadoPagoService.getPayment.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'pay_tenant_mismatch',
+          status: 'approved',
+          payer: { id: 12345, email: 'mismatch@example.com' },
+          metadata: { preapproval_id: 'sub_mismatch' },
+          payment_method_id: 'credit_card'
+        }
+      });
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_mismatch',
+          preapproval_plan_id: 'plan_xyz',
+          status: 'authorized'
+        }
+      });
+
+      const mockGroup = {
+        id: 'group-uuid-123',
+        name: 'Grupo Premium',
+        status: 'active',
+        mp_plan_id: 'plan_xyz'
+      };
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+            }),
+            single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+          }),
+        }),
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+        }),
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' }
+      });
+
+      getMemberByEmail
+        .mockResolvedValueOnce({
+          success: false,
+          error: { code: 'MEMBER_NOT_FOUND' }
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: {
+            id: 'uuid-other-group',
+            status: 'trial',
+            email: 'mismatch@example.com',
+            group_id: 'group-uuid-999'
+          }
+        });
+
+      createTrialMemberMP.mockResolvedValue({
+        success: true,
+        data: { id: 101, email: 'mismatch@example.com', status: 'trial' }
+      });
+      mercadoPagoService.mapPaymentMethod.mockReturnValue('credit_card');
+      activateMember.mockResolvedValue({
+        success: true,
+        data: { id: 101, status: 'ativo' }
+      });
+
+      const result = await handlePaymentApproved(payload);
+
+      expect(result.success).toBe(true);
+      expect(result.data.action).toBe('created_active');
+      expect(createTrialMemberMP).toHaveBeenCalledWith(
+        expect.objectContaining({
+          groupId: 'group-uuid-123',
+          email: 'mismatch@example.com'
+        })
+      );
     });
   });
 
@@ -554,6 +749,12 @@ describe('webhookProcessors - Mercado Pago', () => {
         data: { id: 'sub_cancelled' }
       };
 
+      // Story 4.3: handler now fetches subscription for group resolution
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_cancelled', status: 'cancelled' }
+      });
+
       getMemberBySubscription.mockResolvedValue({
         success: true,
         data: { id: 'uuid-1', status: 'ativo', telegram_id: 123456789 }
@@ -570,6 +771,7 @@ describe('webhookProcessors - Mercado Pago', () => {
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('removed');
       expect(markMemberAsRemoved).toHaveBeenCalledWith('uuid-1', 'subscription_cancelled');
+      // Story 4.3: Without group resolution, falls back to config.telegram.publicGroupId
       expect(kickMemberFromGroup).toHaveBeenCalledWith(123456789, '-1001234567890');
     });
 
@@ -577,6 +779,11 @@ describe('webhookProcessors - Mercado Pago', () => {
       const payload = {
         data: { id: 'sub_trial_expired' }
       };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_trial_expired', status: 'cancelled' }
+      });
 
       getMemberBySubscription.mockResolvedValue({
         success: true,
@@ -601,6 +808,11 @@ describe('webhookProcessors - Mercado Pago', () => {
         data: { id: 'sub_already_removed' }
       };
 
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_already_removed', status: 'cancelled' }
+      });
+
       getMemberBySubscription.mockResolvedValue({
         success: true,
         data: { id: 'uuid-3', status: 'removido' }
@@ -618,6 +830,11 @@ describe('webhookProcessors - Mercado Pago', () => {
       const payload = {
         data: { id: 'sub_unknown' }
       };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_unknown', status: 'cancelled' }
+      });
 
       getMemberBySubscription.mockResolvedValue({
         success: false,
@@ -705,6 +922,40 @@ describe('webhookProcessors - Mercado Pago', () => {
 
       expect(result.success).toBe(true);
       expect(markMemberAsRemoved).toHaveBeenCalled();
+    });
+
+    it('should route subscription_preapproval expired to handleSubscriptionCancelled', async () => {
+      const event = {
+        event_type: 'subscription_preapproval',
+        payload: {
+          action: 'updated',
+          data: { id: 'sub_expired' }
+        }
+      };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'sub_expired',
+          status: 'expired'
+        }
+      });
+
+      getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-expired', status: 'ativo', telegram_id: 123456789 }
+      });
+
+      kickMemberFromGroup.mockResolvedValue({ success: true });
+      markMemberAsRemoved.mockResolvedValue({
+        success: true,
+        data: { id: 'uuid-expired', status: 'removido' }
+      });
+
+      const result = await processWebhookEvent(event);
+
+      expect(result.success).toBe(true);
+      expect(markMemberAsRemoved).toHaveBeenCalledWith('uuid-expired', 'subscription_cancelled');
     });
 
     it('should route payment approved to handlePaymentApproved', async () => {

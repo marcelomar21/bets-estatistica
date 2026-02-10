@@ -1,6 +1,7 @@
 /**
  * Webhook Processors - Mercado Pago
  * Tech-Spec: Migração Cakto → Mercado Pago
+ * Story 4.3: Multi-tenant webhook processing
  *
  * Processa eventos de webhook salvos na tabela webhook_events.
  * Chamado pelo job process-webhooks.js.
@@ -12,6 +13,7 @@
 const mercadoPagoService = require('./mercadoPagoService');
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
+const { supabase } = require('../../lib/supabase');
 
 // Lazy load memberService to avoid circular dependency
 let _memberService = null;
@@ -41,20 +43,250 @@ function getBot() {
   return _bot;
 }
 
+const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+// ============================================
+// Story 4.3: GROUP RESOLUTION (AC2)
+// ============================================
+
+/**
+ * Resolve group from subscription data via preapproval_plan_id → groups.mp_plan_id
+ * @param {object} subscriptionData - Subscription data from MP API
+ * @returns {Promise<{success: boolean, data: {groupId: string|null, group: object|null, fallback?: string}}>}
+ */
+async function resolveGroupFromSubscription(subscriptionData) {
+  const planId = subscriptionData?.preapproval_plan_id;
+  const externalReference = subscriptionData?.external_reference
+    || subscriptionData?.metadata?.external_reference
+    || subscriptionData?.metadata?.group_id
+    || null;
+
+  if (planId) {
+    try {
+      const { data: group, error } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('mp_plan_id', planId)
+        .eq('status', 'active')
+        .single();
+
+      if (!error && group) {
+        logger.info('[webhookProcessors] resolveGroupFromSubscription: resolved via mp_plan_id', {
+          planId,
+          groupId: group.id,
+          groupName: group.name,
+        });
+
+        return { success: true, data: { groupId: group.id, group } };
+      }
+
+      logger.warn('[webhookProcessors] resolveGroupFromSubscription: plan not found or inactive, trying external_reference', {
+        planId,
+        error: error?.code,
+      });
+    } catch (err) {
+      logger.error('[webhookProcessors] resolveGroupFromSubscription: unexpected plan lookup error', {
+        planId,
+        error: err.message,
+      });
+    }
+  } else {
+    logger.warn('[webhookProcessors] resolveGroupFromSubscription: no preapproval_plan_id, trying external_reference', {
+      subscriptionId: subscriptionData?.id,
+    });
+  }
+
+  const externalReferenceResult = await resolveGroupFromExternalReference(externalReference, {
+    source: 'subscription',
+    subscriptionId: subscriptionData?.id,
+    planId,
+  });
+  if (externalReferenceResult.data.groupId) {
+    return externalReferenceResult;
+  }
+
+  return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+}
+
+/**
+ * Resolve group from payment data by finding subscription → preapproval_plan_id
+ * @param {object} paymentData - Payment data from MP API
+ * @returns {Promise<{success: boolean, data: {groupId: string|null, group: object|null, fallback?: string}}>}
+ */
+async function resolveGroupFromPayment(paymentData) {
+  const paymentExternalReference = paymentData?.external_reference
+    || paymentData?.metadata?.external_reference
+    || paymentData?.metadata?.group_id
+    || null;
+
+  // Try to get subscription ID from payment
+  const subscriptionId = paymentData?.point_of_interaction?.transaction_data?.subscription_id
+    || paymentData?.metadata?.preapproval_id
+    || paymentData?.preapproval_id;
+
+  if (!subscriptionId) {
+    logger.warn('[webhookProcessors] resolveGroupFromPayment: no subscription_id in payment, trying external_reference', {
+      paymentId: paymentData?.id,
+    });
+
+    const externalReferenceResult = await resolveGroupFromExternalReference(paymentExternalReference, {
+      source: 'payment',
+      paymentId: paymentData?.id,
+    });
+    if (externalReferenceResult.data.groupId) {
+      return externalReferenceResult;
+    }
+
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+
+  // Fetch subscription to get preapproval_plan_id
+  const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+  if (!subscriptionResult.success) {
+    logger.warn('[webhookProcessors] resolveGroupFromPayment: failed to fetch subscription, trying external_reference', {
+      subscriptionId,
+      error: subscriptionResult.error,
+    });
+
+    const externalReferenceResult = await resolveGroupFromExternalReference(paymentExternalReference, {
+      source: 'payment',
+      paymentId: paymentData?.id,
+      subscriptionId,
+    });
+    if (externalReferenceResult.data.groupId) {
+      return externalReferenceResult;
+    }
+
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+
+  return resolveGroupFromSubscription(subscriptionResult.data);
+}
+
+/**
+ * Try to resolve group from external_reference fallback.
+ * external_reference is expected to include group_id from MP onboarding.
+ * @param {string|null|undefined} externalReference
+ * @param {object} context - Logging context
+ * @returns {Promise<{success: boolean, data: {groupId: string|null, group: object|null, fallback?: string}}>}
+ */
+async function resolveGroupFromExternalReference(externalReference, context = {}) {
+  const candidate = extractGroupIdFromExternalReference(externalReference);
+  if (!candidate) {
+    logger.warn('[webhookProcessors] resolveGroupFromExternalReference: no valid group_id candidate', {
+      ...context,
+      hasExternalReference: !!externalReference,
+    });
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+
+  try {
+    const { data: group, error } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('id', candidate)
+      .eq('status', 'active')
+      .single();
+
+    if (error || !group) {
+      logger.warn('[webhookProcessors] resolveGroupFromExternalReference: group not found or inactive', {
+        ...context,
+        externalReference: externalReference?.toString?.().slice(0, 80),
+        candidate,
+        error: error?.code,
+      });
+      return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+    }
+
+    logger.info('[webhookProcessors] resolveGroupFromExternalReference: resolved', {
+      ...context,
+      candidate,
+      groupId: group.id,
+      groupName: group.name,
+    });
+
+    return { success: true, data: { groupId: group.id, group } };
+  } catch (err) {
+    logger.error('[webhookProcessors] resolveGroupFromExternalReference: unexpected error', {
+      ...context,
+      candidate,
+      error: err.message,
+    });
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+}
+
+function extractGroupIdFromExternalReference(externalReference) {
+  if (externalReference === null || externalReference === undefined) {
+    return null;
+  }
+
+  const value = String(externalReference).trim();
+  if (!value) {
+    return null;
+  }
+
+  const uuidMatch = value.match(UUID_REGEX);
+  return uuidMatch ? uuidMatch[0] : null;
+}
+
+/**
+ * Update webhook_events row with resolved group_id
+ * @param {string|number} eventId - webhook_events.id
+ * @param {string|null} groupId - Resolved group UUID
+ */
+async function updateWebhookEventGroupId(eventId, groupId) {
+  if (!eventId || !groupId) return;
+
+  try {
+    const { error } = await supabase
+      .from('webhook_events')
+      .update({ group_id: groupId })
+      .eq('id', eventId);
+
+    if (error) {
+      logger.warn('[webhookProcessors] updateWebhookEventGroupId: update error', {
+        eventId,
+        groupId,
+        error: error.message || error.code,
+      });
+      return;
+    }
+
+    logger.debug('[webhookProcessors] updateWebhookEventGroupId: updated', { eventId, groupId });
+  } catch (err) {
+    // Non-critical: don't fail webhook processing for audit tracking
+    logger.warn('[webhookProcessors] updateWebhookEventGroupId: failed', {
+      eventId,
+      groupId,
+      error: err.message,
+    });
+  }
+}
+
+// ============================================
+// ADMIN NOTIFICATION (AC8 - multi-tenant)
+// ============================================
+
 /**
  * Send payment notification to admin group
+ * Story 4.3: Supports multi-tenant admin group targeting
  * @param {object} params - Notification params
  * @param {string} params.email - Payer email
  * @param {number} params.amount - Payment amount
  * @param {string} params.action - Action type (new_member, conversion, renewal, recovery, reactivation)
  * @param {number} [params.memberId] - Member ID if available
+ * @param {string} [params.groupId] - Group UUID for multi-tenant
+ * @param {string} [params.groupName] - Group name for notification
+ * @param {string} [params.adminGroupId] - Group-specific admin Telegram group ID
  */
-async function notifyAdminPayment({ email, amount, action, memberId }) {
+async function notifyAdminPayment({ email, amount, action, memberId, groupId, groupName, adminGroupId }) {
   try {
     const bot = getBot();
-    const adminGroupId = config.telegram.adminGroupId;
+    // AC8: Use group-specific admin group, fallback to config
+    const targetAdminGroupId = adminGroupId || config.telegram.adminGroupId;
 
-    if (!bot || !adminGroupId) {
+    if (!bot || !targetAdminGroupId) {
       logger.warn('[webhookProcessors] notifyAdminPayment: bot or adminGroupId not configured');
       return;
     }
@@ -79,27 +311,46 @@ async function notifyAdminPayment({ email, amount, action, memberId }) {
     const actionText = actionTexts[action] || 'Pagamento aprovado';
     const amountFormatted = (amount || 50).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+    // AC8: Include group name in notification
+    const groupLine = groupName ? `📋 Grupo: ${groupName}` : '';
+
     const message = `
 ${emoji} *${actionText}!*
 
 📧 ${email}
 💰 ${amountFormatted}
+${groupLine}
 ${memberId ? `🆔 ID: ${memberId}` : ''}
     `.trim();
 
-    await bot.sendMessage(adminGroupId, message, { parse_mode: 'Markdown' });
+    await bot.sendMessage(targetAdminGroupId, message, { parse_mode: 'Markdown' });
 
-    logger.info('[webhookProcessors] notifyAdminPayment: sent', { email, action, amount });
+    logger.info('[webhookProcessors] notifyAdminPayment: sent', { email, action, amount, groupId });
   } catch (err) {
     // Don't fail the webhook processing if notification fails
     logger.warn('[webhookProcessors] notifyAdminPayment: failed', { error: err.message });
   }
 }
 
+/**
+ * Build notification context from resolved group
+ * @param {object|null} group - Resolved group object
+ * @returns {object} Notification context with adminGroupId, groupName, groupId
+ */
+function buildNotifyContext(group) {
+  if (!group) return {};
+  return {
+    groupId: group.id,
+    groupName: group.name,
+    adminGroupId: group.telegram_admin_group_id || null,
+  };
+}
+
 // ============================================
 // HANDLER: Assinatura Criada (trial inicia)
+// Story 4.3: Added groupId resolution and eventContext
 // ============================================
-async function handleSubscriptionCreated(payload) {
+async function handleSubscriptionCreated(payload, eventContext = {}) {
   const subscriptionId = payload.data?.id;
   if (!subscriptionId) {
     logger.warn('[webhookProcessors] handleSubscriptionCreated: missing subscription ID');
@@ -117,6 +368,14 @@ async function handleSubscriptionCreated(payload) {
   }
 
   const subscription = subscriptionResult.data;
+
+  // Story 4.3: Resolve group from subscription
+  const groupResult = await resolveGroupFromSubscription(subscription);
+  const groupId = groupResult.data.groupId;
+  const group = groupResult.data.group;
+
+  // Story 4.3: Update webhook_events with resolved group_id (AC5)
+  await updateWebhookEventGroupId(eventContext.eventId, groupId);
 
   // Só processa assinaturas autorizadas (cartão validado)
   if (subscription.status !== 'authorized') {
@@ -143,7 +402,7 @@ async function handleSubscriptionCreated(payload) {
     });
 
     if (payerId) {
-      const payerResult = await memberService.getMemberByPayerId(payerId);
+      const payerResult = await memberService.getMemberByPayerId(payerId, groupId);
       if (payerResult.success) {
         // Membro encontrado por payer_id - vincular subscription
         const member = payerResult.data;
@@ -157,7 +416,8 @@ async function handleSubscriptionCreated(payload) {
           logger.info('[webhookProcessors] handleSubscriptionCreated: linked subscription to member by payer_id', {
             memberId: member.id,
             subscriptionId,
-            payerId
+            payerId,
+            groupId
           });
           return { success: true, data: { memberId: member.id, action: 'linked_by_payer_id' } };
         }
@@ -172,8 +432,8 @@ async function handleSubscriptionCreated(payload) {
     return { success: true, data: { skipped: true, reason: 'no_email_no_payer_match' } };
   }
 
-  // Verificar se já existe membro com esse email
-  const existingResult = await memberService.getMemberByEmail(email);
+  // Story 4.3: Verificar se já existe membro com esse email (filtrar por groupId)
+  const existingResult = await memberService.getMemberByEmail(email, groupId);
 
   if (existingResult.success) {
     // Membro existente - atualizar subscription ID
@@ -195,18 +455,20 @@ async function handleSubscriptionCreated(payload) {
 
     logger.info('[webhookProcessors] handleSubscriptionCreated: updated existing member', {
       memberId: member.id,
-      subscriptionId
+      subscriptionId,
+      groupId
     });
 
     return { success: true, data: { memberId: member.id, action: 'updated' } };
   }
 
-  // Novo membro - criar como TRIAL
+  // Story 4.3: Novo membro - criar como TRIAL com groupId
   const createResult = await memberService.createTrialMemberMP({
     email,
     subscriptionId,
     payerId: subscription.payer_id?.toString(),
-    couponCode
+    couponCode,
+    groupId
   });
 
   if (!createResult.success) {
@@ -223,19 +485,18 @@ async function handleSubscriptionCreated(payload) {
     memberId: newMember.id,
     email,
     subscriptionId,
-    couponCode
+    couponCode,
+    groupId
   });
-
-  // Nota: Para enviar convite do grupo, precisamos do telegram_id
-  // O membro receberá o convite quando fizer /start no bot e vincular o email
 
   return { success: true, data: { memberId: newMember.id, action: 'created' } };
 }
 
 // ============================================
 // HANDLER: Pagamento Aprovado (trial → ativo, ou renovação)
+// Story 4.3: Added groupId resolution and multi-tenant member lookup
 // ============================================
-async function handlePaymentApproved(payload, paymentData = null) {
+async function handlePaymentApproved(payload, eventContext = {}, paymentData = null) {
   const paymentId = payload.data?.id;
   if (!paymentId) {
     logger.warn('[webhookProcessors] handlePaymentApproved: missing payment ID');
@@ -265,30 +526,65 @@ async function handlePaymentApproved(payload, paymentData = null) {
     return { success: true, data: { skipped: true, reason: 'not_approved' } };
   }
 
+  // Story 4.3: Resolve group from payment (AC2)
+  const groupResult = await resolveGroupFromPayment(payment);
+  const groupId = groupResult.data.groupId;
+  const group = groupResult.data.group;
+  const notifyCtx = buildNotifyContext(group);
+
+  // Story 4.3: Update webhook_events with resolved group_id (AC5)
+  await updateWebhookEventGroupId(eventContext.eventId, groupId);
+
   const memberService = getMemberService();
 
-  // Buscar membro pela subscription ou email
-  // subscription_id está em point_of_interaction para pagamentos de assinatura MP
+  // Story 4.3: Buscar membro pela subscription ou email (com group_id filter - AC3)
   const subscriptionId = payment.point_of_interaction?.transaction_data?.subscription_id ||
                          payment.metadata?.preapproval_id;
   let member = null;
 
   if (subscriptionId) {
-    const subResult = await memberService.getMemberBySubscription(subscriptionId);
+    const subResult = await memberService.getMemberBySubscription(subscriptionId, groupId);
     if (subResult.success) {
       member = subResult.data;
     }
   }
 
   if (!member && payment.payer?.email) {
-    const emailResult = await memberService.getMemberByEmail(payment.payer.email);
+    const emailResult = await memberService.getMemberByEmail(payment.payer.email, groupId);
     if (emailResult.success) {
       member = emailResult.data;
     }
   }
 
+  // AC3 fallback: if not found in tenant, search globally by email and validate tenant ownership
+  if (!member && payment.payer?.email && groupId) {
+    const globalEmailResult = await memberService.getMemberByEmail(payment.payer.email, null);
+    if (globalEmailResult.success) {
+      const globalMember = globalEmailResult.data;
+      const belongsToResolvedGroup = !globalMember.group_id || globalMember.group_id === groupId;
+
+      if (belongsToResolvedGroup) {
+        member = globalMember;
+        logger.info('[webhookProcessors] handlePaymentApproved: using global email fallback with tenant validation', {
+          paymentId,
+          memberId: globalMember.id,
+          memberGroupId: globalMember.group_id || null,
+          resolvedGroupId: groupId,
+        });
+      } else {
+        logger.warn('[webhookProcessors] handlePaymentApproved: global email fallback rejected due to group mismatch', {
+          paymentId,
+          email: payment.payer.email,
+          memberId: globalMember.id,
+          memberGroupId: globalMember.group_id,
+          resolvedGroupId: groupId,
+        });
+      }
+    }
+  }
+
   if (!member) {
-    // Membro não existe - criar como ativo diretamente (fluxo MP sem trial ou email ausente em test)
+    // Membro não existe - criar como ativo diretamente
     const email = payment.payer?.email;
     if (!email) {
       logger.warn('[webhookProcessors] handlePaymentApproved: member not found and no email', {
@@ -301,16 +597,17 @@ async function handlePaymentApproved(payload, paymentData = null) {
     logger.info('[webhookProcessors] handlePaymentApproved: creating new member from payment', {
       paymentId,
       email,
-      subscriptionId
+      subscriptionId,
+      groupId
     });
 
-    // Criar membro como trial primeiro (telegram_id pode ser null)
-    // Será ativado quando fizer /start no bot ou já fica ativo se pagamento confirmado
+    // Story 4.3: Criar membro com groupId
     const createResult = await memberService.createTrialMemberMP({
       email,
       subscriptionId: subscriptionId,
       payerId: payment.payer?.id?.toString(),
-      couponCode: null
+      couponCode: null,
+      groupId
     });
 
     if (!createResult.success) {
@@ -340,15 +637,17 @@ async function handlePaymentApproved(payload, paymentData = null) {
     logger.info('[webhookProcessors] 🎉 New active member created from payment', {
       memberId: createResult.data.id,
       email,
-      paymentId
+      paymentId,
+      groupId
     });
 
-    // Notify admin group
+    // AC8: Notify admin group (multi-tenant)
     await notifyAdminPayment({
       email,
       amount: payment.transaction_amount,
       action: 'new_member',
-      memberId: createResult.data.id
+      memberId: createResult.data.id,
+      ...notifyCtx
     });
 
     return { success: true, data: { memberId: createResult.data.id, action: 'created_active' } };
@@ -375,15 +674,16 @@ async function handlePaymentApproved(payload, paymentData = null) {
 
     logger.info('[webhookProcessors] 🎉 Trial converted to active', {
       memberId: member.id,
-      paymentId
+      paymentId,
+      groupId
     });
 
-    // Notify admin group
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
       action: 'conversion',
-      memberId: member.id
+      memberId: member.id,
+      ...notifyCtx
     });
 
     return { success: true, data: { memberId: member.id, action: 'activated' } };
@@ -402,15 +702,16 @@ async function handlePaymentApproved(payload, paymentData = null) {
 
     logger.info('[webhookProcessors] Subscription renewed', {
       memberId: member.id,
-      paymentId
+      paymentId,
+      groupId
     });
 
-    // Notify admin group
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
       action: 'renewal',
-      memberId: member.id
+      memberId: member.id,
+      ...notifyCtx
     });
 
     return { success: true, data: { memberId: member.id, action: 'renewed' } };
@@ -433,15 +734,16 @@ async function handlePaymentApproved(payload, paymentData = null) {
 
     logger.info('[webhookProcessors] Member recovered from defaulted', {
       memberId: member.id,
-      paymentId
+      paymentId,
+      groupId
     });
 
-    // Notify admin group
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
       action: 'recovery',
-      memberId: member.id
+      memberId: member.id,
+      ...notifyCtx
     });
 
     return { success: true, data: { memberId: member.id, action: 'recovered' } };
@@ -476,15 +778,16 @@ async function handlePaymentApproved(payload, paymentData = null) {
 
     logger.info('[webhookProcessors] Member reactivated after removal', {
       memberId: member.id,
-      paymentId
+      paymentId,
+      groupId
     });
 
-    // Notify admin group
     await notifyAdminPayment({
       email: member.email,
       amount: payment.transaction_amount,
       action: 'reactivation',
-      memberId: member.id
+      memberId: member.id,
+      ...notifyCtx
     });
 
     return { success: true, data: { memberId: member.id, action: 'reactivated' } };
@@ -500,8 +803,9 @@ async function handlePaymentApproved(payload, paymentData = null) {
 
 // ============================================
 // HANDLER: Pagamento Rejeitado
+// Story 4.3: Added groupId for multi-tenant member lookup
 // ============================================
-async function handlePaymentRejected(payload, paymentData = null) {
+async function handlePaymentRejected(payload, eventContext = {}, paymentData = null) {
   const paymentId = payload.data?.id;
   if (!paymentId) {
     logger.warn('[webhookProcessors] handlePaymentRejected: missing payment ID');
@@ -521,25 +825,32 @@ async function handlePaymentRejected(payload, paymentData = null) {
     }
     payment = paymentResult.data;
   }
+
+  // Story 4.3: Resolve group from payment (AC2)
+  const groupResult = await resolveGroupFromPayment(payment);
+  const groupId = groupResult.data.groupId;
+
+  // Story 4.3: Update webhook_events with resolved group_id (AC5)
+  await updateWebhookEventGroupId(eventContext.eventId, groupId);
+
   const memberService = getMemberService();
   const { sendPaymentRejectedNotification } = require('./notificationService');
 
-  // Buscar membro
-  // subscription_id pode estar em diferentes lugares dependendo do tipo de payment
+  // Buscar membro com group_id filter (AC3)
   const subscriptionId = payment.point_of_interaction?.transaction_data?.subscription_id ||
                          payment.metadata?.preapproval_id ||
-                         payment.preapproval_id; // authorized_payment tem preapproval_id direto
+                         payment.preapproval_id;
   let member = null;
 
   if (subscriptionId) {
-    const subResult = await memberService.getMemberBySubscription(subscriptionId);
+    const subResult = await memberService.getMemberBySubscription(subscriptionId, groupId);
     if (subResult.success) {
       member = subResult.data;
     }
   }
 
   if (!member && payment.payer?.email) {
-    const emailResult = await memberService.getMemberByEmail(payment.payer.email);
+    const emailResult = await memberService.getMemberByEmail(payment.payer.email, groupId);
     if (emailResult.success) {
       member = emailResult.data;
     }
@@ -556,7 +867,6 @@ async function handlePaymentRejected(payload, paymentData = null) {
   const rejectionReason = payment.status_detail || payment.rejection_code || 'unknown';
 
   // Só marca como inadimplente se já era ativo
-  // (trial com falha será cancelado pelo MP automaticamente)
   if (member.status === 'ativo') {
     const defaultResult = await memberService.markMemberAsDefaulted(member.id);
 
@@ -571,10 +881,10 @@ async function handlePaymentRejected(payload, paymentData = null) {
     logger.warn('[webhookProcessors] Member marked as defaulted - payment rejected', {
       memberId: member.id,
       paymentId,
-      reason: rejectionReason
+      reason: rejectionReason,
+      groupId
     });
 
-    // Enviar notificação ao membro
     const notifyResult = await sendPaymentRejectedNotification(member, rejectionReason);
     if (!notifyResult.success && notifyResult.error?.code !== 'NO_TELEGRAM_ID') {
       logger.warn('[webhookProcessors] handlePaymentRejected: failed to send notification', {
@@ -596,18 +906,33 @@ async function handlePaymentRejected(payload, paymentData = null) {
 
 // ============================================
 // HANDLER: Assinatura Cancelada
+// Story 4.3: Multi-tenant kick/farewell (AC4)
 // ============================================
-async function handleSubscriptionCancelled(payload) {
+async function handleSubscriptionCancelled(payload, eventContext = {}) {
   const subscriptionId = payload.data?.id;
   if (!subscriptionId) {
     logger.warn('[webhookProcessors] handleSubscriptionCancelled: missing subscription ID');
     return { success: false, error: { code: 'MISSING_SUBSCRIPTION_ID', message: 'Missing subscription ID' } };
   }
 
+  // Story 4.3: Fetch subscription and resolve group (AC2)
+  const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+  let groupId = null;
+  let group = null;
+
+  if (subscriptionResult.success) {
+    const groupResult = await resolveGroupFromSubscription(subscriptionResult.data);
+    groupId = groupResult.data.groupId;
+    group = groupResult.data.group;
+  }
+
+  // Story 4.3: Update webhook_events with resolved group_id (AC5)
+  await updateWebhookEventGroupId(eventContext.eventId, groupId);
+
   const memberService = getMemberService();
 
-  // Buscar membro pela subscription
-  const memberResult = await memberService.getMemberBySubscription(subscriptionId);
+  // Story 4.3: Buscar membro pela subscription com group_id filter
+  const memberResult = await memberService.getMemberBySubscription(subscriptionId, groupId);
   if (!memberResult.success) {
     logger.info('[webhookProcessors] handleSubscriptionCancelled: member not found, ignoring', {
       subscriptionId
@@ -630,8 +955,9 @@ async function handleSubscriptionCancelled(payload) {
   const notificationService = getNotificationService();
 
   // 1. Enviar mensagem de despedida com link para reativar
+  // AC4: Use group.checkout_url instead of process.env.MP_CHECKOUT_URL
   if (member.telegram_id) {
-    const checkoutUrl = process.env.MP_CHECKOUT_URL || config.membership?.checkoutUrl;
+    const checkoutUrl = group?.checkout_url || process.env.MP_CHECKOUT_URL || config.membership?.checkoutUrl;
     if (checkoutUrl) {
       const farewellMessage = notificationService.formatFarewellMessage(member, reason, checkoutUrl);
       await notificationService.sendPrivateMessage(member.telegram_id, farewellMessage);
@@ -639,14 +965,16 @@ async function handleSubscriptionCancelled(payload) {
   }
 
   // 2. Kick do grupo Telegram
+  // AC4: Use group.telegram_group_id instead of config.telegram.publicGroupId
   if (member.telegram_id) {
-    const groupId = config.telegram.publicGroupId;
-    if (groupId) {
-      const kickResult = await memberService.kickMemberFromGroup(member.telegram_id, groupId);
+    const kickGroupId = group?.telegram_group_id || config.telegram.publicGroupId;
+    if (kickGroupId) {
+      const kickResult = await memberService.kickMemberFromGroup(member.telegram_id, kickGroupId);
       if (!kickResult.success) {
         logger.error('[webhookProcessors] handleSubscriptionCancelled: failed to kick member', {
           memberId: member.id,
-          error: kickResult.error
+          error: kickResult.error,
+          groupId
         });
         // Continua - atualizar DB é mais importante
       }
@@ -667,7 +995,8 @@ async function handleSubscriptionCancelled(payload) {
     memberId: member.id,
     subscriptionId,
     previousStatus: member.status,
-    reason
+    reason,
+    groupId
   });
 
   return { success: true, data: { memberId: member.id, action: 'removed' } };
@@ -675,30 +1004,35 @@ async function handleSubscriptionCancelled(payload) {
 
 // ============================================
 // ROUTER DE EVENTOS
+// Story 4.3: Pass eventContext to handlers
 // ============================================
-async function processWebhookEvent({ event_type, payload }) {
+async function processWebhookEvent({ event_type, payload, eventId }) {
   const action = payload?.action;
 
-  logger.info('[webhookProcessors] processWebhookEvent: received', { eventType: event_type, action });
+  logger.info('[webhookProcessors] processWebhookEvent: received', { eventType: event_type, action, eventId });
+
+  const eventContext = { eventId };
 
   try {
     // subscription_preapproval events
     if (event_type === 'subscription_preapproval') {
-      // Buscar status atual da assinatura para determinar ação
       const subscriptionId = payload?.data?.id;
       if (!subscriptionId) {
         return { success: false, error: { code: 'MISSING_SUBSCRIPTION_ID', message: 'Missing subscription ID' } };
       }
 
       const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+      const isExpiredOrCancelledAction = action === 'cancelled' || action === 'expired';
 
       if (action === 'created' ||
           (subscriptionResult.success && subscriptionResult.data.status === 'authorized')) {
-        return await handleSubscriptionCreated(payload);
+        return await handleSubscriptionCreated(payload, eventContext);
       }
 
-      if (subscriptionResult.success && subscriptionResult.data.status === 'cancelled') {
-        return await handleSubscriptionCancelled(payload);
+      if (isExpiredOrCancelledAction ||
+          (subscriptionResult.success &&
+            (subscriptionResult.data.status === 'cancelled' || subscriptionResult.data.status === 'expired'))) {
+        return await handleSubscriptionCancelled(payload, eventContext);
       }
 
       logger.info('[webhookProcessors] Ignoring subscription_preapproval event', {
@@ -715,26 +1049,20 @@ async function processWebhookEvent({ event_type, payload }) {
         return { success: false, error: { code: 'MISSING_PAYMENT_ID', message: 'Missing payment ID' } };
       }
 
-      // Para subscription_authorized_payment, tentar authorized_payments primeiro, fallback para payments
-      // Para payment, usar payments diretamente
       let paymentResult;
       let payment;
 
       if (event_type === 'subscription_authorized_payment') {
-        // Tentar endpoint de authorized_payments primeiro
         paymentResult = await mercadoPagoService.getAuthorizedPayment(paymentId);
 
         if (paymentResult.success) {
-          // authorized_payment tem estrutura diferente - o status real está em payment.status
           const authorizedPayment = paymentResult.data;
           payment = {
             ...authorizedPayment,
-            // Usar o status do payment interno se disponível, senão mapear status do authorized_payment
             status: authorizedPayment.payment?.status || (authorizedPayment.status === 'processed' ? 'approved' : authorizedPayment.status),
             preapproval_id: authorizedPayment.preapproval_id
           };
         } else if (paymentResult.error?.code === 'AUTHORIZED_PAYMENT_NOT_FOUND') {
-          // Fallback: tentar como payment normal
           logger.debug('[webhookProcessors] authorized_payment not found, trying as regular payment', { paymentId });
           paymentResult = await mercadoPagoService.getPayment(paymentId);
           if (paymentResult.success) {
@@ -753,11 +1081,11 @@ async function processWebhookEvent({ event_type, payload }) {
       }
 
       if (payment.status === 'approved') {
-        return await handlePaymentApproved(payload, payment);
+        return await handlePaymentApproved(payload, eventContext, payment);
       }
 
       if (payment.status === 'rejected') {
-        return await handlePaymentRejected(payload, payment);
+        return await handlePaymentRejected(payload, eventContext, payment);
       }
 
       logger.info('[webhookProcessors] Ignoring payment event', {
@@ -787,5 +1115,9 @@ module.exports = {
   handleSubscriptionCreated,
   handlePaymentApproved,
   handlePaymentRejected,
-  handleSubscriptionCancelled
+  handleSubscriptionCancelled,
+  // Story 4.3: Export group resolution for testing
+  resolveGroupFromSubscription,
+  resolveGroupFromPayment,
+  notifyAdminPayment,
 };
