@@ -99,7 +99,7 @@ describe('Multi-tenant Schema Validation (Migration 019)', () => {
       if (skipIfNotApplied(migrationApplied)) return;
       const { data: _data, error } = await supabase
         .from('groups')
-        .select('id, name, bot_token, telegram_group_id, telegram_admin_group_id, mp_product_id, render_service_id, checkout_url, status, created_at')
+        .select('id, name, bot_token, telegram_group_id, telegram_admin_group_id, mp_plan_id, render_service_id, checkout_url, status, created_at')
         .limit(1);
 
       expect(error).toBeNull();
