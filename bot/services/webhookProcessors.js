@@ -43,6 +43,8 @@ function getBot() {
   return _bot;
 }
 
+const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
 // ============================================
 // Story 4.3: GROUP RESOLUTION (AC2)
 // ============================================
@@ -54,44 +56,56 @@ function getBot() {
  */
 async function resolveGroupFromSubscription(subscriptionData) {
   const planId = subscriptionData?.preapproval_plan_id;
+  const externalReference = subscriptionData?.external_reference
+    || subscriptionData?.metadata?.external_reference
+    || subscriptionData?.metadata?.group_id
+    || null;
 
-  if (!planId) {
-    logger.warn('[webhookProcessors] resolveGroupFromSubscription: no preapproval_plan_id', {
-      subscriptionId: subscriptionData?.id,
-    });
-    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
-  }
+  if (planId) {
+    try {
+      const { data: group, error } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('mp_plan_id', planId)
+        .eq('status', 'active')
+        .single();
 
-  try {
-    const { data: group, error } = await supabase
-      .from('groups')
-      .select('*')
-      .eq('mp_plan_id', planId)
-      .eq('status', 'active')
-      .single();
+      if (!error && group) {
+        logger.info('[webhookProcessors] resolveGroupFromSubscription: resolved via mp_plan_id', {
+          planId,
+          groupId: group.id,
+          groupName: group.name,
+        });
 
-    if (error || !group) {
-      logger.warn('[webhookProcessors] resolveGroupFromSubscription: group not found or inactive', {
+        return { success: true, data: { groupId: group.id, group } };
+      }
+
+      logger.warn('[webhookProcessors] resolveGroupFromSubscription: plan not found or inactive, trying external_reference', {
         planId,
         error: error?.code,
       });
-      return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+    } catch (err) {
+      logger.error('[webhookProcessors] resolveGroupFromSubscription: unexpected plan lookup error', {
+        planId,
+        error: err.message,
+      });
     }
-
-    logger.info('[webhookProcessors] resolveGroupFromSubscription: resolved', {
-      planId,
-      groupId: group.id,
-      groupName: group.name,
+  } else {
+    logger.warn('[webhookProcessors] resolveGroupFromSubscription: no preapproval_plan_id, trying external_reference', {
+      subscriptionId: subscriptionData?.id,
     });
-
-    return { success: true, data: { groupId: group.id, group } };
-  } catch (err) {
-    logger.error('[webhookProcessors] resolveGroupFromSubscription: unexpected error', {
-      planId,
-      error: err.message,
-    });
-    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
   }
+
+  const externalReferenceResult = await resolveGroupFromExternalReference(externalReference, {
+    source: 'subscription',
+    subscriptionId: subscriptionData?.id,
+    planId,
+  });
+  if (externalReferenceResult.data.groupId) {
+    return externalReferenceResult;
+  }
+
+  return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
 }
 
 /**
@@ -100,29 +114,120 @@ async function resolveGroupFromSubscription(subscriptionData) {
  * @returns {Promise<{success: boolean, data: {groupId: string|null, group: object|null, fallback?: string}}>}
  */
 async function resolveGroupFromPayment(paymentData) {
+  const paymentExternalReference = paymentData?.external_reference
+    || paymentData?.metadata?.external_reference
+    || paymentData?.metadata?.group_id
+    || null;
+
   // Try to get subscription ID from payment
   const subscriptionId = paymentData?.point_of_interaction?.transaction_data?.subscription_id
     || paymentData?.metadata?.preapproval_id
     || paymentData?.preapproval_id;
 
   if (!subscriptionId) {
-    logger.warn('[webhookProcessors] resolveGroupFromPayment: no subscription_id in payment', {
+    logger.warn('[webhookProcessors] resolveGroupFromPayment: no subscription_id in payment, trying external_reference', {
       paymentId: paymentData?.id,
     });
+
+    const externalReferenceResult = await resolveGroupFromExternalReference(paymentExternalReference, {
+      source: 'payment',
+      paymentId: paymentData?.id,
+    });
+    if (externalReferenceResult.data.groupId) {
+      return externalReferenceResult;
+    }
+
     return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
   }
 
   // Fetch subscription to get preapproval_plan_id
   const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
   if (!subscriptionResult.success) {
-    logger.warn('[webhookProcessors] resolveGroupFromPayment: failed to fetch subscription', {
+    logger.warn('[webhookProcessors] resolveGroupFromPayment: failed to fetch subscription, trying external_reference', {
       subscriptionId,
       error: subscriptionResult.error,
     });
+
+    const externalReferenceResult = await resolveGroupFromExternalReference(paymentExternalReference, {
+      source: 'payment',
+      paymentId: paymentData?.id,
+      subscriptionId,
+    });
+    if (externalReferenceResult.data.groupId) {
+      return externalReferenceResult;
+    }
+
     return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
   }
 
   return resolveGroupFromSubscription(subscriptionResult.data);
+}
+
+/**
+ * Try to resolve group from external_reference fallback.
+ * external_reference is expected to include group_id from MP onboarding.
+ * @param {string|null|undefined} externalReference
+ * @param {object} context - Logging context
+ * @returns {Promise<{success: boolean, data: {groupId: string|null, group: object|null, fallback?: string}}>}
+ */
+async function resolveGroupFromExternalReference(externalReference, context = {}) {
+  const candidate = extractGroupIdFromExternalReference(externalReference);
+  if (!candidate) {
+    logger.warn('[webhookProcessors] resolveGroupFromExternalReference: no valid group_id candidate', {
+      ...context,
+      hasExternalReference: !!externalReference,
+    });
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+
+  try {
+    const { data: group, error } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('id', candidate)
+      .eq('status', 'active')
+      .single();
+
+    if (error || !group) {
+      logger.warn('[webhookProcessors] resolveGroupFromExternalReference: group not found or inactive', {
+        ...context,
+        externalReference: externalReference?.toString?.().slice(0, 80),
+        candidate,
+        error: error?.code,
+      });
+      return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+    }
+
+    logger.info('[webhookProcessors] resolveGroupFromExternalReference: resolved', {
+      ...context,
+      candidate,
+      groupId: group.id,
+      groupName: group.name,
+    });
+
+    return { success: true, data: { groupId: group.id, group } };
+  } catch (err) {
+    logger.error('[webhookProcessors] resolveGroupFromExternalReference: unexpected error', {
+      ...context,
+      candidate,
+      error: err.message,
+    });
+    return { success: true, data: { groupId: null, group: null, fallback: 'single-tenant' } };
+  }
+}
+
+function extractGroupIdFromExternalReference(externalReference) {
+  if (externalReference === null || externalReference === undefined) {
+    return null;
+  }
+
+  const value = String(externalReference).trim();
+  if (!value) {
+    return null;
+  }
+
+  const uuidMatch = value.match(UUID_REGEX);
+  return uuidMatch ? uuidMatch[0] : null;
 }
 
 /**
@@ -134,10 +239,19 @@ async function updateWebhookEventGroupId(eventId, groupId) {
   if (!eventId || !groupId) return;
 
   try {
-    await supabase
+    const { error } = await supabase
       .from('webhook_events')
       .update({ group_id: groupId })
       .eq('id', eventId);
+
+    if (error) {
+      logger.warn('[webhookProcessors] updateWebhookEventGroupId: update error', {
+        eventId,
+        groupId,
+        error: error.message || error.code,
+      });
+      return;
+    }
 
     logger.debug('[webhookProcessors] updateWebhookEventGroupId: updated', { eventId, groupId });
   } catch (err) {
@@ -439,6 +553,33 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
     const emailResult = await memberService.getMemberByEmail(payment.payer.email, groupId);
     if (emailResult.success) {
       member = emailResult.data;
+    }
+  }
+
+  // AC3 fallback: if not found in tenant, search globally by email and validate tenant ownership
+  if (!member && payment.payer?.email && groupId) {
+    const globalEmailResult = await memberService.getMemberByEmail(payment.payer.email, null);
+    if (globalEmailResult.success) {
+      const globalMember = globalEmailResult.data;
+      const belongsToResolvedGroup = !globalMember.group_id || globalMember.group_id === groupId;
+
+      if (belongsToResolvedGroup) {
+        member = globalMember;
+        logger.info('[webhookProcessors] handlePaymentApproved: using global email fallback with tenant validation', {
+          paymentId,
+          memberId: globalMember.id,
+          memberGroupId: globalMember.group_id || null,
+          resolvedGroupId: groupId,
+        });
+      } else {
+        logger.warn('[webhookProcessors] handlePaymentApproved: global email fallback rejected due to group mismatch', {
+          paymentId,
+          email: payment.payer.email,
+          memberId: globalMember.id,
+          memberGroupId: globalMember.group_id,
+          resolvedGroupId: groupId,
+        });
+      }
     }
   }
 
@@ -881,13 +1022,16 @@ async function processWebhookEvent({ event_type, payload, eventId }) {
       }
 
       const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
+      const isExpiredOrCancelledAction = action === 'cancelled' || action === 'expired';
 
       if (action === 'created' ||
           (subscriptionResult.success && subscriptionResult.data.status === 'authorized')) {
         return await handleSubscriptionCreated(payload, eventContext);
       }
 
-      if (subscriptionResult.success && subscriptionResult.data.status === 'cancelled') {
+      if (isExpiredOrCancelledAction ||
+          (subscriptionResult.success &&
+            (subscriptionResult.data.status === 'cancelled' || subscriptionResult.data.status === 'expired'))) {
         return await handleSubscriptionCancelled(payload, eventContext);
       }
 

@@ -186,11 +186,24 @@ async function processEvent(event) {
 
   try {
     // Step 1: Mark as processing (optimistic locking)
-    const { error: updateError } = await supabase
+    const lockQuery = supabase
       .from('webhook_events')
       .update({ status: 'processing' })
       .eq('id', id)
       .eq('status', 'pending'); // Optimistic lock
+
+    let lockResult;
+    if (typeof lockQuery.select === 'function') {
+      const selected = lockQuery.select('id');
+      lockResult = typeof selected.maybeSingle === 'function'
+        ? await selected.maybeSingle()
+        : await selected;
+    } else {
+      lockResult = await lockQuery;
+    }
+
+    const updateError = lockResult?.error || null;
+    const lockedEvent = lockResult?.data || (lockResult && !updateError ? { id } : null);
 
     if (updateError) {
       logger.warn('[membership:process-webhooks] Failed to mark as processing', {
@@ -198,6 +211,14 @@ async function processEvent(event) {
         error: updateError.message
       });
       return { success: false };
+    }
+
+    if (!lockedEvent) {
+      logger.warn('[membership:process-webhooks] Lock not acquired (already processed by another worker)', {
+        eventId: id,
+        idempotencyKey: idempotency_key
+      });
+      return { success: true, skipped: true };
     }
 
     // Step 2: Call the appropriate handler

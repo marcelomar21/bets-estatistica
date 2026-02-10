@@ -1,6 +1,6 @@
 # Story 4.3: Webhook Mercado Pago Multi-tenant
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -370,12 +370,13 @@ ca30a6d feat(admin): implement recurring subscription via Mercado Pago preapprov
 
 ### Agent Model Used
 
-Claude Opus 4.6
+Claude Opus 4.6 + GPT-5 Codex (code review fixes)
 
 ### Debug Log References
 
 - RED phase: 13 tests failed (expected) — new story43 test file before implementation
 - GREEN phase: 749/749 tests passing, 0 regressions (baseline was 735)
+- Review-fix phase: 65/65 tests passing em suites-alvo (`webhookProcessors`, `process-webhooks`, integração de fluxo)
 
 ### Completion Notes List
 
@@ -384,27 +385,35 @@ Claude Opus 4.6
 - Existing webhookProcessors.test.js required: supabase mock (for group resolution), getAuthorizedPayment mock, getMemberByPayerId mock, and mercadoPagoService.getSubscription mocks for subscription cancelled tests
 - Integration test (webhookProcessingFlow.test.js) required default `getSubscription` mock in beforeEach since payment handlers now call `resolveGroupFromPayment` which fetches subscription for group resolution
 - Handler signatures changed: `handlePaymentApproved(payload, eventContext, paymentData)` and `handlePaymentRejected(payload, eventContext, paymentData)` — backward compatible via defaults
+- Code review fix: `resolveGroupFromSubscription()` agora aplica fallback via `external_reference` (extraindo `group_id`) quando `preapproval_plan_id` está ausente/inválido
+- Code review fix: `processWebhookEvent()` agora trata `subscription_preapproval` com status/ação `expired` no mesmo fluxo de cancelamento
+- Code review fix: `handlePaymentApproved()` agora tenta fallback por email sem filtro de tenant e valida `group_id` antes de usar o membro retornado
+- Code review fix: `updateWebhookEventGroupId()` agora valida erro do update em `webhook_events` (antes podia logar sucesso silencioso mesmo sem persistência)
+- Code review fix: lock otimista de `process-webhooks` reforçado para reduzir corrida entre workers (skip quando lock não é adquirido)
 
 ### Implementation Notes
 
-- Group resolution uses `preapproval_plan_id → groups.mp_plan_id` mapping (AC2)
+- Group resolution uses `preapproval_plan_id → groups.mp_plan_id` mapping (AC2), com fallback `external_reference → groups.id` para rastreabilidade por tenant
 - All handlers accept `eventContext = {}` parameter with `eventId` for webhook_events tracking
 - `buildNotifyContext(group)` helper extracts `adminGroupId`, `groupName`, `groupId` from resolved group
 - Non-critical failures in `updateWebhookEventGroupId` are logged as warnings, not thrown — preserves webhook processing reliability
 - Inactive groups are filtered by the DB query `.eq('status', 'active')`, not by post-query validation
+- Fallback de busca de membro por email em `handlePaymentApproved()` agora valida grupo resolvido para evitar atribuição cruzada entre tenants
+- `subscription_preapproval` com status `expired` agora é tratado como cancelamento para remover membro e manter consistência de acesso
 
 ### File List
 
 | File | Action | Description |
 |------|--------|-------------|
 | `sql/migrations/026_webhook_events_group_id.sql` | Created | Migration: adds nullable `group_id UUID` column + index to `webhook_events` |
-| `bot/services/webhookProcessors.js` | Modified | Main change: added group resolution, multi-tenant handlers, admin notifications, webhook_events tracking |
+| `bot/services/webhookProcessors.js` | Modified | Main change: added group resolution, multi-tenant handlers, admin notifications, webhook_events tracking + post-review fixes (`external_reference` fallback, `expired` handling, global email fallback validation) |
 | `bot/services/memberService.js` | Modified | Added optional `groupId` parameter to `getMemberBySubscription()` |
-| `bot/jobs/membership/process-webhooks.js` | Modified | Pass `eventId` to `processWebhookEvent()` for AC5 tracking |
-| `__tests__/services/webhookProcessors.story43.test.js` | Created | 14 new tests for Story 4.3 multi-tenant functionality |
-| `__tests__/services/webhookProcessors.test.js` | Modified | Added supabase mock, getAuthorizedPayment mock, updated handler assertions for new signatures |
+| `bot/jobs/membership/process-webhooks.js` | Modified | Pass `eventId` to `processWebhookEvent()` for AC5 tracking + stronger optimistic lock handling in processing step |
+| `__tests__/services/webhookProcessors.story43.test.js` | Created/Modified | Story 4.3 suite expanded with `external_reference` fallback, `expired` routing, and strict assertion for `webhook_events.group_id` update |
+| `__tests__/services/webhookProcessors.test.js` | Modified | Added supabase mock, getAuthorizedPayment mock, updated handler assertions for new signatures + new tests for global email fallback/tenant validation and `expired` routing |
 | `__tests__/integration/membership/webhookProcessingFlow.test.js` | Modified | Added default `getSubscription` mock for `resolveGroupFromPayment` compatibility |
 
 ### Change Log
 
 - **Story 4.3 implementation**: Adapted single-tenant Mercado Pago webhook processing to multi-tenant by adding group resolution via `preapproval_plan_id → groups.mp_plan_id`. Each handler now resolves the target group, passes `groupId` to member service operations, kicks from group-specific Telegram group, sends farewell with group-specific checkout URL, and notifies group-specific admin group. Added `group_id` column to `webhook_events` for per-tenant audit trail.
+- **Code review fixes applied (post-review)**: Implemented fallback de resolução de grupo por `external_reference`, adicionou tratamento de assinatura `expired`, reforçou fallback de lookup por email com validação de tenant, validou erro no update de `webhook_events.group_id` e fortaleceu lock otimista no job `process-webhooks`. Cobertura de testes ampliada para os cenários críticos.

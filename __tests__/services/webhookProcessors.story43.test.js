@@ -97,7 +97,7 @@ const {
 // ============================================
 
 const mockGroup = {
-  id: 'group-uuid-123',
+  id: '11111111-1111-1111-1111-111111111111',
   name: 'Grupo Premium',
   status: 'active',
   mp_plan_id: 'plan_xyz',
@@ -131,7 +131,7 @@ const mockMember = {
   email: 'user@example.com',
   status: 'trial',
   telegram_id: '999888777',
-  group_id: 'group-uuid-123',
+  group_id: '11111111-1111-1111-1111-111111111111',
 };
 
 // ============================================
@@ -160,7 +160,7 @@ describe('Story 4.3: Group Resolution', () => {
       const result = await resolveGroupFromSubscription(mockSubscription);
 
       expect(result.success).toBe(true);
-      expect(result.data.groupId).toBe('group-uuid-123');
+      expect(result.data.groupId).toBe('11111111-1111-1111-1111-111111111111');
       expect(result.data.group).toEqual(mockGroup);
     });
 
@@ -197,6 +197,31 @@ describe('Story 4.3: Group Resolution', () => {
       expect(result.success).toBe(true);
       expect(result.data.groupId).toBeNull();
       expect(result.data.fallback).toBe('single-tenant');
+    });
+
+    it('should resolve group via external_reference fallback when plan is missing', async () => {
+      const subWithExternalReference = {
+        ...mockSubscription,
+        preapproval_plan_id: null,
+        external_reference: '11111111-1111-1111-1111-111111111111',
+      };
+
+      supabase.from.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+            }),
+            single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+          }),
+        }),
+      });
+
+      const result = await resolveGroupFromSubscription(subWithExternalReference);
+
+      expect(result.success).toBe(true);
+      expect(result.data.groupId).toBe('11111111-1111-1111-1111-111111111111');
+      expect(result.data.group).toEqual(mockGroup);
     });
 
     it('should reject inactive group', async () => {
@@ -249,7 +274,7 @@ describe('Story 4.3: Group Resolution', () => {
       const result = await resolveGroupFromPayment(mockPayment);
 
       expect(result.success).toBe(true);
-      expect(result.data.groupId).toBe('group-uuid-123');
+      expect(result.data.groupId).toBe('11111111-1111-1111-1111-111111111111');
     });
 
     it('should fallback to single-tenant when payment has no subscription', async () => {
@@ -317,7 +342,7 @@ describe('Story 4.3: Multi-tenant Handlers', () => {
       expect(result.success).toBe(true);
       expect(memberService.createTrialMemberMP).toHaveBeenCalledWith(
         expect.objectContaining({
-          groupId: 'group-uuid-123',
+          groupId: '11111111-1111-1111-1111-111111111111',
         })
       );
     });
@@ -348,7 +373,7 @@ describe('Story 4.3: Multi-tenant Handlers', () => {
       expect(result.success).toBe(true);
       expect(memberService.getMemberBySubscription).toHaveBeenCalledWith(
         'sub_abc123',
-        'group-uuid-123'
+        '11111111-1111-1111-1111-111111111111'
       );
     });
   });
@@ -425,7 +450,7 @@ describe('Story 4.3: Multi-tenant Handlers', () => {
         amount: 50,
         action: 'conversion',
         memberId: 1,
-        groupId: 'group-uuid-123',
+        groupId: '11111111-1111-1111-1111-111111111111',
         groupName: 'Grupo Premium',
         adminGroupId: '-1006666666666',
       });
@@ -455,6 +480,34 @@ describe('Story 4.3: Multi-tenant Handlers', () => {
       );
     });
   });
+
+  describe('processWebhookEvent - subscription expired (AC4)', () => {
+    it('should route expired subscription to cancellation handler', async () => {
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { ...mockSubscription, status: 'expired' },
+      });
+
+      memberService.getMemberBySubscription.mockResolvedValue({
+        success: true,
+        data: { ...mockMember, status: 'ativo' },
+      });
+      memberService.kickMemberFromGroup.mockResolvedValue({ success: true });
+      memberService.markMemberAsRemoved.mockResolvedValue({
+        success: true,
+        data: { ...mockMember, status: 'removido' },
+      });
+
+      const result = await processWebhookEvent({
+        event_type: 'subscription_preapproval',
+        payload: { action: 'updated', data: { id: 'sub_abc123' } },
+        eventId: 'evt-expired',
+      });
+
+      expect(result.success).toBe(true);
+      expect(memberService.markMemberAsRemoved).toHaveBeenCalled();
+    });
+  });
 });
 
 // ============================================
@@ -480,6 +533,32 @@ describe('Story 4.3: webhook_events group_id tracking (AC5)', () => {
   });
 
   it('should update webhook_events with resolved group_id after processing', async () => {
+    const webhookEventsEq = jest.fn().mockResolvedValue({ data: null, error: null });
+    const webhookEventsUpdate = jest.fn().mockReturnValue({ eq: webhookEventsEq });
+
+    supabase.from.mockImplementation((table) => {
+      if (table === 'groups') {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+              }),
+              single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
+            }),
+          }),
+        };
+      }
+
+      if (table === 'webhook_events') {
+        return {
+          update: webhookEventsUpdate,
+        };
+      }
+
+      return {};
+    });
+
     mercadoPagoService.getSubscription.mockResolvedValue({
       success: true,
       data: mockSubscription,
@@ -500,8 +579,8 @@ describe('Story 4.3: webhook_events group_id tracking (AC5)', () => {
       { eventId: 'evt-5' }
     );
 
-    // Verify that webhook_events was updated with group_id
-    expect(supabase.from).toHaveBeenCalledWith('webhook_events');
+    expect(webhookEventsUpdate).toHaveBeenCalledWith({ group_id: '11111111-1111-1111-1111-111111111111' });
+    expect(webhookEventsEq).toHaveBeenCalledWith('id', 'evt-5');
   });
 });
 
