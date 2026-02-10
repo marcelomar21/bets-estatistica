@@ -48,8 +48,10 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos');
   const [searchInput, setSearchInput] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
 
-  const fetchMembers = useCallback(async (page: number, status: StatusFilter, search: string) => {
+  const fetchMembers = useCallback(async (page: number, status: StatusFilter, search: string, groupId: string) => {
     setLoading(true);
     setError(null);
 
@@ -59,6 +61,7 @@ export default function MembersPage() {
       params.set('per_page', '50');
       params.set('status', status);
       if (search) params.set('search', search);
+      if (groupId) params.set('group_id', groupId);
 
       const response = await fetch(`/api/members?${params.toString()}`);
       if (!response.ok) {
@@ -113,9 +116,30 @@ export default function MembersPage() {
   }, []);
 
   useEffect(() => {
+    if (!roleResolved || role !== 'super_admin') return;
+    let cancelled = false;
+
+    async function fetchGroups() {
+      try {
+        const res = await fetch('/api/groups');
+        if (cancelled) return;
+        if (res.ok) {
+          const payload = await res.json();
+          if (!cancelled && payload.success) setGroups(payload.data);
+        }
+      } catch {
+        // ignore - groups dropdown simply won't populate
+      }
+    }
+
+    fetchGroups();
+    return () => { cancelled = true; };
+  }, [roleResolved, role]);
+
+  useEffect(() => {
     if (!roleResolved) return;
-    fetchMembers(pagination.page, statusFilter, searchFilter);
-  }, [roleResolved, fetchMembers, pagination.page, statusFilter, searchFilter]);
+    fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
+  }, [roleResolved, fetchMembers, pagination.page, statusFilter, searchFilter, selectedGroupId]);
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -184,6 +208,28 @@ export default function MembersPage() {
               <option value="removido">Removidos</option>
             </select>
           </div>
+
+          {role === 'super_admin' && (
+            <div className="w-full md:w-56">
+              <label htmlFor="group-filter" className="mb-1 block text-sm font-medium text-gray-700">
+                Grupo
+              </label>
+              <select
+                id="group-filter"
+                value={selectedGroupId}
+                onChange={(event) => {
+                  setSelectedGroupId(event.target.value);
+                  setPagination((prev) => ({ ...prev, page: 1 }));
+                }}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">Todos os grupos</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="w-full md:flex-1">
             <label htmlFor="search-username" className="mb-1 block text-sm font-medium text-gray-700">
