@@ -12,7 +12,9 @@ const logger = require('../../lib/logger');
  */
 async function getEligibleBets(limit = 10) {
   try {
-    const { data, error } = await supabase
+    const groupId = config.membership.groupId;
+
+    let query = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -39,7 +41,14 @@ async function getEligibleBets(limit = 10) {
       .in('bet_status', ['generated', 'pending_link', 'ready'])
       .gte('odds', config.betting.minOdds)
       .gte('league_matches.kickoff_time', new Date().toISOString())
-      .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString())
+      .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString());
+
+    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data, error } = await query
       .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
       .order('odds', { ascending: false }) // Story 14.4: Depois odds
       .limit(limit);
@@ -88,12 +97,13 @@ async function getBetsReadyForPosting() {
   try {
     const now = new Date();
     const maxDate = new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+    const groupId = config.membership.groupId;
 
     // Story 13.5: Query alinhada com getFilaStatus()
     // Critérios: elegibilidade='elegivel', deep_link NOT NULL, kickoff dentro de 2 dias
     // IMPORTANTE: Não filtra por bet_status='ready' - aceita qualquer status não-terminal
     // que tenha elegibilidade correta e link disponível
-    const { data, error } = await supabase
+    let query = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -116,7 +126,14 @@ async function getBetsReadyForPosting() {
       .not('deep_link', 'is', null)     // Deve ter link
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])  // Exclui posted
       .gte('league_matches.kickoff_time', now.toISOString())
-      .lte('league_matches.kickoff_time', maxDate.toISOString())
+      .lte('league_matches.kickoff_time', maxDate.toISOString());
+
+    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data, error } = await query
       .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
       .order('promovida_manual', { ascending: false })  // Promovidas primeiro
       .order('odds', { ascending: false })              // Depois por odds
@@ -281,8 +298,9 @@ async function getActiveBetsForRepost() {
   try {
     const now = new Date();
     const maxKickoffTime = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+    const groupId = config.membership.groupId;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -300,7 +318,14 @@ async function getActiveBetsForRepost() {
       `)
       .eq('bet_status', 'posted')
       .gte('league_matches.kickoff_time', now.toISOString())
-      .lte('league_matches.kickoff_time', maxKickoffTime.toISOString())
+      .lte('league_matches.kickoff_time', maxKickoffTime.toISOString());
+
+    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data, error } = await query
       .order('league_matches(kickoff_time)', { ascending: true })
       .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
 
@@ -339,8 +364,9 @@ async function getAvailableBets() {
   try {
     const now = new Date();
     const _maxDate = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+    const groupId = config.membership.groupId;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -362,7 +388,14 @@ async function getAvailableBets() {
         )
       `)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
-      .gte('league_matches.kickoff_time', now.toISOString())
+      .gte('league_matches.kickoff_time', now.toISOString());
+
+    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data, error } = await query
       .order('league_matches(kickoff_time)', { ascending: true })
       .order('odds', { ascending: false }); // Story 14.4: Padronizar ordenação
 
@@ -1221,16 +1254,20 @@ function getNextPostTime() {
 /**
  * Obtém status da fila de postagem (Story 13.4)
  * Mostra apostas ativas (posted) + novas que serão postadas
+ * @param {string|null|undefined} groupIdParam - Group ID opcional para sobrescrever config.membership.groupId
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getFilaStatus() {
+async function getFilaStatus(groupIdParam = undefined) {
   try {
     const now = new Date();
     const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
+    const effectiveGroupId = typeof groupIdParam !== 'undefined'
+      ? groupIdParam
+      : config.membership.groupId;
 
     // 1. Buscar apostas ATIVAS (posted) - serão repostadas
     // IMPORTANTE: Também filtra por elegibilidade - apostas removidas não aparecem
-    const { data: activeBets, error: activeError } = await supabase
+    let ativasQuery = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -1252,7 +1289,14 @@ async function getFilaStatus() {
       .eq('bet_status', 'posted')
       .eq('elegibilidade', 'elegivel')  // Respeita /remover - apostas removidas não aparecem
       .gte('league_matches.kickoff_time', now.toISOString())
-      .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
+      .lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+
+    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    if (effectiveGroupId) {
+      ativasQuery = ativasQuery.eq('group_id', effectiveGroupId);
+    }
+
+    const { data: activeBets, error: activeError } = await ativasQuery
       .order('league_matches(kickoff_time)', { ascending: true })
       .order('odds', { ascending: false }) // Story 14.4: Padronizar ordenação
       .limit(config.betting.maxActiveBets);
@@ -1282,7 +1326,7 @@ async function getFilaStatus() {
     // 3. Buscar NOVAS apostas elegíveis para preencher slots
     let novas = [];
     if (slotsDisponiveis > 0) {
-      const { data: eligibleBets, error: eligibleError } = await supabase
+      let novasQuery = supabase
         .from('suggested_bets')
         .select(`
           id,
@@ -1304,7 +1348,14 @@ async function getFilaStatus() {
         .not('deep_link', 'is', null)
         .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
         .gte('league_matches.kickoff_time', now.toISOString())
-        .lte('league_matches.kickoff_time', twoDaysLater.toISOString())
+        .lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+
+      // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+      if (effectiveGroupId) {
+        novasQuery = novasQuery.eq('group_id', effectiveGroupId);
+      }
+
+      const { data: eligibleBets, error: eligibleError } = await novasQuery
         .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
         .order('promovida_manual', { ascending: false })
         .order('odds', { ascending: false })
@@ -1338,7 +1389,7 @@ async function getFilaStatus() {
     const filaCompleta = [...ativas, ...novas];
 
     // 5. Contar por elegibilidade (todas as apostas com jogos futuros)
-    const { data: allBets, error: countError } = await supabase
+    let countsQuery = supabase
       .from('suggested_bets')
       .select(`
         elegibilidade,
@@ -1349,6 +1400,12 @@ async function getFilaStatus() {
         )
       `)
       .gte('league_matches.kickoff_time', now.toISOString());
+
+    if (effectiveGroupId) {
+      countsQuery = countsQuery.eq('group_id', effectiveGroupId);
+    }
+
+    const { data: allBets, error: countError } = await countsQuery;
 
     if (countError) {
       logger.warn('Erro ao contar apostas', { error: countError.message });
