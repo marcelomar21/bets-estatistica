@@ -100,6 +100,16 @@ function mockFetchByUrl({
       }));
     }
 
+    if (parsedUrl.pathname === '/api/groups') {
+      return Promise.resolve(createJsonResponse({
+        success: true,
+        data: [
+          { id: 'group-1', name: 'Grupo Alpha', status: 'active' },
+          { id: 'group-2', name: 'Grupo Beta', status: 'active' },
+        ],
+      }));
+    }
+
     if (parsedUrl.pathname === '/api/members') {
       const currentPage = Number(parsedUrl.searchParams.get('page') ?? '1');
       const payload = membersByPage?.[currentPage] ?? defaultMembersPage;
@@ -273,6 +283,139 @@ describe('/members page', () => {
       expect(screen.getByText('alice')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Grupo')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /grupo/i })).toBeInTheDocument();
+  });
+
+  // Story 3.4: dropdown de grupos tests
+  it('dropdown de grupos aparece apenas para super_admin', async () => {
+    mockFetchByUrl({ role: 'super_admin' });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Grupo')).toBeInTheDocument();
+    });
+
+    const groupDropdown = screen.getByLabelText('Grupo') as HTMLSelectElement;
+    expect(groupDropdown).toBeInTheDocument();
+    const options = Array.from(groupDropdown.options).map((o) => o.text);
+    expect(options).toContain('Todos os grupos');
+    expect(options).toContain('Grupo Alpha');
+    expect(options).toContain('Grupo Beta');
+  });
+
+  it('dropdown NAO aparece para group_admin', async () => {
+    mockFetchByUrl({ role: 'group_admin' });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByLabelText('Grupo')).not.toBeInTheDocument();
+  });
+
+  it('selecionar grupo atualiza lista de membros com group_id param e reseta paginacao', async () => {
+    const fetchSpy = mockFetchByUrl({
+      role: 'super_admin',
+      membersByPage: {
+        1: {
+          success: true,
+          data: {
+            items: [
+              {
+                id: 1,
+                telegram_id: 1001,
+                telegram_username: 'alice',
+                status: 'ativo',
+                subscription_ends_at: '2026-02-12T00:00:00Z',
+                created_at: '2026-02-01T00:00:00Z',
+                group_id: 'group-1',
+                groups: { name: 'Grupo Alpha' },
+              },
+            ],
+            pagination: {
+              page: 1,
+              per_page: 50,
+              total: 51,
+              total_pages: 2,
+            },
+            counters: {
+              total: 51,
+              trial: 20,
+              ativo: 25,
+              vencendo: 6,
+            },
+          },
+        },
+        2: {
+          success: true,
+          data: {
+            items: [
+              {
+                id: 51,
+                telegram_id: 1051,
+                telegram_username: 'charlie',
+                status: 'trial',
+                subscription_ends_at: null,
+                created_at: '2026-02-02T00:00:00Z',
+                group_id: 'group-1',
+                groups: { name: 'Grupo Alpha' },
+              },
+            ],
+            pagination: {
+              page: 2,
+              per_page: 50,
+              total: 51,
+              total_pages: 2,
+            },
+            counters: {
+              total: 51,
+              trial: 20,
+              ativo: 25,
+              vencendo: 6,
+            },
+          },
+        },
+      },
+    });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Grupo')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('charlie')).toBeInTheDocument();
+    });
+
+    await userEvent.selectOptions(screen.getByLabelText('Grupo'), 'group-1');
+
+    await waitFor(() => {
+      const calledUrls = fetchSpy.mock.calls.map((call) => {
+        const input = call[0];
+        return typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url;
+      });
+      expect(calledUrls.some((url) => url.includes('/api/members') && url.includes('page=2'))).toBe(true);
+      expect(calledUrls.some((url) => (
+        url.includes('/api/members') && url.includes('group_id=group-1') && url.includes('page=1')
+      ))).toBe(true);
+    });
   });
 });

@@ -4,6 +4,7 @@ import { createApiHandler } from '@/middleware/api-handler';
 const DEFAULT_PAGE = 1;
 const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido']);
 
@@ -14,6 +15,13 @@ function parsePositiveInt(rawValue: string | null, fallback: number): number {
   return parsed;
 }
 
+function dbErrorResponse() {
+  return NextResponse.json(
+    { success: false, error: { code: 'DB_ERROR', message: 'Erro ao consultar membros' } },
+    { status: 500 },
+  );
+}
+
 export const GET = createApiHandler(
   async (req, context) => {
     const { supabase, role, groupFilter } = context;
@@ -21,6 +29,13 @@ export const GET = createApiHandler(
     const url = new URL(req.url);
     const statusFilter = url.searchParams.get('status')?.trim().toLowerCase() ?? 'todos';
     const search = url.searchParams.get('search')?.trim() ?? '';
+    const groupIdParam = url.searchParams.get('group_id')?.trim() || null;
+    if (!groupFilter && groupIdParam && !UUID_PATTERN.test(groupIdParam)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'group_id invalido' } },
+        { status: 400 },
+      );
+    }
 
     const page = parsePositiveInt(url.searchParams.get('page'), DEFAULT_PAGE);
     const perPageRaw = parsePositiveInt(url.searchParams.get('per_page'), DEFAULT_PER_PAGE);
@@ -40,6 +55,8 @@ export const GET = createApiHandler(
 
     if (groupFilter) {
       query = query.eq('group_id', groupFilter);
+    } else if (groupIdParam) {
+      query = query.eq('group_id', groupIdParam);
     }
 
     if (statusFilter !== 'todos') {
@@ -80,6 +97,10 @@ export const GET = createApiHandler(
       trialQuery = trialQuery.eq('group_id', groupFilter);
       ativoQuery = ativoQuery.eq('group_id', groupFilter);
       vencendoQuery = vencendoQuery.eq('group_id', groupFilter);
+    } else if (groupIdParam) {
+      trialQuery = trialQuery.eq('group_id', groupIdParam);
+      ativoQuery = ativoQuery.eq('group_id', groupIdParam);
+      vencendoQuery = vencendoQuery.eq('group_id', groupIdParam);
     }
 
     const [mainResult, trialResult, ativoResult, vencendoResult] = await Promise.all([
@@ -89,11 +110,8 @@ export const GET = createApiHandler(
       vencendoQuery,
     ]);
 
-    if (mainResult.error) {
-      return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: mainResult.error.message } },
-        { status: 500 },
-      );
+    if (mainResult.error || trialResult.error || ativoResult.error || vencendoResult.error) {
+      return dbErrorResponse();
     }
 
     const total = mainResult.count ?? 0;
