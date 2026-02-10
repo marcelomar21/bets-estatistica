@@ -10,11 +10,17 @@ const {
   getMemberByTelegramId,
   createTrialMember,
   canRejoinGroup,
-  reactivateMember,
-  getTrialDays
+  reactivateMember
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
 const { registerNotification } = require('../services/notificationService');
+
+// Story 4.2 requires a fixed 7-day MP trial period for registration/welcome messaging.
+const MP_TRIAL_DAYS = 7;
+
+function getSubscriptionPrice() {
+  return config.membership?.subscriptionPrice || 'R$50/mês';
+}
 
 /**
  * Handle new_chat_members event from Telegram
@@ -182,9 +188,7 @@ async function processNewMember(user, groupId = null) {
   }
 
   // New member - create trial (1.5)
-  // Read trial days from system_config (set via /trial command)
-  const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+  const trialDays = MP_TRIAL_DAYS;
   // Story 3.1: Pass groupId for multi-tenant member creation
   const createResult = await createTrialMember({ telegramId, telegramUsername: username, groupId }, trialDays);
 
@@ -292,14 +296,13 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
     successRateText = metricsResult.data.rate.toFixed(1);
   }
 
-  // Read trial days from system_config (set via /trial command)
-  const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+  const trialDays = MP_TRIAL_DAYS;
+  const subscriptionPrice = getSubscriptionPrice();
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   // Format message (4.3)
   const paymentCta = checkoutUrl
-    ? `💳 [ASSINAR POR R$50/MÊS](${checkoutUrl})`
+    ? `💳 [ASSINAR POR ${subscriptionPrice}](${checkoutUrl})`
     : `💳 Para assinar, fale com @${operatorUsername}`;
 
   const message = `
@@ -312,7 +315,7 @@ Você tem *${trialDays} dias grátis* para experimentar nossas apostas.
 • Horários: 10h, 15h e 22h
 • Taxa de acerto (7 dias): *${successRateText}%*
 
-💰 Após o trial, continue por apenas *R$50/mês*.
+💰 Após o trial, continue por apenas *${subscriptionPrice}*.
 ${paymentCta}
 
 ❓ Dúvidas? Fale com @${operatorUsername}
@@ -473,6 +476,7 @@ async function sendPaymentRequiredMessage(telegramId, memberId = null, groupId =
   const bot = getBot();
   const checkoutUrl = await resolveCheckoutUrl(groupId);
   const operatorUsername = config.membership?.operatorUsername || 'operador';
+  const subscriptionPrice = getSubscriptionPrice();
 
   // Issue #3: Handle missing checkout URL gracefully
   let message;
@@ -483,7 +487,7 @@ Olá! Notamos que você voltou ao grupo. 👋
 Seu período de trial já terminou há mais de 24 horas.
 
 Para continuar recebendo nossas apostas:
-[ASSINAR POR R$50/MÊS](${checkoutUrl})
+[ASSINAR POR ${subscriptionPrice}](${checkoutUrl})
 
 ❓ Dúvidas? Fale com @${operatorUsername}
     `.trim();
@@ -494,7 +498,7 @@ Olá! Notamos que você voltou ao grupo. 👋
 
 Seu período de trial já terminou há mais de 24 horas.
 
-Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar por *R$50/mês*.
+Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar por *${subscriptionPrice}*.
     `.trim();
     logger.warn('[membership:member-events] Checkout URL not configured, using fallback message');
   }
