@@ -80,7 +80,7 @@ development_status:
   4-2-boas-vindas-e-registro-com-status-trial: done
   4-3-webhook-mercado-pago-multi-tenant: done
   4-4-acesso-instantaneo-pos-pagamento: done
-  4-5-kick-automatico-de-membros-expirados: backlog
+  4-5-kick-automatico-de-membros-expirados: done
   epic-4-retrospective: optional
 
   # ========================================

@@ -51,6 +51,10 @@ jest.mock('../../../bot/services/alertService', () => ({
   alertAdmin: jest.fn().mockResolvedValue({ success: true }),
 }));
 
+jest.mock('../../../bot/handlers/memberEvents', () => ({
+  registerMemberEvent: jest.fn().mockResolvedValue({ success: true }),
+}));
+
 const {
   runKickExpired,
   getAllInadimplenteMembers,
@@ -327,7 +331,6 @@ describe('kick-expired job', () => {
       };
 
       supabase.from
-        .mockReturnValueOnce(mockGetChain)     // getMemberById for kick
         .mockReturnValueOnce(mockGetChain)     // getMemberById for markAsRemoved
         .mockReturnValueOnce(mockUpdateChain); // update
 
