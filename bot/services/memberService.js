@@ -1970,10 +1970,12 @@ function generatePaymentLink(member) {
 
 /**
  * Get member by Mercado Pago subscription ID
+ * Story 4.3: Added optional groupId parameter for multi-tenant filtering
  * @param {string} subscriptionId - MP preapproval ID
+ * @param {string|null} [groupId=undefined] - Group ID for multi-tenant filtering
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getMemberBySubscription(subscriptionId) {
+async function getMemberBySubscription(subscriptionId, groupId = undefined) {
   try {
     if (!subscriptionId) {
       return {
@@ -1982,11 +1984,19 @@ async function getMemberBySubscription(subscriptionId) {
       };
     }
 
-    const { data, error } = await supabase
+    const effectiveGroupId = resolveGroupId(groupId);
+
+    let query = supabase
       .from('members')
       .select('*')
-      .eq('mp_subscription_id', subscriptionId)
-      .single();
+      .eq('mp_subscription_id', subscriptionId);
+
+    // Story 4.3: Filter by group_id when provided (multi-tenant)
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
+    }
+
+    const { data, error } = await query.single();
 
     if (error) {
       if (error.code === 'PGRST116') {

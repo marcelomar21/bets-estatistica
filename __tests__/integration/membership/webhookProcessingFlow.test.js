@@ -146,6 +146,12 @@ describe('Webhook Processing Flow Integration Tests', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Story 4.3: Default mock for getSubscription (used by resolveGroupFromPayment)
+    // Payment handlers now resolve group via subscription, so this must return a valid response
+    mockMPService.getSubscription.mockResolvedValue({
+      success: true,
+      data: { id: 'sub_123', status: 'authorized' },
+    });
     // Use isolateModules to ensure fresh module state for each test
     // This properly resets module state, unlike jest.resetModules() with top-level imports
     jest.isolateModules(() => {

@@ -3,10 +3,30 @@
  * Tech-Spec: Migração Cakto → Mercado Pago
  */
 
+// Mock supabase (Story 4.3: needed for group resolution and webhook_events tracking)
+jest.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+          }),
+          single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      }),
+    }),
+  },
+}));
+
 // Mock mercadoPagoService
 jest.mock('../../bot/services/mercadoPagoService', () => ({
   getSubscription: jest.fn(),
   getPayment: jest.fn(),
+  getAuthorizedPayment: jest.fn(),
   extractCouponCode: jest.fn(),
   mapPaymentMethod: jest.fn()
 }));
@@ -15,6 +35,7 @@ jest.mock('../../bot/services/mercadoPagoService', () => ({
 jest.mock('../../bot/services/memberService', () => ({
   getMemberByEmail: jest.fn(),
   getMemberBySubscription: jest.fn(),
+  getMemberByPayerId: jest.fn(),
   createTrialMemberMP: jest.fn(),
   updateSubscriptionData: jest.fn(),
   activateMember: jest.fn(),
@@ -125,12 +146,14 @@ describe('webhookProcessors - Mercado Pago', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('created');
-      expect(createTrialMemberMP).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        subscriptionId: 'sub_123',
-        payerId: '12345',
-        couponCode: null
-      });
+      expect(createTrialMemberMP).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          subscriptionId: 'sub_123',
+          payerId: '12345',
+          couponCode: null,
+        })
+      );
     });
 
     it('should update existing member subscription data', async () => {
@@ -439,12 +462,14 @@ describe('webhookProcessors - Mercado Pago', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('created_active');
-      expect(createTrialMemberMP).toHaveBeenCalledWith({
-        email: 'new@example.com',
-        subscriptionId: 'sub_new',
-        payerId: 'payer123',
-        couponCode: null
-      });
+      expect(createTrialMemberMP).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'new@example.com',
+          subscriptionId: 'sub_new',
+          payerId: 'payer123',
+          couponCode: null,
+        })
+      );
     });
   });
 
@@ -554,6 +579,12 @@ describe('webhookProcessors - Mercado Pago', () => {
         data: { id: 'sub_cancelled' }
       };
 
+      // Story 4.3: handler now fetches subscription for group resolution
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_cancelled', status: 'cancelled' }
+      });
+
       getMemberBySubscription.mockResolvedValue({
         success: true,
         data: { id: 'uuid-1', status: 'ativo', telegram_id: 123456789 }
@@ -570,6 +601,7 @@ describe('webhookProcessors - Mercado Pago', () => {
       expect(result.success).toBe(true);
       expect(result.data.action).toBe('removed');
       expect(markMemberAsRemoved).toHaveBeenCalledWith('uuid-1', 'subscription_cancelled');
+      // Story 4.3: Without group resolution, falls back to config.telegram.publicGroupId
       expect(kickMemberFromGroup).toHaveBeenCalledWith(123456789, '-1001234567890');
     });
 
@@ -577,6 +609,11 @@ describe('webhookProcessors - Mercado Pago', () => {
       const payload = {
         data: { id: 'sub_trial_expired' }
       };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_trial_expired', status: 'cancelled' }
+      });
 
       getMemberBySubscription.mockResolvedValue({
         success: true,
@@ -601,6 +638,11 @@ describe('webhookProcessors - Mercado Pago', () => {
         data: { id: 'sub_already_removed' }
       };
 
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_already_removed', status: 'cancelled' }
+      });
+
       getMemberBySubscription.mockResolvedValue({
         success: true,
         data: { id: 'uuid-3', status: 'removido' }
@@ -618,6 +660,11 @@ describe('webhookProcessors - Mercado Pago', () => {
       const payload = {
         data: { id: 'sub_unknown' }
       };
+
+      mercadoPagoService.getSubscription.mockResolvedValue({
+        success: true,
+        data: { id: 'sub_unknown', status: 'cancelled' }
+      });
 
       getMemberBySubscription.mockResolvedValue({
         success: false,

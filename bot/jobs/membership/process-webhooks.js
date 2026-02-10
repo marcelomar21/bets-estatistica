@@ -201,7 +201,8 @@ async function processEvent(event) {
     }
 
     // Step 2: Call the appropriate handler
-    const result = await processWebhookEvent({ event_type, payload });
+    // Story 4.3: Pass eventId for group_id tracking in webhook_events (AC5)
+    const result = await processWebhookEvent({ event_type, payload, eventId: id });
 
     // Step 3: Update based on result
     if (result.success) {
