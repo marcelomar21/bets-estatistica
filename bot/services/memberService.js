@@ -555,9 +555,12 @@ async function renewMemberSubscription(memberId) {
     const member = memberResult.data;
     const currentStatus = member.status;
 
-    // Calculate new subscription end date
+    // Renewal extends from the current end date when it is in the future.
     const now = new Date();
-    const subscriptionEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
+    const currentEndsAt = member.subscription_ends_at ? new Date(member.subscription_ends_at) : null;
+    const hasValidCurrentEndsAt = currentEndsAt && !Number.isNaN(currentEndsAt.getTime());
+    const extensionBase = (hasValidCurrentEndsAt && currentEndsAt > now) ? currentEndsAt : now;
+    const subscriptionEndsAt = new Date(extensionBase.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
 
     // If inadimplente, transition to ativo
     if (currentStatus === 'inadimplente') {

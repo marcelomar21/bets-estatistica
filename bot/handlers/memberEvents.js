@@ -544,11 +544,13 @@ Para continuar recebendo nossas apostas, entre em contato com @${operatorUsernam
  * @param {number} telegramId - Telegram user ID
  * @param {number} memberId - Internal member ID for notification tracking
  * @param {string} subscriptionEndsAt - ISO date string of subscription end date
+ * @param {string} [groupName] - Display name of the member's group
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function sendPaymentConfirmation(telegramId, memberId, subscriptionEndsAt) {
+async function sendPaymentConfirmation(telegramId, memberId, subscriptionEndsAt, groupName = null) {
   const bot = getBot();
   const operatorUsername = config.membership?.operatorUsername || 'operador';
+  const safeGroupName = (typeof groupName === 'string' && groupName.trim()) ? groupName.trim() : 'GuruBet';
 
   // Format date in Brazilian format (DD/MM/AAAA)
   const endDate = new Date(subscriptionEndsAt);
@@ -561,7 +563,7 @@ async function sendPaymentConfirmation(telegramId, memberId, subscriptionEndsAt)
   const message = `
 ✅ *Pagamento confirmado!*
 
-Você agora é membro ativo do *GuruBet* até *${formattedDate}*.
+Você agora é membro ativo do *${safeGroupName}* até *${formattedDate}*.
 
 📊 Continue recebendo:
 • 3 apostas diárias com análise estatística

@@ -367,9 +367,10 @@ Duvidas? @${operatorUsername}`;
  *
  * @param {number|string} telegramId - Telegram user ID
  * @param {number} memberId - Internal member ID (for updating invite data)
+ * @param {number|string|null} groupTelegramId - Target Telegram group ID for invite generation
  * @returns {Promise<{success: boolean, data?: {messageId: number, inviteLink: string}, error?: object}>}
  */
-async function sendReactivationNotification(telegramId, memberId) {
+async function sendReactivationNotification(telegramId, memberId, groupTelegramId = null) {
   // Issue #6 Fix: Input validation
   if (!telegramId) {
     logger.warn('[notificationService] sendReactivationNotification: invalid telegramId', { telegramId });
@@ -388,9 +389,9 @@ async function sendReactivationNotification(telegramId, memberId) {
   }
 
   const bot = getBot();
-  const groupId = config.telegram.publicGroupId;
+  const resolvedGroupId = groupTelegramId || config.telegram.publicGroupId;
 
-  if (!groupId) {
+  if (!resolvedGroupId) {
     logger.error('[notificationService] sendReactivationNotification: TELEGRAM_PUBLIC_GROUP_ID not configured');
     return {
       success: false,
@@ -401,7 +402,7 @@ async function sendReactivationNotification(telegramId, memberId) {
   // Generate unique invite link
   let inviteLink;
   try {
-    const invite = await bot.createChatInviteLink(groupId, {
+    const invite = await bot.createChatInviteLink(resolvedGroupId, {
       member_limit: 1, // Only 1 use
       expire_date: Math.floor(Date.now() / 1000) + 86400 // Expires in 24h
     });
