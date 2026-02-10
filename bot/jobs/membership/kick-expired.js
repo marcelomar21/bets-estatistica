@@ -37,6 +37,7 @@ const {
   markMemberAsRemoved,
 } = require('../../services/memberService');
 const { alertAdmin } = require('../../services/alertService');
+const { registerMemberEvent } = require('../../handlers/memberEvents');
 
 // Configuration
 const CONFIG = {
@@ -48,16 +49,57 @@ const CONFIG = {
 let kickExpiredRunning = false;
 
 /**
+ * Resolve group data from database by group ID
+ * Story 4.5: Multi-tenant group resolution for kick job
+ * @param {string} groupId - UUID of the group
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function resolveGroupData(groupId) {
+  try {
+    const { data: group, error } = await supabase
+      .from('groups')
+      .select('id, name, telegram_group_id, checkout_url, status')
+      .eq('id', groupId)
+      .single();
+
+    if (error || !group) {
+      logger.error('[membership:kick-expired] resolveGroupData: group not found', {
+        groupId,
+        error: error?.message,
+      });
+      return { success: false, error: { code: 'GROUP_NOT_FOUND', message: `Group ${groupId} not found` } };
+    }
+
+    return { success: true, data: group };
+  } catch (err) {
+    logger.error('[membership:kick-expired] resolveGroupData: unexpected error', {
+      groupId,
+      error: err.message,
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Get all members marked as inadimplente (defaulted)
  * Returns all inadimplente members for processing (warnings + kicks)
+ * Story 4.5: Filters by group_id when GROUP_ID is configured (multi-tenant)
  * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
  */
 async function getAllInadimplenteMembers() {
   try {
-    const { data: members, error } = await supabase
+    const groupId = config.membership?.groupId;
+
+    let query = supabase
       .from('members')
       .select('*')
       .eq('status', 'inadimplente');
+
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data: members, error } = await query;
 
     if (error) {
       logger.error('[membership:kick-expired] getAllInadimplenteMembers: database error', {
@@ -68,6 +110,7 @@ async function getAllInadimplenteMembers() {
 
     logger.debug('[membership:kick-expired] getAllInadimplenteMembers: found members', {
       count: members?.length || 0,
+      groupId: groupId || 'all (single-tenant)',
     });
 
     return { success: true, data: { members: members || [] } };
@@ -117,9 +160,10 @@ function shouldKickMember(member) {
  *
  * @param {object} member - Member object
  * @param {string} reason - 'payment_failed' or 'subscription_cancelled'
+ * @param {object} [groupData] - Resolved group data (multi-tenant). If null, falls back to single-tenant config.
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function processMemberKick(member, reason) {
+async function processMemberKick(member, reason, groupData) {
   const { id: memberId, telegram_id: telegramId, telegram_username: username } = member;
 
   // If no telegram_id, just mark as removed in DB
@@ -135,9 +179,13 @@ async function processMemberKick(member, reason) {
   }
 
   // 1. Send farewell message
-  const checkoutResult = getCheckoutLink();
-  if (checkoutResult.success) {
-    const farewellMessage = formatFarewellMessage(member, reason, checkoutResult.data.checkoutUrl);
+  // Story 4.5: Use group's checkout_url (multi-tenant) or fall back to config
+  const checkoutUrl = groupData?.checkout_url || null;
+  const fallbackResult = !checkoutUrl ? getCheckoutLink() : null;
+  const effectiveCheckoutUrl = checkoutUrl || (fallbackResult?.success ? fallbackResult.data.checkoutUrl : null);
+
+  if (effectiveCheckoutUrl) {
+    const farewellMessage = formatFarewellMessage(member, reason, effectiveCheckoutUrl);
     const sendResult = await sendPrivateMessage(telegramId, farewellMessage);
 
     if (!sendResult.success && sendResult.error?.code !== 'USER_BLOCKED_BOT') {
@@ -155,13 +203,15 @@ async function processMemberKick(member, reason) {
   }
 
   // 2. Kick from group
-  const chatId = config.telegram?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
+  // Story 4.5: Use group's telegram_group_id (multi-tenant) or fall back to config
+  const chatId = groupData?.telegram_group_id
+    || config.telegram?.publicGroupId
+    || process.env.TELEGRAM_PUBLIC_GROUP_ID;
 
   if (!chatId) {
-    logger.error('[membership:kick-expired] processMemberKick: TELEGRAM_PUBLIC_GROUP_ID not configured');
-    // Alert admin immediately - this is a persistent config error
+    logger.error('[membership:kick-expired] processMemberKick: no group chat ID available');
     await alertAdmin(
-      `ERRO DE CONFIGURACAO: TELEGRAM_PUBLIC_GROUP_ID nao configurado.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.`
+      `ERRO DE CONFIGURACAO: Nenhum group chat ID disponivel.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.`
     );
     return { success: false, error: { code: 'CONFIG_MISSING', message: 'Group ID not configured' } };
   }
@@ -213,10 +263,18 @@ async function processMemberKick(member, reason) {
     });
   }
 
+  // 4. Audit log (Story 4.5: AC1)
+  await registerMemberEvent(memberId, 'kick', {
+    reason,
+    groupId: groupData?.id || null,
+    groupName: groupData?.name || null,
+  });
+
   logger.info('[membership:kick-expired] processMemberKick: member kicked successfully', {
     memberId,
     telegramId,
     reason,
+    groupId: groupData?.id || null,
     until_date: kickResult.data?.until_date,
   });
 
@@ -252,7 +310,8 @@ async function _runKickExpiredInternal() {
   const startTime = Date.now();
   const today = new Date().toISOString().split('T')[0];
   const gracePeriodDays = config.membership?.gracePeriodDays || 2;
-  logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays });
+  const groupId = config.membership?.groupId;
+  logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays, groupId: groupId || 'single-tenant' });
 
   let kicked = 0;
   let warned = 0;
@@ -260,7 +319,29 @@ async function _runKickExpiredInternal() {
   let failed = 0;
 
   try {
-    // Get ALL inadimplente members
+    // Story 4.5: Resolve group data for multi-tenant
+    let groupData = null;
+    if (groupId) {
+      const groupResult = await resolveGroupData(groupId);
+      if (!groupResult.success) {
+        logger.error('[membership:kick-expired] Failed to resolve group, aborting', {
+          groupId,
+          error: groupResult.error,
+        });
+        await alertAdmin(
+          `ERRO: Grupo ${groupId} nao encontrado no banco.\n\nJob kick-expired abortado. Verifique a configuracao GROUP_ID.`
+        );
+        return { success: false, kicked, warned, alreadyRemoved, failed, error: groupResult.error?.message };
+      }
+      groupData = groupResult.data;
+      logger.info('[membership:kick-expired] Group resolved', {
+        groupId: groupData.id,
+        groupName: groupData.name,
+        telegramGroupId: groupData.telegram_group_id,
+      });
+    }
+
+    // Get inadimplente members (filtered by group_id if multi-tenant)
     const inadimplenteResult = await getAllInadimplenteMembers();
 
     if (!inadimplenteResult.success) {
@@ -279,6 +360,7 @@ async function _runKickExpiredInternal() {
 
     logger.info('[membership:kick-expired] Processing inadimplente members', {
       count: members.length,
+      groupId: groupId || 'all',
     });
 
     for (const member of members) {
@@ -292,7 +374,7 @@ async function _runKickExpiredInternal() {
           inadimplente_at: member.inadimplente_at,
         });
 
-        const result = await processMemberKick(member, 'payment_failed');
+        const result = await processMemberKick(member, 'payment_failed', groupData);
 
         if (result.success) {
           kicked++;
@@ -356,6 +438,7 @@ if (require.main === module) {
 
 module.exports = {
   runKickExpired,
+  resolveGroupData,
   getAllInadimplenteMembers,
   calculateDaysRemaining,
   shouldKickMember,
