@@ -390,10 +390,12 @@ function validateBetForPosting(bet) {
 async function runPostBets(skipConfirmation = false) {
   const period = getPeriod();
   const now = new Date().toISOString();
-  logger.info('Starting post bets job', { period, timestamp: now, skipConfirmation });
+  const groupId = config.membership.groupId;
+  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
-  const filaResult = await getFilaStatus();
+  // Story 5.1: passar groupId explicitamente quando disponível
+  const filaResult = await getFilaStatus(groupId);
 
   if (!filaResult.success) {
     logger.error('Failed to get fila status', { error: filaResult.error?.message });
@@ -466,7 +468,7 @@ async function runPostBets(skipConfirmation = false) {
         // Registrar repost no histórico (não muda status, já é posted)
         await registrarPostagem(bet.id);
         reposted++;
-        logger.info('Bet reposted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+        logger.info('[postBets] Bet reposted successfully', { betId: bet.id, messageId: sendResult.data.messageId, groupId: groupId || 'single-tenant' });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({
@@ -512,7 +514,7 @@ async function runPostBets(skipConfirmation = false) {
         // Registrar postagem no histórico
         await registrarPostagem(bet.id);
         posted++;
-        logger.info('New bet posted successfully', { betId: bet.id, messageId: sendResult.data.messageId });
+        logger.info('[postBets] Posting bet for group', { betId: bet.id, messageId: sendResult.data.messageId, groupId: groupId || 'single-tenant' });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({

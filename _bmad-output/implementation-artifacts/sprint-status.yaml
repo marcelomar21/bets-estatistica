@@ -86,8 +86,8 @@ development_status:
   # ========================================
   # Epic 5: Distribuição de Apostas Multi-tenant
   # ========================================
-  epic-5: backlog
-  5-1-distribuicao-round-robin-de-apostas-entre-grupos: backlog
+  epic-5: in-progress
+  5-1-distribuicao-round-robin-de-apostas-entre-grupos: done
   5-2-gestao-de-odds-no-painel-individual-e-bulk: backlog
   5-3-gestao-de-links-no-painel-individual-e-bulk: backlog
   5-4-postagem-automatica-de-apostas-nos-grupos-telegram: backlog
