@@ -1,18 +1,16 @@
-import { fetchWithRetry } from './fetch-utils';
-
-interface MercadoPagoSuccess {
+export interface MercadoPagoSuccess {
   success: true;
-  data: { id: string; checkout_url: string };
+  data: { planId: string; checkoutUrl: string };
 }
 
-interface MercadoPagoError {
+export interface MercadoPagoError {
   success: false;
   error: string;
 }
 
-type MercadoPagoResult = MercadoPagoSuccess | MercadoPagoError;
+export type MercadoPagoResult = MercadoPagoSuccess | MercadoPagoError;
 
-export async function createCheckoutPreference(
+export async function createSubscriptionPlan(
   groupName: string,
   groupId: string,
   price: number,
@@ -22,9 +20,13 @@ export async function createCheckoutPreference(
     return { success: false, error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado' };
   }
 
+  if (price <= 0) {
+    return { success: false, error: 'Preço deve ser maior que zero' };
+  }
+
   try {
-    const response = await fetchWithRetry(
-      'https://api.mercadopago.com/checkout/preferences',
+    const response = await fetch(
+      'https://api.mercadopago.com/preapproval_plan',
       {
         method: 'POST',
         headers: {
@@ -32,40 +34,51 @@ export async function createCheckoutPreference(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          items: [
-            {
-              title: `Assinatura ${groupName}`,
-              quantity: 1,
-              currency_id: 'BRL',
-              unit_price: price,
+          reason: `Assinatura ${groupName}`,
+          auto_recurring: {
+            frequency: 1,
+            frequency_type: 'months',
+            transaction_amount: price,
+            currency_id: 'BRL',
+            free_trial: {
+              frequency: 7,
+              frequency_type: 'days',
             },
-          ],
+          },
           external_reference: groupId,
           ...(process.env.NEXT_PUBLIC_APP_URL
-            ? {
-                back_urls: {
-                  success: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
-                  failure: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
-                  pending: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}`,
-                },
-                auto_return: 'approved',
-              }
+            ? { back_url: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}` }
             : {}),
         }),
       },
     );
 
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      return { success: false, error: data.message || 'Erro ao criar preferência no Mercado Pago' };
+      if (response.status === 401) {
+        return { success: false, error: 'Credenciais inválidas do Mercado Pago' };
+      }
+
+      if (response.status >= 500) {
+        return { success: false, error: 'Erro temporário do Mercado Pago. Tente novamente.' };
+      }
+
+      return { success: false, error: data.message || 'Erro ao criar plano de assinatura no Mercado Pago' };
     }
 
     return {
       success: true,
-      data: { id: data.id, checkout_url: data.init_point },
+      data: { planId: data.id, checkoutUrl: data.init_point },
     };
   } catch (err) {
+    if (err instanceof Error && err.message.toLowerCase().includes('timeout')) {
+      return {
+        success: false,
+        error: 'Timeout ao conectar com Mercado Pago',
+      };
+    }
+
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Erro ao conectar com Mercado Pago',

@@ -4,7 +4,7 @@ export interface Group {
   bot_token: string | null;
   telegram_group_id: number | null;
   telegram_admin_group_id: number | null;
-  mp_product_id: string | null;
+  mp_plan_id: string | null;
   render_service_id: string | null;
   checkout_url: string | null;
   status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed';
