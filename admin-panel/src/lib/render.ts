@@ -55,7 +55,7 @@ export async function createBotService(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: 'background_worker',
+          type: 'web_service',
           name: `bot-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
           ownerId,
           repo: repoUrl,

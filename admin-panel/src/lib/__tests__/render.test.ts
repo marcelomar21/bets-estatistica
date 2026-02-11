@@ -71,7 +71,7 @@ describe('createBotService', () => {
     );
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.type).toBe('background_worker');
+    expect(body.type).toBe('web_service');
     expect(body.ownerId).toBe('tea-test123');
     expect(body.repo).toBe('https://github.com/user/bets-estatistica');
     expect(body.branch).toBe('master');
