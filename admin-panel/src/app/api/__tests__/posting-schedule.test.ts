@@ -30,6 +30,7 @@ function createMockSupabase(config: Record<string, any> = {}) {
     chain.eq = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);
     chain.gt = vi.fn(() => chain);
+    chain.not = vi.fn(() => chain);
     chain.order = vi.fn(() => ({
       data: config[`${table}_list`] ?? [],
       error: config[`${table}_list_error`] ?? null,
@@ -38,6 +39,11 @@ function createMockSupabase(config: Record<string, any> = {}) {
       data: config[`${table}_single`] ?? null,
       error: config[`${table}_single_error`] ?? null,
     }));
+    // Make chain thenable so `await supabase.from(x).select().eq().gt()` resolves
+    chain.then = (resolve: (v: unknown) => void) => resolve({
+      data: config[`${table}_list`] ?? [],
+      error: config[`${table}_list_error`] ?? null,
+    });
     return chain;
   }
 
@@ -64,9 +70,12 @@ describe('POST /api/bets/post-now', () => {
     vi.resetModules();
   });
 
-  it('sets post_now_requested_at flag for group_admin', async () => {
+  it('sets post_now_requested_at flag for group_admin with valid bets', async () => {
     const mockSupa = createMockSupabase({
       groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 1, bet_status: 'ready', odds: 1.8, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
+      ],
     });
     mockWithTenant.mockResolvedValue(
       createTenantContext('group_admin', 'group-uuid-1', mockSupa),
@@ -78,7 +87,8 @@ describe('POST /api/bets/post-now', () => {
     const json = await res.json();
 
     expect(json.success).toBe(true);
-    expect(json.data.message).toBe('Postagem solicitada');
+    expect(json.data.message).toContain('1 aposta(s) valida(s)');
+    expect(json.data.validCount).toBe(1);
     expect(mockSupa.from).toHaveBeenCalledWith('groups');
   });
 
@@ -104,6 +114,9 @@ describe('POST /api/bets/post-now', () => {
   it('super_admin can post for a specific group', async () => {
     const mockSupa = createMockSupabase({
       groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 10, bet_status: 'ready', odds: 2.0, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
+      ],
     });
     mockWithTenant.mockResolvedValue(
       createTenantContext('super_admin', null, mockSupa),
@@ -119,6 +132,89 @@ describe('POST /api/bets/post-now', () => {
     const json = await res.json();
 
     expect(json.success).toBe(true);
+    expect(json.data.validCount).toBe(1);
+  });
+
+  it('returns 422 when no bets have deep_link', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 5, bet_status: 'ready', odds: 1.8, deep_link: null, promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', { method: 'POST' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(false);
+    expect(res.status).toBe(422);
+    expect(json.error.code).toBe('NO_VALID_BETS');
+    expect(json.error.details).toContain('Aposta #5: sem link');
+  });
+
+  it('returns 422 when bets have low odds', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 7, bet_status: 'ready', odds: 1.2, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', { method: 'POST' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(false);
+    expect(res.status).toBe(422);
+    expect(json.error.details[0]).toContain('odds insuficientes');
+  });
+
+  it('allows promovida_manual bets without minimum odds', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 8, bet_status: 'ready', odds: 1.1, deep_link: 'https://link.com', promovida_manual: true, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', { method: 'POST' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(json.data.validCount).toBe(1);
+  });
+
+  it('returns 422 when queue is empty', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', { method: 'POST' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(false);
+    expect(res.status).toBe(422);
+    expect(json.error.code).toBe('NO_VALID_BETS');
   });
 
   it('returns 404 when target group does not exist', async () => {
