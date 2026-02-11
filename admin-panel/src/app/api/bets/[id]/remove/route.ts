@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
-import { determineStatus } from '@/lib/bet-utils';
-import type { BetStatus } from '@/types/database';
 
 /**
  * POST /api/bets/[id]/remove
- * Removes a bet from the posting queue by reverting its promotion.
- * Sets promovida_manual = false and recalculates bet_status.
- * The bet returns to "Apostas Pendentes" instead of disappearing.
+ * Same logic as bot's /remover command:
+ * sets elegibilidade = 'removida' to take the bet out of the posting queue.
+ * Does NOT change bet_status — the pipeline status is independent.
+ * Can be reversed with /promote (promoverAposta).
  */
 export const POST = createApiHandler(
   async (_req, context, routeContext) => {
@@ -25,7 +24,7 @@ export const POST = createApiHandler(
     // Verify bet exists and belongs to the admin's group
     let query = supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status, odds, deep_link, promovida_manual')
+      .select('id, group_id, bet_status, elegibilidade')
       .eq('id', betId);
 
     if (groupFilter) {
@@ -41,27 +40,16 @@ export const POST = createApiHandler(
       );
     }
 
-    if (bet.bet_status !== 'ready') {
+    if (bet.elegibilidade === 'removida') {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta nao esta na fila de postagem' } },
+        { success: false, error: { code: 'ALREADY_REMOVED', message: 'Aposta ja esta removida da fila' } },
         { status: 400 },
       );
     }
 
-    // Recalculate natural status without manual promotion
-    const newStatus = determineStatus(
-      bet.bet_status as BetStatus,
-      bet.odds,
-      bet.deep_link,
-      false, // promovida_manual = false
-    );
-
     const { error: updateError } = await supabase
       .from('suggested_bets')
-      .update({
-        promovida_manual: false,
-        bet_status: newStatus,
-      })
+      .update({ elegibilidade: 'removida' })
       .eq('id', betId);
 
     if (updateError) {
@@ -75,9 +63,8 @@ export const POST = createApiHandler(
       success: true,
       data: {
         id: betId,
-        old_status: bet.bet_status,
-        new_status: newStatus,
-        promovida_manual: false,
+        elegibilidade: 'removida',
+        bet_status: bet.bet_status,
       },
     });
   },

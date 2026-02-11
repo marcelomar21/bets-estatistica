@@ -56,6 +56,7 @@ export const GET = createApiHandler(
           bet_pick,
           odds,
           deep_link,
+          promovida_manual,
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -104,6 +105,7 @@ export const GET = createApiHandler(
           odds: b.odds,
           has_link: !!b.deep_link,
           deep_link: b.deep_link,
+          promovida_manual: b.promovida_manual ?? false,
           hit_rate: enrichWithHitRate(b, pairStats),
           match: {
             home_team_name: b.league_matches.home_team_name,

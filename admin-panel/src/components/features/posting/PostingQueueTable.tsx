@@ -11,6 +11,7 @@ interface QueueBet {
   odds: number | null;
   has_link: boolean;
   deep_link: string | null;
+  promovida_manual?: boolean;
   hit_rate?: { rate: number; wins: number; total: number } | null;
   match: {
     home_team_name: string;
@@ -34,13 +35,19 @@ type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate
 type SortDir = 'asc' | 'desc';
 
 function getStatusBadge(bet: QueueBet) {
-  if (bet.bet_status === 'ready') {
-    return { label: 'pronta', className: 'bg-green-100 text-green-800' };
-  }
   if (!bet.has_link) {
     return { label: 'faltando link', className: 'bg-yellow-100 text-yellow-800' };
   }
-  return { label: 'faltando odds', className: 'bg-orange-100 text-orange-800' };
+  if (bet.odds === null || bet.odds === undefined) {
+    return { label: 'faltando odds', className: 'bg-orange-100 text-orange-800' };
+  }
+  if (bet.promovida_manual) {
+    return { label: 'promovida', className: 'bg-blue-100 text-blue-800' };
+  }
+  if (bet.odds >= 1.60) {
+    return { label: 'pronta', className: 'bg-green-100 text-green-800' };
+  }
+  return { label: 'odds baixa', className: 'bg-orange-100 text-orange-800' };
 }
 
 function formatKickoffDate(isoString: string) {
@@ -263,8 +270,8 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-center gap-1">
-                    {/* Promote action */}
-                    {bet.bet_status !== 'ready' && onPromote && (
+                    {/* Promote action — only shown in pendentes table (onPromote passed) */}
+                    {onPromote && (
                       <button
                         onClick={async () => {
                           setPromotingId(bet.id);
@@ -278,7 +285,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                       </button>
                     )}
                     {/* Edit actions for pending bets */}
-                    {bet.bet_status !== 'ready' && onEditOdds && bet.odds === null && (
+                    {onEditOdds && bet.odds === null && (
                       <button
                         onClick={() => onEditOdds(bet)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
@@ -286,7 +293,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                         Odds
                       </button>
                     )}
-                    {bet.bet_status !== 'ready' && onEditLink && !bet.has_link && (
+                    {onEditLink && !bet.has_link && (
                       <button
                         onClick={() => onEditLink(bet)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"

@@ -245,9 +245,15 @@ export default function PostagemPage() {
   const currentGroup = groups.find(g => g.id === selectedGroupId);
   const scheduleForGroup = currentGroup?.posting_schedule ?? queueData?.postingSchedule ?? { enabled: true, times: ['10:00', '15:00', '22:00'] };
 
-  // Separate ready bets (queue) from pending bets
-  const readyBets = queueData?.bets.filter(b => b.bet_status === 'ready') ?? [];
-  const pendingBets = queueData?.bets.filter(b => b.bet_status !== 'ready') ?? [];
+  // Separate bets the bot WILL post from bets still missing data
+  // Mirrors getBetsReadyForPosting(): has link + (odds >= 1.60 OR promovida_manual)
+  const MIN_ODDS = 1.60;
+  function isPostable(b: QueueBet): boolean {
+    if (!b.has_link) return false;
+    return b.promovida_manual || (b.odds !== null && b.odds >= MIN_ODDS);
+  }
+  const postableBets = queueData?.bets.filter(isPostable) ?? [];
+  const pendingBets = queueData?.bets.filter(b => !isPostable(b)) ?? [];
 
   return (
     <div className="space-y-6">
@@ -340,26 +346,26 @@ export default function PostagemPage() {
         </div>
       )}
 
-      {/* Ready Bets — Fila de Postagem */}
+      {/* Postable Bets — Fila de Postagem */}
       {queueData && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
               Fila de Postagem
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({readyBets.length} aposta{readyBets.length !== 1 ? 's' : ''} pronta{readyBets.length !== 1 ? 's' : ''})
+                ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} elegivel{postableBets.length !== 1 ? 'is' : ''})
               </span>
             </h2>
             <PostNowButton
-              readyCount={queueData.readyCount}
+              readyCount={postableBets.length}
               groupId={selectedGroupId || undefined}
               onPostComplete={fetchQueue}
             />
           </div>
           <PostingQueueTable
-            bets={readyBets}
+            bets={postableBets}
             onRemove={handleRemoveBet}
-            emptyMessage="Nenhuma aposta pronta para postagem."
+            emptyMessage="Nenhuma aposta elegivel para postagem."
           />
         </div>
       )}
