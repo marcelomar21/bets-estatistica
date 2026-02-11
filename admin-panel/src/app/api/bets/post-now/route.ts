@@ -60,7 +60,8 @@ export const POST = createApiHandler(
       );
     }
 
-    // Pre-validate: check what bets would actually be sent by the bot
+    // Pre-validate: mirror the bot's getBetsReadyForPosting() logic exactly
+    // — eligible bets with link, any active status, future kickoff
     const now = new Date().toISOString();
     const { data: queueBets, error: queueError } = await supabase
       .from('suggested_bets')
@@ -70,10 +71,15 @@ export const POST = createApiHandler(
         odds,
         deep_link,
         promovida_manual,
-        league_matches!inner (kickoff_time)
+        league_matches!inner (
+          home_team_name,
+          away_team_name,
+          kickoff_time
+        )
       `)
       .eq('group_id', groupId)
       .eq('elegibilidade', 'elegivel')
+      .not('deep_link', 'is', null)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
       .gt('league_matches.kickoff_time', now);
 
@@ -84,16 +90,15 @@ export const POST = createApiHandler(
       );
     }
 
-    // Apply same validation rules as the bot's validateBetForPosting()
+    // Apply same filter as bot: odds >= minOdds OR promovida_manual = true
     const issues: string[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const validBets = (queueBets || []).filter((b: any) => {
-      if (!b.deep_link) {
-        issues.push(`Aposta #${b.id}: sem link`);
-        return false;
-      }
+      const matchLabel = b.league_matches
+        ? `${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}`
+        : `#${b.id}`;
       if (!b.promovida_manual && (!b.odds || b.odds < MIN_ODDS)) {
-        issues.push(`Aposta #${b.id}: odds insuficientes (${b.odds ?? 'N/A'} < ${MIN_ODDS})`);
+        issues.push(`${matchLabel}: odds insuficientes (${b.odds ?? 'N/A'} < ${MIN_ODDS})`);
         return false;
       }
       return true;

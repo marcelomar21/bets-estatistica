@@ -129,6 +129,7 @@ export function BetTable({
                   />
                 </th>
               )}
+              <SortHeader field="id">ID</SortHeader>
               <SortHeader field="kickoff_time">Jogo</SortHeader>
               <SortHeader field="kickoff_time">Data Jogo</SortHeader>
               <SortHeader field="bet_market">Mercado</SortHeader>
@@ -191,6 +192,9 @@ export function BetTable({
                       />
                     </td>
                   )}
+                  <td className="px-3 py-3 text-xs font-mono text-gray-500">
+                    {bet.id}
+                  </td>
                   <td className="px-3 py-3 text-sm font-medium text-gray-900">
                     {match ? `${match.home_team_name} vs ${match.away_team_name}` : '-'}
                   </td>

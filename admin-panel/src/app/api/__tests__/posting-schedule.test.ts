@@ -135,12 +135,12 @@ describe('POST /api/bets/post-now', () => {
     expect(json.data.validCount).toBe(1);
   });
 
-  it('returns 422 when no bets have deep_link', async () => {
+  it('returns 422 when no bets are in the queue (deep_link filtered at DB level)', async () => {
+    // Bets without deep_link are excluded by the SQL .not('deep_link', 'is', null)
+    // so they never reach the JS validation — result is empty queue
     const mockSupa = createMockSupabase({
       groups_single: { id: 'group-uuid-1' },
-      suggested_bets_list: [
-        { id: 5, bet_status: 'ready', odds: 1.8, deep_link: null, promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
-      ],
+      suggested_bets_list: [],
     });
     mockWithTenant.mockResolvedValue(
       createTenantContext('group_admin', 'group-uuid-1', mockSupa),
@@ -154,7 +154,6 @@ describe('POST /api/bets/post-now', () => {
     expect(json.success).toBe(false);
     expect(res.status).toBe(422);
     expect(json.error.code).toBe('NO_VALID_BETS');
-    expect(json.error.details).toContain('Aposta #5: sem link');
   });
 
   it('returns 422 when bets have low odds', async () => {
