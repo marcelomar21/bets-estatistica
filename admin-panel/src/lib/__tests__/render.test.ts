@@ -4,6 +4,14 @@ import { createBotService } from '../render';
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
 
+const defaultOptions = {
+  groupId: 'group-uuid',
+  botToken: 'bot-token-123',
+  groupName: 'Canal do João',
+  telegramGroupId: -1001234567890,
+  checkoutUrl: 'http://mp.com/checkout',
+};
+
 describe('createBotService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -17,7 +25,7 @@ describe('createBotService', () => {
   it('returns error when API key is not configured', async () => {
     delete process.env.RENDER_API_KEY;
 
-    const result = await createBotService('group-1', 'bot-token', 'Test');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'RENDER_API_KEY não configurado' });
   });
@@ -25,7 +33,7 @@ describe('createBotService', () => {
   it('returns error when repo URL is not configured', async () => {
     delete process.env.RENDER_REPO_URL;
 
-    const result = await createBotService('group-1', 'bot-token', 'Test');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'RENDER_REPO_URL não configurado' });
   });
@@ -33,19 +41,19 @@ describe('createBotService', () => {
   it('returns error when owner ID is not configured', async () => {
     delete process.env.RENDER_OWNER_ID;
 
-    const result = await createBotService('group-1', 'bot-token', 'Test');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'RENDER_OWNER_ID não configurado' });
   });
 
-  it('creates service with correct data', async () => {
+  it('creates service with correct data including telegram env vars', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ service: { id: 'srv-456' } }),
     });
 
-    const result = await createBotService('group-uuid', 'bot-token-123', 'Canal do João');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({
       success: true,
@@ -80,8 +88,26 @@ describe('createBotService', () => {
       expect.arrayContaining([
         { key: 'GROUP_ID', value: 'group-uuid' },
         { key: 'TELEGRAM_BOT_TOKEN', value: 'bot-token-123' },
+        { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1001234567890' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1001234567890' },
+        { key: 'NODE_ENV', value: 'production' },
+        { key: 'MP_CHECKOUT_URL', value: 'http://mp.com/checkout' },
       ]),
     );
+  });
+
+  it('omits MP_CHECKOUT_URL when not provided', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ service: { id: 'srv-456' } }),
+    });
+
+    await createBotService({ ...defaultOptions, checkoutUrl: null });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    const keys = body.envVars.map((v: { key: string }) => v.key);
+    expect(keys).not.toContain('MP_CHECKOUT_URL');
   });
 
   it('returns error when API returns error', async () => {
@@ -91,7 +117,7 @@ describe('createBotService', () => {
       json: () => Promise.resolve({ message: 'Internal error' }),
     });
 
-    const result = await createBotService('group-1', 'token', 'Test');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'Internal error' });
   });
@@ -99,7 +125,7 @@ describe('createBotService', () => {
   it('returns error when fetch throws', async () => {
     mockFetch.mockRejectedValue(new Error('Network error'));
 
-    const result = await createBotService('group-1', 'token', 'Test');
+    const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'Network error' });
   });

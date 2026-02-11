@@ -290,7 +290,7 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
 
   const { data: group } = await context.supabase
     .from('groups')
-    .select('id, name, render_service_id')
+    .select('id, name, render_service_id, telegram_group_id, checkout_url')
     .eq('id', group_id)
     .single();
 
@@ -323,7 +323,20 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
     );
   }
 
-  const renderResult = await createBotService(group_id, bot.bot_token, group.name);
+  if (!group.telegram_group_id) {
+    return NextResponse.json(
+      { success: false, error: { code: 'ONBOARDING_FAILED', message: 'Grupo Telegram ainda não foi criado. Crie o grupo Telegram antes do deploy.', step: 'deploying_bot', group_id } },
+      { status: 400 },
+    );
+  }
+
+  const renderResult = await createBotService({
+    groupId: group_id,
+    botToken: bot.bot_token,
+    groupName: group.name,
+    telegramGroupId: group.telegram_group_id,
+    checkoutUrl: group.checkout_url,
+  });
   if (!renderResult.success) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
     logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', renderResult.error);
