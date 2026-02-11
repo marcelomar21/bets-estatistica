@@ -20,6 +20,11 @@ interface CreateBotServiceOptions {
   checkoutUrl?: string | null;
 }
 
+/** Convert MTProto channel ID (positive) to Bot API format (-100 prefix) */
+function toBotApiGroupId(id: number): string {
+  return id > 0 ? `-100${id}` : String(id);
+}
+
 export async function createBotService(
   options: CreateBotServiceOptions,
 ): Promise<RenderResult> {
@@ -66,8 +71,8 @@ export async function createBotService(
           envVars: [
             { key: 'GROUP_ID', value: groupId },
             { key: 'TELEGRAM_BOT_TOKEN', value: botToken },
-            { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: String(telegramGroupId) },
-            { key: 'TELEGRAM_ADMIN_GROUP_ID', value: String(telegramGroupId) },
+            { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: toBotApiGroupId(telegramGroupId) },
+            { key: 'TELEGRAM_ADMIN_GROUP_ID', value: toBotApiGroupId(telegramGroupId) },
             { key: 'SUPABASE_URL', value: process.env.NEXT_PUBLIC_SUPABASE_URL || '' },
             { key: 'SUPABASE_SERVICE_KEY', value: process.env.SUPABASE_SERVICE_KEY || '' },
             { key: 'NODE_ENV', value: 'production' },

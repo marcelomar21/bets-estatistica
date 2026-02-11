@@ -545,11 +545,12 @@ async function handleCreatingTelegramGroup(data: z.infer<typeof creatingTelegram
       return { telegramGroupId, inviteLink };
     });
 
-    // 5. Save to database
+    // 5. Save to database (admin group = public group for now)
     await context.supabase
       .from('groups')
       .update({
         telegram_group_id: result.telegramGroupId,
+        telegram_admin_group_id: result.telegramGroupId,
         telegram_invite_link: result.inviteLink,
       })
       .eq('id', group_id);
