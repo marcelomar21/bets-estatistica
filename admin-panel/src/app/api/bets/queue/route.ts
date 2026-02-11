@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
+import { fetchPairStats, enrichWithHitRate } from '@/lib/pair-stats';
 
 /**
  * GET /api/bets/queue
@@ -44,36 +45,40 @@ export const GET = createApiHandler(
 
     const postingSchedule = group?.posting_schedule || { enabled: true, times: ['10:00', '15:00', '22:00'] };
 
-    // Query bets in active posting states for this group
-    const { data: bets, error: betsError } = await supabase
-      .from('suggested_bets')
-      .select(`
-        id,
-        bet_status,
-        bet_market,
-        bet_pick,
-        odds,
-        deep_link,
-        league_matches!inner (
-          home_team_name,
-          away_team_name,
-          kickoff_time
-        )
-      `)
-      .eq('group_id', effectiveGroupId)
-      .eq('elegibilidade', 'elegivel')
-      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
-      .gt('league_matches.kickoff_time', new Date().toISOString())
-      .order('league_matches(kickoff_time)', { ascending: true });
+    // Query bets in active posting states for this group (include league_seasons for hit_rate)
+    const [betsResult, pairStats] = await Promise.all([
+      supabase
+        .from('suggested_bets')
+        .select(`
+          id,
+          bet_status,
+          bet_market,
+          bet_pick,
+          odds,
+          deep_link,
+          league_matches!inner (
+            home_team_name,
+            away_team_name,
+            kickoff_time,
+            league_seasons!inner (league_name, country)
+          )
+        `)
+        .eq('group_id', effectiveGroupId)
+        .eq('elegibilidade', 'elegivel')
+        .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
+        .gt('league_matches.kickoff_time', new Date().toISOString())
+        .order('league_matches(kickoff_time)', { ascending: true }),
+      fetchPairStats(supabase),
+    ]);
 
-    if (betsError) {
+    if (betsResult.error) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: betsError.message } },
+        { success: false, error: { code: 'DB_ERROR', message: betsResult.error.message } },
         { status: 500 },
       );
     }
 
-    const queueBets = bets || [];
+    const queueBets = betsResult.data || [];
     const readyCount = queueBets.filter(b => b.bet_status === 'ready').length;
     const pendingLinkCount = queueBets.filter(b => b.bet_status === 'pending_link').length;
     const pendingOddsCount = queueBets.filter(b => b.bet_status === 'pending_odds' || b.bet_status === 'generated').length;
@@ -97,7 +102,13 @@ export const GET = createApiHandler(
           bet_status: b.bet_status,
           odds: b.odds,
           has_link: !!b.deep_link,
-          match: b.league_matches,
+          deep_link: b.deep_link,
+          hit_rate: enrichWithHitRate(b, pairStats),
+          match: {
+            home_team_name: b.league_matches.home_team_name,
+            away_team_name: b.league_matches.away_team_name,
+            kickoff_time: b.league_matches.kickoff_time,
+          },
         })),
       },
     });

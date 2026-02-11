@@ -14,6 +14,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: '📊' },
   { name: 'Membros', href: '/members', icon: '👤' },
   { name: 'Apostas', href: '/bets', icon: '🎯' },
+  { name: 'Postagem', href: '/postagem', icon: '📤' },
   { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },
   { name: 'Bots', href: '/bots', icon: '🤖', roles: ['super_admin'] },
   { name: 'Telegram', href: '/settings/telegram', icon: '📱', roles: ['super_admin'] },
