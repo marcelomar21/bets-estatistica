@@ -35,6 +35,9 @@ type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate
 type SortDir = 'asc' | 'desc';
 
 function getStatusBadge(bet: QueueBet) {
+  if (bet.bet_status === 'posted') {
+    return { label: 'postada', className: 'bg-emerald-100 text-emerald-800' };
+  }
   if (!bet.has_link) {
     return { label: 'faltando link', className: 'bg-yellow-100 text-yellow-800' };
   }
