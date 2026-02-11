@@ -15,6 +15,7 @@ const baseGroup: GroupListItem = {
   name: 'Grupo Teste',
   telegram_group_id: null,
   telegram_admin_group_id: null,
+  telegram_invite_link: null,
   checkout_url: null,
   posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
   status: 'active',

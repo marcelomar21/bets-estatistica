@@ -16,6 +16,7 @@ interface OnboardingResult {
   admin_email: string;
   temp_password: string;
   bot_username: string;
+  telegram_invite_link: string | null;
 }
 
 interface OnboardingError {
@@ -84,6 +85,7 @@ export function OnboardingWizard() {
   const [checkoutUrl, setCheckoutUrl] = useState<string>('');
   const [adminEmail, setAdminEmail] = useState<string>('');
   const [tempPassword, setTempPassword] = useState<string>('');
+  const [telegramInviteLink, setTelegramInviteLink] = useState<string | null>(null);
 
   // Incomplete onboarding detection
   const [incompleteGroup, setIncompleteGroup] = useState<IncompleteGroup | null>(null);
@@ -180,6 +182,7 @@ export function OnboardingWizard() {
     let localCheckoutUrl = checkoutUrl;
     let localAdminEmail = adminEmail;
     let localTempPassword = tempPassword;
+    let localTelegramInviteLink = telegramInviteLink;
 
     for (let i = startIndex; i < STEPS.length; i++) {
       const stepKey = STEPS[i].key;
@@ -241,6 +244,10 @@ export function OnboardingWizard() {
           setTempPassword(localTempPassword);
         }
       }
+      if (stepKey === 'creating_telegram_group' && res.data) {
+        localTelegramInviteLink = (res.data.invite_link as string) || null;
+        setTelegramInviteLink(localTelegramInviteLink);
+      }
       if (stepKey === 'finalizing' && res.data) {
         const group = res.data.group as OnboardingResult['group'];
         setResult({
@@ -249,6 +256,7 @@ export function OnboardingWizard() {
           admin_email: localAdminEmail || email.trim(),
           temp_password: localTempPassword,
           bot_username: localBotUsername,
+          telegram_invite_link: localTelegramInviteLink,
         });
         setWizardState('success');
         return;
@@ -373,7 +381,15 @@ export function OnboardingWizard() {
 
   async function copyCredentials() {
     if (!result) return;
-    const text = `Email: ${result.admin_email}\nSenha: ${result.temp_password}\nBot: @${result.bot_username}\nCheckout: ${result.checkout_url}`;
+    const lines = [
+      `Email: ${result.admin_email}`,
+      `Senha: ${result.temp_password}`,
+      `Bot: @${result.bot_username}`,
+      `Link do Bot: https://t.me/${result.bot_username}?start=subscribe`,
+      ...(result.telegram_invite_link ? [`Grupo Telegram: ${result.telegram_invite_link}`] : []),
+      `Checkout: ${result.checkout_url}`,
+    ];
+    const text = lines.join('\n');
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -644,6 +660,20 @@ export function OnboardingWizard() {
             </p>
             <p>
               <span className="font-medium">Senha temporária:</span> {result.temp_password}
+            </p>
+            {result.telegram_invite_link && (
+              <p>
+                <span className="font-medium">Grupo Telegram:</span>{' '}
+                <a href={result.telegram_invite_link} target="_blank" rel="noopener noreferrer" className="underline">
+                  {result.telegram_invite_link}
+                </a>
+              </p>
+            )}
+            <p>
+              <span className="font-medium">Link do Bot:</span>{' '}
+              <a href={`https://t.me/${result.bot_username}?start=subscribe`} target="_blank" rel="noopener noreferrer" className="underline">
+                https://t.me/{result.bot_username}?start=subscribe
+              </a>
             </p>
             <p>
               <span className="font-medium">Checkout:</span>{' '}

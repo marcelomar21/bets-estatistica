@@ -16,6 +16,7 @@ const sampleGroup: GroupListItem = {
   status: 'active',
   telegram_group_id: -1001234567890,
   telegram_admin_group_id: -1009876543210,
+  telegram_invite_link: null,
   checkout_url: null,
   posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
   created_at: '2026-02-06T12:00:00Z',
