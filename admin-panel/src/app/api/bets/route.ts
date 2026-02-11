@@ -157,7 +157,7 @@ export const GET = createApiHandler(
     // Apply sorting
     const ascending = sortDir === 'asc';
     if (sortBy === 'kickoff_time') {
-      query = query.order('kickoff_time', { referencedTable: 'league_matches', ascending });
+      query = query.order('league_matches(kickoff_time)', { ascending });
     } else {
       query = query.order(sortBy, { ascending });
     }
