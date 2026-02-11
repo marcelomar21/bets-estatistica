@@ -103,3 +103,18 @@ development_status:
   6-2-alertas-de-bot-offline-via-telegram: backlog
   6-3-restart-remoto-de-bot-pelo-painel: backlog
   epic-6-retrospective: optional
+
+  # ========================================
+  # Tarefas Operacionais / Infra
+  # ========================================
+  ops-1-configurar-cicd-vercel: backlog
+  # Conectar repo GitHub ao Vercel para deploy automático em push na main.
+  # Atualmente deploys são feitos manualmente via `vercel deploy --prod`.
+  # Configurar via dashboard: Settings > Git > Connected Repository.
+  # Root directory: admin-panel, Production branch: master.
+
+  ops-2-salvar-metadata-render-e-telegram-no-banco: backlog
+  # Salvar dados adicionais no banco durante o onboarding:
+  # - URL do dashboard do Render (render_dashboard_url)
+  # - Distinção entre admin group ID e public group ID quando forem separados
+  # - Link do bot de subscribe (t.me/BotName?start=subscribe)

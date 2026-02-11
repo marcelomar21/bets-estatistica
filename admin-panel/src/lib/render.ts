@@ -17,6 +17,7 @@ interface CreateBotServiceOptions {
   botToken: string;
   groupName: string;
   telegramGroupId: number;
+  telegramAdminGroupId?: string;
   checkoutUrl?: string | null;
 }
 
@@ -28,7 +29,7 @@ function toBotApiGroupId(id: number): string {
 export async function createBotService(
   options: CreateBotServiceOptions,
 ): Promise<RenderResult> {
-  const { groupId, botToken, groupName, telegramGroupId, checkoutUrl } = options;
+  const { groupId, botToken, groupName, telegramGroupId, telegramAdminGroupId, checkoutUrl } = options;
   const apiKey = process.env.RENDER_API_KEY;
   if (!apiKey) {
     return { success: false, error: 'RENDER_API_KEY não configurado' };
@@ -72,7 +73,8 @@ export async function createBotService(
             { key: 'GROUP_ID', value: groupId },
             { key: 'TELEGRAM_BOT_TOKEN', value: botToken },
             { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: toBotApiGroupId(telegramGroupId) },
-            { key: 'TELEGRAM_ADMIN_GROUP_ID', value: toBotApiGroupId(telegramGroupId) },
+            { key: 'TELEGRAM_ADMIN_GROUP_ID', value: telegramAdminGroupId || toBotApiGroupId(telegramGroupId) },
+            { key: 'BOT_MODE', value: 'group' },
             { key: 'SUPABASE_URL', value: process.env.NEXT_PUBLIC_SUPABASE_URL || '' },
             { key: 'SUPABASE_SERVICE_KEY', value: process.env.SUPABASE_SERVICE_KEY || '' },
             { key: 'NODE_ENV', value: 'production' },
