@@ -129,14 +129,10 @@ export function BetTable({
                   />
                 </th>
               )}
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Jogo</th>
+              <SortHeader field="kickoff_time">Jogo</SortHeader>
               <SortHeader field="kickoff_time">Data Jogo</SortHeader>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                <span className="inline-flex items-center gap-1" title="Categoria do mercado de aposta (Gols, Escanteios, etc.)">
-                  Mercado
-                </span>
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Pick</th>
+              <SortHeader field="bet_market">Mercado</SortHeader>
+              <SortHeader field="bet_pick">Pick</SortHeader>
               <th className="relative px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
                 <span className="inline-flex items-center gap-1">
                   Taxa Hist.
@@ -158,10 +154,10 @@ export function BetTable({
                 )}
               </th>
               <SortHeader field="odds">Odds</SortHeader>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Link</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
+              <SortHeader field="deep_link">Link</SortHeader>
+              <SortHeader field="group_id">Grupo</SortHeader>
               <SortHeader field="bet_status">Status</SortHeader>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Distribuicao</th>
+              <SortHeader field="distributed_at">Distribuicao</SortHeader>
               <SortHeader field="created_at">Criada</SortHeader>
               {isSuperAdmin && (
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Acoes</th>

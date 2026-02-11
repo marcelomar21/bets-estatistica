@@ -1,0 +1,83 @@
+import { NextResponse } from 'next/server';
+import { createApiHandler } from '@/middleware/api-handler';
+
+/**
+ * POST /api/bets/[id]/promote
+ * Manually promotes a bet to the posting queue.
+ * Forces bet_status = 'ready' and sets promovida_manual = true,
+ * regardless of missing odds or link.
+ */
+export const POST = createApiHandler(
+  async (_req, context, routeContext) => {
+    const { supabase, groupFilter } = context;
+    const { id } = await routeContext.params;
+    const betId = Number.parseInt(id, 10);
+
+    if (Number.isNaN(betId) || betId <= 0) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'ID de aposta invalido' } },
+        { status: 400 },
+      );
+    }
+
+    // Fetch current bet
+    let query = supabase
+      .from('suggested_bets')
+      .select('id, bet_status, odds, deep_link, promovida_manual, elegibilidade, group_id')
+      .eq('id', betId);
+
+    if (groupFilter) {
+      query = query.eq('group_id', groupFilter);
+    }
+
+    const { data: bet, error: fetchError } = await query.single();
+
+    if (fetchError || !bet) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Aposta nao encontrada' } },
+        { status: 404 },
+      );
+    }
+
+    if (bet.bet_status === 'posted') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta ja foi postada' } },
+        { status: 400 },
+      );
+    }
+
+    if (bet.bet_status === 'ready') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta ja esta na fila' } },
+        { status: 400 },
+      );
+    }
+
+    // Force to ready regardless of missing odds/link
+    const { error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({
+        promovida_manual: true,
+        bet_status: 'ready',
+      })
+      .eq('id', betId);
+
+    if (updateError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
+        { status: 500 },
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: betId,
+        promovida_manual: true,
+        old_status: bet.bet_status,
+        new_status: 'ready',
+      },
+    });
+  },
+  { allowedRoles: ['super_admin', 'group_admin'] },
+);

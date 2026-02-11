@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { GroupListItem, PostingSchedule } from '@/types/database';
+import { PostingScheduleSection } from '@/components/features/posting/PostingScheduleSection';
 import { statusConfig } from './group-utils';
 
 interface GroupEditFormProps {
@@ -229,73 +230,15 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
 
       {/* Story 5.5: Posting Schedule Section */}
       <div className="border-t pt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Postagem Automatica</h3>
-
-        <div className="mb-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={postingEnabled}
-              onClick={() => setPostingEnabled(!postingEnabled)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                postingEnabled ? 'bg-blue-600' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  postingEnabled ? 'translate-x-6' : 'translate-x-1'
-                }`}
-              />
-            </button>
-            <span className="text-sm font-medium text-gray-700">
-              {postingEnabled ? 'Postagem habilitada' : 'Postagem desabilitada'}
-            </span>
-          </label>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Horarios de Postagem
-          </label>
-          <div className="space-y-2">
-            {postingTimes.map((time, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(e) => {
-                    const updated = [...postingTimes];
-                    updated[index] = e.target.value;
-                    setPostingTimes(updated);
-                  }}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-                {postingTimes.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setPostingTimes(postingTimes.filter((_, i) => i !== index))}
-                    className="text-red-500 hover:text-red-700 text-sm px-2"
-                  >
-                    Remover
-                  </button>
-                )}
-              </div>
-            ))}
-            {postingTimes.length < 12 && (
-              <button
-                type="button"
-                onClick={() => setPostingTimes([...postingTimes, '12:00'])}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                + Adicionar Horario
-              </button>
-            )}
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Min. 1, max. 12 horarios. Distribuicao automatica ocorre 5 min antes de cada horario.
-          </p>
-        </div>
+        <PostingScheduleSection
+          groupId={initialData.id}
+          initialSchedule={initialSchedule}
+          standalone={false}
+          onScheduleChange={(schedule) => {
+            setPostingEnabled(schedule.enabled);
+            setPostingTimes(schedule.times);
+          }}
+        />
       </div>
 
       <div className="flex gap-3">

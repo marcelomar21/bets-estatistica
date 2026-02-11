@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
-import { categorizeMarket } from '@/lib/bet-categories';
+import { fetchPairStats, enrichWithHitRate } from '@/lib/pair-stats';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PER_PAGE = 50;
@@ -10,10 +10,8 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
-const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status']);
+const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
-
-const MIN_PAIR_STATS_BETS = 3;
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
   if (!rawValue) return fallback;
@@ -36,54 +34,6 @@ const BET_SELECT = `
   league_matches!inner(home_team_name, away_team_name, kickoff_time, status, league_seasons!inner(league_name, country)),
   groups(name)
 `;
-
-interface PairStatsEntry {
-  rate: number;
-  wins: number;
-  total: number;
-}
-
-async function fetchPairStats(supabase: ReturnType<typeof Object>): Promise<Record<string, PairStatsEntry>> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any)
-    .from('suggested_bets')
-    .select(`
-      bet_market,
-      bet_result,
-      league_matches!inner (
-        league_seasons!inner (league_name, country)
-      )
-    `)
-    .in('bet_result', ['success', 'failure']);
-
-  if (error || !data) return {};
-
-  const pairs: Record<string, { wins: number; total: number }> = {};
-  for (const bet of data) {
-    const leagueInfo = bet.league_matches?.league_seasons;
-    if (!leagueInfo?.country || !leagueInfo?.league_name) continue;
-
-    const league = `${leagueInfo.country} - ${leagueInfo.league_name}`;
-    const category = categorizeMarket(bet.bet_market);
-    const key = `${league}|${category}`;
-
-    if (!pairs[key]) pairs[key] = { wins: 0, total: 0 };
-    pairs[key].total++;
-    if (bet.bet_result === 'success') pairs[key].wins++;
-  }
-
-  const stats: Record<string, PairStatsEntry> = {};
-  for (const [key, v] of Object.entries(pairs)) {
-    if (v.total >= MIN_PAIR_STATS_BETS) {
-      stats[key] = {
-        rate: (v.wins / v.total) * 100,
-        wins: v.wins,
-        total: v.total,
-      };
-    }
-  }
-  return stats;
-}
 
 export const GET = createApiHandler(
   async (req, context) => {
@@ -258,16 +208,10 @@ export const GET = createApiHandler(
 
     // Enrich items with hit_rate from pair stats
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const enrichedItems = (mainResult.data ?? []).map((item: any) => {
-      const leagueInfo = item.league_matches?.league_seasons;
-      if (!leagueInfo?.country || !leagueInfo?.league_name) {
-        return { ...item, hit_rate: null };
-      }
-      const league = `${leagueInfo.country} - ${leagueInfo.league_name}`;
-      const category = categorizeMarket(item.bet_market);
-      const key = `${league}|${category}`;
-      return { ...item, hit_rate: pairStats[key] || null };
-    });
+    const enrichedItems = (mainResult.data ?? []).map((item: any) => ({
+      ...item,
+      hit_rate: enrichWithHitRate(item, pairStats),
+    }));
 
     const total = mainResult.count ?? 0;
     const totalPages = total > 0 ? Math.ceil(total / perPage) : 0;

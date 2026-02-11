@@ -9,7 +9,6 @@ import { OddsEditModal } from '@/components/features/bets/OddsEditModal';
 import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
 import { LinkEditModal } from '@/components/features/bets/LinkEditModal';
 import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
-import { PostingQueueCard } from '@/components/features/bets/PostingQueueCard';
 
 const DEFAULT_FILTERS: BetFilterValues = {
   status: '',
@@ -289,15 +288,6 @@ export default function BetsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Apostas</h1>
       </div>
-
-      {/* Story 5.5: Posting Queue Card — super_admin must select a group first */}
-      {(role === 'group_admin' || filters.group_id) ? (
-        <PostingQueueCard groupId={filters.group_id || undefined} />
-      ) : (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <p className="text-sm text-gray-500">Selecione um grupo no filtro para ver a fila de postagem.</p>
-        </div>
-      )}
 
       <BetStatsBar counters={counters} />
 
