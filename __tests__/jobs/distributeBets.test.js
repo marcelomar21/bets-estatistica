@@ -517,8 +517,8 @@ describe('distributeBets job', () => {
       expect(result.data).toHaveLength(5);
       expect(supabase.from).toHaveBeenCalledWith('suggested_bets');
       // Verify temporal window filters are applied
-      expect(chain.gte).toHaveBeenCalledWith('kickoff_time', expect.any(String));
-      expect(chain.lte).toHaveBeenCalledWith('kickoff_time', expect.any(String));
+      expect(chain.gte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
+      expect(chain.lte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
     });
   });
 
@@ -602,8 +602,8 @@ describe('distributeBets job', () => {
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(3);
       // Verify that gte and lte filters were applied
-      expect(chain.gte).toHaveBeenCalledWith('kickoff_time', expect.any(String));
-      expect(chain.lte).toHaveBeenCalledWith('kickoff_time', expect.any(String));
+      expect(chain.gte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
+      expect(chain.lte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
     });
 
     test('sem apostas na janela → retorna lista vazia', async () => {
