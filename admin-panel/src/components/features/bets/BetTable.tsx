@@ -133,13 +133,19 @@ export function BetTable({
               <SortHeader field="kickoff_time">Data Jogo</SortHeader>
               <SortHeader field="bet_market">Mercado</SortHeader>
               <SortHeader field="bet_pick">Pick</SortHeader>
-              <th className="relative px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+              <th
+                className="relative cursor-pointer px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 hover:text-gray-900"
+                onClick={() => onSort('hit_rate')}
+              >
                 <span className="inline-flex items-center gap-1">
                   Taxa Hist.
+                  {sortBy === 'hit_rate' && (
+                    <span className="text-blue-600">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+                  )}
                   <button
                     type="button"
                     className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-600 hover:bg-gray-300"
-                    onClick={() => setShowHitRateTooltip(!showHitRateTooltip)}
+                    onClick={(e) => { e.stopPropagation(); setShowHitRateTooltip(!showHitRateTooltip); }}
                     onMouseEnter={() => setShowHitRateTooltip(true)}
                     onMouseLeave={() => setShowHitRateTooltip(false)}
                     aria-label="Info taxa historica"
