@@ -9,6 +9,7 @@ export interface Group {
   bot_token: string | null;
   telegram_group_id: number | null;
   telegram_admin_group_id: number | null;
+  telegram_invite_link: string | null;
   mp_plan_id: string | null;
   render_service_id: string | null;
   checkout_url: string | null;
@@ -18,7 +19,9 @@ export interface Group {
   created_at: string;
 }
 
-export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'checkout_url' | 'posting_schedule' | 'created_at'>;
+export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'telegram_invite_link' | 'checkout_url' | 'posting_schedule' | 'created_at'> & {
+  bot_pool?: { bot_username: string }[] | null;
+};
 
 export interface AdminUser {
   id: string;
