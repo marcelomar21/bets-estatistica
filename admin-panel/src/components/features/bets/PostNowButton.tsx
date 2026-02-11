@@ -12,6 +12,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string[]>([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const disabled = readyCount === 0 || loading;
@@ -19,6 +20,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   async function handlePost() {
     setLoading(true);
     setError(null);
+    setErrorDetails([]);
 
     try {
       const res = await fetch('/api/bets/post-now', {
@@ -30,13 +32,16 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
       const json = await res.json();
       if (!json.success) {
         setError(json.error?.message ?? 'Erro ao solicitar postagem');
+        if (json.error?.details) {
+          setErrorDetails(json.error.details);
+        }
         return;
       }
 
       setSuccessMessage(json.data?.message ?? 'Postagem solicitada');
       setShowConfirm(false);
       onPostComplete();
-      setTimeout(() => setSuccessMessage(null), 4000);
+      setTimeout(() => setSuccessMessage(null), 6000);
     } catch {
       setError('Erro de conexao');
     } finally {
@@ -45,7 +50,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   }
 
   return (
-    <>
+    <div className="flex items-center gap-3">
       <button
         onClick={() => setShowConfirm(true)}
         disabled={disabled}
@@ -56,7 +61,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
       </button>
 
       {successMessage && (
-        <p className="mt-2 text-sm text-green-700">{successMessage}</p>
+        <p className="text-sm text-green-700">{successMessage}</p>
       )}
 
       {showConfirm && (
@@ -71,7 +76,14 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
             </p>
 
             {error && (
-              <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</div>
+              <div className="mt-3 rounded-md bg-red-50 p-3">
+                <p className="text-sm font-medium text-red-700">{error}</p>
+                {errorDetails.length > 0 && (
+                  <ul className="mt-1 list-disc pl-4 text-xs text-red-600">
+                    {errorDetails.map((d, i) => <li key={i}>{d}</li>)}
+                  </ul>
+                )}
+              </div>
             )}
 
             <div className="mt-4 flex gap-3 justify-end">
@@ -93,6 +105,6 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
