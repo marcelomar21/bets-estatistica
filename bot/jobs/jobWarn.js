@@ -176,49 +176,16 @@ function formatPostedBetsList(bets) {
  * @param {Array} pendingActions - Actions needed (sem link, sem odds)
  * @returns {Promise<{success: boolean}>}
  */
-async function sendPostWarn(period, postedBets = [], upcomingBets = [], pendingActions = []) {
+async function sendPostWarn(period, postedBets = [], _upcomingBets = [], _pendingActions = []) {
   const periodName = getPeriodName(period);
 
-  let text = `\ud83d\udce4 *POSTAGEM ${periodName} CONCLUIDA* \u2705\n\n`;
-  text += '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n';
+  const ids = (postedBets || []).map((b) => `#${b.id}`).join(', ');
 
-  // Posted bets section
-  text += '*APOSTAS POSTADAS:*\n';
-  text += formatPostedBetsList(postedBets);
-  text += '\n\n';
+  const text = postedBets.length > 0
+    ? `\u2705 Postagem ${periodName.toLowerCase()} enviada com as apostas ${ids}`
+    : `\u2705 Postagem ${periodName.toLowerCase()} concluida — nenhuma aposta enviada`;
 
-  // Upcoming bets section
-  if (upcomingBets && upcomingBets.length > 0) {
-    text += '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n';
-    text += '\ud83d\udcca *PROXIMOS 2 DIAS*\n\n';
-
-    const grouped = groupBetsByDay(upcomingBets);
-
-    for (const [dayLabel, bets] of Object.entries(grouped)) {
-      text += `*${dayLabel}:*\n`;
-
-      for (const bet of bets) {
-        text += formatBetLine(bet, true);
-        text += ` \u2502 ${getBetStatusDisplay(bet)}\n\n`;
-      }
-    }
-  }
-
-  // Pending actions section
-  if (pendingActions && pendingActions.length > 0) {
-    text += '\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n';
-    text += '\u26a0\ufe0f *ACOES PENDENTES:*\n';
-
-    pendingActions.forEach((action, idx) => {
-      text += `${idx + 1}. ${action}\n`;
-    });
-    text += '\n';
-  }
-
-  // Next post time
-  text += `\ud83d\udca1 Proxima postagem: ${getNextPostTime()}`;
-
-  logger.info('Sending post warn', { period, postedCount: postedBets.length, upcomingCount: upcomingBets.length });
+  logger.info('Sending post warn', { period, postedCount: postedBets.length });
 
   return sendToAdmin(text);
 }
