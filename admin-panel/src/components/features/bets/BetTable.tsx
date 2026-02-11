@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { SuggestedBetListItem, BetPagination } from '@/types/database';
 import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
+import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
 
 interface BetTableProps {
   bets: SuggestedBetListItem[];
@@ -19,13 +20,29 @@ interface BetTableProps {
   sortDir: string;
 }
 
-function formatDate(dateStr: string): string {
+function formatKickoffDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatCreatedDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getHitRateStyle(rate: number): string {
+  if (rate >= 70) return 'text-green-700 bg-green-50';
+  if (rate >= 50) return 'text-yellow-700 bg-yellow-50';
+  return 'text-red-700 bg-red-50';
 }
 
 export function BetTable({
@@ -43,6 +60,7 @@ export function BetTable({
 }: BetTableProps) {
   const isSuperAdmin = role === 'super_admin';
   const allSelected = bets.length > 0 && bets.every((b) => selectedIds.has(b.id));
+  const [showHitRateTooltip, setShowHitRateTooltip] = useState(false);
 
   function getDistributionStatus(bet: SuggestedBetListItem): { label: string; className: string } {
     if (bet.group_id) {
@@ -111,9 +129,34 @@ export function BetTable({
                   />
                 </th>
               )}
-              <SortHeader field="kickoff_time">Jogo</SortHeader>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mercado</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Jogo</th>
+              <SortHeader field="kickoff_time">Data Jogo</SortHeader>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <span className="inline-flex items-center gap-1" title="Categoria do mercado de aposta (Gols, Escanteios, etc.)">
+                  Mercado
+                </span>
+              </th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Pick</th>
+              <th className="relative px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <span className="inline-flex items-center gap-1">
+                  Taxa Hist.
+                  <button
+                    type="button"
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-600 hover:bg-gray-300"
+                    onClick={() => setShowHitRateTooltip(!showHitRateTooltip)}
+                    onMouseEnter={() => setShowHitRateTooltip(true)}
+                    onMouseLeave={() => setShowHitRateTooltip(false)}
+                    aria-label="Info taxa historica"
+                  >
+                    i
+                  </button>
+                </span>
+                {showHitRateTooltip && (
+                  <div className="absolute top-full left-0 z-50 mt-1 w-72 rounded-lg bg-gray-900 p-3 text-xs font-normal normal-case tracking-normal text-white shadow-lg">
+                    Taxa de acerto historica para esta combinacao de liga e categoria de mercado. Baseada em apostas com resultado definido (minimo 3 apostas). Categorias: Gols, Escanteios, Cartoes, BTTS, Outros.
+                  </div>
+                )}
+              </th>
               <SortHeader field="odds">Odds</SortHeader>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Link</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
@@ -129,6 +172,10 @@ export function BetTable({
             {bets.map((bet) => {
               const match = bet.league_matches;
               const distribution = getDistributionStatus(bet);
+              const category = categorizeMarket(bet.bet_market);
+              const categoryStyle = CATEGORY_STYLES[category] || CATEGORY_STYLES['Outros'];
+              const pickDisplay = formatPickDisplay(bet.bet_market, bet.bet_pick);
+
               return (
                 <tr key={bet.id} className={`hover:bg-gray-50 ${selectedIds.has(bet.id) ? 'bg-blue-50' : ''}`}>
                   {isSuperAdmin && (
@@ -142,18 +189,29 @@ export function BetTable({
                       />
                     </td>
                   )}
-                  <td className="px-3 py-3 text-sm text-gray-900">
-                    {match ? (
-                      <div>
-                        <p className="font-medium">{match.home_team_name} vs {match.away_team_name}</p>
-                        <p className="text-xs text-gray-500">{formatDate(match.kickoff_time)}</p>
-                      </div>
+                  <td className="px-3 py-3 text-sm font-medium text-gray-900">
+                    {match ? `${match.home_team_name} vs ${match.away_team_name}` : '-'}
+                  </td>
+                  <td className="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">
+                    {match ? formatKickoffDate(match.kickoff_time) : '-'}
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${categoryStyle}`}>
+                      {category}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-sm text-gray-600 max-w-[200px] truncate" title={pickDisplay}>
+                    {pickDisplay}
+                  </td>
+                  <td className="px-3 py-3 text-sm whitespace-nowrap">
+                    {bet.hit_rate ? (
+                      <span className={`inline-flex rounded px-1.5 py-0.5 text-xs font-medium ${getHitRateStyle(bet.hit_rate.rate)}`}>
+                        {bet.hit_rate.rate.toFixed(0)}% ({bet.hit_rate.wins}/{bet.hit_rate.total})
+                      </span>
                     ) : (
-                      '-'
+                      <span className="text-xs text-gray-400">-</span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-sm text-gray-600">{bet.bet_market}</td>
-                  <td className="px-3 py-3 text-sm text-gray-600">{bet.bet_pick}</td>
                   <td className="px-3 py-3 text-sm">
                     {bet.odds != null ? (
                       <span className={`font-medium ${bet.odds < 1.60 ? 'text-orange-600' : 'text-gray-900'}`}>
@@ -192,7 +250,7 @@ export function BetTable({
                     </span>
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {formatDate(bet.created_at)}
+                    {formatCreatedDate(bet.created_at)}
                   </td>
                   {isSuperAdmin && (
                     <td className="px-3 py-3">

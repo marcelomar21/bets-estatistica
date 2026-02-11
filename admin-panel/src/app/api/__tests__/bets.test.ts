@@ -47,6 +47,9 @@ function createListQueryBuilder(options: {
     chain.is = vi.fn(() => chain);
     chain.or = vi.fn(() => chain);
     chain.ilike = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.gte = vi.fn(() => chain);
+    chain.lte = vi.fn(() => chain);
     chain.order = vi.fn(() => chain);
     chain.range = vi.fn(() => ({
       data: mainData,
@@ -71,7 +74,7 @@ function createListQueryBuilder(options: {
 
   const mockFrom = vi.fn(() => {
     fromCallIndex++;
-    // First call is the main query, rest are counters
+    // First call is the main query, rest are counters/pair-stats
     return createChain(fromCallIndex > 1);
   });
 
@@ -288,6 +291,9 @@ describe('GET /api/bets', () => {
       });
       chain.not = vi.fn(() => chain);
       chain.is = vi.fn(() => chain);
+      chain.in = vi.fn(() => chain);
+      chain.gte = vi.fn(() => chain);
+      chain.lte = vi.fn(() => chain);
       chain.or = vi.fn(() => chain);
       chain.ilike = vi.fn(() => chain);
       chain.order = vi.fn(() => chain);
