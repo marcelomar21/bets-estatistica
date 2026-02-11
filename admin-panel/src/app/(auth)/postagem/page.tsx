@@ -247,8 +247,10 @@ export default function PostagemPage() {
 
   // Separate bets the bot WILL post from bets still missing data
   // Mirrors getBetsReadyForPosting(): has link + (odds >= 1.60 OR promovida_manual)
+  // Already-posted bets are always postable (they stay in queue until kickoff)
   const MIN_ODDS = 1.60;
   function isPostable(b: QueueBet): boolean {
+    if (b.bet_status === 'posted') return true;
     if (!b.has_link) return false;
     return b.promovida_manual || (b.odds !== null && b.odds >= MIN_ODDS);
   }

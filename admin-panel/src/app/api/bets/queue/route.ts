@@ -66,7 +66,7 @@ export const GET = createApiHandler(
         `)
         .eq('group_id', effectiveGroupId)
         .eq('elegibilidade', 'elegivel')
-        .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
+        .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
         .gt('league_matches.kickoff_time', new Date().toISOString())
         .order('league_matches(kickoff_time)', { ascending: true }),
       fetchPairStats(supabase),
