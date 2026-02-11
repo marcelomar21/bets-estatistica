@@ -35,11 +35,17 @@ describe('PostNowButton', () => {
     expect(screen.getByText(/3 apostas prontas/i)).toBeInTheDocument();
   });
 
-  it('calls API and triggers onPostComplete on confirm', async () => {
+  it('calls API and starts polling on confirm', async () => {
     const user = userEvent.setup();
     const onPostComplete = vi.fn();
+
+    // POST /api/bets/post-now → success with betIds
     mockFetch.mockResolvedValueOnce({
-      json: () => Promise.resolve({ success: true, data: { message: 'ok' } }),
+      json: () => Promise.resolve({ success: true, data: { message: '1 aposta(s)', betIds: [1], validCount: 1 } }),
+    });
+    // GET /api/bets/post-now/status → all posted
+    mockFetch.mockResolvedValueOnce({
+      json: () => Promise.resolve({ success: true, data: { posted: [1], pending: [], allPosted: true } }),
     });
 
     render(<PostNowButton readyCount={2} onPostComplete={onPostComplete} />);
@@ -51,10 +57,33 @@ describe('PostNowButton', () => {
       expect(mockFetch).toHaveBeenCalledWith('/api/bets/post-now', expect.objectContaining({
         method: 'POST',
       }));
-      expect(onPostComplete).toHaveBeenCalled();
     });
 
-    expect(screen.getByText(/ok/i)).toBeInTheDocument();
+    // Polling resolves immediately → done phase
+    await waitFor(() => {
+      expect(onPostComplete).toHaveBeenCalled();
+      expect(screen.getByText(/concluido/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows validation errors from pre-validation', async () => {
+    const user = userEvent.setup();
+    mockFetch.mockResolvedValueOnce({
+      json: () => Promise.resolve({
+        success: false,
+        error: { code: 'NO_VALID_BETS', message: 'Nenhuma aposta valida', details: ['Aposta #5: sem link'] },
+      }),
+    });
+
+    render(<PostNowButton readyCount={1} onPostComplete={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: /postar agora/i }));
+    await user.click(screen.getByRole('button', { name: /confirmar/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/nenhuma aposta valida/i)).toBeInTheDocument();
+      expect(screen.getByText(/sem link/i)).toBeInTheDocument();
+    });
   });
 
   it('closes dialog on cancel', async () => {
