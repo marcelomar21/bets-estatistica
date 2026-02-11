@@ -63,8 +63,19 @@ describe('createBotService', () => {
     );
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.type).toBe('background_worker');
     expect(body.ownerId).toBe('tea-test123');
     expect(body.repo).toBe('https://github.com/user/bets-estatistica');
+    expect(body.branch).toBe('master');
+    expect(body.serviceDetails).toEqual({
+      env: 'node',
+      plan: 'starter',
+      region: 'oregon',
+      envSpecificDetails: {
+        buildCommand: 'npm install',
+        startCommand: 'node bot/server.js',
+      },
+    });
     expect(body.envVars).toEqual(
       expect.arrayContaining([
         { key: 'GROUP_ID', value: 'group-uuid' },
