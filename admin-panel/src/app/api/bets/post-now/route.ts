@@ -123,11 +123,15 @@ export const POST = createApiHandler(
       );
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const betIds = validBets.map((b: any) => b.id);
+
     return NextResponse.json({
       success: true,
       data: {
         message: `Postagem solicitada: ${validBets.length} aposta(s) valida(s)`,
         validCount: validBets.length,
+        betIds,
         issues: issues.length > 0 ? issues : undefined,
       },
     });
