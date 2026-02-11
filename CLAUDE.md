@@ -35,27 +35,33 @@ Resposta `[]` (array vazio) indica sucesso para comandos DDL (CREATE, ALTER, DRO
 
 ## Validacao pre-merge (OBRIGATORIO)
 
-**SEMPRE** rodar os dois comandos antes de criar PR ou mergear:
+**SEMPRE** rodar **todos** os passos abaixo antes de criar PR ou mergear:
 
-```bash
-cd admin-panel && npm test && npm run build
-```
+1. `cd admin-panel && npm test` — roda vitest (testes unitarios)
+2. `npm run build` — roda o build do Next.js com checagem TypeScript strict
+3. **Playwright E2E** — abrir o navegador via Playwright MCP e testar o fluxo afetado na aplicacao rodando (`localhost:3000`). Verificar que a mudanca funciona de verdade na UI.
 
-- `npm test` — roda vitest (testes unitarios), mas **nao** checa TypeScript completo
-- `npm run build` — roda o build do Next.js com checagem TypeScript strict
+Os tres devem passar sem erros. Nunca mergear apenas com testes unitarios + build.
 
-Os dois devem passar sem erros. Nunca mergear apenas com testes passando.
+## Testes no navegador (E2E) — OBRIGATORIO
 
-## Testes no navegador (E2E)
+O Playwright MCP esta configurado para testes via navegador.
 
-O Playwright MCP esta configurado para testes via navegador. Para usar:
+**SEMPRE rodar testes E2E via Playwright antes de criar PR.** Isso nao e opcional — faz parte da validacao pre-merge assim como `npm test` e `npm run build`.
 
-```bash
-# Ja esta adicionado como MCP server no Claude Code
-claude mcp add playwright npx @playwright/mcp@latest
-```
+### Quando rodar
 
-Permite que o Claude Code abra o navegador, navegue pela aplicacao, clique em botoes e verifique resultados visualmente.
+- **Qualquer mudanca em API routes** (`/api/**`): testar a funcionalidade correspondente na UI
+- **Qualquer mudanca em componentes** (`/components/**`): testar o componente no navegador
+- **Qualquer mudanca em lib** (`/lib/**`): testar o fluxo que usa aquela lib na UI
+- Na duvida, **sempre rodar**. Melhor testar demais do que de menos.
+
+### Como rodar
+
+1. Garantir que o dev server esta rodando (`npm run dev` no admin-panel)
+2. Usar o Playwright MCP para navegar ate a pagina afetada
+3. Executar o fluxo completo que a mudanca afeta
+4. Verificar resultado final (nao apenas acao intermediaria)
 
 ### Rigor nos testes E2E (OBRIGATORIO)
 
