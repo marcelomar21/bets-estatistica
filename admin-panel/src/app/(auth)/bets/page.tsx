@@ -17,6 +17,9 @@ const DEFAULT_FILTERS: BetFilterValues = {
   has_odds: '',
   has_link: '',
   search: '',
+  future_only: 'true',
+  date_from: '',
+  date_to: '',
 };
 
 const DEFAULT_COUNTERS: BetCounters = {
@@ -85,6 +88,9 @@ export default function BetsPage() {
     if (filters.has_odds) params.set('has_odds', filters.has_odds);
     if (filters.has_link) params.set('has_link', filters.has_link);
     if (filters.search) params.set('search', filters.search);
+    if (filters.future_only) params.set('future_only', filters.future_only);
+    if (filters.date_from) params.set('date_from', filters.date_from);
+    if (filters.date_to) params.set('date_to', filters.date_to);
 
     try {
       const res = await fetch(`/api/bets?${params}`);
