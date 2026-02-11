@@ -20,6 +20,11 @@ export async function createSubscriptionPlan(
     return { success: false, error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado' };
   }
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  if (!appUrl) {
+    return { success: false, error: 'NEXT_PUBLIC_APP_URL não configurado' };
+  }
+
   if (price <= 0) {
     return { success: false, error: 'Preço deve ser maior que zero' };
   }
@@ -46,9 +51,7 @@ export async function createSubscriptionPlan(
             },
           },
           external_reference: groupId,
-          ...(process.env.NEXT_PUBLIC_APP_URL
-            ? { back_url: `${process.env.NEXT_PUBLIC_APP_URL}/groups/${groupId}` }
-            : {}),
+          back_url: `${appUrl}/groups/${groupId}`,
         }),
       },
     );

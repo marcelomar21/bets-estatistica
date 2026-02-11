@@ -8,7 +8,7 @@ describe('createSubscriptionPlan', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.MERCADO_PAGO_ACCESS_TOKEN = 'test-token';
-    delete process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = 'https://admin.example.com';
   });
 
   it('returns error when access token is not configured', async () => {
@@ -17,6 +17,15 @@ describe('createSubscriptionPlan', () => {
     const result = await createSubscriptionPlan('Test Group', 'group-1', 29.9);
 
     expect(result).toEqual({ success: false, error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns error when NEXT_PUBLIC_APP_URL is not configured', async () => {
+    delete process.env.NEXT_PUBLIC_APP_URL;
+
+    const result = await createSubscriptionPlan('Test Group', 'group-1', 29.9);
+
+    expect(result).toEqual({ success: false, error: 'NEXT_PUBLIC_APP_URL não configurado' });
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
@@ -66,20 +75,6 @@ describe('createSubscriptionPlan', () => {
       frequency: 7,
       frequency_type: 'days',
     });
-    expect(body.back_url).toBeUndefined();
-  });
-
-  it('includes back_url when NEXT_PUBLIC_APP_URL is set', async () => {
-    process.env.NEXT_PUBLIC_APP_URL = 'https://admin.example.com';
-    mockFetch.mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: () => Promise.resolve({ id: 'plan-1', init_point: 'https://mp.com/checkout' }),
-    });
-
-    await createSubscriptionPlan('Test', 'group-uuid', 29.9);
-
-    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
     expect(body.back_url).toBe('https://admin.example.com/groups/group-uuid');
   });
 
