@@ -441,7 +441,7 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     const mockCtx = createMockContext({
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', render_service_id: null },
+          data: { id: 'group-1', name: 'Test', render_service_id: null, telegram_group_id: -1001234567890 },
           error: null,
         }),
       },
