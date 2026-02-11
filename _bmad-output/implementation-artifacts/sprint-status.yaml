@@ -88,7 +88,7 @@ development_status:
   # ========================================
   epic-5: in-progress
   5-1-distribuicao-round-robin-de-apostas-entre-grupos: done
-  5-2-gestao-de-odds-no-painel-individual-e-bulk: backlog
+  5-2-gestao-de-odds-no-painel-individual-e-bulk: done
   5-3-gestao-de-links-no-painel-individual-e-bulk: backlog
   5-4-postagem-automatica-de-apostas-nos-grupos-telegram: backlog
   epic-5-retrospective: optional
