@@ -76,14 +76,14 @@ async function getUndistributedBets() {
 
     const { data, error } = await supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, kickoff_time')
+      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time)')
       .eq('elegibilidade', 'elegivel')
       .is('group_id', null)
       .is('distributed_at', null)
       .neq('bet_status', 'posted')
-      .gte('kickoff_time', startOfToday)
-      .lte('kickoff_time', endOfTomorrow)
-      .order('kickoff_time', { ascending: true });
+      .gte('league_matches.kickoff_time', startOfToday)
+      .lte('league_matches.kickoff_time', endOfTomorrow)
+      .order('kickoff_time', { referencedTable: 'league_matches', ascending: true });
 
     if (error) {
       logger.error('[bets:distribute] Erro ao buscar apostas não distribuídas', { error: error.message });
@@ -113,12 +113,12 @@ async function rebalanceIfNeeded(activeGroups) {
   try {
     const { data: distributedBets, error } = await supabase
       .from('suggested_bets')
-      .select('id, group_id')
+      .select('id, group_id, league_matches!inner(kickoff_time)')
       .eq('elegibilidade', 'elegivel')
       .not('group_id', 'is', null)
       .neq('bet_status', 'posted')
-      .gte('kickoff_time', startOfToday)
-      .lte('kickoff_time', endOfTomorrow);
+      .gte('league_matches.kickoff_time', startOfToday)
+      .lte('league_matches.kickoff_time', endOfTomorrow);
 
     if (error) {
       logger.error('[bets:distribute] Erro ao verificar rebalanceamento', { error: error.message });
