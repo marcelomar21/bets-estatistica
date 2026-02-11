@@ -4,8 +4,9 @@ import { createApiHandler } from '@/middleware/api-handler';
 /**
  * POST /api/bets/[id]/promote
  * Manually promotes a bet to the posting queue.
- * Forces bet_status = 'ready' and sets promovida_manual = true,
- * regardless of missing odds or link.
+ * Same logic as bot's /promover command:
+ * sets elegibilidade = 'elegivel' and promovida_manual = true.
+ * Does NOT force bet_status — the bot handles status transitions.
  */
 export const POST = createApiHandler(
   async (_req, context, routeContext) => {
@@ -46,19 +47,19 @@ export const POST = createApiHandler(
       );
     }
 
-    if (bet.bet_status === 'ready') {
+    if (bet.promovida_manual === true) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta ja esta na fila' } },
+        { success: false, error: { code: 'ALREADY_PROMOTED', message: 'Aposta ja esta promovida' } },
         { status: 400 },
       );
     }
 
-    // Force to ready regardless of missing odds/link
+    // Same as bot's promoverAposta: set elegibilidade + promovida_manual
     const { error: updateError } = await supabase
       .from('suggested_bets')
       .update({
+        elegibilidade: 'elegivel',
         promovida_manual: true,
-        bet_status: 'ready',
       })
       .eq('id', betId);
 
@@ -73,9 +74,9 @@ export const POST = createApiHandler(
       success: true,
       data: {
         id: betId,
+        elegibilidade: 'elegivel',
         promovida_manual: true,
-        old_status: bet.bet_status,
-        new_status: 'ready',
+        bet_status: bet.bet_status,
       },
     });
   },
