@@ -8,20 +8,20 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Guru da Bet — Tips de apostas esportivas com Estatistica",
+  title: "Guru da Bet — Tips de apostas esportivas com Estatística",
   description:
-    "Analise estatistica avancada para maximizar seus resultados em apostas esportivas. Modelos matematicos com 71,32% de taxa de acerto.",
+    "Análise estatística avançada para maximizar seus resultados em apostas esportivas. Modelos matemáticos com 71,32% de taxa de acerto.",
   keywords: [
     "apostas esportivas",
     "tips",
-    "analise estatistica",
-    "modelos matematicos",
+    "análise estatística",
+    "modelos matemáticos",
     "guru da bet",
   ],
   openGraph: {
-    title: "Guru da Bet — Tips de apostas esportivas com Estatistica",
+    title: "Guru da Bet — Tips de apostas esportivas com Estatística",
     description:
-      "Analise estatistica avancada e modelos matematicos para maximizar seus resultados. 71,32% de taxa de acerto.",
+      "Análise estatística avançada e modelos matemáticos para maximizar seus resultados. 71,32% de taxa de acerto.",
     url: "https://gurudabet.com.br",
     siteName: "Guru da Bet",
     locale: "pt_BR",
@@ -29,9 +29,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Guru da Bet — Tips de apostas esportivas com Estatistica",
+    title: "Guru da Bet — Tips de apostas esportivas com Estatística",
     description:
-      "Analise estatistica avancada e modelos matematicos para maximizar seus resultados. 71,32% de taxa de acerto.",
+      "Análise estatística avançada e modelos matemáticos para maximizar seus resultados. 71,32% de taxa de acerto.",
   },
 };
 

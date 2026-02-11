@@ -63,10 +63,10 @@ const LEAGUES = [
   { flag: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}", name: "Premier League", country: "Inglaterra" },
   { flag: "\u{1F1EA}\u{1F1F8}", name: "La Liga", country: "Espanha" },
   { flag: "\u{1F1E9}\u{1F1EA}", name: "Bundesliga", country: "Alemanha" },
-  { flag: "\u{1F1EB}\u{1F1F7}", name: "Ligue 1", country: "Franca" },
-  { flag: "\u{1F1EE}\u{1F1F9}", name: "Serie A", country: "Italia" },
-  { flag: "\u{1F1E7}\u{1F1F7}", name: "Brasileirao Serie A", country: "Brasil" },
-  { flag: "\u{1F1E7}\u{1F1F7}", name: "Paulistao", country: "Brasil" },
+  { flag: "\u{1F1EB}\u{1F1F7}", name: "Ligue 1", country: "França" },
+  { flag: "\u{1F1EE}\u{1F1F9}", name: "Serie A", country: "Itália" },
+  { flag: "\u{1F1E7}\u{1F1F7}", name: "Brasileirão Série A", country: "Brasil" },
+  { flag: "\u{1F1E7}\u{1F1F7}", name: "Paulistão", country: "Brasil" },
   { flag: "\u{1F1E7}\u{1F1F7}", name: "Carioca", country: "Brasil" },
   { flag: "\u{1F1E7}\u{1F1F7}", name: "Mineiro", country: "Brasil" },
   { flag: "\u{1F30D}", name: "Champions League", country: "UEFA" },
@@ -78,18 +78,18 @@ const LEAGUES = [
 const TESTIMONIALS = [
   {
     name: "Rafael S.",
-    text: "Recebia as tips no Telegram e no comeco duvidei, mas em 2 semanas vi que a taxa de acerto era real. Hoje faz parte da minha rotina.",
-    role: "Assinante desde 2024",
+    text: "Recebia as tips no Telegram e no começo duvidei, mas em 2 semanas vi que a taxa de acerto era real. Hoje faz parte da minha rotina.",
+    role: "Assinante desde nov/2025",
   },
   {
     name: "Camila M.",
-    text: "O diferencial e que nao e achismo, da pra ver que tem analise por tras. As odds sao boas e a consistencia impressiona.",
-    role: "Assinante desde 2025",
+    text: "O diferencial é que não é achismo, dá pra ver que tem análise por trás. As odds são boas e a consistência impressiona.",
+    role: "Assinante desde dez/2025",
   },
   {
     name: "Lucas P.",
-    text: "Ja testei varios grupos de tips e esse e o unico que mostra transparencia nos resultados. A estatistica realmente faz diferenca.",
-    role: "Assinante desde 2024",
+    text: "Já testei vários grupos de tips e esse é o único que mostra transparência nos resultados. A estatística realmente faz diferença.",
+    role: "Assinante desde nov/2025",
   },
 ];
 
@@ -116,7 +116,7 @@ export default function Home() {
               href="https://admin.gurudabet.com.br"
               className="hidden sm:inline-flex rounded-lg border border-guru-gold/60 px-4 py-2 text-sm font-medium text-guru-gold transition hover:bg-guru-gold/10"
             >
-              Area de Influencer
+              Área de Influencer
             </a>
             <a
               href="https://wa.me/5541992268584"
@@ -137,11 +137,11 @@ export default function Home() {
         <div className="relative mx-auto max-w-4xl px-4 py-20 text-center sm:py-28 lg:py-36">
           <h1 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-5xl">
             Tips de apostas esportivas com{" "}
-            <span className="text-guru-gold">Analise Estatistica</span>
+            <span className="text-guru-gold">Análise Estatística</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base text-white/70 sm:text-lg">
-            Analise estatistica avancada para maximizar seus resultados. Receba
-            tips diretamente no seu Telegram, com transparencia total nos
+            Análise estatística avançada para maximizar seus resultados. Receba
+            tips diretamente no seu Telegram, com transparência total nos
             resultados.
           </p>
 
@@ -169,7 +169,7 @@ export default function Home() {
           </div>
 
           <p className="mt-6 text-xs text-white/40">
-            Analise baseada em modelos matematicos e dados estatisticos
+            Análise baseada em modelos matemáticos e dados estatísticos
           </p>
         </div>
       </section>
@@ -187,11 +187,11 @@ export default function Home() {
           </div>
           <div>
             <p className="text-3xl font-extrabold text-guru-gold sm:text-4xl">1.500+</p>
-            <p className="mt-1 text-sm text-white/50">Tips ja enviadas</p>
+            <p className="mt-1 text-sm text-white/50">Tips já enviadas</p>
           </div>
           <div>
             <p className="text-3xl font-extrabold text-guru-gold sm:text-4xl">24/7</p>
-            <p className="mt-1 text-sm text-white/50">Monitoramento estatistico</p>
+            <p className="mt-1 text-sm text-white/50">Monitoramento estatístico</p>
           </div>
         </div>
       </section>
@@ -213,18 +213,18 @@ export default function Home() {
               </div>
               <h3 className="mt-5 text-lg font-bold">Coleta de dados</h3>
               <p className="mt-2 text-sm text-white/60">
-                Coletamos estatisticas de desempenho, historico de confrontos,
-                odds de mercado e dezenas de variaveis de cada partida.
+                Coletamos estatísticas de desempenho, histórico de confrontos,
+                odds de mercado e dezenas de variáveis de cada partida.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-guru-gold/15">
                 <BrainIcon className="h-7 w-7 text-guru-gold" />
               </div>
-              <h3 className="mt-5 text-lg font-bold">Modelos estatisticos</h3>
+              <h3 className="mt-5 text-lg font-bold">Modelos estatísticos</h3>
               <p className="mt-2 text-sm text-white/60">
-                Nossos modelos matematicos processam os dados e identificam
-                padroes que o olho humano nao consegue ver.
+                Nossos modelos matemáticos processam os dados e identificam
+                padrões que o olho humano não consegue ver.
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-6 text-center">
@@ -234,7 +234,7 @@ export default function Home() {
               <h3 className="mt-5 text-lg font-bold">Tip no Telegram</h3>
               <p className="mt-2 text-sm text-white/60">
                 Quando o modelo encontra uma oportunidade com alta probabilidade,
-                voce recebe a tip direto no Telegram em tempo real.
+                você recebe a tip direto no Telegram em tempo real.
               </p>
             </div>
           </div>
@@ -250,7 +250,7 @@ export default function Home() {
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-center text-white/60">
             Cobertura completa dos maiores campeonatos do mundo e do Brasil, com
-            analise em tempo real de cada partida.
+            análise em tempo real de cada partida.
           </p>
           <div className="mx-auto mt-12 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {LEAGUES.map((league) => (
@@ -278,15 +278,15 @@ export default function Home() {
             Mercados <span className="text-guru-gold">analisados</span>
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-center text-white/60">
-            Nao nos limitamos a um unico mercado. Nossos modelos analisam multiplas
+            Não nos limitamos a um único mercado. Nossos modelos analisam múltiplas
             categorias para encontrar valor em cada jogo.
           </p>
           <div className="mx-auto mt-12 grid max-w-2xl grid-cols-2 gap-4 sm:grid-cols-4">
             {[
               { label: "Gols", desc: "Over/Under, Resultado Exato" },
               { label: "Escanteios", desc: "Over/Under corners" },
-              { label: "Cartoes", desc: "Over/Under cards" },
-              { label: "Ambas Marcam", desc: "BTTS Sim/Nao" },
+              { label: "Cartões", desc: "Over/Under cards" },
+              { label: "Ambas Marcam", desc: "BTTS Sim/Não" },
             ].map((market) => (
               <div
                 key={market.label}
@@ -340,8 +340,8 @@ export default function Home() {
             Instagram
           </h2>
           <p className="mx-auto mt-3 max-w-lg text-white/60">
-            Acompanhe resultados diarios, bastidores das analises, pre-jogo e
-            dicas exclusivas. Conteudo novo todos os dias.
+            Acompanhe resultados diários, bastidores das análises, pré-jogo e
+            dicas exclusivas. Conteúdo novo todos os dias.
           </p>
           <div className="mt-10">
             <a
@@ -363,11 +363,11 @@ export default function Home() {
         <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:py-24">
           <h2 className="text-2xl font-extrabold sm:text-3xl lg:text-4xl">
             Pronto para lucrar com{" "}
-            <span className="text-guru-gold">analise estatistica</span>?
+            <span className="text-guru-gold">análise estatística</span>?
           </h2>
           <p className="mx-auto mt-4 max-w-lg text-white/60">
-            Junte-se a centenas de apostadores que ja recebem tips com mais de 71% de acerto.
-            Sem achismo, sem palpite — apenas matematica e dados.
+            Junte-se a centenas de apostadores que já recebem tips com mais de 71% de acerto.
+            Sem achismo, sem palpite — apenas matemática e dados.
           </p>
           <div className="mt-10">
             <a
@@ -377,7 +377,7 @@ export default function Home() {
               className="inline-flex items-center gap-2 rounded-xl bg-guru-gold px-8 py-4 text-lg font-bold text-guru-purple-900 shadow-lg shadow-guru-gold/25 transition hover:bg-guru-gold-light hover:shadow-guru-gold/40"
             >
               <TelegramIcon className="h-5 w-5" />
-              Comecar a receber tips agora
+              Começar a receber tips agora
             </a>
           </div>
         </div>
@@ -390,21 +390,21 @@ export default function Home() {
             Para Influencers
           </span>
           <h2 className="mt-6 text-2xl font-extrabold leading-tight sm:text-3xl lg:text-4xl">
-            E influencer digital?{" "}
+            É influencer digital?{" "}
             <span className="text-guru-gold">
-              Temos uma proposta pra voce
+              Temos uma proposta pra você
             </span>
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-base text-white/70 sm:text-lg">
-            Monetize sua audiencia no mercado de apostas esportivas de forma
+            Monetize sua audiência no mercado de apostas esportivas de forma
             profissional. Oferecemos uma parceria exclusiva com tecnologia e
-            suporte completo para voce focar no que faz de melhor.
+            suporte completo para você focar no que faz de melhor.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             {[
-              { title: "Tecnologia propria", desc: "Modelos estatisticos e analise de dados que geram resultados reais para sua audiencia." },
-              { title: "Suporte completo", desc: "Time dedicado para te ajudar com conteudo, estrategia e operacao." },
-              { title: "Monetizacao real", desc: "Modelo de parceria transparente e lucrativo para ambos os lados." },
+              { title: "Tecnologia própria", desc: "Modelos estatísticos e análise de dados que geram resultados reais para sua audiência." },
+              { title: "Suporte completo", desc: "Time dedicado para te ajudar com conteúdo, estratégia e operação." },
+              { title: "Monetização real", desc: "Modelo de parceria transparente e lucrativo para ambos os lados." },
             ].map((item) => (
               <div
                 key={item.title}
@@ -468,7 +468,7 @@ export default function Home() {
               href="https://admin.gurudabet.com.br"
               className="transition hover:text-guru-gold"
             >
-              Area de Influencer
+              Área de Influencer
             </a>
           </div>
           <p className="mt-6 text-xs text-white/30">
