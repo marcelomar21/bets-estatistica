@@ -79,7 +79,7 @@ export function PostingScheduleSection({
     setSaving(true);
     try {
       const res = await fetch(`/api/groups/${groupId}`, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           posting_schedule: { enabled: postingEnabled, times: postingTimes },
