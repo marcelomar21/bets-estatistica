@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+@theme {
+  --color-guru-purple-900: #1a0a3e;
+  --color-guru-purple: #3D1C7C;
+  --color-guru-purple-600: #5a2fb0;
+  --color-guru-gold: #F5C518;
+  --color-guru-gold-light: #ffe066;
+  --color-guru-gold-dark: #d4a800;
+}
