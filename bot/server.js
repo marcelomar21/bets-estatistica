@@ -21,6 +21,7 @@ const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
+const { runDistributeBets } = require('./jobs/distributeBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
 const { supabase } = require('../lib/supabase');
@@ -209,6 +210,16 @@ function setupScheduler() {
   const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
   const { withExecutionLogging, cleanupStuckJobs } = require('./services/jobExecutionService');
 
+  async function runDistributeBetsWithFailureGuard() {
+    return withExecutionLogging('distribute-bets', async () => {
+      const result = await runDistributeBets();
+      if (!result?.success) {
+        throw new Error(result?.error?.message || 'runDistributeBets returned success=false');
+      }
+      return result;
+    });
+  }
+
   const TZ = 'America/Sao_Paulo';
 
   // Track results - a cada hora entre 13h e 23h (horário São Paulo)
@@ -257,6 +268,17 @@ function setupScheduler() {
     // }
   }, { timezone: TZ });
 
+  // Story 5.4: Distribute bets before posting - 09:55 São Paulo
+  cron.schedule('55 9 * * *', async () => {
+    logger.info('[scheduler] Running distribute-bets job (pre-morning)');
+    try {
+      await runDistributeBetsWithFailureGuard();
+      logger.info('[scheduler] distribute-bets (pre-morning) complete');
+    } catch (err) {
+      logger.error('[scheduler] distribute-bets (pre-morning) failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
   // Morning post + Renewal reminders - 10:00 São Paulo
   cron.schedule('0 10 * * *', async () => {
     // Story 16.5: Renewal reminders first
@@ -268,13 +290,57 @@ function setupScheduler() {
       logger.error('[scheduler] renewal-reminders failed', { error: err.message });
     }
 
-    // Then post bets
-    logger.info('[scheduler] Running morning-post job');
+    // Story 5.4: Fix parameter - skipConfirmation=true for scheduled posts
+    logger.info('[scheduler] Running post-bets job (morning)');
     try {
-      await withExecutionLogging('post-bets', () => runPostBets('morning'));
-      logger.info('[scheduler] morning-post complete');
+      await withExecutionLogging('post-bets', () => runPostBets(true));
+      logger.info('[scheduler] post-bets (morning) complete');
     } catch (err) {
-      logger.error('[scheduler] morning-post failed', { error: err.message });
+      logger.error('[scheduler] post-bets (morning) failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Story 5.4: Distribute bets before posting - 14:55 São Paulo
+  cron.schedule('55 14 * * *', async () => {
+    logger.info('[scheduler] Running distribute-bets job (pre-afternoon)');
+    try {
+      await runDistributeBetsWithFailureGuard();
+      logger.info('[scheduler] distribute-bets (pre-afternoon) complete');
+    } catch (err) {
+      logger.error('[scheduler] distribute-bets (pre-afternoon) failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Story 5.4: Afternoon post - 15:00 São Paulo
+  cron.schedule('0 15 * * *', async () => {
+    logger.info('[scheduler] Running post-bets job (afternoon)');
+    try {
+      await withExecutionLogging('post-bets', () => runPostBets(true));
+      logger.info('[scheduler] post-bets (afternoon) complete');
+    } catch (err) {
+      logger.error('[scheduler] post-bets (afternoon) failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Story 5.4: Distribute bets before posting - 21:55 São Paulo
+  cron.schedule('55 21 * * *', async () => {
+    logger.info('[scheduler] Running distribute-bets job (pre-night)');
+    try {
+      await runDistributeBetsWithFailureGuard();
+      logger.info('[scheduler] distribute-bets (pre-night) complete');
+    } catch (err) {
+      logger.error('[scheduler] distribute-bets (pre-night) failed', { error: err.message });
+    }
+  }, { timezone: TZ });
+
+  // Story 5.4: Night post - 22:00 São Paulo
+  cron.schedule('0 22 * * *', async () => {
+    logger.info('[scheduler] Running post-bets job (night)');
+    try {
+      await withExecutionLogging('post-bets', () => runPostBets(true));
+      logger.info('[scheduler] post-bets (night) complete');
+    } catch (err) {
+      logger.error('[scheduler] post-bets (night) failed', { error: err.message });
     }
   }, { timezone: TZ });
 
@@ -353,7 +419,12 @@ function setupScheduler() {
   console.log('   03:00 - Cakto reconciliation (membership)');
   console.log('   08:00 - Enrich odds + Request links');
   console.log('   09:00 - Trial reminders + Link reminders');
-  console.log('   10:00 - Renewal reminders + Post bets');
+  console.log('   09:55 - Distribute bets (pre-morning)');
+  console.log('   10:00 - Renewal reminders + Post bets (morning)');
+  console.log('   14:55 - Distribute bets (pre-afternoon)');
+  console.log('   15:00 - Post bets (afternoon)');
+  console.log('   21:55 - Distribute bets (pre-night)');
+  console.log('   22:00 - Post bets (night)');
   console.log('   */5   - Health check');
   console.log('   */30s - Process webhooks (membership)');
   console.log('   */1h  - Cleanup stuck jobs');
@@ -404,6 +475,59 @@ async function start() {
       }
     } catch (err) {
       logger.error('[server] Multi-tenant initialization error', { error: err.message });
+    }
+  }
+
+  // Story 5.4: Log pending ready bets on startup (AC4)
+  if (config.membership.groupId) {
+    try {
+      const { data: pendingBets, error: pendingErr } = await supabase
+        .from('suggested_bets')
+        .select(`
+          id,
+          league_matches (
+            kickoff_time
+          )
+        `)
+        .eq('bet_status', 'ready')
+        .eq('group_id', config.membership.groupId);
+
+      if (pendingErr) {
+        logger.warn('[server] Failed to check pending bets on startup', {
+          groupId: config.membership.groupId,
+          error: pendingErr.message
+        });
+      } else if (pendingBets) {
+        const pendingCount = pendingBets.length;
+        const now = new Date();
+        const expired = pendingBets.filter((b) => {
+          const kickoff = b.league_matches?.kickoff_time;
+          return kickoff && new Date(kickoff) <= now;
+        });
+
+        // Compute next post time (10h, 15h, 22h BRT)
+        const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+        const h = brTime.getHours();
+        const nextPostHour = h < 10 ? '10:00' : h < 15 ? '15:00' : h < 22 ? '22:00' : '10:00 (tomorrow)';
+
+        if (pendingCount > 0) {
+          logger.info('[server] Bot started with pending ready bets', {
+            groupId: config.membership.groupId,
+            pendingCount,
+            nextPostTime: nextPostHour
+          });
+        }
+
+        if (expired.length > 0) {
+          logger.warn('[server] Found ready bets with expired kickoff', {
+            groupId: config.membership.groupId,
+            count: expired.length,
+            expiredIds: expired.map(b => b.id)
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn('[server] Failed to check pending bets on startup', { error: err.message });
     }
   }
 
