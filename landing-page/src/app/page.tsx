@@ -79,17 +79,17 @@ const TESTIMONIALS = [
   {
     name: "Rafael S.",
     text: "Recebia as tips no Telegram e no começo duvidei, mas em 2 semanas vi que a taxa de acerto era real. Hoje faz parte da minha rotina.",
-    role: "Assinante desde 2024",
+    role: "Assinante desde nov/2025",
   },
   {
     name: "Camila M.",
     text: "O diferencial é que não é achismo, dá pra ver que tem análise por trás. As odds são boas e a consistência impressiona.",
-    role: "Assinante desde 2025",
+    role: "Assinante desde dez/2025",
   },
   {
     name: "Lucas P.",
     text: "Já testei vários grupos de tips e esse é o único que mostra transparência nos resultados. A estatística realmente faz diferença.",
-    role: "Assinante desde 2024",
+    role: "Assinante desde nov/2025",
   },
 ];
 
