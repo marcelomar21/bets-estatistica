@@ -80,7 +80,7 @@ export const POST = createApiHandler(
       .eq('group_id', groupId)
       .eq('elegibilidade', 'elegivel')
       .not('deep_link', 'is', null)
-      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
+      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
       .gt('league_matches.kickoff_time', now);
 
     if (queueError) {
