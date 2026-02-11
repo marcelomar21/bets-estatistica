@@ -18,6 +18,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [postedCount, setPostedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -73,6 +74,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   }
 
   async function handlePost() {
+    setSubmitting(true);
     setPhase('requesting');
     setError(null);
     setErrorDetails([]);
@@ -87,6 +89,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
 
       const json = await res.json();
       if (!json.success) {
+        setSubmitting(false);
         setPhase('confirming');
         setError(json.error?.message ?? 'Erro ao solicitar postagem');
         if (json.error?.details) setErrorDetails(json.error.details);
@@ -101,9 +104,10 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
         setPhase('done');
         setStatusMessage(json.data?.message ?? 'Postagem solicitada');
         onPostComplete();
-        setTimeout(() => { setPhase('idle'); setStatusMessage(null); }, 5000);
+        setTimeout(() => { setPhase('idle'); setStatusMessage(null); setSubmitting(false); }, 5000);
       }
     } catch {
+      setSubmitting(false);
       setPhase('confirming');
       setError('Erro de conexao');
     }
@@ -175,7 +179,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
               </button>
               <button
                 onClick={handlePost}
-                disabled={phase === 'requesting'}
+                disabled={submitting}
                 className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
               >
                 Confirmar
