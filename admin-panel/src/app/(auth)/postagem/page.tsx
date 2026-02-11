@@ -245,11 +245,13 @@ export default function PostagemPage() {
   const currentGroup = groups.find(g => g.id === selectedGroupId);
   const scheduleForGroup = currentGroup?.posting_schedule ?? queueData?.postingSchedule ?? { enabled: true, times: ['10:00', '15:00', '22:00'] };
 
-  // Separate bets the bot WILL post from bets still missing data
+  // Separate bets the bot WILL post from bets still missing data or removed
   // Mirrors getBetsReadyForPosting(): has link + (odds >= 1.60 OR promovida_manual)
   // Already-posted bets are always postable (they stay in queue until kickoff)
+  // Removed bets (elegibilidade='removida') go to "Fora da Fila" section
   const MIN_ODDS = 1.60;
   function isPostable(b: QueueBet): boolean {
+    if (b.elegibilidade === 'removida') return false;
     if (b.bet_status === 'posted') return true;
     if (!b.has_link) return false;
     return b.promovida_manual || (b.odds !== null && b.odds >= MIN_ODDS);
@@ -372,17 +374,17 @@ export default function PostagemPage() {
         </div>
       )}
 
-      {/* Pending Bets — Apostas Pendentes */}
+      {/* Pending/Removed Bets — Apostas Fora da Fila */}
       {queueData && pendingBets.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">
-            Apostas Pendentes
+            Apostas Fora da Fila
             <span className="ml-2 text-sm font-normal text-gray-500">
-              ({pendingBets.length} aposta{pendingBets.length !== 1 ? 's' : ''} faltando dados)
+              ({pendingBets.length} aposta{pendingBets.length !== 1 ? 's' : ''})
             </span>
           </h2>
           <p className="text-sm text-gray-500">
-            Preencha odds e link para promover a aposta para a fila de postagem.
+            Apostas removidas ou faltando dados. Promova para incluir na fila de postagem.
           </p>
           <PostingQueueTable
             bets={pendingBets}

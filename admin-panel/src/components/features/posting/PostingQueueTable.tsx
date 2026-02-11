@@ -12,6 +12,7 @@ interface QueueBet {
   has_link: boolean;
   deep_link: string | null;
   promovida_manual?: boolean;
+  elegibilidade?: string;
   hit_rate?: { rate: number; wins: number; total: number } | null;
   match: {
     home_team_name: string;
@@ -35,6 +36,9 @@ type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate
 type SortDir = 'asc' | 'desc';
 
 function getStatusBadge(bet: QueueBet) {
+  if (bet.elegibilidade === 'removida') {
+    return { label: 'removida', className: 'bg-gray-100 text-gray-800' };
+  }
   if (bet.bet_status === 'posted') {
     return { label: 'postada', className: 'bg-emerald-100 text-emerald-800' };
   }

@@ -40,14 +40,17 @@ export const POST = createApiHandler(
       );
     }
 
-    if (bet.bet_status === 'posted') {
+    // Removed bets can always be re-promoted (restoring to the queue)
+    const isRestore = bet.elegibilidade === 'removida';
+
+    if (!isRestore && bet.bet_status === 'posted') {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta ja foi postada' } },
         { status: 400 },
       );
     }
 
-    if (bet.promovida_manual === true) {
+    if (!isRestore && bet.promovida_manual === true) {
       return NextResponse.json(
         { success: false, error: { code: 'ALREADY_PROMOTED', message: 'Aposta ja esta promovida' } },
         { status: 400 },
