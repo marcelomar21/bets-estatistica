@@ -38,3 +38,14 @@ Resposta `[]` (array vazio) indica sucesso para comandos DDL (CREATE, ALTER, DRO
 ```bash
 cd admin-panel && npm test
 ```
+
+## Testes no navegador (E2E)
+
+O Playwright MCP esta configurado para testes via navegador. Para usar:
+
+```bash
+# Ja esta adicionado como MCP server no Claude Code
+claude mcp add playwright npx @playwright/mcp@latest
+```
+
+Permite que o Claude Code abra o navegador, navegue pela aplicacao, clique em botoes e verifique resultados visualmente.

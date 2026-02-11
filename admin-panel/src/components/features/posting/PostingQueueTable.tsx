@@ -11,6 +11,7 @@ interface QueueBet {
   odds: number | null;
   has_link: boolean;
   deep_link: string | null;
+  promovida_manual?: boolean;
   hit_rate?: { rate: number; wins: number; total: number } | null;
   match: {
     home_team_name: string;
@@ -30,17 +31,23 @@ interface PostingQueueTableProps {
 
 export type { QueueBet };
 
-type SortField = 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate' | 'odds' | 'link' | 'status';
+type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate' | 'odds' | 'link' | 'status';
 type SortDir = 'asc' | 'desc';
 
 function getStatusBadge(bet: QueueBet) {
-  if (bet.bet_status === 'ready') {
-    return { label: 'pronta', className: 'bg-green-100 text-green-800' };
-  }
   if (!bet.has_link) {
     return { label: 'faltando link', className: 'bg-yellow-100 text-yellow-800' };
   }
-  return { label: 'faltando odds', className: 'bg-orange-100 text-orange-800' };
+  if (bet.odds === null || bet.odds === undefined) {
+    return { label: 'faltando odds', className: 'bg-orange-100 text-orange-800' };
+  }
+  if (bet.promovida_manual) {
+    return { label: 'promovida', className: 'bg-blue-100 text-blue-800' };
+  }
+  if (bet.odds >= 1.60) {
+    return { label: 'pronta', className: 'bg-green-100 text-green-800' };
+  }
+  return { label: 'odds baixa', className: 'bg-orange-100 text-orange-800' };
 }
 
 function formatKickoffDate(isoString: string) {
@@ -64,6 +71,9 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
   let result = 0;
 
   switch (field) {
+    case 'id':
+      result = a.id - b.id;
+      break;
     case 'match':
       result = a.match.home_team_name.localeCompare(b.match.home_team_name);
       break;
@@ -164,6 +174,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
+            <SortHeader field="id">ID</SortHeader>
             <SortHeader field="match">Jogo</SortHeader>
             <SortHeader field="market">Mercado</SortHeader>
             <SortHeader field="pick">Pick</SortHeader>
@@ -186,6 +197,9 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
 
             return (
               <tr key={bet.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 text-xs font-mono text-gray-500">
+                  {bet.id}
+                </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
                   <span className="font-medium">{bet.match.home_team_name}</span>
                   {' x '}
@@ -256,8 +270,8 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-center gap-1">
-                    {/* Promote action */}
-                    {bet.bet_status !== 'ready' && onPromote && (
+                    {/* Promote action — only shown in pendentes table (onPromote passed) */}
+                    {onPromote && (
                       <button
                         onClick={async () => {
                           setPromotingId(bet.id);
@@ -271,7 +285,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                       </button>
                     )}
                     {/* Edit actions for pending bets */}
-                    {bet.bet_status !== 'ready' && onEditOdds && bet.odds === null && (
+                    {onEditOdds && bet.odds === null && (
                       <button
                         onClick={() => onEditOdds(bet)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
@@ -279,7 +293,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                         Odds
                       </button>
                     )}
-                    {bet.bet_status !== 'ready' && onEditLink && !bet.has_link && (
+                    {onEditLink && !bet.has_link && (
                       <button
                         onClick={() => onEditLink(bet)}
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
