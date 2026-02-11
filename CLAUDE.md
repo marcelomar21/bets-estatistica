@@ -33,11 +33,18 @@ Consultar as policies/tabelas via a mesma API para confirmar que o objeto foi cr
 
 Resposta `[]` (array vazio) indica sucesso para comandos DDL (CREATE, ALTER, DROP).
 
-## Testes
+## Validacao pre-merge (OBRIGATORIO)
+
+**SEMPRE** rodar os dois comandos antes de criar PR ou mergear:
 
 ```bash
-cd admin-panel && npm test
+cd admin-panel && npm test && npm run build
 ```
+
+- `npm test` — roda vitest (testes unitarios), mas **nao** checa TypeScript completo
+- `npm run build` — roda o build do Next.js com checagem TypeScript strict
+
+Os dois devem passar sem erros. Nunca mergear apenas com testes passando.
 
 ## Testes no navegador (E2E)
 
