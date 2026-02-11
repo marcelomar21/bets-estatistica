@@ -335,7 +335,6 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
     botToken: bot.bot_token,
     groupName: group.name,
     telegramGroupId: group.telegram_group_id,
-    telegramAdminGroupId: process.env.CENTRAL_ADMIN_GROUP_ID,
     checkoutUrl: group.checkout_url,
   });
   if (!renderResult.success) {

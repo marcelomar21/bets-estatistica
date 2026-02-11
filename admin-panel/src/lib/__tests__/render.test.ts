@@ -20,6 +20,7 @@ describe('createBotService', () => {
     process.env.RENDER_OWNER_ID = 'tea-test123';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.co';
     process.env.SUPABASE_SERVICE_KEY = 'service-key';
+    process.env.TELEGRAM_ADMIN_GROUP_ID = '-1009999999999';
   });
 
   it('returns error when API key is not configured', async () => {
@@ -46,7 +47,15 @@ describe('createBotService', () => {
     expect(result).toEqual({ success: false, error: 'RENDER_OWNER_ID não configurado' });
   });
 
-  it('creates service with correct data including telegram env vars', async () => {
+  it('returns error when TELEGRAM_ADMIN_GROUP_ID is not configured', async () => {
+    delete process.env.TELEGRAM_ADMIN_GROUP_ID;
+
+    const result = await createBotService(defaultOptions);
+
+    expect(result).toEqual({ success: false, error: 'TELEGRAM_ADMIN_GROUP_ID não configurado' });
+  });
+
+  it('creates service with central admin group from env, not from group public ID', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -89,7 +98,7 @@ describe('createBotService', () => {
         { key: 'GROUP_ID', value: 'group-uuid' },
         { key: 'TELEGRAM_BOT_TOKEN', value: 'bot-token-123' },
         { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1001234567890' },
-        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1001234567890' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1009999999999' },
         { key: 'BOT_MODE', value: 'group' },
         { key: 'NODE_ENV', value: 'production' },
         { key: 'MP_CHECKOUT_URL', value: 'http://mp.com/checkout' },
@@ -97,7 +106,7 @@ describe('createBotService', () => {
     );
   });
 
-  it('converts positive MTProto group ID to Bot API format with -100 prefix', async () => {
+  it('converts positive MTProto group ID to Bot API format for public group only', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -110,12 +119,12 @@ describe('createBotService', () => {
     expect(body.envVars).toEqual(
       expect.arrayContaining([
         { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1003647535811' },
-        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1003647535811' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1009999999999' },
       ]),
     );
   });
 
-  it('keeps already negative group ID as-is', async () => {
+  it('keeps already negative group ID as-is for public group', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -128,7 +137,7 @@ describe('createBotService', () => {
     expect(body.envVars).toEqual(
       expect.arrayContaining([
         { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1001234567890' },
-        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1001234567890' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1009999999999' },
       ]),
     );
   });
