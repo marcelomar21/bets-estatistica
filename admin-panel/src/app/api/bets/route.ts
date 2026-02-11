@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
+import { categorizeMarket } from '@/lib/bet-categories';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
 const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
+
+const MIN_PAIR_STATS_BETS = 3;
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
   if (!rawValue) return fallback;
@@ -29,9 +33,57 @@ const BET_SELECT = `
   id, bet_market, bet_pick, odds, deep_link, bet_status,
   elegibilidade, promovida_manual, group_id, distributed_at,
   created_at, odds_at_post, notes,
-  league_matches!inner(home_team_name, away_team_name, kickoff_time, status),
+  league_matches!inner(home_team_name, away_team_name, kickoff_time, status, league_seasons!inner(league_name, country)),
   groups(name)
 `;
+
+interface PairStatsEntry {
+  rate: number;
+  wins: number;
+  total: number;
+}
+
+async function fetchPairStats(supabase: ReturnType<typeof Object>): Promise<Record<string, PairStatsEntry>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from('suggested_bets')
+    .select(`
+      bet_market,
+      bet_result,
+      league_matches!inner (
+        league_seasons!inner (league_name, country)
+      )
+    `)
+    .in('bet_result', ['success', 'failure']);
+
+  if (error || !data) return {};
+
+  const pairs: Record<string, { wins: number; total: number }> = {};
+  for (const bet of data) {
+    const leagueInfo = bet.league_matches?.league_seasons;
+    if (!leagueInfo?.country || !leagueInfo?.league_name) continue;
+
+    const league = `${leagueInfo.country} - ${leagueInfo.league_name}`;
+    const category = categorizeMarket(bet.bet_market);
+    const key = `${league}|${category}`;
+
+    if (!pairs[key]) pairs[key] = { wins: 0, total: 0 };
+    pairs[key].total++;
+    if (bet.bet_result === 'success') pairs[key].wins++;
+  }
+
+  const stats: Record<string, PairStatsEntry> = {};
+  for (const [key, v] of Object.entries(pairs)) {
+    if (v.total >= MIN_PAIR_STATS_BETS) {
+      stats[key] = {
+        rate: (v.wins / v.total) * 100,
+        wins: v.wins,
+        total: v.total,
+      };
+    }
+  }
+  return stats;
+}
 
 export const GET = createApiHandler(
   async (req, context) => {
@@ -53,6 +105,11 @@ export const GET = createApiHandler(
     const search = url.searchParams.get('search')?.trim() || null;
     const sortBy = url.searchParams.get('sort_by')?.trim().toLowerCase() || 'kickoff_time';
     const sortDir = url.searchParams.get('sort_dir')?.trim().toLowerCase() || 'desc';
+
+    // Date filters (Story 5.6)
+    const futureOnly = url.searchParams.get('future_only')?.trim().toLowerCase() ?? 'true';
+    const dateFrom = url.searchParams.get('date_from')?.trim() || null;
+    const dateTo = url.searchParams.get('date_to')?.trim() || null;
 
     // Validate filters
     if (statusFilter && !VALID_BET_STATUSES.has(statusFilter)) {
@@ -82,6 +139,18 @@ export const GET = createApiHandler(
     if (!VALID_SORT_DIRS.has(sortDir)) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Direcao de ordenacao invalida' } },
+        { status: 400 },
+      );
+    }
+    if (dateFrom && !ISO_DATE_PATTERN.test(dateFrom)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'date_from invalido (esperado YYYY-MM-DD)' } },
+        { status: 400 },
+      );
+    }
+    if (dateTo && !ISO_DATE_PATTERN.test(dateTo)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'date_to invalido (esperado YYYY-MM-DD)' } },
         { status: 400 },
       );
     }
@@ -121,6 +190,20 @@ export const GET = createApiHandler(
       );
     }
 
+    // Date filters (Story 5.6)
+    if (dateFrom || dateTo) {
+      // Explicit date range takes priority over future_only
+      if (dateFrom) {
+        query = query.gte('league_matches.kickoff_time', `${dateFrom}T00:00:00.000Z`);
+      }
+      if (dateTo) {
+        query = query.lte('league_matches.kickoff_time', `${dateTo}T23:59:59.999Z`);
+      }
+    } else if (futureOnly === 'true') {
+      // Default: only future games
+      query = query.gte('league_matches.kickoff_time', new Date().toISOString());
+    }
+
     // Apply sorting
     const ascending = sortDir === 'asc';
     if (sortBy === 'kickoff_time') {
@@ -148,8 +231,8 @@ export const GET = createApiHandler(
       semLinkQuery = semLinkQuery.eq('group_id', tenantCol);
     }
 
-    // Run all queries in parallel
-    const [mainResult, readyResult, postedResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult] =
+    // Run all queries in parallel (including pair stats)
+    const [mainResult, readyResult, postedResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult, pairStats] =
       await Promise.all([
         query.range(from, from + perPage - 1),
         readyQuery,
@@ -158,6 +241,7 @@ export const GET = createApiHandler(
         pendingOddsQuery,
         semOddsQuery,
         semLinkQuery,
+        fetchPairStats(supabase),
       ]);
 
     if (
@@ -172,13 +256,26 @@ export const GET = createApiHandler(
       return dbErrorResponse();
     }
 
+    // Enrich items with hit_rate from pair stats
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const enrichedItems = (mainResult.data ?? []).map((item: any) => {
+      const leagueInfo = item.league_matches?.league_seasons;
+      if (!leagueInfo?.country || !leagueInfo?.league_name) {
+        return { ...item, hit_rate: null };
+      }
+      const league = `${leagueInfo.country} - ${leagueInfo.league_name}`;
+      const category = categorizeMarket(item.bet_market);
+      const key = `${league}|${category}`;
+      return { ...item, hit_rate: pairStats[key] || null };
+    });
+
     const total = mainResult.count ?? 0;
     const totalPages = total > 0 ? Math.ceil(total / perPage) : 0;
 
     return NextResponse.json({
       success: true,
       data: {
-        items: mainResult.data ?? [],
+        items: enrichedItems,
         pagination: {
           page,
           per_page: perPage,

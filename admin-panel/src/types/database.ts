@@ -221,8 +221,13 @@ export type SuggestedBetListItem = Pick<
     away_team_name: string;
     kickoff_time: string;
     status: string;
+    league_seasons?: {
+      league_name: string;
+      country: string;
+    } | null;
   } | null;
   groups: { name: string } | null;
+  hit_rate?: { rate: number; wins: number; total: number } | null;
 };
 
 export interface OddsHistoryEntry {

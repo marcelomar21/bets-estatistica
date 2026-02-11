@@ -9,6 +9,9 @@ export interface BetFilterValues {
   has_odds: string;
   has_link: string;
   search: string;
+  future_only: string;
+  date_from: string;
+  date_to: string;
 }
 
 interface BetFiltersProps {
@@ -40,6 +43,10 @@ const ODDS_LINK_OPTIONS = [
   { value: 'false', label: 'Sem' },
 ];
 
+function toISODate(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
 export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }: BetFiltersProps) {
   const [searchInput, setSearchInput] = useState(filters.search);
 
@@ -51,6 +58,35 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }:
     e.preventDefault();
     handleChange('search', searchInput);
   }
+
+  function handleToggleFutureOnly() {
+    const newValue = filters.future_only === 'true' ? 'false' : 'true';
+    // Clear date filters when toggling future_only back on
+    if (newValue === 'true') {
+      onFilterChange({ ...filters, future_only: newValue, date_from: '', date_to: '' });
+    } else {
+      onFilterChange({ ...filters, future_only: newValue });
+    }
+  }
+
+  function setDateShortcut(daysFrom: number, daysTo: number) {
+    const from = new Date();
+    from.setDate(from.getDate() + daysFrom);
+    const to = new Date();
+    to.setDate(to.getDate() + daysTo);
+    onFilterChange({
+      ...filters,
+      date_from: toISODate(from),
+      date_to: toISODate(to),
+      future_only: 'false',
+    });
+  }
+
+  function clearDateFilters() {
+    onFilterChange({ ...filters, date_from: '', date_to: '', future_only: 'true' });
+  }
+
+  const hasDateFilter = filters.date_from || filters.date_to;
 
   return (
     <div className="space-y-3 rounded-lg bg-white p-4 shadow">
@@ -125,6 +161,69 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }:
             <option key={`link-${opt.value}`} value={opt.value}>{opt.value === '' ? 'Link: Todos' : `Link: ${opt.label}`}</option>
           ))}
         </select>
+      </div>
+
+      {/* Date filters */}
+      <div className="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={filters.future_only === 'true' && !hasDateFilter}
+            onChange={handleToggleFutureOnly}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600"
+          />
+          Apenas jogos futuros
+        </label>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500">De:</label>
+          <input
+            type="date"
+            value={filters.date_from}
+            onChange={(e) => onFilterChange({ ...filters, date_from: e.target.value, future_only: 'false' })}
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          />
+          <label className="text-xs text-gray-500">Ate:</label>
+          <input
+            type="date"
+            value={filters.date_to}
+            onChange={(e) => onFilterChange({ ...filters, date_to: e.target.value, future_only: 'false' })}
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => setDateShortcut(0, 0)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            Hoje
+          </button>
+          <button
+            type="button"
+            onClick={() => setDateShortcut(1, 1)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            Amanha
+          </button>
+          <button
+            type="button"
+            onClick={() => setDateShortcut(0, 7)}
+            className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            Prox. 7 dias
+          </button>
+          {hasDateFilter && (
+            <button
+              type="button"
+              onClick={clearDateFilters}
+              className="rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+            >
+              Limpar datas
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

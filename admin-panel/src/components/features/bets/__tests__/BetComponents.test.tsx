@@ -122,6 +122,9 @@ describe('BetFilters', () => {
     has_odds: '',
     has_link: '',
     search: '',
+    future_only: 'true',
+    date_from: '',
+    date_to: '',
   };
 
   it('renders search input and button', () => {
@@ -184,8 +187,10 @@ describe('BetTable', () => {
   it('renders bet data in table', () => {
     render(<BetTable {...defaultProps} role="super_admin" />);
     expect(screen.getByText(/Flamengo vs Palmeiras/i)).toBeInTheDocument();
-    expect(screen.getByText('Over 2.5 Gols')).toBeInTheDocument();
-    expect(screen.getByText('Over')).toBeInTheDocument();
+    // Mercado column now shows category badge
+    expect(screen.getByText('Gols')).toBeInTheDocument();
+    // Pick column shows formatted pick display (market - pick when different)
+    expect(screen.getByText('Over 2.5 Gols - Over')).toBeInTheDocument();
     expect(screen.getByText('1.85')).toBeInTheDocument();
     expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
     expect(screen.getByText('Distribuida')).toBeInTheDocument();
