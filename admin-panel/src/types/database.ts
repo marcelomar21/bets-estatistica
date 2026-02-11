@@ -292,3 +292,36 @@ export interface BulkOddsUpdateResponse {
     errors: Array<{ id: number; error: string }>;
   };
 }
+
+// ============================================================
+// Link Updates (Story 5.3)
+// ============================================================
+
+export interface BetLinkUpdateRequest {
+  link: string | null;
+}
+
+export interface BulkLinksUpdateRequest {
+  updates: Array<{ id: number; link: string | null }>;
+}
+
+export interface BetLinkUpdateResponse {
+  success: true;
+  data: {
+    bet: SuggestedBet;
+    promoted: boolean;
+    old_link: string | null;
+    new_link: string | null;
+  };
+}
+
+export interface BulkLinksUpdateResponse {
+  success: true;
+  data: {
+    updated: number;
+    promoted: number;
+    skipped: number;
+    failed: number;
+    errors: Array<{ id: number; error: string }>;
+  };
+}

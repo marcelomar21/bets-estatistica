@@ -7,6 +7,8 @@ import { BetStatsBar } from '@/components/features/bets/BetStatsBar';
 import { BetFilters, type BetFilterValues } from '@/components/features/bets/BetFilters';
 import { OddsEditModal } from '@/components/features/bets/OddsEditModal';
 import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
+import { LinkEditModal } from '@/components/features/bets/LinkEditModal';
+import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
 
 const DEFAULT_FILTERS: BetFilterValues = {
   status: '',
@@ -54,6 +56,10 @@ export default function BetsPage() {
   const [oddsHistory, setOddsHistory] = useState<OddsHistoryEntry[]>([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Link modal state
+  const [linkEditBet, setLinkEditBet] = useState<SuggestedBetListItem | null>(null);
+  const [showBulkLinks, setShowBulkLinks] = useState(false);
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -193,6 +199,59 @@ export default function BetsPage() {
     fetchBets(pagination.page);
   }
 
+  function handleEditLink(bet: SuggestedBetListItem) {
+    setLinkEditBet(bet);
+  }
+
+  async function handleSaveLink(betId: number, link: string | null) {
+    const res = await fetch(`/api/bets/${betId}/link`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ link }),
+    });
+
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error?.message ?? 'Erro ao salvar');
+    }
+
+    const promoted = json.data.promoted;
+    showToast(
+      promoted
+        ? 'Link atualizado. Aposta promovida para "ready"!'
+        : link ? 'Link atualizado' : 'Link removido',
+      'success',
+    );
+
+    setLinkEditBet(null);
+    fetchBets(pagination.page);
+  }
+
+  async function handleBulkLinksSave(link: string) {
+    const updates = Array.from(selectedIds).map((id) => ({ id, link }));
+
+    const res = await fetch('/api/bets/bulk/links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    });
+
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error?.message ?? 'Erro ao atualizar em lote');
+    }
+
+    const { updated, promoted, failed } = json.data;
+    showToast(
+      `${updated} atualizada${updated > 1 ? 's' : ''}${promoted > 0 ? `, ${promoted} promovida${promoted > 1 ? 's' : ''}` : ''}${failed > 0 ? `, ${failed} falha${failed > 1 ? 's' : ''}` : ''}`,
+      failed > 0 ? 'error' : 'success',
+    );
+
+    setShowBulkLinks(false);
+    setSelectedIds(new Set());
+    fetchBets(pagination.page);
+  }
+
   async function handleBulkSave(odds: number) {
     const updates = Array.from(selectedIds).map((id) => ({ id, odds }));
 
@@ -246,6 +305,12 @@ export default function BetsPage() {
             Atualizar Odds em Lote
           </button>
           <button
+            onClick={() => setShowBulkLinks(true)}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            Adicionar Links em Lote
+          </button>
+          <button
             onClick={() => setSelectedIds(new Set())}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
@@ -271,6 +336,7 @@ export default function BetsPage() {
           onSelectionChange={setSelectedIds}
           onPageChange={handlePageChange}
           onEditOdds={handleEditOdds}
+          onEditLink={handleEditLink}
           onSort={handleSort}
           sortBy={sortBy}
           sortDir={sortDir}
@@ -288,12 +354,30 @@ export default function BetsPage() {
         />
       )}
 
-      {/* Bulk Modal */}
+      {/* Bulk Odds Modal */}
       {showBulkModal && (
         <BulkOddsModal
           selectedCount={selectedIds.size}
           onClose={() => setShowBulkModal(false)}
           onSave={handleBulkSave}
+        />
+      )}
+
+      {/* Link Edit Modal */}
+      {linkEditBet && (
+        <LinkEditModal
+          bet={linkEditBet}
+          onClose={() => setLinkEditBet(null)}
+          onSave={handleSaveLink}
+        />
+      )}
+
+      {/* Bulk Links Modal */}
+      {showBulkLinks && (
+        <BulkLinksModal
+          selectedCount={selectedIds.size}
+          onClose={() => setShowBulkLinks(false)}
+          onSave={handleBulkLinksSave}
         />
       )}
 
