@@ -27,6 +27,11 @@ export async function createBotService(
     return { success: false, error: 'RENDER_REPO_URL não configurado' };
   }
 
+  const ownerId = process.env.RENDER_OWNER_ID;
+  if (!ownerId) {
+    return { success: false, error: 'RENDER_OWNER_ID não configurado' };
+  }
+
   try {
     const response = await fetchWithRetry(
       'https://api.render.com/v1/services',
@@ -39,6 +44,7 @@ export async function createBotService(
         body: JSON.stringify({
           type: 'web_service',
           name: `bot-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          ownerId,
           repo: repoUrl,
           envVars: [
             { key: 'GROUP_ID', value: groupId },
