@@ -1224,40 +1224,64 @@ async function getOverviewStats() {
 }
 
 /**
- * Calcula próximo horário de postagem (10h, 15h, 22h)
+ * Calcula próximo horário de postagem
+ * Story 5.5: Aceita array de horarios "HH:mm" ou usa default [10, 15, 22]
+ * @param {string[]} [postTimesParam] - Array de strings "HH:mm" (ex: ["10:00", "15:00", "22:00"])
  * @returns {{time: string, diff: string}}
  */
-function getNextPostTime() {
+function getNextPostTime(postTimesParam) {
   const now = new Date();
   // Ajustar para timezone Brasil
   const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  const hours = brTime.getHours();
-  const minutes = brTime.getMinutes();
-  const postTimes = [10, 15, 22];
+  const currentHours = brTime.getHours();
+  const currentMinutes = brTime.getMinutes();
 
-  for (const time of postTimes) {
-    if (hours < time || (hours === time && minutes === 0)) {
-      const diffHours = time - hours;
-      const diffMins = 60 - minutes;
-      if (diffHours === 0) {
-        return { time: `${time}:00`, diff: `${diffMins}min` };
+  // Parse times: accept ["HH:mm", ...] or default to [10, 15, 22]
+  let parsedTimes;
+  if (postTimesParam && Array.isArray(postTimesParam) && postTimesParam.length > 0) {
+    parsedTimes = postTimesParam
+      .map(t => {
+        const [h, m] = t.split(':').map(Number);
+        return { hours: h, minutes: m };
+      })
+      .sort((a, b) => a.hours * 60 + a.minutes - (b.hours * 60 + b.minutes));
+  } else {
+    parsedTimes = [
+      { hours: 10, minutes: 0 },
+      { hours: 15, minutes: 0 },
+      { hours: 22, minutes: 0 },
+    ];
+  }
+
+  const currentTotalMin = currentHours * 60 + currentMinutes;
+
+  for (const pt of parsedTimes) {
+    const ptTotalMin = pt.hours * 60 + pt.minutes;
+    if (ptTotalMin > currentTotalMin) {
+      const diffMin = ptTotalMin - currentTotalMin;
+      const timeStr = `${String(pt.hours).padStart(2, '0')}:${String(pt.minutes).padStart(2, '0')}`;
+      if (diffMin < 60) {
+        return { time: timeStr, diff: `${diffMin}min` };
       }
-      return { time: `${time}:00`, diff: `${diffHours}h` };
+      return { time: timeStr, diff: `${Math.floor(diffMin / 60)}h` };
     }
   }
 
-  // Próximo é amanhã às 10h
-  const diff = 24 - hours + 10;
-  return { time: '10:00 (amanhã)', diff: `${diff}h` };
+  // Next is tomorrow at the first configured time
+  const first = parsedTimes[0];
+  const firstStr = `${String(first.hours).padStart(2, '0')}:${String(first.minutes).padStart(2, '0')}`;
+  const diffMin = (24 * 60 - currentTotalMin) + first.hours * 60 + first.minutes;
+  return { time: `${firstStr} (amanhã)`, diff: `${Math.floor(diffMin / 60)}h` };
 }
 
 /**
  * Obtém status da fila de postagem (Story 13.4)
  * Mostra apostas ativas (posted) + novas que serão postadas
  * @param {string|null|undefined} groupIdParam - Group ID opcional para sobrescrever config.membership.groupId
+ * @param {string[]|undefined} postTimesParam - Horarios de postagem "HH:mm" opcionais para cálculo do próximo post
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getFilaStatus(groupIdParam = undefined) {
+async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefined) {
   try {
     const now = new Date();
     const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
@@ -1426,8 +1450,8 @@ async function getFilaStatus(groupIdParam = undefined) {
       if (bet.promovida_manual === true) counts.promovidas++;
     });
 
-    // Calcular próximo horário de postagem
-    const nextPost = getNextPostTime();
+    // Calcular próximo horário de postagem (Story 5.5: aceita horários dinâmicos quando informados)
+    const nextPost = getNextPostTime(postTimesParam);
 
     return {
       success: true,
@@ -1748,6 +1772,7 @@ module.exports = {
 
   // Utility functions
   determineStatus,
+  getNextPostTime,
 
   // Create functions
   createManualBet,

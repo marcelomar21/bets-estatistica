@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { GroupListItem } from '@/types/database';
+import type { GroupListItem, PostingSchedule } from '@/types/database';
 import { statusConfig } from './group-utils';
 
 interface GroupEditFormProps {
@@ -23,6 +23,7 @@ export interface GroupEditFormData {
   telegram_admin_group_id: number | null;
   status: 'active' | 'paused' | 'inactive';
   additional_invitee_ids: InviteeEntry[];
+  posting_schedule: PostingSchedule;
 }
 
 const editableStatuses = ['active', 'paused', 'inactive'] as const;
@@ -43,6 +44,13 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       : 'active',
   );
   const [invitees, setInvitees] = useState<InviteeEntry[]>(initialData.additional_invitee_ids || []);
+
+  // Story 5.5: Posting schedule state
+  const defaultSchedule: PostingSchedule = { enabled: true, times: ['10:00', '15:00', '22:00'] };
+  const initialSchedule = initialData.posting_schedule || defaultSchedule;
+  const [postingEnabled, setPostingEnabled] = useState(initialSchedule.enabled);
+  const [postingTimes, setPostingTimes] = useState<string[]>(initialSchedule.times);
+
   const [validationError, setValidationError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,12 +62,28 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       return;
     }
 
+    // Story 5.5: Validate posting times
+    if (postingTimes.length === 0) {
+      setValidationError('Defina pelo menos 1 horario de postagem');
+      return;
+    }
+    if (postingTimes.length > 12) {
+      setValidationError('Maximo de 12 horarios de postagem');
+      return;
+    }
+    const uniqueTimes = new Set(postingTimes);
+    if (uniqueTimes.size !== postingTimes.length) {
+      setValidationError('Horarios de postagem duplicados');
+      return;
+    }
+
     const data: GroupEditFormData = {
       name: name.trim(),
       telegram_group_id: null,
       telegram_admin_group_id: null,
       status,
       additional_invitee_ids: invitees.filter(i => i.value.trim() !== ''),
+      posting_schedule: { enabled: postingEnabled, times: postingTimes },
     };
 
     if (telegramGroupId.trim()) {
@@ -200,6 +224,77 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           >
             + Adicionar Convidado
           </button>
+        </div>
+      </div>
+
+      {/* Story 5.5: Posting Schedule Section */}
+      <div className="border-t pt-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Postagem Automatica</h3>
+
+        <div className="mb-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={postingEnabled}
+              onClick={() => setPostingEnabled(!postingEnabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                postingEnabled ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  postingEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className="text-sm font-medium text-gray-700">
+              {postingEnabled ? 'Postagem habilitada' : 'Postagem desabilitada'}
+            </span>
+          </label>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Horarios de Postagem
+          </label>
+          <div className="space-y-2">
+            {postingTimes.map((time, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(e) => {
+                    const updated = [...postingTimes];
+                    updated[index] = e.target.value;
+                    setPostingTimes(updated);
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                {postingTimes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setPostingTimes(postingTimes.filter((_, i) => i !== index))}
+                    className="text-red-500 hover:text-red-700 text-sm px-2"
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+            ))}
+            {postingTimes.length < 12 && (
+              <button
+                type="button"
+                onClick={() => setPostingTimes([...postingTimes, '12:00'])}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                + Adicionar Horario
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            Min. 1, max. 12 horarios. Distribuicao automatica ocorre 5 min antes de cada horario.
+          </p>
         </div>
       </div>
 

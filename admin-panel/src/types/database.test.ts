@@ -12,6 +12,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'active',
         created_at: '2024-01-01T00:00:00Z',
       };
@@ -37,6 +39,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'creating',
         created_at: '2024-01-01',
       };
@@ -53,6 +57,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'active',
         created_at: '2024-01-01',
       };
@@ -69,6 +75,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'paused',
         created_at: '2024-01-01',
       };
@@ -85,6 +93,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'inactive',
         created_at: '2024-01-01',
       };
@@ -101,6 +111,8 @@ describe('Database Types', () => {
         mp_plan_id: null,
         render_service_id: null,
         checkout_url: null,
+        posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
+        post_now_requested_at: null,
         status: 'failed',
         created_at: '2024-01-01',
       };
@@ -117,6 +129,8 @@ describe('Database Types', () => {
         mp_plan_id: 'mp-plan-001',
         render_service_id: 'srv-abc123',
         checkout_url: 'https://checkout.example.com',
+        posting_schedule: { enabled: false, times: ['09:00', '14:00'] },
+        post_now_requested_at: '2026-02-10T12:00:00Z',
         status: 'active',
         created_at: '2024-06-15T10:30:00Z',
       };
