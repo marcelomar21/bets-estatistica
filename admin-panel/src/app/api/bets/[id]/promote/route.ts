@@ -54,6 +54,14 @@ export const POST = createApiHandler(
       );
     }
 
+    // Must have deep_link to be promoted — without link the bet can never be posted
+    if (!bet.deep_link) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Aposta nao pode ser promovida sem link. Adicione o link primeiro.' } },
+        { status: 400 },
+      );
+    }
+
     // Same as bot's promoverAposta: set elegibilidade + promovida_manual
     const { error: updateError } = await supabase
       .from('suggested_bets')

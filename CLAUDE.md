@@ -56,3 +56,13 @@ claude mcp add playwright npx @playwright/mcp@latest
 ```
 
 Permite que o Claude Code abra o navegador, navegue pela aplicacao, clique em botoes e verifique resultados visualmente.
+
+### Rigor nos testes E2E (OBRIGATORIO)
+
+Ao testar fluxos via Playwright, ser **extremamente criterioso**:
+
+- **Validar o resultado final**, nao apenas a acao intermediaria. Se o fluxo envolve enviar algo ao Telegram, abrir o Telegram Web e verificar que a mensagem chegou corretamente.
+- **Questionar mensagens de sucesso**: se o sistema diz "promovido com sucesso" mas o item nao aparece onde deveria, isso e um bug — reportar imediatamente.
+- **Testar fluxos completos end-to-end**: nao parar no meio. Se o teste e "promover e postar", ir ate o final e verificar no destino (Telegram, banco, etc).
+- **Validar pre-condicoes**: antes de executar uma acao (ex: promover), verificar se a aposta tem os dados necessarios (link, odds). Se nao tem, o sistema deveria bloquear — se nao bloqueia, e bug.
+- **Nao ignorar inconsistencias**: se algo parece errado (contadores nao batem, item sumiu, mensagem no lugar errado), investigar e reportar.
