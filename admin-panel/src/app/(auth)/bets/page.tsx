@@ -79,8 +79,11 @@ export default function BetsPage() {
     const params = new URLSearchParams();
     params.set('page', String(page));
     params.set('per_page', '50');
-    params.set('sort_by', sortBy);
-    params.set('sort_dir', sortDir);
+
+    // hit_rate is computed client-side, use default server sort
+    const isClientSort = sortBy === 'hit_rate';
+    params.set('sort_by', isClientSort ? 'kickoff_time' : sortBy);
+    params.set('sort_dir', isClientSort ? 'desc' : sortDir);
 
     if (filters.status) params.set('status', filters.status);
     if (filters.elegibilidade) params.set('elegibilidade', filters.elegibilidade);
@@ -101,12 +104,20 @@ export default function BetsPage() {
         return;
       }
 
-      setBets(json.data.items);
+      let items = json.data.items;
+
+      // Client-side sort for hit_rate (computed field, not in DB)
+      if (isClientSort) {
+        items = [...items].sort((a: SuggestedBetListItem, b: SuggestedBetListItem) => {
+          const rateA = a.hit_rate?.rate ?? -1;
+          const rateB = b.hit_rate?.rate ?? -1;
+          return sortDir === 'asc' ? rateA - rateB : rateB - rateA;
+        });
+      }
+
+      setBets(items);
       setPagination(json.data.pagination);
       setCounters(json.data.counters);
-
-      // Detect role from response (if group_admin, items will have same group_id)
-      // Role is inferred from session, but we check if groups filter is available
     } catch {
       setError('Erro de conexao ao carregar apostas');
     } finally {
