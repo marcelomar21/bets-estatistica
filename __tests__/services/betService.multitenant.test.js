@@ -116,6 +116,39 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
       const otherGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val !== 'group-uuid-123');
       expect(otherGroupFilters).toHaveLength(0);
     });
+
+    test('groupIdParam explícito deve sobrescrever config.membership.groupId', async () => {
+      mockConfig.membership.groupId = 'group-config';
+      const explicitGroupId = 'group-param-override';
+
+      const eqCalls = [];
+
+      supabase.from.mockImplementation(() => {
+        const chain = {};
+        chain.select = jest.fn().mockReturnValue(chain);
+        chain.eq = jest.fn().mockImplementation((col, val) => {
+          eqCalls.push({ col, val });
+          return chain;
+        });
+        chain.gte = jest.fn().mockReturnValue(chain);
+        chain.lte = jest.fn().mockReturnValue(chain);
+        chain.not = jest.fn().mockReturnValue(chain);
+        chain.in = jest.fn().mockReturnValue(chain);
+        chain.order = jest.fn().mockReturnValue(chain);
+        chain.limit = jest.fn().mockResolvedValue({ data: [], error: null });
+        chain.then = (resolve) => resolve({ data: [], error: null });
+        chain.catch = () => chain;
+        return chain;
+      });
+
+      await getFilaStatus(explicitGroupId);
+
+      const explicitGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === explicitGroupId);
+      expect(explicitGroupFilters.length).toBeGreaterThanOrEqual(3);
+
+      const configGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-config');
+      expect(configGroupFilters).toHaveLength(0);
+    });
   });
 
   // ===========================
@@ -148,6 +181,35 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
       await getFilaStatus();
 
       // Verify no .eq('group_id', ...) was called
+      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id');
+      expect(groupIdFilters).toHaveLength(0);
+    });
+
+    test('groupIdParam=null explícito desabilita filtro mesmo com config.membership.groupId preenchido', async () => {
+      mockConfig.membership.groupId = 'group-from-config';
+
+      const eqCalls = [];
+
+      supabase.from.mockImplementation(() => {
+        const chain = {};
+        chain.select = jest.fn().mockReturnValue(chain);
+        chain.eq = jest.fn().mockImplementation((col, val) => {
+          eqCalls.push({ col, val });
+          return chain;
+        });
+        chain.gte = jest.fn().mockReturnValue(chain);
+        chain.lte = jest.fn().mockReturnValue(chain);
+        chain.not = jest.fn().mockReturnValue(chain);
+        chain.in = jest.fn().mockReturnValue(chain);
+        chain.order = jest.fn().mockReturnValue(chain);
+        chain.limit = jest.fn().mockResolvedValue({ data: [], error: null });
+        chain.then = (resolve) => resolve({ data: [], error: null });
+        chain.catch = () => chain;
+        return chain;
+      });
+
+      await getFilaStatus(null);
+
       const groupIdFilters = eqCalls.filter(c => c.col === 'group_id');
       expect(groupIdFilters).toHaveLength(0);
     });

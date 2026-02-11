@@ -25,6 +25,10 @@ const pendingConfirmations = new Map();
 // Confirmation timeout in ms (15 minutes)
 const CONFIRMATION_TIMEOUT_MS = 15 * 60 * 1000;
 
+function getLogGroupId() {
+  return config.membership.groupId || 'single-tenant';
+}
+
 /**
  * Check if there's already a pending confirmation
  * Prevents multiple /postar from creating duplicate posts
@@ -54,7 +58,7 @@ function cancelAllPendingConfirmations() {
   for (const [confirmationId, data] of pendingConfirmations.entries()) {
     clearTimeout(data.timeoutId);
     data.resolve({ confirmed: false, autoPosted: false, cancelled: true });
-    logger.info('Cancelled pending confirmation', { confirmationId });
+    logger.info('Cancelled pending confirmation', { confirmationId, groupId: getLogGroupId() });
   }
   pendingConfirmations.clear();
   return count;
@@ -145,7 +149,7 @@ async function formatBetMessage(bet, template) {
       if (copyResult.success && copyResult.data?.copy) {
         parts.push('');
         parts.push(copyResult.data.copy);
-        logger.debug('Using extracted data bullets', { betId: bet.id });
+        logger.debug('Using extracted data bullets', { betId: bet.id, groupId: getLogGroupId() });
       } else {
         // Fallback: usar reasoning direto (truncado)
         const truncated = bet.reasoning.length > 200
@@ -155,7 +159,7 @@ async function formatBetMessage(bet, template) {
         parts.push(`_${truncated}_`);
       }
     } catch (err) {
-      logger.warn('Failed to extract data bullets', { betId: bet.id, error: err.message });
+      logger.warn('Failed to extract data bullets', { betId: bet.id, groupId: getLogGroupId(), error: err.message });
       const truncated = bet.reasoning.length > 200
         ? bet.reasoning.substring(0, 197) + '...'
         : bet.reasoning;
@@ -262,7 +266,7 @@ async function requestConfirmation(ativas, novas, period) {
   );
 
   if (!sendResult || !sendResult.message_id) {
-    logger.error('Failed to send confirmation request');
+    logger.error('Failed to send confirmation request', { groupId: getLogGroupId() });
     // If we can't ask for confirmation, proceed with posting
     return { confirmed: true, autoPosted: true };
   }
@@ -274,7 +278,7 @@ async function requestConfirmation(ativas, novas, period) {
     const timeoutId = setTimeout(() => {
       // Auto-post after timeout
       pendingConfirmations.delete(confirmationId);
-      logger.info('Post confirmation auto-approved (timeout)', { confirmationId });
+      logger.info('Post confirmation auto-approved (timeout)', { confirmationId, groupId: getLogGroupId() });
 
       // Update message to show it was auto-posted
       bot.editMessageText(
@@ -310,7 +314,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
   const pending = pendingConfirmations.get(confirmationId);
 
   if (!pending) {
-    logger.warn('Post confirmation not found or expired', { confirmationId });
+    logger.warn('Post confirmation not found or expired', { confirmationId, groupId: getLogGroupId() });
     return false;
   }
 
@@ -322,7 +326,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
   const user = callbackQuery.from;
 
   if (action === 'confirm') {
-    logger.info('Post confirmed by admin', { confirmationId, userId: user.id, username: user.username });
+    logger.info('Post confirmed by admin', { confirmationId, userId: user.id, username: user.username, groupId: getLogGroupId() });
 
     // Update message
     await bot.editMessageText(
@@ -336,7 +340,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
 
     pending.resolve({ confirmed: true, autoPosted: false });
   } else {
-    logger.info('Post cancelled by admin', { confirmationId, userId: user.id, username: user.username });
+    logger.info('Post cancelled by admin', { confirmationId, userId: user.id, username: user.username, groupId: getLogGroupId() });
 
     // Update message
     await bot.editMessageText(
@@ -398,7 +402,7 @@ async function runPostBets(skipConfirmation = false) {
   const filaResult = await getFilaStatus(groupId);
 
   if (!filaResult.success) {
-    logger.error('Failed to get fila status', { error: filaResult.error?.message });
+    logger.error('[postBets] Failed to get fila status', { groupId, error: filaResult.error?.message });
 
     // Warn failure (Story 14.3 AC5)
     await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`);
@@ -408,15 +412,13 @@ async function runPostBets(skipConfirmation = false) {
 
   const { ativas, novas } = filaResult.data;
 
-  logger.info('Fila status', {
-    ativas: ativas.length,
-    novas: novas.length,
-    total: ativas.length + novas.length
-  });
+  // Story 5.4 AC4/AC5: Log pending ready bets count for this group
+  const readyCount = novas.filter((b) => validateBetForPosting(b).valid).length;
+  logger.info('[postBets] Pending ready bets for group', { groupId, readyCount, ativas: ativas.length, novas: novas.length, total: ativas.length + novas.length });
 
   // If nothing to post, skip confirmation
   if (ativas.length === 0 && novas.length === 0) {
-    logger.info('No bets to post, skipping confirmation');
+    logger.info('[postBets] No bets to post, skipping', { groupId });
     return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
   }
 
@@ -425,12 +427,12 @@ async function runPostBets(skipConfirmation = false) {
     const confirmation = await requestConfirmation(ativas, novas, period);
 
     if (!confirmation.confirmed) {
-      logger.info('Post bets cancelled by admin');
+      logger.info('[postBets] Post bets cancelled by admin', { groupId });
       return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: true };
     }
 
     if (confirmation.autoPosted) {
-      logger.info('Post bets auto-confirmed after timeout');
+      logger.info('[postBets] Post bets auto-confirmed after timeout', { groupId });
     }
   }
 
@@ -444,7 +446,8 @@ async function runPostBets(skipConfirmation = false) {
 
   // Step 3: Repostar apostas ATIVAS (já postadas, continuam na fila)
   if (ativas.length > 0) {
-    logger.info('Reposting active bets', {
+    logger.info('[postBets] Reposting active bets', {
+      groupId,
       count: ativas.length,
       bets: ativas.map(b => ({ id: b.id, match: `${b.homeTeamName} x ${b.awayTeamName}` }))
     });
@@ -453,7 +456,7 @@ async function runPostBets(skipConfirmation = false) {
       // Validate before posting
       const validation = validateBetForPosting(bet);
       if (!validation.valid) {
-        logger.warn('Active bet failed validation', { betId: bet.id, reason: validation.reason });
+        logger.warn('[postBets] Active bet failed validation', { betId: bet.id, groupId, reason: validation.reason });
         repostFailed++;
         continue;
       }
@@ -468,7 +471,7 @@ async function runPostBets(skipConfirmation = false) {
         // Registrar repost no histórico (não muda status, já é posted)
         await registrarPostagem(bet.id);
         reposted++;
-        logger.info('[postBets] Bet reposted successfully', { betId: bet.id, messageId: sendResult.data.messageId, groupId: groupId || 'single-tenant' });
+        logger.info('[postBets] Bet reposted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), telegramMessageId: sendResult.data.messageId });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({
@@ -480,7 +483,7 @@ async function runPostBets(skipConfirmation = false) {
           type: 'repost',
         });
       } else {
-        logger.error('Failed to repost bet', { betId: bet.id, error: sendResult.error?.message });
+        logger.error('[postBets] Failed to repost bet', { betId: bet.id, groupId, error: sendResult.error?.message });
         repostFailed++;
       }
     }
@@ -488,7 +491,8 @@ async function runPostBets(skipConfirmation = false) {
 
   // Step 4: Postar NOVAS apostas (preenchendo slots disponíveis)
   if (novas.length > 0) {
-    logger.info('Posting new bets', {
+    logger.info('[postBets] Posting new bets', {
+      groupId,
       count: novas.length,
       bets: novas.map(b => ({ id: b.id, match: `${b.homeTeamName} x ${b.awayTeamName}` }))
     });
@@ -497,7 +501,7 @@ async function runPostBets(skipConfirmation = false) {
       // Validate before posting
       const validation = validateBetForPosting(bet);
       if (!validation.valid) {
-        logger.warn('New bet failed validation', { betId: bet.id, reason: validation.reason });
+        logger.warn('[postBets] New bet failed validation', { betId: bet.id, groupId, reason: validation.reason });
         skipped++;
         continue;
       }
@@ -514,7 +518,7 @@ async function runPostBets(skipConfirmation = false) {
         // Registrar postagem no histórico
         await registrarPostagem(bet.id);
         posted++;
-        logger.info('[postBets] Posting bet for group', { betId: bet.id, messageId: sendResult.data.messageId, groupId: groupId || 'single-tenant' });
+        logger.info('[postBets] Bet posted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), telegramMessageId: sendResult.data.messageId });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({
@@ -526,13 +530,14 @@ async function runPostBets(skipConfirmation = false) {
           type: 'new',
         });
       } else {
-        logger.error('Failed to post new bet', { betId: bet.id, error: sendResult.error?.message });
+        logger.error('[postBets] Failed to post new bet', { betId: bet.id, groupId, error: sendResult.error?.message });
         skipped++;
       }
     }
   }
 
-  logger.info('Post bets job complete', {
+  logger.info('[postBets] Post bets job complete', {
+    groupId,
     reposted,
     repostFailed,
     newPosted: posted,
@@ -558,10 +563,10 @@ async function runPostBets(skipConfirmation = false) {
     }
 
     await sendPostWarn(period, postedBetsArray, upcomingBets, pendingActions);
-    logger.info('Post warn sent successfully');
+    logger.info('[postBets] Post warn sent successfully', { groupId });
   } catch (warnErr) {
     // Warn failure should not fail the job
-    logger.warn('Failed to send post warn', { error: warnErr.message });
+    logger.warn('[postBets] Failed to send post warn', { groupId, error: warnErr.message });
   }
 
   return {
