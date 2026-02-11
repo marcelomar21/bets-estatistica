@@ -27,7 +27,7 @@ const updateGroupSchema = z.object({
   posting_schedule: postingScheduleSchema.optional(),
 });
 
-const GROUP_SELECT_FIELDS = 'id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, posting_schedule, created_at';
+const GROUP_SELECT_FIELDS = 'id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, mp_plan_id, render_service_id, posting_schedule, created_at';
 
 export const GET = createApiHandler(
   async (_req: NextRequest, context, routeContext) => {
