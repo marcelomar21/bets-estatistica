@@ -1,5 +1,5 @@
 # CI/CD Pipeline - bets-estatistica
-# Roda lint e testes em cada push/PR, deploy para Render apenas em push para main
+# Roda lint e testes em cada push/PR, deploy para Render e Vercel apenas em push para main
 
 name: CI/CD
 
@@ -90,3 +90,83 @@ jobs:
           else
             echo "::warning::Deploy request returned HTTP $response"
           fi
+
+  deploy-admin-panel:
+    name: Deploy Admin Panel to Vercel
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_CNoiSynMmrxky1dmtI6DPRdY
+      VERCEL_PROJECT_ID: prj_6C4cxKzY2J5Ub2ncXiCTzGMoe8Ls
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Vercel token configured
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret not configured"
+            echo "Configure the secret in GitHub: Settings → Secrets → Actions → New secret"
+            exit 1
+          fi
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+        working-directory: admin-panel
+
+      - name: Build project
+        run: vercel build --prod --token=$VERCEL_TOKEN
+        working-directory: admin-panel
+
+      - name: Deploy to Vercel
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          echo "::notice::Admin Panel deployed to: $url"
+        working-directory: admin-panel
+
+  deploy-landing-page:
+    name: Deploy Landing Page to Vercel
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_CNoiSynMmrxky1dmtI6DPRdY
+      VERCEL_PROJECT_ID: prj_GYhImveHeqV6arpnfzECAwDU6qKA
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Vercel token configured
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret not configured"
+            echo "Configure the secret in GitHub: Settings → Secrets → Actions → New secret"
+            exit 1
+          fi
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+        working-directory: landing-page
+
+      - name: Build project
+        run: vercel build --prod --token=$VERCEL_TOKEN
+        working-directory: landing-page
+
+      - name: Deploy to Vercel
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          echo "::notice::Landing Page deployed to: $url"
+        working-directory: landing-page
