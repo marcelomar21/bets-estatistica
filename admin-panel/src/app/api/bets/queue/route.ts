@@ -95,7 +95,8 @@ export const GET = createApiHandler(
         totalQueue: queueBets.length,
         nextPostTime,
         postingSchedule,
-        bets: queueBets.map(b => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        bets: queueBets.map((b: any) => ({
           id: b.id,
           bet_market: b.bet_market,
           bet_pick: b.bet_pick,
