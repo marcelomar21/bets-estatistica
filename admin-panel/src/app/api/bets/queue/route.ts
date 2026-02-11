@@ -57,6 +57,7 @@ export const GET = createApiHandler(
           odds,
           deep_link,
           promovida_manual,
+          elegibilidade,
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -65,7 +66,7 @@ export const GET = createApiHandler(
           )
         `)
         .eq('group_id', effectiveGroupId)
-        .eq('elegibilidade', 'elegivel')
+        .in('elegibilidade', ['elegivel', 'removida'])
         .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
         .gt('league_matches.kickoff_time', new Date().toISOString())
         .order('league_matches(kickoff_time)', { ascending: true }),
@@ -106,6 +107,7 @@ export const GET = createApiHandler(
           has_link: !!b.deep_link,
           deep_link: b.deep_link,
           promovida_manual: b.promovida_manual ?? false,
+          elegibilidade: b.elegibilidade ?? 'elegivel',
           hit_rate: enrichWithHitRate(b, pairStats),
           match: {
             home_team_name: b.league_matches.home_team_name,

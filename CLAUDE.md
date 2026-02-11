@@ -72,3 +72,65 @@ Ao testar fluxos via Playwright, ser **extremamente criterioso**:
 - **Testar fluxos completos end-to-end**: nao parar no meio. Se o teste e "promover e postar", ir ate o final e verificar no destino (Telegram, banco, etc).
 - **Validar pre-condicoes**: antes de executar uma acao (ex: promover), verificar se a aposta tem os dados necessarios (link, odds). Se nao tem, o sistema deveria bloquear — se nao bloqueia, e bug.
 - **Nao ignorar inconsistencias**: se algo parece errado (contadores nao batem, item sumiu, mensagem no lugar errado), investigar e reportar.
+
+## Telegram — Debug de mensagens
+
+### Servicos no Render
+
+| Service ID | Nome | Funcao |
+|---|---|---|
+| `srv-d6678u1r0fns73ciknn0` | bot-osmar-palpites | Bot do grupo Osmar Palpites |
+| `srv-d5hp23a4d50c7397o1q0` | bets-bot | Bot do grupo Guru da Bet |
+| `srv-d5hotp24d50c7397lcf0` | bets-bot | Webhook de pagamento |
+| `srv-d5v4u8npm1nc73cao690` | clawdin-api | API do Clawdin |
+| `srv-d5m5cmje5dus73e8ds10` | bets-webhook | Webhook de apostas |
+
+**IMPORTANTE:** NAO suspender os servicos `bets-bot` — eles servem grupos diferentes.
+
+### Passo 1: Obter RENDER_API_KEY (esta no Vercel)
+
+```bash
+cd admin-panel && npx vercel env pull .env.render --environment production --yes
+```
+
+### Passo 2: Obter BOT_TOKEN do Render
+
+```bash
+source admin-panel/.env.render && \
+curl -s "https://api.render.com/v1/services/srv-d6678u1r0fns73ciknn0/env-vars" \
+  -H "Authorization: Bearer $RENDER_API_KEY" | \
+  python3 -c "import sys,json; [print(v['envVar']['value']) for v in json.load(sys.stdin) if v['envVar']['key']=='TELEGRAM_BOT_TOKEN']"
+```
+
+### Passo 3: Diagnosticar grupo/chat no Telegram
+
+```bash
+# Verificar se o bot tem acesso a um grupo
+curl -s "https://api.telegram.org/bot<TOKEN>/getChat?chat_id=<CHAT_ID>" | python3 -m json.tool
+
+# Verificar webhook ativo
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo" | python3 -m json.tool
+```
+
+### Passo 4: Consultar execucoes de jobs (Supabase)
+
+```bash
+# Ultimas 5 execucoes de post manual
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/job_executions?order=created_at.desc&limit=5&job_name=eq.post-bets-manual" \
+  -H "apikey: <SUPABASE_SERVICE_KEY>" \
+  -H "Authorization: Bearer <SUPABASE_SERVICE_KEY>" | python3 -m json.tool
+
+# Ultimas 5 execucoes de distribute-bets
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/job_executions?order=created_at.desc&limit=5&job_name=eq.distribute-bets" \
+  -H "apikey: <SUPABASE_SERVICE_KEY>" \
+  -H "Authorization: Bearer <SUPABASE_SERVICE_KEY>" | python3 -m json.tool
+```
+
+O SUPABASE_SERVICE_KEY esta em `admin-panel/.env.local` (variavel `SUPABASE_SERVICE_KEY`).
+
+### IDs dos grupos
+
+| Grupo | Chat ID |
+|---|---|
+| Osmar Palpites (admin) | `-1003363567204` |
+| Osmar Palpites (publico) | `-1003659711655` |
