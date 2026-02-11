@@ -21,7 +21,6 @@ const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
-const { runDistributeBets } = require('./jobs/distributeBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
 const { supabase } = require('../lib/supabase');
@@ -189,41 +188,62 @@ async function setupWebhook() {
 
 /**
  * Setup internal scheduler (node-cron)
- * This runs inside the web service to avoid paid cron jobs
+ * Story 5.5: Posting/distribution jobs are now DYNAMIC — managed by server.scheduler.js
+ * Only non-posting jobs remain hardcoded here.
  */
-function setupScheduler() {
+async function setupScheduler() {
   const cron = require('node-cron');
   const { runEnrichment } = require('./jobs/enrichOdds');
-  // DISABLED: Request links chato no admin
-  // const { runRequestLinks } = require('./jobs/requestLinks');
-  const { runPostBets } = require('./jobs/postBets');
   const { runHealthCheck } = require('./jobs/healthCheck');
   const { runTrackResults } = require('./jobs/trackResults');
-  // DISABLED: Reminders de links são chatos no admin
-  // const { runReminders } = require('./jobs/reminders');
   const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
-  // DISABLED: Trial reminders não fazem sentido no fluxo MP (usuário já assinou)
-  // const { runTrialReminders } = require('./jobs/membership/trial-reminders');
   const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
   const { runKickExpired } = require('./jobs/membership/kick-expired');
   const { runReconciliation } = require('./jobs/membership/reconciliation');
   const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
   const { withExecutionLogging, cleanupStuckJobs } = require('./services/jobExecutionService');
-
-  async function runDistributeBetsWithFailureGuard() {
-    return withExecutionLogging('distribute-bets', async () => {
-      const result = await runDistributeBets();
-      if (!result?.success) {
-        throw new Error(result?.error?.message || 'runDistributeBets returned success=false');
-      }
-      return result;
-    });
-  }
+  const {
+    loadPostingSchedule,
+    setupDynamicScheduler,
+    reloadPostingSchedule,
+    checkPostNow,
+  } = require('./server.scheduler');
 
   const TZ = 'America/Sao_Paulo';
 
-  // Track results - a cada hora entre 13h e 23h (horário São Paulo)
-  // Avalia apostas de jogos finalizados e envia resumo no admin
+  // =========================================================
+  // Story 5.5: Dynamic posting scheduler (replaces hardcoded)
+  // =========================================================
+  if (config.membership.groupId) {
+    const schedule = await loadPostingSchedule();
+    setupDynamicScheduler(schedule);
+
+    // Reload posting schedule every 5 minutes
+    setInterval(async () => {
+      try {
+        await reloadPostingSchedule();
+      } catch (err) {
+        logger.error('[scheduler] reloadPostingSchedule interval error', { error: err.message });
+      }
+    }, 5 * 60 * 1000);
+    logger.info('[scheduler] Posting schedule reload interval started (every 5min)');
+
+    // Story 5.5: Post-now polling every 30 seconds
+    setInterval(async () => {
+      try {
+        await checkPostNow();
+      } catch (err) {
+        logger.error('[scheduler] checkPostNow interval error', { error: err.message });
+      }
+    }, 30000);
+    logger.info('[scheduler] Post-now polling started (every 30s)');
+  }
+
+  // =========================================================
+  // Non-posting jobs (UNCHANGED — remain hardcoded)
+  // =========================================================
+
+  // Track results - every hour between 13h and 23h (São Paulo time)
   cron.schedule('0 13-23 * * *', async () => {
     logger.info('[scheduler] Running track-results job');
     try {
@@ -239,108 +259,20 @@ function setupScheduler() {
     logger.info('[scheduler] Running morning-prep jobs');
     try {
       await withExecutionLogging('enrich-odds', runEnrichment);
-      // DISABLED: Request links chato no admin
-      // await withExecutionLogging('request-links', () => runRequestLinks('morning'));
       logger.info('[scheduler] morning-prep complete');
     } catch (err) {
       logger.error('[scheduler] morning-prep failed', { error: err.message });
     }
   }, { timezone: TZ });
 
-  // Link reminders - 09:00 São Paulo
-  cron.schedule('0 9 * * *', async () => {
-    // DISABLED: Trial reminders não fazem sentido no fluxo MP (usuário já assinou)
-    // logger.info('[scheduler] Running trial-reminders job');
-    // try {
-    //   await withExecutionLogging('trial-reminders', runTrialReminders);
-    //   logger.info('[scheduler] trial-reminders complete');
-    // } catch (err) {
-    //   logger.error('[scheduler] trial-reminders failed', { error: err.message });
-    // }
-
-    // DISABLED: Link reminders são chatos no admin
-    // logger.info('[scheduler] Running reminders job');
-    // try {
-    //   await withExecutionLogging('reminders', runReminders);
-    //   logger.info('[scheduler] reminders complete');
-    // } catch (err) {
-    //   logger.error('[scheduler] reminders failed', { error: err.message });
-    // }
-  }, { timezone: TZ });
-
-  // Story 5.4: Distribute bets before posting - 09:55 São Paulo
-  cron.schedule('55 9 * * *', async () => {
-    logger.info('[scheduler] Running distribute-bets job (pre-morning)');
-    try {
-      await runDistributeBetsWithFailureGuard();
-      logger.info('[scheduler] distribute-bets (pre-morning) complete');
-    } catch (err) {
-      logger.error('[scheduler] distribute-bets (pre-morning) failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Morning post + Renewal reminders - 10:00 São Paulo
+  // Story 5.5: Renewal reminders SEPARATED from posting — stays hardcoded at 10:00
   cron.schedule('0 10 * * *', async () => {
-    // Story 16.5: Renewal reminders first
     logger.info('[scheduler] Running renewal-reminders job');
     try {
       await withExecutionLogging('renewal-reminders', runRenewalReminders);
       logger.info('[scheduler] renewal-reminders complete');
     } catch (err) {
       logger.error('[scheduler] renewal-reminders failed', { error: err.message });
-    }
-
-    // Story 5.4: Fix parameter - skipConfirmation=true for scheduled posts
-    logger.info('[scheduler] Running post-bets job (morning)');
-    try {
-      await withExecutionLogging('post-bets', () => runPostBets(true));
-      logger.info('[scheduler] post-bets (morning) complete');
-    } catch (err) {
-      logger.error('[scheduler] post-bets (morning) failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Story 5.4: Distribute bets before posting - 14:55 São Paulo
-  cron.schedule('55 14 * * *', async () => {
-    logger.info('[scheduler] Running distribute-bets job (pre-afternoon)');
-    try {
-      await runDistributeBetsWithFailureGuard();
-      logger.info('[scheduler] distribute-bets (pre-afternoon) complete');
-    } catch (err) {
-      logger.error('[scheduler] distribute-bets (pre-afternoon) failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Story 5.4: Afternoon post - 15:00 São Paulo
-  cron.schedule('0 15 * * *', async () => {
-    logger.info('[scheduler] Running post-bets job (afternoon)');
-    try {
-      await withExecutionLogging('post-bets', () => runPostBets(true));
-      logger.info('[scheduler] post-bets (afternoon) complete');
-    } catch (err) {
-      logger.error('[scheduler] post-bets (afternoon) failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Story 5.4: Distribute bets before posting - 21:55 São Paulo
-  cron.schedule('55 21 * * *', async () => {
-    logger.info('[scheduler] Running distribute-bets job (pre-night)');
-    try {
-      await runDistributeBetsWithFailureGuard();
-      logger.info('[scheduler] distribute-bets (pre-night) complete');
-    } catch (err) {
-      logger.error('[scheduler] distribute-bets (pre-night) failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Story 5.4: Night post - 22:00 São Paulo
-  cron.schedule('0 22 * * *', async () => {
-    logger.info('[scheduler] Running post-bets job (night)');
-    try {
-      await withExecutionLogging('post-bets', () => runPostBets(true));
-      logger.info('[scheduler] post-bets (night) complete');
-    } catch (err) {
-      logger.error('[scheduler] post-bets (night) failed', { error: err.message });
     }
   }, { timezone: TZ });
 
@@ -355,7 +287,6 @@ function setupScheduler() {
   }, { timezone: TZ });
 
   // Webhook processing - every 30 seconds (Story 16.3)
-  // Using setInterval instead of cron - node-cron doesn't support sub-minute intervals
   setInterval(async () => {
     try {
       await runProcessWebhooks();
@@ -412,22 +343,19 @@ function setupScheduler() {
   }, { timezone: TZ });
 
   logger.info('Internal scheduler started');
-  console.log('⏰ Scheduler jobs:');
+  console.log('⏰ Scheduler jobs (non-posting):');
   console.log('   00:01 - Kick expired members (membership)');
   console.log('   00:30 - Check affiliate expiration (membership)');
-  console.log('   02:00 - Track results');
   console.log('   03:00 - Cakto reconciliation (membership)');
-  console.log('   08:00 - Enrich odds + Request links');
-  console.log('   09:00 - Trial reminders + Link reminders');
-  console.log('   09:55 - Distribute bets (pre-morning)');
-  console.log('   10:00 - Renewal reminders + Post bets (morning)');
-  console.log('   14:55 - Distribute bets (pre-afternoon)');
-  console.log('   15:00 - Post bets (afternoon)');
-  console.log('   21:55 - Distribute bets (pre-night)');
-  console.log('   22:00 - Post bets (night)');
+  console.log('   08:00 - Enrich odds');
+  console.log('   10:00 - Renewal reminders');
+  console.log('   13-23 - Track results (hourly)');
   console.log('   */5   - Health check');
   console.log('   */30s - Process webhooks (membership)');
+  console.log('   */30s - Post-now polling (story 5.5)');
+  console.log('   */5m  - Posting schedule reload (story 5.5)');
   console.log('   */1h  - Cleanup stuck jobs');
+  console.log('   [dynamic] - Posting + distribution (story 5.5)');
 }
 
 /**
@@ -539,8 +467,8 @@ async function start() {
     console.log('   Render provides RENDER_EXTERNAL_URL automatically\n');
   }
 
-  // Setup internal scheduler
-  setupScheduler();
+  // Setup internal scheduler (async for dynamic scheduler init)
+  await setupScheduler();
 
   app.listen(PORT, () => {
     console.log(`\n✅ Server running on port ${PORT}`);

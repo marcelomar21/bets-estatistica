@@ -16,6 +16,7 @@ const baseGroup: GroupListItem = {
   telegram_group_id: null,
   telegram_admin_group_id: null,
   checkout_url: null,
+  posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
   status: 'active',
   created_at: '2026-01-15T10:00:00Z',
 };

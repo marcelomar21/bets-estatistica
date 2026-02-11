@@ -486,7 +486,8 @@ describe('GET /api/groups/[groupId]', () => {
     expect(body.error.code).toBe('DB_ERROR');
   });
 
-  it('returns 403 for group_admin', async () => {
+  // Story 5.5: group_admin can now GET their own group
+  it('allows group_admin to GET their own group', async () => {
     const context = createMockContext('group_admin');
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -496,6 +497,24 @@ describe('GET /api/groups/[groupId]', () => {
       'http://localhost/api/groups/group-uuid-1',
     );
     const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await GET(req, routeCtx);
+
+    // group_admin accessing their own group (groupFilter matches groupId)
+    // Result depends on DB mock, but should not be 403
+    expect(response.status).not.toBe(403);
+  });
+
+  it('returns 403 for group_admin accessing another group', async () => {
+    const context = createMockContext('group_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest(
+      'GET',
+      'http://localhost/api/groups/other-group-uuid',
+    );
+    const routeCtx = createRouteContext({ groupId: 'other-group-uuid' });
 
     const response = await GET(req, routeCtx);
     const body = await response.json();
@@ -609,8 +628,13 @@ describe('PUT /api/groups/[groupId]', () => {
     expect(body.error.code).toBe('DB_ERROR');
   });
 
-  it('returns 403 for group_admin', async () => {
-    const context = createMockContext('group_admin');
+  // Story 5.5: group_admin can now update their own group
+  it('allows group_admin to update their own group', async () => {
+    const qb = createMockPutQueryBuilder({
+      currentGroupData: { id: 'group-uuid-1', name: 'Old Name', status: 'active', telegram_group_id: null, telegram_admin_group_id: null, posting_schedule: null },
+      updatedGroupData: { id: 'group-uuid-1', name: 'New Name', status: 'active', telegram_group_id: null, telegram_admin_group_id: null, posting_schedule: null, checkout_url: null, created_at: '2026-01-01' },
+    });
+    const context = createMockContextWithSupabase('group_admin', { from: qb.from });
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { PUT } = await import('@/app/api/groups/[groupId]/route');
@@ -620,6 +644,25 @@ describe('PUT /api/groups/[groupId]', () => {
       { name: 'New Name' },
     );
     const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await PUT(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('forbids group_admin from updating another group', async () => {
+    const context = createMockContext('group_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { PUT } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest(
+      'PUT',
+      'http://localhost/api/groups/other-group-uuid',
+      { name: 'New Name' },
+    );
+    const routeCtx = createRouteContext({ groupId: 'other-group-uuid' });
 
     const response = await PUT(req, routeCtx);
     const body = await response.json();
@@ -808,8 +851,13 @@ describe('PUT /api/groups/[groupId]', () => {
     consoleWarnSpy.mockRestore();
   });
 
-  it('uses createApiHandler with allowedRoles super_admin (enforcement)', async () => {
-    const context = createMockContext('group_admin');
+  // Story 5.5: group_admin can now update their OWN group (posting_schedule, etc.)
+  it('allows group_admin to update their own group', async () => {
+    const qb = createMockPutQueryBuilder({
+      currentGroupData: { id: 'group-uuid-1', name: 'Old Name', status: 'active', telegram_group_id: null, telegram_admin_group_id: null, posting_schedule: null },
+      updatedGroupData: { id: 'group-uuid-1', name: 'Try Update', status: 'active', telegram_group_id: null, telegram_admin_group_id: null, posting_schedule: null, checkout_url: null, created_at: '2026-01-01' },
+    });
+    const context = createMockContextWithSupabase('group_admin', { from: qb.from });
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { PUT } = await import('@/app/api/groups/[groupId]/route');
@@ -819,6 +867,25 @@ describe('PUT /api/groups/[groupId]', () => {
       { name: 'Try Update' },
     );
     const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await PUT(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('forbids group_admin from updating another group', async () => {
+    const context = createMockContext('group_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { PUT } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest(
+      'PUT',
+      'http://localhost/api/groups/other-group-uuid',
+      { name: 'Try Update' },
+    );
+    const routeCtx = createRouteContext({ groupId: 'other-group-uuid' });
 
     const response = await PUT(req, routeCtx);
     const body = await response.json();

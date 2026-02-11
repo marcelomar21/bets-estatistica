@@ -14,6 +14,7 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
+const { supabase } = require('../../lib/supabase');
 const { sendToPublic, sendToAdmin, getBot } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
@@ -27,6 +28,40 @@ const CONFIRMATION_TIMEOUT_MS = 15 * 60 * 1000;
 
 function getLogGroupId() {
   return config.membership.groupId || 'single-tenant';
+}
+
+async function loadPostingTimesForGroup(groupId) {
+  if (!groupId) {
+    return undefined;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('groups')
+      .select('posting_schedule')
+      .eq('id', groupId)
+      .single();
+
+    if (error) {
+      logger.warn('[postBets] Failed to load posting_schedule for nextPost calculation', {
+        groupId,
+        error: error.message,
+      });
+      return undefined;
+    }
+
+    const times = data?.posting_schedule?.times;
+    if (Array.isArray(times) && times.length > 0) {
+      return times;
+    }
+  } catch (err) {
+    logger.warn('[postBets] Exception loading posting_schedule for nextPost calculation', {
+      groupId,
+      error: err.message,
+    });
+  }
+
+  return undefined;
 }
 
 /**
@@ -398,8 +433,9 @@ async function runPostBets(skipConfirmation = false) {
   logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
-  // Story 5.1: passar groupId explicitamente quando disponível
-  const filaResult = await getFilaStatus(groupId);
+  // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis
+  const postTimes = await loadPostingTimesForGroup(groupId);
+  const filaResult = await getFilaStatus(groupId, postTimes);
 
   if (!filaResult.success) {
     logger.error('[postBets] Failed to get fila status', { groupId, error: filaResult.error?.message });

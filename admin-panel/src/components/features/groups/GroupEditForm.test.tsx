@@ -17,6 +17,7 @@ const sampleGroup: GroupListItem = {
   telegram_group_id: -1001234567890,
   telegram_admin_group_id: -1009876543210,
   checkout_url: null,
+  posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
   created_at: '2026-02-06T12:00:00Z',
 };
 
@@ -127,7 +128,54 @@ describe('GroupEditForm', () => {
       telegram_admin_group_id: -1009876543210,
       status: 'paused',
       additional_invitee_ids: [],
+      posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
     });
+  });
+
+  it('blocks submit when posting times are duplicated', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <GroupEditForm
+        initialData={sampleGroup}
+        onSubmit={onSubmit}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    const timeInputs = screen.getAllByDisplayValue(/^\d{2}:\d{2}$/);
+    await user.clear(timeInputs[1]);
+    await user.type(timeInputs[1], '10:00');
+    await user.click(screen.getByRole('button', { name: /Salvar Alteracoes/i }));
+
+    expect(screen.getByText(/Horarios de postagem duplicados/i)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('submits updated posting schedule when toggle/time are changed', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(
+      <GroupEditForm
+        initialData={sampleGroup}
+        onSubmit={onSubmit}
+        loading={false}
+        error={null}
+      />,
+    );
+
+    await user.click(screen.getByRole('switch'));
+
+    const timeInput = screen.getByDisplayValue('15:00');
+    await user.clear(timeInput);
+    await user.type(timeInput, '16:30');
+
+    await user.click(screen.getByRole('button', { name: /Salvar Alteracoes/i }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      posting_schedule: { enabled: false, times: ['10:00', '16:30', '22:00'] },
+    }));
   });
 
   it('Cancel button navigates back to group details', async () => {

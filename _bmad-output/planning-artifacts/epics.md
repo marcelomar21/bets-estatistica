@@ -3,7 +3,7 @@ stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step
 status: 'complete'
 completedAt: '2026-02-06'
 epicCount: 6
-storyCount: 26
+storyCount: 27
 frsTotal: 62
 frsCovered: 58
 frsDelegatedToMP: 4
@@ -722,6 +722,42 @@ So that eu tenha as dicas no horário programado.
 **And** formato da mensagem inclui: jogo, odds, link de aposta
 **And** se bot está offline, apostas ficam pendentes para próximo ciclo
 **And** logging registra: apostas postadas, grupo, horário real de postagem
+
+### Story 5.5: Controle de Postagem no Painel Admin
+
+As a **Super Admin / Admin de grupo**,
+I want controlar postagens automáticas pelo painel admin,
+So that eu possa ligar/desligar postagens, configurar horários, ver a fila e disparar postagens manualmente.
+
+**Acceptance Criteria:**
+
+**Given** admin está logado no painel
+**When** acessa as configurações do grupo
+**Then** pode ligar/desligar postagem automática via toggle (`posting_schedule.enabled`)
+**And** pode configurar múltiplos horários de postagem via time picker (user-friendly)
+**And** horários são salvos como array `["10:00", "15:00", "22:00"]` em JSONB
+**And** bot recarrega configuração periodicamente sem restart
+**And** admin vê card "Próxima Postagem" com: horário, apostas prontas, pendências
+**And** admin pode disparar postagem imediata via botão "Postar Agora" (equivalente ao /postar)
+**And** distribuição automática é agendada 5 min antes de cada horário configurado
+
+### Story 5.6: Melhorias de UX na Listagem de Apostas
+
+As a **Super Admin / Admin de Grupo**,
+I want uma listagem de apostas mais clara, com filtro de jogos futuros, coluna de data separada, filtro por data, coluna de mercado corrigida e taxa histórica de acerto,
+So that eu consiga analisar as apostas rapidamente sem poluição visual de jogos passados e com contexto de performance histórica.
+
+**Acceptance Criteria:**
+
+**Given** o admin acessa a página `/bets`
+**When** a página carrega pela primeira vez
+**Then** apenas apostas com `kickoff_time > now()` são exibidas por padrão (toggle "Mostrar jogos passados" disponível)
+**And** existe uma coluna separada "Data Jogo" com `kickoff_time` (sortable), e coluna "Jogo" exibe apenas nomes dos times
+**And** existe filtro por período (data início/fim) com atalhos rápidos (Hoje, Amanhã, Próximos 7 dias)
+**And** coluna "Mercado" exibe a categoria (Gols, Escanteios, Cartões, BTTS, Outros) como badge colorido
+**And** coluna "Pick" exibe `bet_market + bet_pick` combinados (sem duplicação se iguais)
+**And** coluna "Taxa Hist." exibe taxa de acerto histórica por par liga+categoria com indicador visual colorido (verde/amarelo/vermelho) e ícone (i) com tooltip explicativo
+**And** taxa é calculada via lógica idêntica ao `getAllPairStats()` do bot, sem N+1 queries
 
 ---
 

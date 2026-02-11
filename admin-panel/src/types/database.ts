@@ -1,3 +1,8 @@
+export interface PostingSchedule {
+  enabled: boolean;
+  times: string[]; // Array of "HH:mm" strings
+}
+
 export interface Group {
   id: string;
   name: string;
@@ -7,11 +12,13 @@ export interface Group {
   mp_plan_id: string | null;
   render_service_id: string | null;
   checkout_url: string | null;
+  posting_schedule: PostingSchedule;
+  post_now_requested_at: string | null;
   status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed';
   created_at: string;
 }
 
-export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'checkout_url' | 'created_at'>;
+export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'checkout_url' | 'posting_schedule' | 'created_at'>;
 
 export interface AdminUser {
   id: string;

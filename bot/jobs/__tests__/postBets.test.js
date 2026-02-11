@@ -7,7 +7,7 @@
  * - runPostBets(true) skips bets without deep_link
  * - runPostBets(true) skips bets with odds < 1.60 (except promovida_manual)
  * - runPostBets(true) skips bets with expired kickoff
- * - runPostBets forwards groupId to getFilaStatus(groupId)
+ * - runPostBets forwards groupId + dynamic postTimes to getFilaStatus(groupId, postTimes)
  * - markBetAsPosted() records telegram_posted_at, message_id, odds_at_post
  * - No bets to post → job finishes without error
  * - sendToPublic failure → bet skipped, others continue
@@ -29,6 +29,19 @@ jest.mock('../../../lib/config', () => ({
     membership: { groupId: 'test-group-uuid' },
   },
   validateConfig: jest.fn(),
+}));
+
+jest.mock('../../../lib/supabase', () => ({
+  supabase: {
+    from: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({
+        data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
+        error: null,
+      }),
+    })),
+  },
 }));
 
 jest.mock('../../telegram', () => ({
@@ -198,7 +211,7 @@ describe('postBets', () => {
       expect(sendToPublic).not.toHaveBeenCalled();
     });
 
-    it('should forward configured groupId to getFilaStatus', async () => {
+    it('should forward configured groupId and postTimes to getFilaStatus', async () => {
       getFilaStatus.mockResolvedValue({
         success: true,
         data: { ativas: [], novas: [] },
@@ -206,7 +219,7 @@ describe('postBets', () => {
 
       await runPostBets(true);
 
-      expect(getFilaStatus).toHaveBeenCalledWith('test-group-uuid');
+      expect(getFilaStatus).toHaveBeenCalledWith('test-group-uuid', ['10:00', '15:00', '22:00']);
     });
 
     it('should record telegram_posted_at, message_id, odds_at_post via markBetAsPosted', async () => {
