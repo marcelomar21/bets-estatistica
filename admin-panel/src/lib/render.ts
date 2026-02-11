@@ -42,10 +42,20 @@ export async function createBotService(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          type: 'web_service',
+          type: 'background_worker',
           name: `bot-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
           ownerId,
           repo: repoUrl,
+          branch: 'master',
+          serviceDetails: {
+            env: 'node',
+            plan: 'starter',
+            region: 'oregon',
+            envSpecificDetails: {
+              buildCommand: 'npm install',
+              startCommand: 'node bot/server.js',
+            },
+          },
           envVars: [
             { key: 'GROUP_ID', value: groupId },
             { key: 'TELEGRAM_BOT_TOKEN', value: botToken },
