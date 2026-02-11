@@ -141,13 +141,15 @@ export const GET = createApiHandler(
     }
 
     // Date filters (Story 5.6)
+    // Use BRT offset (-03:00) so "today" matches the Brazilian calendar day
+    const BRT_OFFSET = '-03:00';
     if (dateFrom || dateTo) {
       // Explicit date range takes priority over future_only
       if (dateFrom) {
-        query = query.gte('league_matches.kickoff_time', `${dateFrom}T00:00:00.000Z`);
+        query = query.gte('league_matches.kickoff_time', `${dateFrom}T00:00:00.000${BRT_OFFSET}`);
       }
       if (dateTo) {
-        query = query.lte('league_matches.kickoff_time', `${dateTo}T23:59:59.999Z`);
+        query = query.lte('league_matches.kickoff_time', `${dateTo}T23:59:59.999${BRT_OFFSET}`);
       }
     } else if (futureOnly === 'true') {
       // Default: only future games
