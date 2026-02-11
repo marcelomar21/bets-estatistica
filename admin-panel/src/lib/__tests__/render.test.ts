@@ -96,6 +96,42 @@ describe('createBotService', () => {
     );
   });
 
+  it('converts positive MTProto group ID to Bot API format with -100 prefix', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ service: { id: 'srv-456' } }),
+    });
+
+    await createBotService({ ...defaultOptions, telegramGroupId: 3647535811 });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.envVars).toEqual(
+      expect.arrayContaining([
+        { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1003647535811' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1003647535811' },
+      ]),
+    );
+  });
+
+  it('keeps already negative group ID as-is', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ service: { id: 'srv-456' } }),
+    });
+
+    await createBotService({ ...defaultOptions, telegramGroupId: -1001234567890 });
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.envVars).toEqual(
+      expect.arrayContaining([
+        { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1001234567890' },
+        { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1001234567890' },
+      ]),
+    );
+  });
+
   it('omits MP_CHECKOUT_URL when not provided', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
