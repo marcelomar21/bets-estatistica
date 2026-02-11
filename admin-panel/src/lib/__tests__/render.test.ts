@@ -9,6 +9,7 @@ describe('createBotService', () => {
     vi.clearAllMocks();
     process.env.RENDER_API_KEY = 'test-key';
     process.env.RENDER_REPO_URL = 'https://github.com/user/bets-estatistica';
+    process.env.RENDER_OWNER_ID = 'tea-test123';
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.co';
     process.env.SUPABASE_SERVICE_KEY = 'service-key';
   });
@@ -27,6 +28,14 @@ describe('createBotService', () => {
     const result = await createBotService('group-1', 'bot-token', 'Test');
 
     expect(result).toEqual({ success: false, error: 'RENDER_REPO_URL não configurado' });
+  });
+
+  it('returns error when owner ID is not configured', async () => {
+    delete process.env.RENDER_OWNER_ID;
+
+    const result = await createBotService('group-1', 'bot-token', 'Test');
+
+    expect(result).toEqual({ success: false, error: 'RENDER_OWNER_ID não configurado' });
   });
 
   it('creates service with correct data', async () => {
@@ -54,6 +63,7 @@ describe('createBotService', () => {
     );
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.ownerId).toBe('tea-test123');
     expect(body.repo).toBe('https://github.com/user/bets-estatistica');
     expect(body.envVars).toEqual(
       expect.arrayContaining([
