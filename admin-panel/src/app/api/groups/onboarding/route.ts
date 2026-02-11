@@ -655,11 +655,13 @@ async function handleCreatingTelegramGroup(data: z.infer<typeof creatingTelegram
 async function handleFinalizing(data: z.infer<typeof finalizingSchema>, context: TenantContext) {
   const { group_id } = data;
 
-  // Set bot to in_use
-  await context.supabase
+  // Set bot to in_use and fetch token
+  const { data: bot } = await context.supabase
     .from('bot_pool')
     .update({ status: 'in_use' })
-    .eq('group_id', group_id);
+    .eq('group_id', group_id)
+    .select('bot_token')
+    .single();
 
   // Create bot_health (idempotent)
   const { data: existingHealth } = await context.supabase
@@ -674,10 +676,10 @@ async function handleFinalizing(data: z.infer<typeof finalizingSchema>, context:
       .insert({ group_id, status: 'offline' });
   }
 
-  // Activate group
+  // Activate group and copy bot_token from bot_pool
   await context.supabase
     .from('groups')
-    .update({ status: 'active' })
+    .update({ status: 'active', ...(bot?.bot_token ? { bot_token: bot.bot_token } : {}) })
     .eq('id', group_id);
 
   logOnboardingAudit(context.supabase, context.user.id, group_id, 'finalizing', 'success');
