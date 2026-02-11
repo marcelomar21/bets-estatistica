@@ -42,12 +42,38 @@ async function getActiveGroups() {
 }
 
 /**
+ * Calculate the distribution window: today 00:00 BRT to end of tomorrow 23:59:59 BRT
+ * @returns {{ startOfToday: string, endOfTomorrow: string }}
+ */
+function getDistributionWindow() {
+  const now = new Date();
+  const brFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const todayStr = brFormatter.format(now);
+  const startOfToday = new Date(`${todayStr}T00:00:00-03:00`).toISOString();
+
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = brFormatter.format(tomorrow);
+  const endOfTomorrow = new Date(`${tomorrowStr}T23:59:59-03:00`).toISOString();
+
+  return { startOfToday, endOfTomorrow };
+}
+
+/**
  * Get undistributed eligible bets ordered by kickoff_time ASC
  * Only returns bets with group_id IS NULL and distributed_at IS NULL
+ * Filtered to today+tomorrow window (BRT timezone)
  * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
  */
 async function getUndistributedBets() {
   try {
+    const { startOfToday, endOfTomorrow } = getDistributionWindow();
+
     const { data, error } = await supabase
       .from('suggested_bets')
       .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, kickoff_time')
@@ -55,6 +81,8 @@ async function getUndistributedBets() {
       .is('group_id', null)
       .is('distributed_at', null)
       .neq('bet_status', 'posted')
+      .gte('kickoff_time', startOfToday)
+      .lte('kickoff_time', endOfTomorrow)
       .order('kickoff_time', { ascending: true });
 
     if (error) {
@@ -67,6 +95,69 @@ async function getUndistributedBets() {
   } catch (err) {
     logger.error('[bets:distribute] Erro inesperado ao buscar apostas', { error: err.message });
     return { success: false, error: { code: 'FETCH_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Rebalance distributed bets if new groups were added.
+ * Checks if all active groups have bets in the current window.
+ * If any active group has no bets, undistributes all non-posted bets
+ * so the round-robin can redistribute them evenly.
+ * @param {Array} activeGroups - Active groups
+ * @returns {Promise<{rebalanced: boolean, undistributed?: number, error?: object}>}
+ */
+async function rebalanceIfNeeded(activeGroups) {
+  const { startOfToday, endOfTomorrow } = getDistributionWindow();
+  const activeGroupIds = activeGroups.map((g) => g.id);
+
+  try {
+    const { data: distributedBets, error } = await supabase
+      .from('suggested_bets')
+      .select('id, group_id')
+      .eq('elegibilidade', 'elegivel')
+      .not('group_id', 'is', null)
+      .neq('bet_status', 'posted')
+      .gte('kickoff_time', startOfToday)
+      .lte('kickoff_time', endOfTomorrow);
+
+    if (error) {
+      logger.error('[bets:distribute] Erro ao verificar rebalanceamento', { error: error.message });
+      return { rebalanced: false, error };
+    }
+
+    if (!distributedBets || distributedBets.length === 0) {
+      return { rebalanced: false };
+    }
+
+    const groupsWithBets = new Set(distributedBets.map((b) => b.group_id));
+    const groupsWithoutBets = activeGroupIds.filter((id) => !groupsWithBets.has(id));
+
+    if (groupsWithoutBets.length === 0) {
+      return { rebalanced: false };
+    }
+
+    logger.info('[bets:distribute] Rebalanceamento: grupos sem apostas detectados', {
+      groupsWithoutBets,
+      totalToRedistribute: distributedBets.length,
+    });
+
+    const betIds = distributedBets.map((b) => b.id);
+    const { error: updateError } = await supabase
+      .from('suggested_bets')
+      .update({ group_id: null, distributed_at: null })
+      .in('id', betIds)
+      .neq('bet_status', 'posted');
+
+    if (updateError) {
+      logger.error('[bets:distribute] Erro no rebalanceamento', { error: updateError.message });
+      return { rebalanced: false, error: updateError };
+    }
+
+    logger.info('[bets:distribute] Rebalanceamento concluído', { undistributed: betIds.length });
+    return { rebalanced: true, undistributed: betIds.length };
+  } catch (err) {
+    logger.error('[bets:distribute] Erro inesperado no rebalanceamento', { error: err.message });
+    return { rebalanced: false, error: { code: 'REBALANCE_ERROR', message: err.message } };
   }
 }
 
@@ -137,6 +228,14 @@ async function runDistributeBets() {
   }
 
   const groups = groupsResult.data;
+
+  // 1.5 Rebalance if needed (e.g. new group was added)
+  if (groups.length > 0) {
+    const rebalanceResult = await rebalanceIfNeeded(groups);
+    if (rebalanceResult.rebalanced) {
+      logger.info('[bets:distribute] Rebalanceamento executado, prosseguindo com redistribuição');
+    }
+  }
 
   // No active groups: alert admin and return
   if (groups.length === 0) {
@@ -244,6 +343,8 @@ module.exports = {
   runDistributeBets,
   getActiveGroups,
   getUndistributedBets,
+  getDistributionWindow,
+  rebalanceIfNeeded,
   distributeRoundRobin,
   assignBetToGroup,
 };

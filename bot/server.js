@@ -276,6 +276,23 @@ async function setupScheduler() {
     const { runKickExpired } = require('./jobs/membership/kick-expired');
     const { runReconciliation } = require('./jobs/membership/reconciliation');
     const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
+    const { runDistributeBets } = require('./jobs/distributeBets');
+
+    // Distribute bets (round-robin) - every 15 minutes
+    cron.schedule('*/15 * * * *', async () => {
+      logger.info('[scheduler] Running distribute-bets (central)');
+      try {
+        await withExecutionLogging('distribute-bets', async () => {
+          const result = await runDistributeBets();
+          if (!result?.success) {
+            throw new Error(result?.error?.message || 'distribute-bets failed');
+          }
+          return result;
+        });
+      } catch (err) {
+        logger.error('[scheduler] distribute-bets failed', { error: err.message });
+      }
+    }, { timezone: TZ });
 
     // Track results - every hour between 13h and 23h (São Paulo time)
     cron.schedule('0 13-23 * * *', async () => {
@@ -371,6 +388,7 @@ async function setupScheduler() {
     console.log('   03:00 - Cakto reconciliation (membership)');
     console.log('   08:00 - Enrich odds');
     console.log('   13-23 - Track results (hourly)');
+    console.log('   */15  - Distribute bets (round-robin)');
     console.log('   */30s - Process webhooks (membership)');
     console.log('   */1h  - Cleanup stuck jobs');
   }
