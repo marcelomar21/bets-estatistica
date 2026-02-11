@@ -90,6 +90,7 @@ describe('createBotService', () => {
         { key: 'TELEGRAM_BOT_TOKEN', value: 'bot-token-123' },
         { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: '-1001234567890' },
         { key: 'TELEGRAM_ADMIN_GROUP_ID', value: '-1001234567890' },
+        { key: 'BOT_MODE', value: 'group' },
         { key: 'NODE_ENV', value: 'production' },
         { key: 'MP_CHECKOUT_URL', value: 'http://mp.com/checkout' },
       ]),

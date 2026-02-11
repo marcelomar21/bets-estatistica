@@ -193,28 +193,26 @@ async function setupWebhook() {
  */
 async function setupScheduler() {
   const cron = require('node-cron');
-  const { runEnrichment } = require('./jobs/enrichOdds');
   const { runHealthCheck } = require('./jobs/healthCheck');
-  const { runTrackResults } = require('./jobs/trackResults');
-  const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
-  const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
-  const { runKickExpired } = require('./jobs/membership/kick-expired');
-  const { runReconciliation } = require('./jobs/membership/reconciliation');
-  const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
   const { withExecutionLogging, cleanupStuckJobs } = require('./services/jobExecutionService');
-  const {
-    loadPostingSchedule,
-    setupDynamicScheduler,
-    reloadPostingSchedule,
-    checkPostNow,
-  } = require('./server.scheduler');
 
   const TZ = 'America/Sao_Paulo';
+  const mode = config.botMode; // 'central' | 'group' | 'mixed'
+  const runCentral = mode === 'central' || mode === 'mixed';
+  const runGroup = mode === 'group' || mode === 'mixed';
+
+  logger.info('[scheduler] Bot mode', { mode, runCentral, runGroup });
 
   // =========================================================
-  // Story 5.5: Dynamic posting scheduler (replaces hardcoded)
+  // GROUP JOBS: Dynamic posting scheduler
   // =========================================================
-  if (config.membership.groupId) {
+  if (runGroup && config.membership.groupId) {
+    const {
+      loadPostingSchedule,
+      setupDynamicScheduler,
+      reloadPostingSchedule,
+      checkPostNow,
+    } = require('./server.scheduler');
     const schedule = await loadPostingSchedule();
     setupDynamicScheduler(schedule);
 
@@ -240,43 +238,8 @@ async function setupScheduler() {
   }
 
   // =========================================================
-  // Non-posting jobs (UNCHANGED — remain hardcoded)
+  // ALWAYS: Health check (useful for all instances)
   // =========================================================
-
-  // Track results - every hour between 13h and 23h (São Paulo time)
-  cron.schedule('0 13-23 * * *', async () => {
-    logger.info('[scheduler] Running track-results job');
-    try {
-      await withExecutionLogging('track-results', runTrackResults);
-      logger.info('[scheduler] track-results complete');
-    } catch (err) {
-      logger.error('[scheduler] track-results failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Morning prep - 08:00 São Paulo
-  cron.schedule('0 8 * * *', async () => {
-    logger.info('[scheduler] Running morning-prep jobs');
-    try {
-      await withExecutionLogging('enrich-odds', runEnrichment);
-      logger.info('[scheduler] morning-prep complete');
-    } catch (err) {
-      logger.error('[scheduler] morning-prep failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Story 5.5: Renewal reminders SEPARATED from posting — stays hardcoded at 10:00
-  cron.schedule('0 10 * * *', async () => {
-    logger.info('[scheduler] Running renewal-reminders job');
-    try {
-      await withExecutionLogging('renewal-reminders', runRenewalReminders);
-      logger.info('[scheduler] renewal-reminders complete');
-    } catch (err) {
-      logger.error('[scheduler] renewal-reminders failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Health check - every 5 minutes
   cron.schedule('*/5 * * * *', async () => {
     logger.debug('Running health-check job');
     try {
@@ -286,76 +249,131 @@ async function setupScheduler() {
     }
   }, { timezone: TZ });
 
-  // Webhook processing - every 30 seconds (Story 16.3)
-  setInterval(async () => {
-    try {
-      await runProcessWebhooks();
-    } catch (err) {
-      logger.error('[membership:process-webhooks] Interval error', { error: err.message });
-    }
-  }, 30000);
-  logger.info('[membership:process-webhooks] Interval started (every 30s)');
+  // =========================================================
+  // GROUP JOBS: Renewal reminders (per-group)
+  // =========================================================
+  if (runGroup) {
+    const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
 
-  // Kick expired members - 00:01 São Paulo (Story 16.6)
-  cron.schedule('1 0 * * *', async () => {
-    logger.info('[scheduler] Running kick-expired job');
-    try {
-      await withExecutionLogging('kick-expired', runKickExpired);
-      logger.info('[scheduler] kick-expired complete');
-    } catch (err) {
-      logger.error('[scheduler] kick-expired failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Check affiliate expiration - 00:30 São Paulo (Story 18.2)
-  cron.schedule('30 0 * * *', async () => {
-    logger.info('[scheduler] Running check-affiliate-expiration job');
-    try {
-      await withExecutionLogging('check-affiliate-expiration', runCheckAffiliateExpiration);
-      logger.info('[scheduler] check-affiliate-expiration complete');
-    } catch (err) {
-      logger.error('[scheduler] check-affiliate-expiration failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Cakto reconciliation - 03:00 São Paulo (Story 16.8)
-  cron.schedule('0 3 * * *', async () => {
-    logger.info('[scheduler] Running reconciliation job');
-    try {
-      await withExecutionLogging('reconciliation', runReconciliation);
-      logger.info('[scheduler] reconciliation complete');
-    } catch (err) {
-      logger.error('[scheduler] reconciliation failed', { error: err.message });
-    }
-  }, { timezone: TZ });
-
-  // Cleanup stuck job executions - every hour at minute 0
-  cron.schedule('0 * * * *', async () => {
-    logger.debug('[scheduler] Running cleanup-stuck-jobs');
-    try {
-      const result = await cleanupStuckJobs();
-      if (result.success && result.data.cleaned > 0) {
-        logger.info('[scheduler] cleanup-stuck-jobs complete', { cleaned: result.data.cleaned });
+    cron.schedule('0 10 * * *', async () => {
+      logger.info('[scheduler] Running renewal-reminders job');
+      try {
+        await withExecutionLogging('renewal-reminders', runRenewalReminders);
+        logger.info('[scheduler] renewal-reminders complete');
+      } catch (err) {
+        logger.error('[scheduler] renewal-reminders failed', { error: err.message });
       }
-    } catch (err) {
-      logger.error('[scheduler] cleanup-stuck-jobs failed', { error: err.message });
-    }
-  }, { timezone: TZ });
+    }, { timezone: TZ });
+  }
 
-  logger.info('Internal scheduler started');
-  console.log('⏰ Scheduler jobs (non-posting):');
-  console.log('   00:01 - Kick expired members (membership)');
-  console.log('   00:30 - Check affiliate expiration (membership)');
-  console.log('   03:00 - Cakto reconciliation (membership)');
-  console.log('   08:00 - Enrich odds');
-  console.log('   10:00 - Renewal reminders');
-  console.log('   13-23 - Track results (hourly)');
+  // =========================================================
+  // CENTRAL JOBS: Only run in 'central' or 'mixed' mode
+  // =========================================================
+  if (runCentral) {
+    const { runEnrichment } = require('./jobs/enrichOdds');
+    const { runTrackResults } = require('./jobs/trackResults');
+    const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
+    const { runKickExpired } = require('./jobs/membership/kick-expired');
+    const { runReconciliation } = require('./jobs/membership/reconciliation');
+    const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
+
+    // Track results - every hour between 13h and 23h (São Paulo time)
+    cron.schedule('0 13-23 * * *', async () => {
+      logger.info('[scheduler] Running track-results job');
+      try {
+        await withExecutionLogging('track-results', runTrackResults);
+        logger.info('[scheduler] track-results complete');
+      } catch (err) {
+        logger.error('[scheduler] track-results failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Morning prep - 08:00 São Paulo
+    cron.schedule('0 8 * * *', async () => {
+      logger.info('[scheduler] Running morning-prep jobs');
+      try {
+        await withExecutionLogging('enrich-odds', runEnrichment);
+        logger.info('[scheduler] morning-prep complete');
+      } catch (err) {
+        logger.error('[scheduler] morning-prep failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Webhook processing - every 30 seconds (Story 16.3)
+    setInterval(async () => {
+      try {
+        await runProcessWebhooks();
+      } catch (err) {
+        logger.error('[membership:process-webhooks] Interval error', { error: err.message });
+      }
+    }, 30000);
+    logger.info('[membership:process-webhooks] Interval started (every 30s)');
+
+    // Kick expired members - 00:01 São Paulo (Story 16.6)
+    cron.schedule('1 0 * * *', async () => {
+      logger.info('[scheduler] Running kick-expired job');
+      try {
+        await withExecutionLogging('kick-expired', runKickExpired);
+        logger.info('[scheduler] kick-expired complete');
+      } catch (err) {
+        logger.error('[scheduler] kick-expired failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Check affiliate expiration - 00:30 São Paulo (Story 18.2)
+    cron.schedule('30 0 * * *', async () => {
+      logger.info('[scheduler] Running check-affiliate-expiration job');
+      try {
+        await withExecutionLogging('check-affiliate-expiration', runCheckAffiliateExpiration);
+        logger.info('[scheduler] check-affiliate-expiration complete');
+      } catch (err) {
+        logger.error('[scheduler] check-affiliate-expiration failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Cakto reconciliation - 03:00 São Paulo (Story 16.8)
+    cron.schedule('0 3 * * *', async () => {
+      logger.info('[scheduler] Running reconciliation job');
+      try {
+        await withExecutionLogging('reconciliation', runReconciliation);
+        logger.info('[scheduler] reconciliation complete');
+      } catch (err) {
+        logger.error('[scheduler] reconciliation failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Cleanup stuck job executions - every hour at minute 0
+    cron.schedule('0 * * * *', async () => {
+      logger.debug('[scheduler] Running cleanup-stuck-jobs');
+      try {
+        const result = await cleanupStuckJobs();
+        if (result.success && result.data.cleaned > 0) {
+          logger.info('[scheduler] cleanup-stuck-jobs complete', { cleaned: result.data.cleaned });
+        }
+      } catch (err) {
+        logger.error('[scheduler] cleanup-stuck-jobs failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+  }
+
+  logger.info('Internal scheduler started', { mode });
+  console.log(`⏰ Scheduler started (BOT_MODE=${mode}):`);
   console.log('   */5   - Health check');
-  console.log('   */30s - Process webhooks (membership)');
-  console.log('   */30s - Post-now polling (story 5.5)');
-  console.log('   */5m  - Posting schedule reload (story 5.5)');
-  console.log('   */1h  - Cleanup stuck jobs');
-  console.log('   [dynamic] - Posting + distribution (story 5.5)');
+  if (runGroup) {
+    console.log('   10:00 - Renewal reminders');
+    console.log('   */30s - Post-now polling (story 5.5)');
+    console.log('   */5m  - Posting schedule reload (story 5.5)');
+    console.log('   [dynamic] - Posting + distribution (story 5.5)');
+  }
+  if (runCentral) {
+    console.log('   00:01 - Kick expired members (membership)');
+    console.log('   00:30 - Check affiliate expiration (membership)');
+    console.log('   03:00 - Cakto reconciliation (membership)');
+    console.log('   08:00 - Enrich odds');
+    console.log('   13-23 - Track results (hourly)');
+    console.log('   */30s - Process webhooks (membership)');
+    console.log('   */1h  - Cleanup stuck jobs');
+  }
 }
 
 /**
@@ -363,9 +381,11 @@ async function setupScheduler() {
  */
 async function start() {
   console.log('🤖 Starting GuruBet Server in WEBHOOK mode...\n');
+  console.log(`   BOT_MODE: ${config.botMode}`);
 
   logger.info('[server] Tenant mode', {
-    mode: config.membership.groupId ? 'multi-tenant' : 'single-tenant',
+    botMode: config.botMode,
+    tenantMode: config.membership.groupId ? 'multi-tenant' : 'single-tenant',
     groupId: config.membership.groupId || null
   });
 
