@@ -13,6 +13,7 @@ interface BetTableProps {
   onSelectionChange: (ids: Set<number>) => void;
   onPageChange: (page: number) => void;
   onEditOdds: (bet: SuggestedBetListItem) => void;
+  onEditLink?: (bet: SuggestedBetListItem) => void;
   onSort: (field: string) => void;
   sortBy: string;
   sortDir: string;
@@ -35,6 +36,7 @@ export function BetTable({
   onSelectionChange,
   onPageChange,
   onEditOdds,
+  onEditLink,
   onSort,
   sortBy,
   sortDir,
@@ -113,6 +115,7 @@ export function BetTable({
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mercado</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Pick</th>
               <SortHeader field="odds">Odds</SortHeader>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Link</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
               <SortHeader field="bet_status">Status</SortHeader>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Distribuicao</th>
@@ -160,6 +163,23 @@ export function BetTable({
                       <span className="text-gray-400">-</span>
                     )}
                   </td>
+                  <td className="px-3 py-3 text-sm">
+                    {bet.deep_link ? (
+                      <a
+                        href={bet.deep_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800"
+                        title={bet.deep_link}
+                      >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" />
+                        </svg>
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">&mdash;</span>
+                    )}
+                  </td>
                   <td className="px-3 py-3 text-sm text-gray-600">
                     {bet.groups?.name ?? <span className="text-gray-400">Nao distribuida</span>}
                   </td>
@@ -176,12 +196,22 @@ export function BetTable({
                   </td>
                   {isSuperAdmin && (
                     <td className="px-3 py-3">
-                      <button
-                        onClick={() => onEditOdds(bet)}
-                        className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
-                      >
-                        Editar Odds
-                      </button>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => onEditOdds(bet)}
+                          className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        >
+                          Editar Odds
+                        </button>
+                        {onEditLink && (
+                          <button
+                            onClick={() => onEditLink(bet)}
+                            className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            Editar Link
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
