@@ -12,11 +12,18 @@ interface RenderError {
 
 type RenderResult = RenderSuccess | RenderError;
 
+interface CreateBotServiceOptions {
+  groupId: string;
+  botToken: string;
+  groupName: string;
+  telegramGroupId: number;
+  checkoutUrl?: string | null;
+}
+
 export async function createBotService(
-  groupId: string,
-  botToken: string,
-  groupName: string,
+  options: CreateBotServiceOptions,
 ): Promise<RenderResult> {
+  const { groupId, botToken, groupName, telegramGroupId, checkoutUrl } = options;
   const apiKey = process.env.RENDER_API_KEY;
   if (!apiKey) {
     return { success: false, error: 'RENDER_API_KEY não configurado' };
@@ -59,8 +66,12 @@ export async function createBotService(
           envVars: [
             { key: 'GROUP_ID', value: groupId },
             { key: 'TELEGRAM_BOT_TOKEN', value: botToken },
+            { key: 'TELEGRAM_PUBLIC_GROUP_ID', value: String(telegramGroupId) },
+            { key: 'TELEGRAM_ADMIN_GROUP_ID', value: String(telegramGroupId) },
             { key: 'SUPABASE_URL', value: process.env.NEXT_PUBLIC_SUPABASE_URL || '' },
             { key: 'SUPABASE_SERVICE_KEY', value: process.env.SUPABASE_SERVICE_KEY || '' },
+            { key: 'NODE_ENV', value: 'production' },
+            ...(checkoutUrl ? [{ key: 'MP_CHECKOUT_URL', value: checkoutUrl }] : []),
           ],
         }),
       },

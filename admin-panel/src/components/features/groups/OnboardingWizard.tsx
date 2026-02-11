@@ -42,9 +42,9 @@ const STEPS: { key: OnboardingStep; label: string }[] = [
   { key: 'creating', label: 'Criando Grupo' },
   { key: 'validating_bot', label: 'Validando Bot' },
   { key: 'configuring_mp', label: 'Config. Mercado Pago' },
-  { key: 'deploying_bot', label: 'Deploy Bot' },
   { key: 'creating_admin', label: 'Criando Admin' },
   { key: 'creating_telegram_group', label: 'Criando Grupo Telegram' },
+  { key: 'deploying_bot', label: 'Deploy Bot' },
   { key: 'finalizing', label: 'Concluído' },
 ];
 
@@ -60,8 +60,8 @@ async function callStep(stepPayload: Record<string, unknown>): Promise<{ success
 function determineResumeStep(group: IncompleteGroup): OnboardingStep {
   // Bot is already validated in step 1 (creating reserves it), so we start from validating_bot
   if (!group.mp_plan_id) return 'validating_bot';
-  if (!group.render_service_id) return 'deploying_bot';
   if (!group.telegram_group_id) return 'creating_admin';
+  if (!group.render_service_id) return 'deploying_bot';
   return 'finalizing';
 }
 

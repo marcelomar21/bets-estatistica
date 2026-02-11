@@ -50,20 +50,20 @@ function mockStepResponses() {
     ok: true,
     json: () => Promise.resolve({ success: true, data: { checkout_url: 'http://mp.com/checkout' } }),
   });
-  // Step 4: deploying_bot
-  mockFetch.mockResolvedValueOnce({
-    ok: true,
-    json: () => Promise.resolve({ success: true, data: { service_id: 'srv-1' } }),
-  });
-  // Step 5: creating_admin
+  // Step 4: creating_admin
   mockFetch.mockResolvedValueOnce({
     ok: true,
     json: () => Promise.resolve({ success: true, data: { admin_email: 'test@test.com', temp_password: 'TempPass123!' } }),
   });
-  // Step 6: creating_telegram_group
+  // Step 5: creating_telegram_group
   mockFetch.mockResolvedValueOnce({
     ok: true,
-    json: () => Promise.resolve({ success: true, data: { telegram_invite_link: 'https://t.me/+abc123' } }),
+    json: () => Promise.resolve({ success: true, data: { invite_link: 'https://t.me/+abc123' } }),
+  });
+  // Step 6: deploying_bot
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: { service_id: 'srv-1' } }),
   });
   // Step 7: finalizing
   mockFetch.mockResolvedValueOnce({
@@ -257,26 +257,26 @@ describe('OnboardingWizard', () => {
     expect(screen.getByRole('button', { name: /Tentar Novamente/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Recomeçar do Zero/i })).toBeInTheDocument();
 
-    // Now retry - remaining steps succeed
+    // Now retry - remaining steps succeed (new order: mp -> admin -> telegram -> deploy -> finalize)
     // Step 3 (configuring_mp retry)
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ success: true, data: { checkout_url: 'http://mp.com/checkout' } }),
     });
-    // Step 4: deploying_bot
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ success: true, data: { service_id: 'srv-1' } }),
-    });
-    // Step 5: creating_admin
+    // Step 4: creating_admin
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ success: true, data: { admin_email: 'test@test.com', temp_password: 'TempPass123!' } }),
     });
-    // Step 6: creating_telegram_group
+    // Step 5: creating_telegram_group
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ success: true, data: { telegram_invite_link: 'https://t.me/+abc123' } }),
+      json: () => Promise.resolve({ success: true, data: { invite_link: 'https://t.me/+abc123' } }),
+    });
+    // Step 6: deploying_bot
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: { service_id: 'srv-1' } }),
     });
     // Step 7: finalizing
     mockFetch.mockResolvedValueOnce({
