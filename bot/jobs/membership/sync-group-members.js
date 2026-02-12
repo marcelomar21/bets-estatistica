@@ -65,14 +65,10 @@ async function resolveGroup() {
     };
   }
 
-  // Single-tenant fallback: use config
-  const chatId = config.telegram.publicGroupId;
-  if (!chatId) {
-    logger.error(`[${JOB_NAME}] No group configured (GROUP_ID or TELEGRAM_PUBLIC_GROUP_ID)`);
-    return { groupId: null, chatId: null };
-  }
-
-  return { groupId: null, chatId: normalizeChatId(chatId) };
+  // Without GROUP_ID, we cannot safely associate members to a group.
+  // Abort to avoid creating orphan records without group_id.
+  logger.warn(`[${JOB_NAME}] GROUP_ID not configured — skipping sync to avoid orphan members`);
+  return { groupId: null, chatId: null };
 }
 
 /**
