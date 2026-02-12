@@ -3,13 +3,16 @@ import { render, screen } from '@testing-library/react';
 import { MemberList } from './MemberList';
 import type { MemberListItem } from '@/types/database';
 
+// Use a date 3 days from now to reliably trigger "Vencendo" status
+const threeDaysFromNow = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
 const baseMembers: MemberListItem[] = [
   {
     id: 1,
     telegram_id: 1001,
     telegram_username: 'alice',
     status: 'ativo',
-    subscription_ends_at: '2026-02-12T00:00:00Z',
+    subscription_ends_at: threeDaysFromNow,
     created_at: '2026-02-01T00:00:00Z',
     group_id: 'group-1',
     groups: { name: 'Grupo Alpha' },
