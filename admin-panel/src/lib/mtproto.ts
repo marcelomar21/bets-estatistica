@@ -1,5 +1,6 @@
 import { TelegramClient, Api, errors, sessions } from 'telegram';
 import type { BigInteger } from 'big-integer';
+import bigInt from 'big-integer';
 
 const { StringSession } = sessions;
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -187,6 +188,59 @@ export async function verifyBotIsAdmin(
   } catch {
     return false;
   }
+}
+
+export interface GroupParticipant {
+  userId: number;
+  firstName: string;
+  lastName?: string;
+  username?: string;
+  isBot: boolean;
+}
+
+/**
+ * Fetch ALL participants of a supergroup/channel using MTProto.
+ * Paginates through results in batches of 200.
+ */
+export async function getGroupParticipants(
+  client: TelegramClient,
+  telegramGroupId: number,
+): Promise<GroupParticipant[]> {
+  const inputChannel = await client.getInputEntity(telegramGroupId);
+  const participants: GroupParticipant[] = [];
+  let offset = 0;
+  const limit = 200;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const result = await client.invoke(
+      new Api.channels.GetParticipants({
+        channel: inputChannel,
+        filter: new Api.ChannelParticipantsRecent(),
+        offset,
+        limit,
+        hash: bigInt(0) as unknown as BigInteger,
+      }),
+    );
+
+    if (!(result instanceof Api.channels.ChannelParticipants)) break;
+
+    const users = result.users as Api.User[];
+    for (const user of users) {
+      participants.push({
+        userId: Number(user.id),
+        firstName: user.firstName || '',
+        lastName: user.lastName,
+        username: user.username,
+        isBot: !!user.bot,
+      });
+    }
+
+    if (users.length < limit) break;
+    offset += limit;
+  }
+
+  return participants;
 }
 
 export function isAuthError(error: unknown): boolean {

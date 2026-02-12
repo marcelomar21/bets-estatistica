@@ -31,6 +31,7 @@ describe('MemberList', () => {
     render(<MemberList members={baseMembers} role="group_admin" />);
 
     expect(screen.getByText('Nome Telegram')).toBeInTheDocument();
+    expect(screen.getByText('Telegram ID')).toBeInTheDocument();
     expect(screen.getByText('Status')).toBeInTheDocument();
     expect(screen.getByText('Data de Entrada')).toBeInTheDocument();
     expect(screen.getByText('Vencimento')).toBeInTheDocument();

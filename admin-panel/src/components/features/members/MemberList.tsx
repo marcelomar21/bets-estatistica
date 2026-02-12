@@ -25,6 +25,9 @@ export function MemberList({ members, role }: MemberListProps) {
               Nome Telegram
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+              Telegram ID
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
               Status
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
@@ -53,6 +56,9 @@ export function MemberList({ members, role }: MemberListProps) {
               <tr key={member.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3 text-sm text-gray-900">
                   {member.telegram_username || '-'}
+                </td>
+                <td className="px-4 py-3 text-sm font-mono text-gray-500">
+                  {member.telegram_id ?? '-'}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge.className}`}>
