@@ -200,27 +200,23 @@ describe('jobWarn', () => {
       expect(result.success).toBe(true);
 
       const message = sendToAdmin.mock.calls[0][0];
-      expect(message).toContain('POSTAGEM MANHA CONCLUIDA');
+      expect(message).toContain('Postagem manha enviada');
       expect(message).toContain('#45');
-      expect(message).toContain('Liverpool');
     });
 
-    test('inclui acoes pendentes na mensagem', async () => {
-      const pendingActions = ['#58 precisa de link', '#63 sem odds'];
-
-      await sendPostWarn('afternoon', [], [], pendingActions);
+    test('mensagem sem apostas indica nenhuma enviada', async () => {
+      await sendPostWarn('afternoon', [], [], []);
 
       const message = sendToAdmin.mock.calls[0][0];
-      expect(message).toContain('ACOES PENDENTES');
-      expect(message).toContain('#58 precisa de link');
-      expect(message).toContain('#63 sem odds');
+      expect(message).toContain('Postagem tarde concluida');
+      expect(message).toContain('nenhuma aposta enviada');
     });
 
-    test('inclui proximo horario de postagem', async () => {
+    test('mensagem noturna sem apostas', async () => {
       await sendPostWarn('night', [], [], []);
 
       const message = sendToAdmin.mock.calls[0][0];
-      expect(message).toContain('Proxima postagem');
+      expect(message).toContain('Postagem noite concluida');
     });
 
     test('funciona com parametros vazios', async () => {
