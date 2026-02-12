@@ -254,6 +254,7 @@ async function setupScheduler() {
   // =========================================================
   if (runGroup) {
     const { runRenewalReminders } = require('./jobs/membership/renewal-reminders');
+    const { runSyncGroupMembers } = require('./jobs/membership/sync-group-members');
 
     cron.schedule('0 10 * * *', async () => {
       logger.info('[scheduler] Running renewal-reminders job');
@@ -262,6 +263,17 @@ async function setupScheduler() {
         logger.info('[scheduler] renewal-reminders complete');
       } catch (err) {
         logger.error('[scheduler] renewal-reminders failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Sync group members from Telegram every 30 minutes
+    cron.schedule('*/30 * * * *', async () => {
+      logger.info('[scheduler] Running sync-group-members job');
+      try {
+        await withExecutionLogging('sync-group-members', runSyncGroupMembers);
+        logger.info('[scheduler] sync-group-members complete');
+      } catch (err) {
+        logger.error('[scheduler] sync-group-members failed', { error: err.message });
       }
     }, { timezone: TZ });
   }
