@@ -63,3 +63,4 @@ admin-panel/.env.render
 
 # Temporary images
 telegram-login-qr.png
+.devcontainer/.env
