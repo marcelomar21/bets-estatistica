@@ -40,6 +40,8 @@ Regras adicionais gerais:
 - Tom profissional, direto e útil para apostadores decidirem se vale explorar o jogo.
 - SEMPRE utilize o termo "escanteio(s)" (não use "canto(s)").
 - NUNCA escreva termos em inglês nas recomendações (substitua "Over/Under/BTTS Yes" por "mais de/menos de/ambas as equipes marcam").
+- Use SEMPRE linhas com .5 (ex: 2,5 gols, 3,5 cartões, 8,5 escanteios) — são as linhas reais das casas de apostas. Nunca use linhas inteiras como 3,0 ou 4,0.
+- Escreva de forma clara e simples para o apostador comum. Evite jargões como "baliza zerada" ou "clean sheet" — prefira frases diretas como "Aposte que o Cruzeiro não marca" ou "Jogue que o Arsenal não sofre gol".
 - NUNCA apresente apostas conflitantes entre "safe_bets" e "value_bets"; mantenha coerência absoluta (se a linha conservadora falar em menos gols, não proponha mais gols na linha agressiva a menos que explique claramente o motivo).
 `.trim();
 

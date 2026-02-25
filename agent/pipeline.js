@@ -164,16 +164,25 @@ async function persistMatches() {
   return processed;
 }
 
+const REPORT_CONCURRENCY = Number(process.env.REPORT_CONCURRENCY || 5);
+
 async function generateReports(matchIds = []) {
   if (!matchIds.length) {
     console.log('[pipeline] Nenhum match para geração de relatório.');
     return;
   }
-  for (const matchId of matchIds) {
-    await runWithRetry(
-      () => runNodeScript(REPORT_SCRIPT, [String(matchId)]),
-      { label: `Relatório match ${matchId}`, retries: 1 },
+  console.log(`[pipeline] Gerando ${matchIds.length} relatórios (concorrência: ${REPORT_CONCURRENCY})...`);
+  for (let i = 0; i < matchIds.length; i += REPORT_CONCURRENCY) {
+    const batch = matchIds.slice(i, i + REPORT_CONCURRENCY);
+    await Promise.all(
+      batch.map((matchId) =>
+        runWithRetry(
+          () => runNodeScript(REPORT_SCRIPT, [String(matchId)]),
+          { label: `Relatório match ${matchId}`, retries: 1 },
+        ),
+      ),
     );
+    console.log(`[pipeline] Batch ${Math.floor(i / REPORT_CONCURRENCY) + 1} concluído (${Math.min(i + REPORT_CONCURRENCY, matchIds.length)}/${matchIds.length}).`);
   }
 }
 
