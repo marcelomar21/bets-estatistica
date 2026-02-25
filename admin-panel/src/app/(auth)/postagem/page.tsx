@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { PostingScheduleSection } from '@/components/features/posting/PostingScheduleSection';
 import { PostingQueueTable } from '@/components/features/posting/PostingQueueTable';
 import type { QueueBet } from '@/components/features/posting/PostingQueueTable';
-import { PostNowButton } from '@/components/features/bets/PostNowButton';
 
 interface QueueData {
   readyCount: number;
@@ -20,6 +19,46 @@ interface GroupOption {
   id: string;
   name: string;
   posting_schedule?: { enabled: boolean; times: string[] };
+}
+
+// Preview types matching the API response
+interface PreviewBetInfo {
+  homeTeam: string;
+  awayTeam: string;
+  market: string;
+  pick: string;
+  odds: number;
+  kickoffTime: string;
+  deepLink: string;
+}
+
+interface PreviewBet {
+  betId: number;
+  preview: string;
+  betInfo: PreviewBetInfo;
+}
+
+interface PreviewData {
+  previewId: string;
+  groupId: string;
+  groupName: string;
+  bets: PreviewBet[];
+  expiresInMinutes: number;
+}
+
+type PreviewPhase = 'idle' | 'loading' | 'reviewing' | 'sending' | 'polling' | 'done' | 'timeout';
+
+const POLL_INTERVAL_MS = 5_000;
+const POLL_TIMEOUT_MS = 60_000;
+
+function formatKickoffShort(isoString: string) {
+  return new Date(isoString).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
 }
 
 export default function PostagemPage() {
@@ -39,6 +78,21 @@ export default function PostagemPage() {
   const [linkInput, setLinkInput] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState('');
+
+  // Preview state
+  const [previewPhase, setPreviewPhase] = useState<PreviewPhase>('idle');
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [previewBets, setPreviewBets] = useState<PreviewBet[]>([]);
+  const [editingPreviewIdx, setEditingPreviewIdx] = useState<number | null>(null);
+  const [editingPreviewText, setEditingPreviewText] = useState('');
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [removingPreviewIdx, setRemovingPreviewIdx] = useState<number | null>(null);
+  const [regeneratingIdx, setRegeneratingIdx] = useState<number | null>(null);
+  const [sendStatusMessage, setSendStatusMessage] = useState<string | null>(null);
+  const [postedCount, setPostedCount] = useState(0);
+  const [totalSendCount, setTotalSendCount] = useState(0);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type });
@@ -242,13 +296,223 @@ export default function PostagemPage() {
     }
   }
 
+  // ──────────────────────────────────────────────────────
+  // Preview flow handlers
+  // ──────────────────────────────────────────────────────
+
+  async function handlePreparePreview() {
+    setPreviewPhase('loading');
+    setPreviewError(null);
+
+    try {
+      const res = await fetch('/api/bets/post-now/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedGroupId ? { group_id: selectedGroupId } : {}),
+      });
+
+      const json = await res.json();
+
+      if (!json.success) {
+        setPreviewError(json.error?.message ?? 'Erro ao gerar previews');
+        setPreviewPhase('idle');
+        return;
+      }
+
+      const data: PreviewData = json.data;
+      setPreviewData(data);
+      setPreviewBets([...data.bets]);
+      setPreviewPhase('reviewing');
+    } catch {
+      setPreviewError('Erro de conexao ao gerar previews');
+      setPreviewPhase('idle');
+    }
+  }
+
+  function handleCancelPreview() {
+    setPreviewPhase('idle');
+    setPreviewData(null);
+    setPreviewBets([]);
+    setEditingPreviewIdx(null);
+    setPreviewError(null);
+    setRemovingPreviewIdx(null);
+    setRegeneratingIdx(null);
+  }
+
+  function handleEditPreview(idx: number) {
+    setEditingPreviewIdx(idx);
+    setEditingPreviewText(previewBets[idx].preview);
+  }
+
+  function handleSavePreviewEdit(idx: number) {
+    setPreviewBets(prev => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], preview: editingPreviewText };
+      return updated;
+    });
+    setEditingPreviewIdx(null);
+    setEditingPreviewText('');
+  }
+
+  function handleCancelPreviewEdit() {
+    setEditingPreviewIdx(null);
+    setEditingPreviewText('');
+  }
+
+  async function handleRegeneratePreview(idx: number) {
+    if (!previewData) return;
+    setRegeneratingIdx(idx);
+
+    try {
+      const res = await fetch('/api/bets/post-now/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedGroupId ? { group_id: selectedGroupId } : {}),
+      });
+
+      const json = await res.json();
+
+      if (!json.success) {
+        showToast(json.error?.message ?? 'Erro ao regenerar preview', 'error');
+        return;
+      }
+
+      const freshData: PreviewData = json.data;
+      const currentBetId = previewBets[idx].betId;
+      const freshBet = freshData.bets.find(b => b.betId === currentBetId);
+
+      if (freshBet) {
+        setPreviewBets(prev => {
+          const updated = [...prev];
+          updated[idx] = freshBet;
+          return updated;
+        });
+        // Update the previewId to the latest one from the fresh call
+        setPreviewData(prev => prev ? { ...prev, previewId: freshData.previewId } : prev);
+        showToast('Preview regenerado com sucesso', 'success');
+      } else {
+        showToast('Aposta nao encontrada na nova geracao de previews', 'error');
+      }
+    } catch {
+      showToast('Erro de conexao ao regenerar', 'error');
+    } finally {
+      setRegeneratingIdx(null);
+    }
+  }
+
+  function handleRemovePreviewConfirm(idx: number) {
+    setRemovingPreviewIdx(idx);
+  }
+
+  function handleRemovePreviewExecute(idx: number) {
+    setPreviewBets(prev => prev.filter((_, i) => i !== idx));
+    setRemovingPreviewIdx(null);
+
+    // If no bets left, go back to idle
+    if (previewBets.length <= 1) {
+      handleCancelPreview();
+      showToast('Todas as apostas foram removidas do preview', 'error');
+    }
+  }
+
+  function handleRemovePreviewCancel() {
+    setRemovingPreviewIdx(null);
+  }
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+    if (pollTimeoutRef.current) { clearTimeout(pollTimeoutRef.current); pollTimeoutRef.current = null; }
+  }, []);
+
+  function startPolling(betIds: number[]) {
+    setPreviewPhase('polling');
+    setTotalSendCount(betIds.length);
+    setPostedCount(0);
+    setSendStatusMessage(`Aguardando bot... 0/${betIds.length} postada(s)`);
+
+    const idsParam = betIds.join(',');
+
+    async function poll() {
+      try {
+        const res = await fetch(`/api/bets/post-now/status?bet_ids=${idsParam}`);
+        const json = await res.json();
+        if (!json.success) return;
+
+        const { posted, allPosted } = json.data;
+        setPostedCount(posted.length);
+        setSendStatusMessage(`${allPosted ? 'Concluido!' : 'Aguardando bot...'} ${posted.length}/${betIds.length} postada(s)`);
+
+        if (allPosted) {
+          stopPolling();
+          setPreviewPhase('done');
+          fetchQueue();
+          setTimeout(() => {
+            handleCancelPreview();
+            setSendStatusMessage(null);
+          }, 5000);
+        }
+      } catch {
+        // Network error during poll, keep trying
+      }
+    }
+
+    poll();
+    pollTimerRef.current = setInterval(poll, POLL_INTERVAL_MS);
+
+    pollTimeoutRef.current = setTimeout(() => {
+      stopPolling();
+      setPreviewPhase('timeout');
+      setSendStatusMessage(null);
+      fetchQueue();
+    }, POLL_TIMEOUT_MS);
+  }
+
+  async function handleSendAll() {
+    if (!previewData || previewBets.length === 0) return;
+
+    setPreviewPhase('sending');
+    setPreviewError(null);
+
+    try {
+      const res = await fetch('/api/bets/post-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          group_id: previewData.groupId,
+          previewId: previewData.previewId,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!json.success) {
+        setPreviewError(json.error?.message ?? 'Erro ao enviar postagem');
+        setPreviewPhase('reviewing');
+        return;
+      }
+
+      const betIds: number[] = json.data?.betIds ?? [];
+      if (betIds.length > 0) {
+        startPolling(betIds);
+      } else {
+        setPreviewPhase('done');
+        setSendStatusMessage(json.data?.message ?? 'Postagem solicitada');
+        fetchQueue();
+        setTimeout(() => {
+          handleCancelPreview();
+          setSendStatusMessage(null);
+        }, 5000);
+      }
+    } catch {
+      setPreviewError('Erro de conexao ao enviar');
+      setPreviewPhase('reviewing');
+    }
+  }
+
   const currentGroup = groups.find(g => g.id === selectedGroupId);
   const scheduleForGroup = currentGroup?.posting_schedule ?? queueData?.postingSchedule ?? { enabled: true, times: ['10:00', '15:00', '22:00'] };
 
   // Separate bets the bot WILL post from bets still missing data or removed
-  // Mirrors getBetsReadyForPosting(): has link + (odds >= 1.60 OR promovida_manual)
-  // Already-posted bets are always postable (they stay in queue until kickoff)
-  // Removed bets (elegibilidade='removida') go to "Fora da Fila" section
   const MIN_ODDS = 1.60;
   function isPostable(b: QueueBet): boolean {
     if (b.elegibilidade === 'removida') return false;
@@ -258,6 +522,9 @@ export default function PostagemPage() {
   }
   const postableBets = queueData?.bets.filter(isPostable) ?? [];
   const pendingBets = queueData?.bets.filter(b => !isPostable(b)) ?? [];
+
+  const isPreviewActive = previewPhase !== 'idle';
+  const progressPct = totalSendCount > 0 ? Math.round((postedCount / totalSendCount) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -269,7 +536,8 @@ export default function PostagemPage() {
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            disabled={isPreviewActive}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
@@ -281,7 +549,7 @@ export default function PostagemPage() {
       </div>
 
       {/* Configuration Section */}
-      {(selectedGroupId || role === 'group_admin') && groupsLoaded && (
+      {(selectedGroupId || role === 'group_admin') && groupsLoaded && !isPreviewActive && (
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <PostingScheduleSection
             groupId={selectedGroupId}
@@ -293,7 +561,7 @@ export default function PostagemPage() {
       )}
 
       {/* Queue Summary */}
-      {queueData && (
+      {queueData && !isPreviewActive && (
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-900">Resumo da Fila</h3>
@@ -334,7 +602,7 @@ export default function PostagemPage() {
       )}
 
       {/* Error */}
-      {error && (
+      {error && !isPreviewActive && (
         <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
           {error}
           <button onClick={fetchQueue} className="ml-2 underline hover:no-underline">
@@ -343,15 +611,261 @@ export default function PostagemPage() {
         </div>
       )}
 
+      {/* Preview error (shown at top when not in preview mode) */}
+      {previewError && !isPreviewActive && (
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">
+          {previewError}
+        </div>
+      )}
+
       {/* Loading */}
-      {loading && !queueData && (
+      {loading && !queueData && !isPreviewActive && (
         <div className="flex justify-center py-12">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
         </div>
       )}
 
+      {/* ══════════════════════════════════════════════════ */}
+      {/* PREVIEW FLOW                                      */}
+      {/* ══════════════════════════════════════════════════ */}
+
+      {/* Loading preview */}
+      {previewPhase === 'loading' && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-8 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-300 border-t-blue-600" />
+          <p className="mt-3 text-sm font-medium text-blue-800">Gerando previews...</p>
+          <p className="mt-1 text-xs text-blue-600">Preparando mensagens para revisao</p>
+        </div>
+      )}
+
+      {/* Preview reviewing / sending / polling / done / timeout */}
+      {isPreviewActive && previewPhase !== 'loading' && (
+        <div className="space-y-4">
+          {/* Top bar — counter + actions */}
+          <div className="rounded-lg border border-blue-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                  <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900">
+                    Preview da Postagem
+                    {previewData && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        Grupo: {previewData.groupName}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-xs text-gray-500">
+                    {previewBets.length} de {previewData?.bets.length ?? 0} aposta{(previewData?.bets.length ?? 0) !== 1 ? 's' : ''} selecionada{(previewData?.bets.length ?? 0) !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Polling progress */}
+                {previewPhase === 'polling' && sendStatusMessage && (
+                  <div className="flex items-center gap-2 mr-3">
+                    <div className="h-2 w-24 rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-green-500 transition-all duration-500"
+                        style={{ width: `${Math.max(progressPct, 10)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-600">{sendStatusMessage}</span>
+                  </div>
+                )}
+
+                {/* Done message */}
+                {previewPhase === 'done' && sendStatusMessage && (
+                  <p className="text-sm font-medium text-green-700 mr-3">{sendStatusMessage}</p>
+                )}
+
+                {/* Timeout message */}
+                {previewPhase === 'timeout' && (
+                  <p className="text-xs text-amber-700 mr-3">
+                    Bot nao respondeu em 60s. Verifique se o bot esta rodando.
+                  </p>
+                )}
+
+                {/* Action buttons */}
+                {previewPhase === 'reviewing' && (
+                  <>
+                    <button
+                      onClick={handleCancelPreview}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSendAll}
+                      disabled={previewBets.length === 0}
+                      className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Enviar Todas ({previewBets.length})
+                    </button>
+                  </>
+                )}
+
+                {(previewPhase === 'done' || previewPhase === 'timeout') && (
+                  <button
+                    onClick={handleCancelPreview}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Voltar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Preview error */}
+            {previewError && (
+              <div className="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-700">
+                {previewError}
+              </div>
+            )}
+          </div>
+
+          {/* Sending overlay indicator */}
+          {previewPhase === 'sending' && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
+              <div className="mx-auto h-6 w-6 animate-spin rounded-full border-4 border-green-300 border-t-green-600" />
+              <p className="mt-2 text-sm font-medium text-green-800">Enviando postagem...</p>
+            </div>
+          )}
+
+          {/* Preview cards */}
+          {(previewPhase === 'reviewing' || previewPhase === 'sending') && (
+            <div className="space-y-3">
+              {previewBets.map((bet, idx) => (
+                <div
+                  key={bet.betId}
+                  className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden"
+                >
+                  {/* Card header */}
+                  <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {bet.betInfo.homeTeam} x {bet.betInfo.awayTeam}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatKickoffShort(bet.betInfo.kickoffTime)} &middot; {bet.betInfo.market}: {bet.betInfo.pick} &middot; Odd: {bet.betInfo.odds}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Card actions */}
+                    {previewPhase === 'reviewing' && (
+                      <div className="flex items-center gap-1">
+                        {removingPreviewIdx === idx ? (
+                          <>
+                            <span className="text-xs text-red-600 mr-1">Remover?</span>
+                            <button
+                              onClick={() => handleRemovePreviewExecute(idx)}
+                              className="rounded px-2 py-1 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200"
+                            >
+                              Sim
+                            </button>
+                            <button
+                              onClick={handleRemovePreviewCancel}
+                              className="rounded px-2 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200"
+                            >
+                              Nao
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {editingPreviewIdx !== idx && (
+                              <button
+                                onClick={() => handleEditPreview(idx)}
+                                className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                title="Editar texto"
+                              >
+                                Editar
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleRegeneratePreview(idx)}
+                              disabled={regeneratingIdx === idx}
+                              className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 disabled:opacity-50"
+                              title="Regenerar preview"
+                            >
+                              {regeneratingIdx === idx ? '...' : 'Regenerar'}
+                            </button>
+                            <button
+                              onClick={() => handleRemovePreviewConfirm(idx)}
+                              className="rounded p-1 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              title="Remover do batch"
+                            >
+                              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Card body — preview text or edit textarea */}
+                  <div className="px-4 py-3">
+                    {editingPreviewIdx === idx ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editingPreviewText}
+                          onChange={(e) => setEditingPreviewText(e.target.value)}
+                          rows={6}
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={handleCancelPreviewEdit}
+                            className="rounded-md border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => handleSavePreviewEdit(idx)}
+                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                          >
+                            Salvar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">
+                        {bet.preview}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {previewBets.length === 0 && (
+                <div className="rounded-lg border border-gray-200 bg-white p-6 text-center">
+                  <p className="text-sm text-gray-500">Todas as apostas foram removidas do preview.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════ */}
+      {/* QUEUE TABLES (hidden during active preview)       */}
+      {/* ══════════════════════════════════════════════════ */}
+
       {/* Postable Bets — Fila de Postagem */}
-      {queueData && (
+      {queueData && !isPreviewActive && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">
@@ -360,11 +874,14 @@ export default function PostagemPage() {
                 ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} elegivel{postableBets.length !== 1 ? 'is' : ''})
               </span>
             </h2>
-            <PostNowButton
-              readyCount={postableBets.length}
-              groupId={selectedGroupId || undefined}
-              onPostComplete={fetchQueue}
-            />
+            <button
+              onClick={handlePreparePreview}
+              disabled={postableBets.length === 0}
+              title={postableBets.length === 0 ? 'Nenhuma aposta pronta' : `Preparar postagem de ${postableBets.length} aposta(s)`}
+              className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Preparar Postagem
+            </button>
           </div>
           <PostingQueueTable
             bets={postableBets}
@@ -375,7 +892,7 @@ export default function PostagemPage() {
       )}
 
       {/* Pending/Removed Bets — Apostas Fora da Fila */}
-      {queueData && pendingBets.length > 0 && (
+      {queueData && pendingBets.length > 0 && !isPreviewActive && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-gray-900">
             Apostas Fora da Fila
@@ -397,7 +914,7 @@ export default function PostagemPage() {
       )}
 
       {/* No group selected */}
-      {role === 'super_admin' && !selectedGroupId && groupsLoaded && (
+      {role === 'super_admin' && !selectedGroupId && groupsLoaded && !isPreviewActive && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
           <p className="text-sm text-blue-800">
             Selecione um grupo para visualizar a fila de postagem.
