@@ -54,3 +54,17 @@ PR: #69
 | UI | Postagem Guru (isolamento) | PASS | `e2e-evidence/03-postagem-guru-isolamento.png` |
 
 **Total: 17 verificações, 17 PASS. 0 bugs bloqueantes. 2 issues menores (Erros 1 e 3).**
+
+---
+
+## Fase 2 de Testes — Após Tasks 4.2, 4.5, 5.6, 1.1, 5.7
+
+### Deploy Status
+- **Guru bot** (srv-d5hp23a4d50c7397o1q0): Env vars configuradas, redeploy em progresso
+- **Unified bot** (srv-d6fliv6a2pns7382ckd0): Criado, deploy em progresso, URL: https://bets-bot-unified.onrender.com
+- **Osmar bot** (srv-d6678u1r0fns73ciknn0): Funcionando normalmente
+
+### Pendente verificação
+- [ ] Guru bot responde a /status no grupo admin
+- [ ] Unified bot webhook registra ambos os tokens
+- [ ] Suspender serviços antigos após validação do unified
