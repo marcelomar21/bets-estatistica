@@ -3,8 +3,8 @@
  * Handles inline keyboard callbacks for admin commands
  */
 const logger = require('../../../lib/logger');
-const { config } = require('../../../lib/config');
 const { kickMemberFromGroup, markMemberAsRemoved, appendToNotes } = require('../../services/memberService');
+const { getDefaultBotCtx } = require('../../telegram');
 const { consumePendingRemoval } = require('./removalState');
 
 /**
@@ -14,7 +14,7 @@ const { consumePendingRemoval } = require('./removalState');
  * @param {object} callbackQuery - Telegram callback query object
  * @returns {boolean} - True if handled, false otherwise
  */
-async function handleRemovalCallback(bot, callbackQuery) {
+async function handleRemovalCallback(bot, callbackQuery, botCtx = null) {
   const { data, message, from } = callbackQuery;
 
   // Parse callback data
@@ -70,7 +70,8 @@ async function handleRemovalCallback(bot, callbackQuery) {
   if (action === 'confirm') {
     try {
       // Send farewell message (consistent with kick-expired.js)
-      const groupId = config.telegram.publicGroupId;
+      const effectiveBotCtx = botCtx || getDefaultBotCtx();
+      const groupId = effectiveBotCtx?.publicGroupId;
       try {
         await bot.sendMessage(
           pendingData.telegramId,

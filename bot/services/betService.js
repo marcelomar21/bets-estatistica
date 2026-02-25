@@ -137,7 +137,7 @@ async function getBetsReadyForPosting() {
       .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
       .order('promovida_manual', { ascending: false })  // Promovidas primeiro
       .order('odds', { ascending: false })              // Depois por odds
-      .limit(10); // Buscar mais para depois filtrar
+      .limit(50); // Buscar mais para depois filtrar
 
     if (error) {
       logger.error('Failed to fetch ready bets', { error: error.message });
@@ -1383,7 +1383,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         .order('league_matches(kickoff_time)', { ascending: true }) // Story 14.4: Data primeiro
         .order('promovida_manual', { ascending: false })
         .order('odds', { ascending: false })
-        .limit(10);
+        .limit(50);
 
       if (eligibleError) {
         logger.warn('Erro ao buscar novas elegíveis', { error: eligibleError.message });

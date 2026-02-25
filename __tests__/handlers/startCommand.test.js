@@ -39,7 +39,7 @@ jest.mock('../../lib/config', () => ({
 }));
 
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('../../bot/handlers/startCommand');
-const { getBot } = require('../../bot/telegram');
+const { getBot, getDefaultBotCtx } = require('../../bot/telegram');
 const { supabase } = require('../../lib/supabase');
 const {
   getMemberByTelegramId,
@@ -70,6 +70,11 @@ describe('Start Command Handler', () => {
       })
     };
     getBot.mockReturnValue(mockBot);
+    getDefaultBotCtx.mockReturnValue({
+      publicGroupId: '-1001234567890',
+      adminGroupId: '-100admin',
+      botToken: 'test-token',
+    });
 
     // Mock supabase
     mockSupabaseFrom = {

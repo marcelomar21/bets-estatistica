@@ -29,6 +29,11 @@ jest.mock('../../../bot/telegram', () => ({
     sendMessage: jest.fn(),
     banChatMember: jest.fn(),
   })),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-100123456789',
+    adminGroupId: '-100admin',
+    botToken: 'test-token',
+  })),
 }));
 
 let mockConfig;
@@ -238,12 +243,12 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       );
     });
 
-    it('should fall back to config.telegram.publicGroupId when no groupData (single-tenant)', async () => {
+    it('should fall back to default bot context publicGroupId when no groupData (single-tenant)', async () => {
       await processMemberKick(baseMember, 'payment_failed', null);
 
       expect(kickMemberFromGroup).toHaveBeenCalledWith(
         123456789,
-        '-100123456789' // config.telegram.publicGroupId
+        '-100123456789' // from getDefaultBotCtx().publicGroupId
       );
     });
 

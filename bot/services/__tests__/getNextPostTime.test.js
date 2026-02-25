@@ -9,7 +9,7 @@ jest.mock('../../../lib/logger', () => ({
 
 jest.mock('../../../lib/config', () => ({
   config: {
-    betting: { minOdds: 1.60, maxActiveBets: 3, maxDaysAhead: 2 },
+    betting: { minOdds: 1.60, maxActiveBets: 50, maxDaysAhead: 2 },
     telegram: { adminGroupId: '-100123', publicGroupId: '-100456', botToken: 'test' },
     membership: { groupId: 'test-group-uuid' },
   },

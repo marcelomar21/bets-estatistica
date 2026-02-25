@@ -15,7 +15,7 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
-const { sendToPublic, sendToAdmin, getBot } = require('../telegram');
+const { sendToPublic, sendToAdmin, getBot, getDefaultBotCtx } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
 const { sendPostWarn } = require('./jobWarn');
@@ -277,15 +277,17 @@ function generatePreviewMessage(ativas, novas) {
  * @param {string} period - Period name
  * @returns {Promise<{confirmed: boolean, autoPosted: boolean}>}
  */
-async function requestConfirmation(ativas, novas, period) {
+async function requestConfirmation(ativas, novas, period, botCtx = null) {
   const confirmationId = `postbets_${Date.now()}`;
   const preview = generatePreviewMessage(ativas, novas);
 
   const bot = getBot();
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const adminGroupId = effectiveBotCtx?.adminGroupId;
 
   // Send confirmation request to admin group
   const sendResult = await bot.sendMessage(
-    config.telegram.adminGroupId,
+    adminGroupId,
     preview,
     {
       parse_mode: 'Markdown',
@@ -319,7 +321,7 @@ async function requestConfirmation(ativas, novas, period) {
       bot.editMessageText(
         `${preview}\n\n✅ *Auto-postado* (sem resposta em 15min)`,
         {
-          chat_id: config.telegram.adminGroupId,
+          chat_id: adminGroupId,
           message_id: messageId,
           parse_mode: 'Markdown',
         }
@@ -334,6 +336,7 @@ async function requestConfirmation(ativas, novas, period) {
       timeoutId,
       messageId,
       period,
+      adminGroupId,
     });
   });
 }
@@ -359,6 +362,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
 
   const bot = getBot();
   const user = callbackQuery.from;
+  const adminGroupId = pending.adminGroupId || callbackQuery.message?.chat?.id;
 
   if (action === 'confirm') {
     logger.info('Post confirmed by admin', { confirmationId, userId: user.id, username: user.username, groupId: getLogGroupId() });
@@ -367,7 +371,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
     await bot.editMessageText(
       `✅ *Postagem confirmada* por @${user.username || user.first_name}`,
       {
-        chat_id: config.telegram.adminGroupId,
+        chat_id: adminGroupId,
         message_id: pending.messageId,
         parse_mode: 'Markdown',
       }
@@ -381,7 +385,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
     await bot.editMessageText(
       `❌ *Postagem cancelada* por @${user.username || user.first_name}`,
       {
-        chat_id: config.telegram.adminGroupId,
+        chat_id: adminGroupId,
         message_id: pending.messageId,
         parse_mode: 'Markdown',
       }
@@ -426,10 +430,11 @@ function validateBetForPosting(bet) {
  * Garante que /postar posta EXATAMENTE o que /fila mostra
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
-async function runPostBets(skipConfirmation = false) {
+async function runPostBets(skipConfirmation = false, options = {}) {
+  const { botCtx = null } = options;
   const period = getPeriod();
   const now = new Date().toISOString();
-  const groupId = config.membership.groupId;
+  const groupId = botCtx?.groupId || config.membership.groupId;
   logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
@@ -441,7 +446,7 @@ async function runPostBets(skipConfirmation = false) {
     logger.error('[postBets] Failed to get fila status', { groupId, error: filaResult.error?.message });
 
     // Warn failure (Story 14.3 AC5)
-    await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`);
+    await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`, botCtx);
 
     return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
   }
@@ -460,7 +465,7 @@ async function runPostBets(skipConfirmation = false) {
 
   // Step 2: Request confirmation (unless skipped)
   if (!skipConfirmation) {
-    const confirmation = await requestConfirmation(ativas, novas, period);
+    const confirmation = await requestConfirmation(ativas, novas, period, botCtx);
 
     if (!confirmation.confirmed) {
       logger.info('[postBets] Post bets cancelled by admin', { groupId });
@@ -501,7 +506,7 @@ async function runPostBets(skipConfirmation = false) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template);
 
-      const sendResult = await sendToPublic(message);
+      const sendResult = await sendToPublic(message, botCtx);
 
       if (sendResult.success) {
         // Registrar repost no histórico (não muda status, já é posted)
@@ -546,7 +551,7 @@ async function runPostBets(skipConfirmation = false) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template);
 
-      const sendResult = await sendToPublic(message);
+      const sendResult = await sendToPublic(message, botCtx);
 
       if (sendResult.success) {
         // Mark as posted (updates status and timestamp)

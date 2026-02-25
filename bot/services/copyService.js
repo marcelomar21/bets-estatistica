@@ -6,6 +6,7 @@
 require('dotenv').config();
 
 const { ChatOpenAI } = require('@langchain/openai');
+const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const logger = require('../../lib/logger');
 
 // In-memory cache for generated copies
@@ -30,8 +31,9 @@ function getOpenAI() {
 /**
  * Get cache key for a bet
  */
-function getCacheKey(bet) {
-  return `copy_${bet.id}`;
+function getCacheKey(bet, toneConfig = null) {
+  const toneHash = toneConfig ? JSON.stringify(toneConfig).length : 0;
+  return `copy_${bet.id}_t${toneHash}`;
 }
 
 /**
@@ -71,7 +73,7 @@ function setCache(key, data) {
  * @param {object} bet - Bet object with homeTeamName, awayTeamName, betMarket, betPick, odds, reasoning
  * @returns {Promise<{success: boolean, data?: {copy: string}, error?: object}>}
  */
-async function generateBetCopy(bet) {
+async function generateBetCopy(bet, toneConfig = null) {
   if (!bet) {
     return {
       success: false,
@@ -80,7 +82,7 @@ async function generateBetCopy(bet) {
   }
 
   // Check cache first
-  const cacheKey = getCacheKey(bet);
+  const cacheKey = getCacheKey(bet, toneConfig);
   const cached = getFromCache(cacheKey);
   if (cached) {
     logger.debug('Copy from cache', { betId: bet.id });
@@ -90,31 +92,58 @@ async function generateBetCopy(bet) {
   try {
     const llm = getOpenAI();
 
-    const prompt = `Extraia os dados estatísticos do texto abaixo em bullet points curtos.
+    // Build system message with tone config injection
+    let systemMessage = 'Voce e um copywriter de apostas esportivas. Extrai dados estatisticos em bullet points curtos e engajantes.';
+
+    if (toneConfig) {
+      const parts = [];
+      if (toneConfig.persona) parts.push(`Persona: ${toneConfig.persona}`);
+      if (toneConfig.tone) parts.push(`Tom: ${toneConfig.tone}`);
+      if (toneConfig.forbiddenWords && toneConfig.forbiddenWords.length > 0) {
+        parts.push(`Palavras PROIBIDAS (NUNCA use): ${toneConfig.forbiddenWords.join(', ')}`);
+      }
+      if (toneConfig.ctaText) parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      if (toneConfig.customRules && toneConfig.customRules.length > 0) {
+        parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => `- ${r}`).join('\n')}`);
+      }
+      if (toneConfig.rawDescription) parts.push(`Descricao geral do tom: ${toneConfig.rawDescription}`);
+      if (parts.length > 0) {
+        systemMessage += '\n\nCONFIGURACAO DE TOM DE VOZ:\n' + parts.join('\n');
+      }
+    }
+
+    const humanMessage = `Extraia os dados estatisticos do texto abaixo em bullet points curtos.
 
 Texto:
-${bet.reasoning || 'Sem análise disponível'}
+${bet.reasoning || 'Sem analise disponivel'}
 
 Regras:
-- Extraia APENAS dados numéricos/percentuais do texto
-- Máximo 4-5 bullets
-- Cada bullet deve ter no máximo 40 caracteres
+- Extraia APENAS dados numericos/percentuais do texto
+- Maximo 4-5 bullets
+- Cada bullet deve ter no maximo 40 caracteres
 - Use "•" como marcador
-- Abrevie nomes de times (ex: "Sampaio Corrêa RJ" → "Sampaio")
+- Abrevie nomes de times (ex: "Sampaio Correa RJ" → "Sampaio")
 - Formato: "• Time: XX% dado" ou "• Dado: X,XX valor"
-- NÃO invente dados - use apenas o que está no texto
-- NÃO use emojis
-- Português BR
+- NAO invente dados - use apenas o que esta no texto
+- NAO use emojis
+- Portugues BR
+${toneConfig?.forbiddenWords?.length ? `- NUNCA use estas palavras: ${toneConfig.forbiddenWords.join(', ')}` : ''}
 
-Exemplo de saída:
+Exemplo de saida:
 • Sampaio: 50% ambas marcam
 • Botafogo: 60% ambas marcam
-• Média ofensiva: 1,80 e 2,10 gols
+• Media ofensiva: 1,80 e 2,10 gols
 • 70% jogos com 3+ gols
 
 Responda APENAS com os bullets, sem texto adicional.`;
 
-    const response = await llm.invoke(prompt);
+    const chatPrompt = ChatPromptTemplate.fromMessages([
+      ['system', systemMessage],
+      ['human', humanMessage],
+    ]);
+
+    const chain = chatPrompt.pipe(llm);
+    const response = await chain.invoke({});
     const copy = response.content.trim();
 
     // Validate response - deve ter pelo menos um bullet
@@ -171,8 +200,15 @@ function clearCache() {
  * @param {number} betId - Bet ID to clear from cache
  */
 function clearBetCache(betId) {
-  const key = `copy_${betId}`;
-  const deleted = copyCache.delete(key);
+  // Clear all cache entries for this bet (any tone variant)
+  const prefix = `copy_${betId}_t`;
+  let deleted = false;
+  for (const key of [...copyCache.keys()]) {
+    if (key.startsWith(prefix)) {
+      copyCache.delete(key);
+      deleted = true;
+    }
+  }
   if (deleted) {
     logger.debug('Cleared cache for bet', { betId });
   }

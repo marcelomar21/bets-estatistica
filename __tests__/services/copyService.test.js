@@ -9,12 +9,25 @@ jest.mock('dotenv', () => ({
 }));
 
 // Mock OpenAI/LangChain
-const mockInvoke = jest.fn();
+const mockChainInvoke = jest.fn();
 jest.mock('@langchain/openai', () => ({
   ChatOpenAI: jest.fn().mockImplementation(() => ({
-    invoke: mockInvoke,
+    // llm instance — used by chatPrompt.pipe(llm)
   })),
 }));
+
+jest.mock('@langchain/core/prompts', () => ({
+  ChatPromptTemplate: {
+    fromMessages: jest.fn().mockReturnValue({
+      pipe: jest.fn().mockReturnValue({
+        invoke: mockChainInvoke,
+      }),
+    }),
+  },
+}));
+
+// Alias for backward-compatible test references
+const mockInvoke = mockChainInvoke;
 
 // Mock logger
 jest.mock('../../lib/logger', () => ({

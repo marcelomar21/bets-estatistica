@@ -389,7 +389,8 @@ async function sendReactivationNotification(telegramId, memberId, groupTelegramI
   }
 
   const bot = getBot();
-  const resolvedGroupId = groupTelegramId || config.telegram.publicGroupId;
+  const { getDefaultBotCtx } = require('../telegram');
+  const resolvedGroupId = groupTelegramId || getDefaultBotCtx()?.publicGroupId;
 
   if (!resolvedGroupId) {
     logger.error('[notificationService] sendReactivationNotification: TELEGRAM_PUBLIC_GROUP_ID not configured');

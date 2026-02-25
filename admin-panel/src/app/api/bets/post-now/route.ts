@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 
-const MIN_ODDS = 1.60;
+const MIN_ODDS = Number(process.env.MIN_ODDS) || 1.60;
 
 /**
  * POST /api/bets/post-now
@@ -16,12 +16,22 @@ export const POST = createApiHandler(
 
     // Determine group ID
     let groupId = groupFilter;
+    // Check for preview overrides
+    let previewId: string | null = null;
     if (!groupId) {
       try {
         const body = await req.json();
         groupId = body.group_id;
+        previewId = body.previewId || null;
       } catch {
         // No body provided
+      }
+    } else {
+      try {
+        const bodyForPreview = await req.clone().json();
+        previewId = bodyForPreview.previewId || null;
+      } catch {
+        // No body or already consumed
       }
     }
 
@@ -115,10 +125,41 @@ export const POST = createApiHandler(
       }, { status: 422 });
     }
 
-    // Set the post_now_requested_at flag
+    // Set the post_now_requested_at flag, with optional preview link
+    const updateData: Record<string, unknown> = {
+      post_now_requested_at: new Date().toISOString(),
+    };
+
+    if (previewId) {
+      // Validate preview exists and is not expired
+      const { data: preview, error: previewError } = await supabase
+        .from('post_previews')
+        .select('id, status, expires_at')
+        .eq('preview_id', previewId)
+        .eq('group_id', groupId)
+        .eq('status', 'draft')
+        .single();
+
+      if (previewError || !preview) {
+        return NextResponse.json(
+          { success: false, error: { code: 'PREVIEW_NOT_FOUND', message: 'Preview not found or expired' } },
+          { status: 404 },
+        );
+      }
+
+      if (new Date(preview.expires_at) < new Date()) {
+        return NextResponse.json(
+          { success: false, error: { code: 'PREVIEW_EXPIRED', message: 'Preview has expired' } },
+          { status: 410 },
+        );
+      }
+
+      updateData.active_preview_id = previewId;
+    }
+
     const { error: updateError } = await supabase
       .from('groups')
-      .update({ post_now_requested_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', groupId);
 
     if (updateError) {

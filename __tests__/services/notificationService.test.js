@@ -41,6 +41,11 @@ jest.mock('../../bot/telegram', () => ({
     sendMessage: jest.fn(),
     createChatInviteLink: jest.fn(),
   })),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-1001234567890',
+    adminGroupId: '-100admin',
+    botToken: 'test-token',
+  })),
 }));
 
 // Mock memberService for Story 18.3 - generatePaymentLink
@@ -439,16 +444,13 @@ describe('notificationService', () => {
     });
 
     it('should return error when groupId is not configured', async () => {
-      const { config } = require('../../lib/config');
-      const originalGroupId = config.telegram.publicGroupId;
-      config.telegram.publicGroupId = null;
+      const { getDefaultBotCtx } = require('../../bot/telegram');
+      getDefaultBotCtx.mockReturnValueOnce(null);
 
       const result = await sendReactivationNotification(123456789, 'member-uuid');
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('CONFIG_MISSING');
-
-      config.telegram.publicGroupId = originalGroupId;
     });
 
     it('should return error when invite link generation fails', async () => {

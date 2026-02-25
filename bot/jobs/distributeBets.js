@@ -99,6 +99,35 @@ async function getUndistributedBets() {
 }
 
 /**
+ * Count distributed bets per group in the current window
+ * Used to balance distribution fairly
+ * @returns {Promise<object>} { groupId: count }
+ */
+async function getGroupBetCounts() {
+  const { startOfToday, endOfTomorrow } = getDistributionWindow();
+
+  const { data, error } = await supabase
+    .from('suggested_bets')
+    .select('group_id, league_matches!inner(kickoff_time)')
+    .eq('elegibilidade', 'elegivel')
+    .not('group_id', 'is', null)
+    .not('distributed_at', 'is', null)
+    .gte('league_matches.kickoff_time', startOfToday)
+    .lte('league_matches.kickoff_time', endOfTomorrow);
+
+  if (error) {
+    logger.warn('[bets:distribute] Erro ao contar apostas por grupo', { error: error.message });
+    return {};
+  }
+
+  const counts = {};
+  for (const bet of (data || [])) {
+    counts[bet.group_id] = (counts[bet.group_id] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
  * Rebalance distributed bets if new groups were added.
  * Checks if all active groups have bets in the current window.
  * If any active group has no bets, undistributes all non-posted bets
@@ -162,19 +191,47 @@ async function rebalanceIfNeeded(activeGroups) {
 }
 
 /**
- * Distribute bets among groups using round-robin algorithm
- * Pure function - deterministic and testable
+ * Distribute bets among groups using fair round-robin algorithm
+ * Groups with fewer existing bets get priority
  * @param {Array} bets - Undistributed bets
  * @param {Array} groups - Active groups
+ * @param {object} [groupCounts={}] - Existing bet counts per group { groupId: count }
  * @returns {Array<{betId: string, groupId: string}>} Assignment list
  */
-function distributeRoundRobin(bets, groups) {
+function distributeRoundRobin(bets, groups, groupCounts = {}) {
   if (!bets.length || !groups.length) return [];
 
-  return bets.map((bet, i) => ({
-    betId: bet.id,
-    groupId: groups[i % groups.length].id,
-  }));
+  // Sort groups by current bet count (ascending), with random tiebreaker
+  const sortedGroups = [...groups].sort((a, b) => {
+    const countA = groupCounts[a.id] || 0;
+    const countB = groupCounts[b.id] || 0;
+    if (countA !== countB) return countA - countB;
+    return Math.random() - 0.5; // Random tiebreaker eliminates systematic bias
+  });
+
+  // Track running counts during assignment
+  const runningCounts = {};
+  for (const g of sortedGroups) {
+    runningCounts[g.id] = groupCounts[g.id] || 0;
+  }
+
+  const assignments = [];
+  for (const bet of bets) {
+    // Find group with minimum bets
+    let minGroup = sortedGroups[0];
+    let minCount = runningCounts[minGroup.id];
+    for (const g of sortedGroups) {
+      if (runningCounts[g.id] < minCount) {
+        minGroup = g;
+        minCount = runningCounts[g.id];
+      }
+    }
+
+    assignments.push({ betId: bet.id, groupId: minGroup.id });
+    runningCounts[minGroup.id]++;
+  }
+
+  return assignments;
 }
 
 /**
@@ -269,7 +326,10 @@ async function runDistributeBets() {
   }
 
   // 3. Calculate round-robin assignments
-  const assignments = distributeRoundRobin(bets, groups);
+  // Count existing bets per group for fair distribution
+  const groupCounts = await getGroupBetCounts();
+  logger.info('[bets:distribute] Contagem de apostas por grupo', { groupCounts });
+  const assignments = distributeRoundRobin(bets, groups, groupCounts);
 
   // 4. Execute assignments
   let successCount = 0;
@@ -344,6 +404,7 @@ module.exports = {
   getActiveGroups,
   getUndistributedBets,
   getDistributionWindow,
+  getGroupBetCounts,
   rebalanceIfNeeded,
   distributeRoundRobin,
   assignBetToGroup,

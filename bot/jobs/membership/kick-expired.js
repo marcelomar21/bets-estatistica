@@ -152,7 +152,7 @@ function shouldKickMember(member) {
 /**
  * Resolve chat ID for kick operation
  * Multi-tenant mode (GROUP_ID set): requires group.telegram_group_id from DB
- * Single-tenant mode: falls back to config.telegram.publicGroupId
+ * Single-tenant mode: falls back to default bot context publicGroupId
  * @param {object|null} groupData - Resolved group data from DB
  * @returns {{success: boolean, data?: {chatId: string|number}, error?: object}}
  */
@@ -165,7 +165,8 @@ function resolveKickChatId(groupData) {
   }
 
   if (!isMultiTenant) {
-    const fallbackChatId = config.telegram?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
+    const { getDefaultBotCtx } = require('../../telegram');
+    const fallbackChatId = getDefaultBotCtx()?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
     if (fallbackChatId) {
       return { success: true, data: { chatId: fallbackChatId } };
     }
@@ -393,7 +394,7 @@ async function processMemberKick(member, reason, groupData) {
  * Main entry point - runs the kick expired job with lock
  * @returns {Promise<{success: boolean, kicked?: number, alreadyRemoved?: number, failed?: number, error?: string}>}
  */
-async function runKickExpired() {
+async function runKickExpired(botCtx = null) {
   // Prevent concurrent runs
   if (kickExpiredRunning) {
     logger.debug('[membership:kick-expired] Already running, skipping');
@@ -402,7 +403,7 @@ async function runKickExpired() {
   kickExpiredRunning = true;
 
   try {
-    return await _runKickExpiredInternal();
+    return await _runKickExpiredInternal(botCtx);
   } finally {
     kickExpiredRunning = false;
   }
@@ -414,11 +415,11 @@ async function runKickExpired() {
  * - Members past grace period: kick from group
  * @returns {Promise<{success: boolean, kicked: number, warned: number, alreadyRemoved: number, failed: number}>}
  */
-async function _runKickExpiredInternal() {
+async function _runKickExpiredInternal(botCtx = null) {
   const startTime = Date.now();
   const today = new Date().toISOString().split('T')[0];
   const gracePeriodDays = config.membership?.gracePeriodDays || 2;
-  const groupId = config.membership?.groupId;
+  const groupId = botCtx?.groupId || config.membership?.groupId;
   logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays, groupId: groupId || 'single-tenant' });
 
   let kicked = 0;

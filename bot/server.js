@@ -19,6 +19,7 @@ const express = require('express');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
+const { initBots, getBotForGroup, getAllBots } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
@@ -97,22 +98,24 @@ app.post(`/webhook/${config.telegram.botToken}`, (req, res) => {
  * Process webhook update asynchronously
  * Extracted to allow immediate 200 response
  */
-async function processWebhookUpdate(update) {
-  const bot = getBot();
+async function processWebhookUpdate(update, botCtx = null) {
+  const bot = botCtx ? botCtx.bot : getBot();
+  const adminGroupId = botCtx ? String(botCtx.adminGroupId) : config.telegram.adminGroupId;
+  const publicGroupId = botCtx ? String(botCtx.publicGroupId) : (cachedGroupChatId || config.telegram.publicGroupId);
 
   // Process message
   if (update.message) {
     const msg = update.message;
 
     // DEBUG: Log all messages from public group to diagnose new_chat_members issue
-    const debugGroupId = cachedGroupChatId || config.telegram.publicGroupId;
+    const debugGroupId = publicGroupId;
     if (msg.chat.id.toString() === debugGroupId) {
       logger.info('[webhook:debug] Message from public group', {
         chatId: msg.chat.id,
         hasNewChatMembers: !!msg.new_chat_members,
         newChatMembersCount: msg.new_chat_members?.length || 0,
         messageType: msg.new_chat_members ? 'new_chat_members' : (msg.text ? 'text' : 'other'),
-        configuredPublicGroupId: config.telegram.publicGroupId
+        configuredPublicGroupId: publicGroupId
       });
     }
 
@@ -121,15 +124,15 @@ async function processWebhookUpdate(update) {
       logger.info('[webhook:debug] new_chat_members event received', {
         chatId: msg.chat.id,
         chatTitle: msg.chat.title,
-        configuredPublicGroupId: config.telegram.publicGroupId,
-        match: msg.chat.id.toString() === config.telegram.publicGroupId,
+        configuredPublicGroupId: publicGroupId,
+        match: msg.chat.id.toString() === publicGroupId,
         members: msg.new_chat_members.map(u => ({ id: u.id, username: u.username, is_bot: u.is_bot }))
       });
     }
 
     // Story 16.4: Detect new members joining the PUBLIC group (5.1, 5.2, 5.3)
     // Story 3.1: Use cached group chat ID for multi-tenant, fallback to config
-    const expectedGroupChatId = cachedGroupChatId || config.telegram.publicGroupId;
+    const expectedGroupChatId = publicGroupId;
     if (msg.new_chat_members && msg.chat.id.toString() === expectedGroupChatId) {
       await handleNewChatMembers(msg);
     }
@@ -147,7 +150,7 @@ async function processWebhookUpdate(update) {
     }
 
     // All admin group messages handled by adminGroup.js (includes /help, /status, etc)
-    if (msg.chat.id.toString() === config.telegram.adminGroupId) {
+    if (msg.chat.id.toString() === adminGroupId) {
       await handleAdminMessage(bot, msg);
     }
   }
@@ -156,7 +159,7 @@ async function processWebhookUpdate(update) {
   if (update.callback_query) {
     const callbackQuery = update.callback_query;
     // Only handle from admin group
-    if (callbackQuery.message?.chat?.id?.toString() === config.telegram.adminGroupId) {
+    if (callbackQuery.message?.chat?.id?.toString() === adminGroupId) {
       const data = callbackQuery.data || '';
 
       // Handle post confirmation callbacks
@@ -166,7 +169,7 @@ async function processWebhookUpdate(update) {
         await handlePostConfirmation(action, confirmationId, callbackQuery);
       } else {
         // Handle removal callbacks (existing)
-        await handleRemovalCallback(bot, callbackQuery);
+        await handleRemovalCallback(bot, callbackQuery, botCtx);
       }
     }
   }
@@ -426,6 +429,15 @@ async function start() {
     process.exit(1);
   }
 
+  // Phase 5: Initialize multi-bot registry from database
+  try {
+    await initBots(supabase);
+    const allBots = getAllBots();
+    logger.info('[server] Multi-bot registry initialized', { count: allBots.size });
+  } catch (err) {
+    logger.warn('[server] Multi-bot initialization failed, continuing with single bot', { error: err.message });
+  }
+
   // Story 3.1: Cache telegram_group_id from groups table if multi-tenant
   if (config.membership.groupId) {
     try {
@@ -515,6 +527,39 @@ async function start() {
   } else {
     console.log('⚠️  WEBHOOK_URL not set - webhook not configured');
     console.log('   Render provides RENDER_EXTERNAL_URL automatically\n');
+  }
+
+  // Phase 5: Register webhook routes for additional bots from registry
+  try {
+    const allBots = getAllBots();
+    for (const [groupId, botCtx] of allBots) {
+      // Skip if this is the same token as the legacy bot (already registered above)
+      if (botCtx.botToken === config.telegram.botToken) continue;
+
+      const botWebhookPath = `/webhook/${botCtx.botToken}`;
+      app.post(botWebhookPath, (req, res) => {
+        res.sendStatus(200);
+        processWebhookUpdate(req.body, botCtx).catch(err => {
+          logger.error('Multi-bot webhook processing error', { groupId, error: err.message });
+        });
+      });
+
+      // Register webhook with Telegram
+      if (WEBHOOK_URL) {
+        const webhookUrl = `${WEBHOOK_URL}${botWebhookPath}`;
+        try {
+          await botCtx.bot.setWebHook(webhookUrl);
+          logger.info('[server] Multi-bot webhook registered', {
+            groupId,
+            url: webhookUrl.replace(botCtx.botToken, '***'),
+          });
+        } catch (err) {
+          logger.error('[server] Failed to register multi-bot webhook', { groupId, error: err.message });
+        }
+      }
+    }
+  } catch (err) {
+    logger.error('[server] Multi-bot webhook registration error', { error: err.message });
   }
 
   // Setup internal scheduler (async for dynamic scheduler init)
