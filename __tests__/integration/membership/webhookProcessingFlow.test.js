@@ -61,6 +61,11 @@ const mockBot = {
 jest.mock('../../../bot/telegram', () => ({
   initBot: jest.fn(),
   getBot: jest.fn(() => mockBot),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-100222222',
+    adminGroupId: '-100111111',
+    botToken: 'test-token-123',
+  })),
 }));
 
 // Mock Mercado Pago Service

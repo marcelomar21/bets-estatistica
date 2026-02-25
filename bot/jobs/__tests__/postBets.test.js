@@ -52,6 +52,11 @@ jest.mock('../../telegram', () => ({
     editMessageText: jest.fn().mockResolvedValue(true),
     answerCallbackQuery: jest.fn().mockResolvedValue(true),
   })),
+  getDefaultBotCtx: jest.fn(() => ({
+    adminGroupId: '-100123',
+    publicGroupId: '-100456',
+    botToken: 'test',
+  })),
 }));
 
 jest.mock('../../services/betService', () => ({

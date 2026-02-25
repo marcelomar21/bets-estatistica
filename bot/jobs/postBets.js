@@ -15,7 +15,7 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
-const { sendToPublic, sendToAdmin, getBot } = require('../telegram');
+const { sendToPublic, sendToAdmin, getBot, getDefaultBotCtx } = require('../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
 const { sendPostWarn } = require('./jobWarn');
@@ -277,15 +277,17 @@ function generatePreviewMessage(ativas, novas) {
  * @param {string} period - Period name
  * @returns {Promise<{confirmed: boolean, autoPosted: boolean}>}
  */
-async function requestConfirmation(ativas, novas, period) {
+async function requestConfirmation(ativas, novas, period, botCtx = null) {
   const confirmationId = `postbets_${Date.now()}`;
   const preview = generatePreviewMessage(ativas, novas);
 
   const bot = getBot();
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const adminGroupId = effectiveBotCtx?.adminGroupId;
 
   // Send confirmation request to admin group
   const sendResult = await bot.sendMessage(
-    config.telegram.adminGroupId,
+    adminGroupId,
     preview,
     {
       parse_mode: 'Markdown',
@@ -319,7 +321,7 @@ async function requestConfirmation(ativas, novas, period) {
       bot.editMessageText(
         `${preview}\n\n✅ *Auto-postado* (sem resposta em 15min)`,
         {
-          chat_id: config.telegram.adminGroupId,
+          chat_id: adminGroupId,
           message_id: messageId,
           parse_mode: 'Markdown',
         }
@@ -334,6 +336,7 @@ async function requestConfirmation(ativas, novas, period) {
       timeoutId,
       messageId,
       period,
+      adminGroupId,
     });
   });
 }
@@ -359,6 +362,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
 
   const bot = getBot();
   const user = callbackQuery.from;
+  const adminGroupId = pending.adminGroupId || callbackQuery.message?.chat?.id;
 
   if (action === 'confirm') {
     logger.info('Post confirmed by admin', { confirmationId, userId: user.id, username: user.username, groupId: getLogGroupId() });
@@ -367,7 +371,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
     await bot.editMessageText(
       `✅ *Postagem confirmada* por @${user.username || user.first_name}`,
       {
-        chat_id: config.telegram.adminGroupId,
+        chat_id: adminGroupId,
         message_id: pending.messageId,
         parse_mode: 'Markdown',
       }
@@ -381,7 +385,7 @@ async function handlePostConfirmation(action, confirmationId, callbackQuery) {
     await bot.editMessageText(
       `❌ *Postagem cancelada* por @${user.username || user.first_name}`,
       {
-        chat_id: config.telegram.adminGroupId,
+        chat_id: adminGroupId,
         message_id: pending.messageId,
         parse_mode: 'Markdown',
       }
@@ -461,7 +465,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
 
   // Step 2: Request confirmation (unless skipped)
   if (!skipConfirmation) {
-    const confirmation = await requestConfirmation(ativas, novas, period);
+    const confirmation = await requestConfirmation(ativas, novas, period, botCtx);
 
     if (!confirmation.confirmed) {
       logger.info('[postBets] Post bets cancelled by admin', { groupId });

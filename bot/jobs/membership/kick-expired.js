@@ -152,7 +152,7 @@ function shouldKickMember(member) {
 /**
  * Resolve chat ID for kick operation
  * Multi-tenant mode (GROUP_ID set): requires group.telegram_group_id from DB
- * Single-tenant mode: falls back to config.telegram.publicGroupId
+ * Single-tenant mode: falls back to default bot context publicGroupId
  * @param {object|null} groupData - Resolved group data from DB
  * @returns {{success: boolean, data?: {chatId: string|number}, error?: object}}
  */
@@ -165,7 +165,8 @@ function resolveKickChatId(groupData) {
   }
 
   if (!isMultiTenant) {
-    const fallbackChatId = config.telegram?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
+    const { getDefaultBotCtx } = require('../../telegram');
+    const fallbackChatId = getDefaultBotCtx()?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
     if (fallbackChatId) {
       return { success: true, data: { chatId: fallbackChatId } };
     }

@@ -15,7 +15,7 @@
  */
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
-const { getBot } = require('../telegram');
+const { getBot, getDefaultBotCtx } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
 const {
   getMemberByTelegramId,
@@ -201,7 +201,8 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
  */
 async function handleActiveOrTrialMember(bot, chatId, firstName, member, botCtx = null) {
   const isTrialMember = member.status === 'trial';
-  const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupId = effectiveBotCtx?.publicGroupId;
 
   // Check if member has joined the group according to DB
   const hasJoinedGroupInDb = !!member.joined_group_at;
@@ -282,7 +283,8 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member, b
 
     if (reactivateResult.success) {
       // Unban user from group before sending invite (they were banned when kicked)
-      const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
+      const effectiveBotCtx = botCtx || getDefaultBotCtx();
+      const groupId = effectiveBotCtx?.publicGroupId;
       try {
         await bot.unbanChatMember(groupId, telegramId, { only_if_banned: true });
         logger.info('[membership:start-command] User unbanned for reactivation', {
@@ -525,7 +527,8 @@ Envie /start novamente e informe o mesmo email que usou no checkout.
  * Generate invite link and send welcome message
  */
 async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = null) {
-  const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupId = effectiveBotCtx?.publicGroupId;
   // Get trial days from system_config (database)
   const trialDaysResult = await getTrialDays();
   const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;

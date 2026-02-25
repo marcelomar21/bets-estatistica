@@ -75,6 +75,11 @@ jest.mock('../../bot/telegram', () => ({
   getBot: jest.fn().mockReturnValue({
     sendMessage: jest.fn().mockResolvedValue(true),
   }),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-1001234567890',
+    adminGroupId: '-1009999999999',
+    botToken: 'test-token',
+  })),
 }));
 
 const mercadoPagoService = require('../../bot/services/mercadoPagoService');

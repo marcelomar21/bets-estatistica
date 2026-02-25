@@ -53,6 +53,16 @@ function getBot() {
   return _bot;
 }
 
+// Lazy load getDefaultBotCtx to avoid circular dependency
+let _getDefaultBotCtx = null;
+function getDefaultBotCtxLazy() {
+  if (!_getDefaultBotCtx) {
+    const { getDefaultBotCtx } = require('../telegram');
+    _getDefaultBotCtx = getDefaultBotCtx;
+  }
+  return _getDefaultBotCtx();
+}
+
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 // ============================================
@@ -293,8 +303,8 @@ async function updateWebhookEventGroupId(eventId, groupId) {
 async function notifyAdminPayment({ email, amount, action, memberId, groupId, groupName, adminGroupId }) {
   try {
     const bot = getBot();
-    // AC8: Use group-specific admin group, fallback to config
-    const targetAdminGroupId = adminGroupId || config.telegram.adminGroupId;
+    // AC8: Use group-specific admin group, fallback to default bot context
+    const targetAdminGroupId = adminGroupId || getDefaultBotCtxLazy()?.adminGroupId;
 
     if (!bot || !targetAdminGroupId) {
       logger.warn('[webhookProcessors] notifyAdminPayment: bot or adminGroupId not configured');
@@ -849,8 +859,8 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
 
     // Story 4.4: Check group membership and handle re-add (AC3)
     if (member.telegram_id) {
-      // Keep legacy fallback only when no tenant was resolved (single-tenant mode).
-      const groupTelegramId = group?.telegram_group_id || (!groupId ? config.telegram.publicGroupId : null);
+      // Resolve Telegram group ID from DB group, fallback to default bot context
+      const groupTelegramId = group?.telegram_group_id || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
 
       if (!groupTelegramId) {
         logger.warn('[webhook:payment] Missing telegram group for reactivation flow', {
@@ -1113,9 +1123,9 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
   }
 
   // 2. Kick do grupo Telegram
-  // AC4: Use group.telegram_group_id instead of config.telegram.publicGroupId
+  // AC4: Use group.telegram_group_id, fallback to default bot context
   if (member.telegram_id) {
-    const kickGroupId = group?.telegram_group_id || config.telegram.publicGroupId;
+    const kickGroupId = group?.telegram_group_id || getDefaultBotCtxLazy()?.publicGroupId;
     if (kickGroupId) {
       const kickResult = await memberService.kickMemberFromGroup(member.telegram_id, kickGroupId);
       if (!kickResult.success) {

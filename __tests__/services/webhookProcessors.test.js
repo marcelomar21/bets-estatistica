@@ -79,7 +79,12 @@ jest.mock('../../lib/config', () => ({
 jest.mock('../../bot/telegram', () => ({
   getBot: jest.fn().mockReturnValue({
     sendMessage: jest.fn().mockResolvedValue({ message_id: 1 })
-  })
+  }),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-1001234567890',
+    adminGroupId: '-1009999999999',
+    botToken: 'test-token',
+  })),
 }));
 
 const {

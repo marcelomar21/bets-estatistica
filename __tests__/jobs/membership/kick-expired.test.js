@@ -32,6 +32,11 @@ jest.mock('../../../bot/telegram', () => ({
     sendMessage: jest.fn(),
     banChatMember: jest.fn(),
   })),
+  getDefaultBotCtx: jest.fn(() => ({
+    publicGroupId: '-100123456789',
+    adminGroupId: '-100admin',
+    botToken: 'test-token',
+  })),
 }));
 
 jest.mock('../../../lib/config', () => ({

@@ -169,7 +169,7 @@ async function processWebhookUpdate(update, botCtx = null) {
         await handlePostConfirmation(action, confirmationId, callbackQuery);
       } else {
         // Handle removal callbacks (existing)
-        await handleRemovalCallback(bot, callbackQuery);
+        await handleRemovalCallback(bot, callbackQuery, botCtx);
       }
     }
   }
