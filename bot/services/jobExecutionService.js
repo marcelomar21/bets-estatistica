@@ -108,7 +108,7 @@ async function withExecutionLogging(jobName, fn) {
     return result;
   } catch (err) {
     if (executionId) {
-      await finishExecution(executionId, 'failed', null, err.message);
+      await finishExecution(executionId, 'failed', err.jobResult || null, err.message);
       await jobFailureAlert(jobName, err.message, executionId);
     } else {
       // Still send alert even if logging failed

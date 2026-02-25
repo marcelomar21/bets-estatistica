@@ -448,7 +448,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     // Warn failure (Story 14.3 AC5)
     await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`, botCtx);
 
-    return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
+    throw new Error(`Failed to get fila status: ${filaResult.error?.message || 'Unknown'}`);
   }
 
   const { ativas, novas } = filaResult.data;
@@ -481,6 +481,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   let repostFailed = 0;
   let posted = 0;
   let skipped = 0;
+  let sendFailed = 0; // Story 1.1: Track Telegram send failures separately from validation skips
 
   // Story 14.3: Array para coletar apostas postadas para o warn
   const postedBetsArray = [];
@@ -526,6 +527,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       } else {
         logger.error('[postBets] Failed to repost bet', { betId: bet.id, groupId, error: sendResult.error?.message });
         repostFailed++;
+        sendFailed++;
       }
     }
   }
@@ -573,6 +575,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       } else {
         logger.error('[postBets] Failed to post new bet', { betId: bet.id, groupId, error: sendResult.error?.message });
         skipped++;
+        sendFailed++;
       }
     }
   }
@@ -583,6 +586,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     repostFailed,
     newPosted: posted,
     newSkipped: skipped,
+    sendFailed,
     totalSent: reposted + posted
   });
 
@@ -610,14 +614,27 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     logger.warn('[postBets] Failed to send post warn', { groupId, error: warnErr.message });
   }
 
-  return {
+  const result = {
     reposted,
     repostFailed,
     posted,
     skipped,
+    sendFailed,
     totalSent: reposted + posted,
     cancelled: false
   };
+
+  // Surface real posting failures to withExecutionLogging (Story 1.1: AC#2)
+  // Only throw when Telegram send actually failed — validation skips are not posting failures
+  if (sendFailed > 0 && result.totalSent === 0) {
+    const err = new Error(
+      `Post bets failed: ${sendFailed} Telegram send failures, 0 sent successfully`
+    );
+    err.jobResult = result;
+    throw err;
+  }
+
+  return result;
 }
 
 // Run if called directly
