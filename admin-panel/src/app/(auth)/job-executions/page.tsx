@@ -63,6 +63,7 @@ export default function JobExecutionsPage() {
       setSummaryLoading(true);
       try {
         const res = await fetch('/api/job-executions/summary');
+        if (!res.ok) return;
         const json = await res.json();
         if (json.success) {
           setSummaryJobs(json.data.jobs);
@@ -90,6 +91,10 @@ export default function JobExecutionsPage() {
       if (statusFilter) params.set('status', statusFilter);
 
       const res = await fetch(`/api/job-executions?${params}`);
+      if (!res.ok) {
+        setError(`Erro HTTP ${res.status}`);
+        return;
+      }
       const json = await res.json();
 
       if (!json.success) {

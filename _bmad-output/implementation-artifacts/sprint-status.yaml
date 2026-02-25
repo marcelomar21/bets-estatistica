@@ -52,10 +52,10 @@ development_status:
   # ========================================
   # Epic 1: Envio Automático Estável e Observabilidade
   # ========================================
-  epic-1: in-progress
+  epic-1: done
   1-1-validar-corrigir-envio-automatico: done
   1-2-historico-postagens-dashboard: done
-  1-3-log-execucoes-jobs-falhas: review
+  1-3-log-execucoes-jobs-falhas: done
   epic-1-retrospective: optional
 
   # ========================================

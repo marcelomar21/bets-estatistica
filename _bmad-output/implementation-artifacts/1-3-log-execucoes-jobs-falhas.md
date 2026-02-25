@@ -1,6 +1,6 @@
 # Story 1.3: Log de Execuções de Jobs e Identificação de Falhas
 
-Status: review
+Status: done
 
 ## Story
 
