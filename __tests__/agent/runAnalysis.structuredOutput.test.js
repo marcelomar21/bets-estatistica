@@ -7,6 +7,7 @@
 
 const mockToolInvoke = jest.fn();
 const mockStructuredInvoke = jest.fn();
+const mockConsistencyInvoke = jest.fn();
 const mockBindTools = jest.fn();
 const mockWithStructuredOutput = jest.fn();
 
@@ -47,7 +48,7 @@ jest.mock('fs-extra', () => ({
 
 jest.mock('../../lib/config', () => ({
   config: {
-    llm: { heavyModel: 'gpt-4o-test' },
+    llm: { heavyModel: 'gpt-5.2', lightModel: 'gpt-5-mini' },
   },
 }));
 
@@ -119,7 +120,14 @@ beforeEach(() => {
   process.env.OPENAI_API_KEY = 'test-key';
   // Restore mock chaining after clearAllMocks
   mockBindTools.mockReturnValue({ invoke: mockToolInvoke });
-  mockWithStructuredOutput.mockReturnValue({ invoke: mockStructuredInvoke });
+  // Phase 2 structured output (includeRaw) vs consistency check (no includeRaw)
+  mockWithStructuredOutput.mockImplementation((_schema, opts) => {
+    if (opts?.includeRaw) {
+      return { invoke: mockStructuredInvoke };
+    }
+    return { invoke: mockConsistencyInvoke };
+  });
+  mockConsistencyInvoke.mockResolvedValue({ consistent: true, reason: 'OK' });
 });
 
 afterEach(() => {
@@ -147,28 +155,39 @@ describe('agentCore - structured output', () => {
   });
 
   describe('ensureAnalysisConsistency', () => {
-    test('aceita análise consistente sem conflitos', () => {
-      expect(() => ensureAnalysisConsistency(VALID_STRUCTURED)).not.toThrow();
+    test('aceita análise quando LLM retorna consistent=true', async () => {
+      mockConsistencyInvoke.mockResolvedValueOnce({ consistent: true, reason: 'OK' });
+      await expect(ensureAnalysisConsistency(VALID_STRUCTURED)).resolves.toBeUndefined();
     });
 
-    test('rejeita conflito de direção de gols (over vs under)', () => {
+    test('rejeita quando LLM detecta inconsistência', async () => {
+      mockConsistencyInvoke.mockResolvedValueOnce({
+        consistent: false,
+        reason: 'Under 2.5 gols conflita com over 2.5 gols no mesmo mercado',
+      });
       const conflicting = {
         ...VALID_STRUCTURED,
         safe_bets: [
-          { title: 'Aposte em menos de 2,5 gols', reasoning: 'Dados mostram média baixa de gols nos últimos jogos das equipes.', category: 'gols' },
+          { title: 'Aposte em menos de 2,5 gols', reasoning: 'Dados mostram média baixa.', category: 'gols' },
           ...VALID_STRUCTURED.safe_bets.slice(1),
         ],
         value_bets: [
-          { title: 'Aposte em mais de 3,5 gols no jogo', reasoning: 'O confronto direto historicamente apresenta jogos com muitos gols marcados.', angle: 'gols' },
+          { title: 'Aposte em mais de 2,5 gols no jogo', reasoning: 'Confronto direto com muitos gols.', angle: 'gols' },
           ...VALID_STRUCTURED.value_bets.slice(1),
         ],
       };
-      expect(() => ensureAnalysisConsistency(conflicting)).toThrow(/direção oposta/);
+      await expect(ensureAnalysisConsistency(conflicting)).rejects.toThrow(/conflita/);
     });
 
-    test('aceita null/undefined sem erro', () => {
-      expect(() => ensureAnalysisConsistency(null)).not.toThrow();
-      expect(() => ensureAnalysisConsistency(undefined)).not.toThrow();
+    test('aceita null/undefined sem erro (sem chamada LLM)', async () => {
+      await expect(ensureAnalysisConsistency(null)).resolves.toBeUndefined();
+      await expect(ensureAnalysisConsistency(undefined)).resolves.toBeUndefined();
+      expect(mockConsistencyInvoke).not.toHaveBeenCalled();
+    });
+
+    test('passa sem erro quando LLM de consistência falha (fail-open)', async () => {
+      mockConsistencyInvoke.mockRejectedValueOnce(new Error('Network timeout'));
+      await expect(ensureAnalysisConsistency(VALID_STRUCTURED)).resolves.toBeUndefined();
     });
   });
 
@@ -206,13 +225,15 @@ describe('agentCore - structured output', () => {
       expect(result.structuredAnalysis).toEqual(VALID_STRUCTURED);
       expect(result.analysisText).toContain('Análise Baseada nos Dados Brutos');
       expect(result.toolExecutions).toHaveLength(3);
-      expect(mockWithStructuredOutput).toHaveBeenCalledTimes(1);
+      // 2 calls: Phase 2 (includeRaw) + consistency check
+      expect(mockWithStructuredOutput).toHaveBeenCalledTimes(2);
       expect(mockStructuredInvoke).toHaveBeenCalledTimes(1);
+      expect(mockConsistencyInvoke).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('runAgent - consistency retry', () => {
-    test('retenta quando ensureAnalysisConsistency falha na primeira tentativa', async () => {
+    test('retenta quando LLM de consistência detecta conflito na primeira tentativa', async () => {
       const conflicting = {
         ...VALID_STRUCTURED,
         safe_bets: [
@@ -246,6 +267,11 @@ describe('agentCore - structured output', () => {
           parsed: VALID_STRUCTURED,
         });
 
+      // Consistency: first call rejects, second accepts
+      mockConsistencyInvoke
+        .mockResolvedValueOnce({ consistent: false, reason: 'Under 2.5 vs over 3.5 no mesmo mercado' })
+        .mockResolvedValueOnce({ consistent: true, reason: 'OK' });
+
       const result = await runAgent({
         matchId: 123,
         contextoJogo: 'Contexto de teste',
@@ -253,6 +279,7 @@ describe('agentCore - structured output', () => {
       });
 
       expect(mockStructuredInvoke).toHaveBeenCalledTimes(2);
+      expect(mockConsistencyInvoke).toHaveBeenCalledTimes(2);
       expect(result.structuredAnalysis).toEqual(VALID_STRUCTURED);
     });
   });
@@ -300,19 +327,7 @@ describe('agentCore - structured output', () => {
   });
 
   describe('runAgent - structured output failure', () => {
-    test('throws when all structured retries fail', async () => {
-      const conflicting = {
-        ...VALID_STRUCTURED,
-        safe_bets: [
-          { title: 'Aposte em menos de 2,5 gols', reasoning: 'Dados mostram média baixa de gols nos últimos jogos das equipes.', category: 'gols' },
-          ...VALID_STRUCTURED.safe_bets.slice(1),
-        ],
-        value_bets: [
-          { title: 'Aposte em mais de 3,5 gols no jogo', reasoning: 'O confronto direto historicamente apresenta jogos com muitos gols marcados.', angle: 'gols' },
-          ...VALID_STRUCTURED.value_bets.slice(1),
-        ],
-      };
-
+    test('throws when all structured retries fail consistency check', async () => {
       // Phase 1: tools OK
       mockToolInvoke
         .mockResolvedValueOnce(
@@ -323,16 +338,21 @@ describe('agentCore - structured output', () => {
         )
         .mockResolvedValueOnce(makeTextResponse('done'));
 
-      // Phase 2: both retries produce conflicting analysis
+      // Phase 2: both retries produce analysis
       mockStructuredInvoke
         .mockResolvedValueOnce({
-          raw: makeRawMessage(JSON.stringify(conflicting)),
-          parsed: conflicting,
+          raw: makeRawMessage(JSON.stringify(VALID_STRUCTURED)),
+          parsed: VALID_STRUCTURED,
         })
         .mockResolvedValueOnce({
-          raw: makeRawMessage(JSON.stringify(conflicting)),
-          parsed: conflicting,
+          raw: makeRawMessage(JSON.stringify(VALID_STRUCTURED)),
+          parsed: VALID_STRUCTURED,
         });
+
+      // Consistency LLM rejects both times
+      mockConsistencyInvoke
+        .mockResolvedValueOnce({ consistent: false, reason: 'Conflito detectado' })
+        .mockResolvedValueOnce({ consistent: false, reason: 'Conflito detectado' });
 
       await expect(
         runAgent({
@@ -343,6 +363,7 @@ describe('agentCore - structured output', () => {
       ).rejects.toThrow('Agente não produziu análise estruturada válida após retries.');
 
       expect(mockStructuredInvoke).toHaveBeenCalledTimes(2);
+      expect(mockConsistencyInvoke).toHaveBeenCalledTimes(2);
     });
   });
 

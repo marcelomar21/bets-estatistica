@@ -1,116 +1,105 @@
-# Bets Estatística - Documentação
+# GuruBet (bets-estatistica) - Documentacao
 
-> Sistema de análise estatística de apostas esportivas com IA
+> Plataforma SaaS multi-tenant de analise estatistica de apostas esportivas com IA
 
-## Visão Geral do Projeto
+## Visao Geral
 
 | Atributo | Valor |
 |----------|-------|
-| **Tipo** | Monolith (Backend + Data Pipeline) |
-| **Linguagem** | JavaScript (Node.js 20+) |
-| **Arquitetura** | Pipeline ETL + AI Agent |
-| **Banco de Dados** | PostgreSQL |
-| **IA** | LangChain + OpenAI |
+| **Tipo** | SaaS Multi-tenant (Backend + Admin Panel + Data Pipeline) |
+| **Backend** | Node.js 20+ (bots, jobs, pipeline) |
+| **Frontend** | Next.js 16, React 19, TypeScript 5, Tailwind CSS 4 |
+| **Banco de Dados** | PostgreSQL via Supabase (27 tabelas, RLS) |
+| **IA** | LangChain + OpenAI GPT-4o |
+| **Pagamentos** | Mercado Pago (assinaturas recorrentes) |
+| **Messaging** | Telegram Bot API + MTProto |
 
-## Referência Rápida
+## Referencia Rapida
 
-### Stack Tecnológico
-
-| Tecnologia | Uso |
-|------------|-----|
-| Node.js 20+ | Runtime |
-| LangChain 1.1.x | Framework IA |
-| OpenAI GPT-5 | Modelo de linguagem |
-| PostgreSQL | Armazenamento |
-| Puppeteer | Geração de PDF |
-| Zod | Validação de schemas |
-| Axios | Cliente HTTP |
-
-### Entry Point Principal
+### Entry Points
 
 ```bash
-node main.js  # Pipeline completo
+# Backend (bots)
+npm run dev          # Bot em modo polling (dev)
+npm start            # Bot em modo webhook (prod)
+npm run pipeline     # Pipeline de analise IA
+
+# Admin Panel
+cd admin-panel
+npm run dev          # http://localhost:3000
+npm run build        # Build TypeScript strict
+npm test             # Vitest (47 testes)
 ```
 
-### Comandos Frequentes
+### Comandos do Bot (Grupo Admin)
 
-```bash
-node scripts/check_analysis_queue.js --dry-run  # Ver fila
-node scripts/daily_update.js                     # Atualizar dados
-node agent/analysis/runAnalysis.js today         # Analisar jogos
-node agent/persistence/main.js <match_id>        # Persistir análise
-```
+| Comando | Funcao |
+|---------|--------|
+| `/apostas` | Listar apostas disponiveis |
+| `/postar` | Postar apostas no grupo (com confirmacao) |
+| `/odd <id> <valor>` | Atualizar odds |
+| `/link <id> <url>` | Adicionar link afiliado |
+| `/membros` | Listar membros do grupo |
+| `/overview` | Dashboard resumido |
+| `/metricas` | Taxas de acerto |
+| `/status` | Health do bot e jobs |
 
-## Documentação Gerada
+## Documentacao
 
 ### Arquitetura e Design
 
-- [Visão Geral do Projeto](./project-overview.md) - Resumo executivo e propósito
-- [Arquitetura do Sistema](./architecture.md) - Componentes e fluxos
-- [Análise da Árvore de Código](./source-tree-analysis.md) - Estrutura de diretórios
+- [Visao Geral do Projeto](./project-overview.md) - Proposito, stack e componentes
+- [Arquitetura do Sistema](./architecture.md) - Componentes, fluxos, multi-tenancy e deploy
 
 ### Dados e Modelos
 
-- [Modelos de Dados](./data-models.md) - Schema PostgreSQL completo
+- [Modelos de Dados](./data-models.md) - Schema PostgreSQL completo (27 tabelas, RLS, views)
 
 ### Desenvolvimento
 
-- [Guia de Desenvolvimento](./development-guide.md) - Setup, comandos e troubleshooting
-
-### Metricas e Estatisticas
-
-- [Sistema de Metricas](./metrics.md) - Formulas de calculo e validacao
-
-## Documentação Existente
-
-- [README do Agente](../README_agent.md) - Documentação original do módulo de IA
-- [TODO](../TODO.md) - Lista de tarefas pendentes
-
-## Começando
-
-### Para Desenvolvedores
-
-1. Leia o [Guia de Desenvolvimento](./development-guide.md) para setup
-2. Entenda a [Arquitetura](./architecture.md) do sistema
-3. Explore os [Modelos de Dados](./data-models.md) para entender o banco
-
-### Para Entender o Código
-
-1. Comece pela [Árvore de Código](./source-tree-analysis.md)
-2. Veja os entry points em `main.js` e `scripts/`
-3. Explore `agent/analysis/runAnalysis.js` para a lógica IA
-
-### Para Modificar/Estender
-
-1. Novos dados: Adicione scripts em `scripts/` seguindo padrão fetch/load
-2. Nova lógica IA: Modifique `agent/analysis/prompt.js` e `schema.js`
-3. Novos relatórios: Estenda `agent/persistence/htmlRenderer.js`
-
-## Desenvolvimento Assistido por IA
-
-Ao usar assistentes de IA para desenvolver neste projeto:
-
-1. **Forneça contexto:** Referencie este `index.md` como ponto de partida
-2. **Para features de dados:** Use [data-models.md](./data-models.md)
-3. **Para features de IA:** Use [architecture.md](./architecture.md) seção AI Processing
-4. **Para novos scripts:** Use [source-tree-analysis.md](./source-tree-analysis.md)
+- [Guia de Desenvolvimento](./development-guide.md) - Setup, variaveis, comandos e troubleshooting
 
 ## Estrutura de Pastas
 
 ```
 bets-estatistica/
-├── agent/           # Agente IA e persistência
-│   ├── analysis/    # LangChain, prompts, schemas
-│   ├── persistence/ # Markdown, HTML, PDF
-│   └── shared/      # Utilitários
-├── scripts/         # ETL (fetch/load)
-├── sql/             # Schemas do banco
-├── data/            # Saídas geradas (gitignored)
-└── docs/            # Esta documentação
+├── bot/                 # Telegram bot (webhook/polling)
+│   ├── handlers/        # Command handlers (admin, start, members)
+│   ├── jobs/            # Jobs agendados (post, distribute, enrich, track, kick)
+│   └── services/        # Business logic (bet, member, notification, odds)
+├── agent/               # Pipeline de analise IA
+│   ├── analysis/        # LangChain + GPT-4o
+│   └── persistence/     # Salvar resultados no banco
+├── scripts/             # ETL (daily_update, sync, fetch)
+├── sql/migrations/      # 28 migrations PostgreSQL
+├── lib/                 # Utilitarios compartilhados
+├── admin-panel/         # Next.js dashboard
+│   └── src/
+│       ├── app/         # Pages (10) + API routes (30)
+│       ├── components/  # React components (35+)
+│       ├── middleware/   # Auth (withTenant) + guards
+│       └── types/       # TypeScript types
+├── _bmad-output/        # Artefatos de planejamento (epics, stories)
+└── docs/                # Esta documentacao
 ```
+
+## Deployment
+
+| Servico | Plataforma | Funcao |
+|---------|------------|--------|
+| bets-bot | Render | Bot principal (webhook) |
+| bot-osmar-palpites | Render | Bot grupo Osmar Palpites |
+| bets-webhook | Render | Webhook Mercado Pago |
+| admin-panel | Vercel | Dashboard Next.js |
+| PostgreSQL + Auth | Supabase | Banco + autenticacao + RLS |
+
+## Validacao Pre-merge (Obrigatorio)
+
+1. `cd admin-panel && npm test` — testes unitarios
+2. `npm run build` — build TypeScript strict
+3. **Playwright E2E** — testar fluxo afetado no navegador
 
 ---
 
-**Gerado em:** 2026-01-10  
-**Workflow:** BMM document-project  
-**Modo:** Deep Scan
+**Atualizado em:** 2026-02-25
+**Workflow:** BMM document-project (full rescan)

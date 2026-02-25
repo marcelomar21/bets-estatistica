@@ -1,10 +1,10 @@
 ---
 project_name: 'bets-estatistica'
 user_name: 'Marcelomendes'
-date: '2026-02-05'
+date: '2026-02-25'
 sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'code_quality', 'workflow_rules', 'critical_rules', 'membership_rules', 'multitenant_rules']
 status: 'complete'
-rule_count: 52
+rule_count: 55
 optimized_for_llm: true
 ---
 
@@ -24,13 +24,17 @@ _Regras críticas que AI agents DEVEM seguir ao implementar código neste projet
 | Next.js | 16.x | Admin panel (App Router) |
 | Supabase Auth | latest | Autenticação admin panel |
 | LangChain | 1.1.x | Manter versão existente |
-| OpenAI | GPT-5.1 | Via LangChain |
+| OpenAI | GPT-5.2 (heavy) / GPT-5-mini (light) | Via LangChain |
 | Zod | 4.x | Validação de schemas |
 | axios | 1.x | HTTP client |
 | @supabase/supabase-js | latest | Database client |
-| node-telegram-bot-api | latest | Bot framework |
+| React | 19.x | Admin panel UI |
+| node-telegram-bot-api | 0.67 | Bot framework |
+| telegram (GramJS) | 2.26 | MTProto (sync membros, criar grupos) |
 | node-cron | latest | Job scheduling |
 | Tailwind CSS | 4.x | Styling admin panel |
+| Vitest | 3.2.x | Testes unitários admin panel |
+| Jest | latest | Testes unitários backend |
 
 **Repositórios:**
 - `bets-estatistica/` - Bots + Backend (Node.js)
@@ -269,6 +273,16 @@ export async function withTenant(req) {
 }
 ```
 
+### createApiHandler (OBRIGATÓRIO)
+
+```typescript
+// ✅ SEMPRE usar createApiHandler como wrapper — NUNCA criar API route sem ele
+import { createApiHandler } from '@/middleware/api-handler';
+
+export const GET = createApiHandler(async (req, context) => {
+  const { groupFilter, supabase } = context;
+```
+
 ### Uso em API Routes
 
 ```typescript
@@ -301,6 +315,9 @@ export async function GET(req) {
 | `admin_users` | ✅ FK (null = super) | RLS |
 | `suggested_bets` | ✅ Após distribuição | Pool global → distribuído |
 | `bot_health` | ✅ FK | Status por bot |
+| `bot_pool` | ✅ FK | Bots atribuídos |
+| `webhook_events` | ✅ FK | Webhooks MP |
+| `notifications` | ✅ FK | Alertas do sistema |
 | `league_matches` | ❌ | Dados globais |
 | `game_analysis` | ❌ | Dados globais |
 
@@ -632,7 +649,8 @@ lib/
 └── config.js                   # [ADAPTAR] Carregar GROUP_ID do env
 
 sql/migrations/
-└── 010_multitenant.sql         # Novas tabelas: groups, admin_users, bot_pool, bot_health
+└── 019_multitenant.sql         # Tabelas: groups, admin_users, bot_pool, bot_health
+└── 020-028                     # RLS fixes, audit_log, notifications, MTProto, posting_schedule
 ```
 
 ### Admin Panel (admin-panel) - Novo
@@ -710,4 +728,18 @@ async function heartbeat() {
 
 ---
 
-_Última atualização: 2026-02-05_
+## Grupos Telegram
+
+| Grupo | Chat ID |
+|-------|---------|
+| Osmar Palpites (admin) | `-1003363567204` |
+| Osmar Palpites (publico) | `-1003659711655` |
+
+## Epics Status
+
+- **Epics 1-5**: Concluidos e arquivados (`_bmad-output/archive/epics-completed.md`)
+- **Epic 6**: Health Check, Monitoramento e Alertas (backlog)
+
+---
+
+_Ultima atualizacao: 2026-02-25_

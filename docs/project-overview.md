@@ -1,89 +1,109 @@
-# Bets Estatística - Visão Geral do Projeto
+# GuruBet (bets-estatistica) — Visao Geral
 
-## Resumo Executivo
+## Proposito
 
-O **Bets Estatística** é um sistema de análise estatística de apostas esportivas focado em futebol. O sistema utiliza inteligência artificial (LangChain + OpenAI) para gerar análises estruturadas de partidas, combinando dados de APIs externas de estatísticas de futebol com processamento via agentes IA para produzir recomendações de apostas seguras e oportunidades de valor.
+Plataforma SaaS multi-tenant para gestao de grupos de apostas esportivas no Telegram. Permite que multiplos influencers gerenciem seus proprios grupos com:
 
-## Propósito
+- **Analise estatistica com IA** (GPT-4o via LangChain) para gerar recomendacoes de apostas
+- **Distribuicao automatica** de apostas para grupos no Telegram
+- **Gestao de membros** com cobranca via Mercado Pago (webhook de pagamentos)
+- **Pipeline ETL** para coleta e enriquecimento de dados esportivos (FootyStats, The Odds API)
+- **Admin Panel** completo para dashboard, configuracao de bots e acompanhamento de resultados
 
-Automatizar o processo de análise de partidas de futebol para:
-1. Coletar e manter dados atualizados de ligas, times, jogadores e partidas
-2. Gerar análises estruturadas via IA com recomendações de apostas
-3. Produzir relatórios em múltiplos formatos (Markdown, HTML, PDF)
-4. Persistir análises e recomendações em banco de dados PostgreSQL
+## Stack Tecnologico
 
-## Tipo de Projeto
+| Categoria | Tecnologia |
+|-----------|------------|
+| **Bots/Pipeline** | Node.js 20+, Express 5, node-telegram-bot-api |
+| **Admin Panel** | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
+| **Banco de Dados** | PostgreSQL via Supabase (RLS multi-tenant) |
+| **IA** | LangChain 1.1 + OpenAI GPT-4o |
+| **Telegram** | Bot API (postagem/gestao) + MTProto (sync de membros) |
+| **Pagamentos** | Mercado Pago (webhook) |
+| **Testes** | Jest (bots), Vitest + Testing Library (admin panel) |
 
-| Característica | Valor |
-|----------------|-------|
-| **Tipo** | Backend + Data Pipeline |
-| **Linguagem** | JavaScript (Node.js 20+) |
-| **Arquitetura** | Pipeline ETL + AI Agent |
-| **Banco de Dados** | PostgreSQL (Supabase) |
-| **IA** | LangChain + OpenAI (GPT-5) |
+## Arquitetura
 
-## Stack Tecnológico
+Monorepo com dois projetos principais:
 
-| Categoria | Tecnologia | Versão |
-|-----------|------------|--------|
-| Runtime | Node.js | 20+ |
-| AI Framework | LangChain | 1.1.x |
-| LLM Provider | OpenAI | gpt-5.1-2025-11-13 |
-| Database | PostgreSQL | via pg 8.x |
-| HTTP Client | Axios | 1.13.x |
-| PDF Generation | Puppeteer | 24.x |
-| Schema Validation | Zod | 4.x |
-| Config | dotenv | 17.x |
+```
+bets-estatistica/
+├── bot/              # Bots Telegram + jobs agendados (Render)
+├── agent/            # Pipeline de analise com IA
+├── scripts/          # ETL: fetch/load de dados esportivos
+├── admin-panel/      # Next.js 16 — dashboard + API routes (Vercel)
+├── sql/migrations/   # Migrations SQL sequenciais
+└── lib/              # Bibliotecas compartilhadas
+```
+
+**Multi-tenancy**: Cada influencer (tenant) tem seus proprios bots, grupos e membros. O isolamento e feito via Row Level Security (RLS) no Supabase.
 
 ## Componentes Principais
 
-### 1. Scripts ETL (`scripts/`)
-- Fetch e load de dados de APIs externas (FootyStats)
-- Sincronização de ligas, temporadas, times, jogadores e partidas
-- Atualização diária automatizada via fila de análise
+### 1. Pipeline ETL (`scripts/`)
+Coleta dados de APIs externas (FootyStats, The Odds API) e carrega no PostgreSQL: ligas, temporadas, times, jogadores, partidas, odds.
 
-### 2. Agente de Análise (`agent/analysis/`)
-- Agente IA baseado em LangChain
-- Tools especializadas para consultas SQL (match_detail_raw, team_lastx_raw)
-- Geração de análises estruturadas (overview, safe_bets, value_bets)
+### 2. Agente IA (`agent/`)
+Agente LangChain com tools SQL especializadas que analisa partidas e gera recomendacoes estruturadas (safe bets, value bets). Persiste analises em JSON, Markdown e PDF.
 
-### 3. Persistência (`agent/persistence/`)
-- Geração de Markdown a partir de análises JSON
-- Renderização HTML e geração de PDF via Puppeteer
-- Inserção de resultados em tabelas game_analysis e suggested_bets
+### 3. Bot Telegram (`bot/`)
+Servidor Express com webhook do Telegram. Inclui jobs agendados:
+- **distributeBets** — distribui apostas aprovadas para o grupo publico
+- **postBets** — posta apostas no grupo admin para revisao
+- **enrichOdds** — enriquece apostas com odds atualizadas
+- **trackResults** — acompanha resultados e calcula acertos
+- **jobWarn** — alertas de expiracao de membros
+- **membership/** — gestao de membros e pagamentos
 
-### 4. Orquestração (`main.js`)
-- Pipeline completo automatizado
-- Gerenciamento de fila (match_analysis_queue)
-- Retentativas automáticas e verificação de status
+### 4. Admin Panel (`admin-panel/`)
+Dashboard Next.js 16 com autenticacao Supabase. API routes para:
+- Gestao de apostas (`/api/bets`)
+- Configuracao de bots (`/api/bots`)
+- Dashboard com metricas (`/api/dashboard`)
+- Gestao de grupos e membros (`/api/groups`, `/api/members`)
+- Sync MTProto (`/api/mtproto`)
+- Notificacoes e super-admin (`/api/notifications`, `/api/super-admin-bot`)
 
-## Fluxo de Dados
+### 5. Webhook de Pagamentos (`bot/webhook-server.js`)
+Servidor separado que recebe webhooks do Mercado Pago para ativar/renovar membros automaticamente.
+
+## Deployment
+
+| Componente | Plataforma | Servico |
+|------------|-----------|---------|
+| Bot Telegram (Osmar Palpites) | Render | `bot-osmar-palpites` |
+| Bot Telegram (Guru da Bet) | Render | `bets-bot` |
+| Webhook Pagamentos | Render | `bets-webhook` |
+| API Clawdin | Render | `clawdin-api` |
+| Admin Panel | Vercel | Next.js |
+| Banco de Dados + Auth | Supabase | `vqrcuttvcgmozabsqqja` |
+
+## Grupos Telegram
+
+| Grupo | Chat ID |
+|-------|---------|
+| Osmar Palpites (admin) | `-1003363567204` |
+| Osmar Palpites (publico) | `-1003659711655` |
+
+## Fluxo Principal
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  API Externa    │────▶│  Scripts ETL     │────▶│  PostgreSQL     │
-│  (FootyStats)   │     │  (fetch/load)    │     │  (dados brutos) │
-└─────────────────┘     └──────────────────┘     └────────┬────────┘
-                                                          │
-                        ┌──────────────────┐              │
-                        │  Agente IA       │◀─────────────┘
-                        │  (LangChain)     │
-                        └────────┬─────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         ▼                       ▼                       ▼
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  JSON           │     │  Markdown        │     │  HTML/PDF       │
-│  Intermediário  │     │  Final           │     │  Relatórios     │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
+FootyStats / Odds API
+        │
+        ▼
+   Scripts ETL ──▶ PostgreSQL (Supabase)
+                        │
+                        ▼
+                   Agente IA (GPT-4o)
+                        │
+                        ▼
+                  Apostas sugeridas
+                        │
+            ┌───────────┼───────────┐
+            ▼           ▼           ▼
+      Admin Panel   Bot Telegram   Webhook MP
+      (revisao)     (postagem)     (pagamentos)
 ```
-
-## Documentação Relacionada
-
-- [Arquitetura](./architecture.md) - Arquitetura detalhada do sistema
-- [Modelos de Dados](./data-models.md) - Schema do banco de dados
-- [Guia de Desenvolvimento](./development-guide.md) - Como configurar e executar
-- [Árvore de Código](./source-tree-analysis.md) - Estrutura de diretórios
 
 ---
-*Documentação gerada em 2026-01-10 via BMM document-project workflow*
+*Atualizado em 2026-02-25*
