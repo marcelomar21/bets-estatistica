@@ -204,78 +204,64 @@ const normalizePortugueseTerminology = (text = '') => {
   return normalized;
 };
 
-const GOAL_DIRECTION_KEYWORDS = {
-  over: ['mais de', 'acima de', 'superior a', 'over'],
-  under: ['menos de', 'abaixo de', 'inferior a', 'under'],
-};
-
-const BTTS_DIRECTION_KEYWORDS = {
-  yes: ['btts: sim', 'btts sim', 'ambas as equipes marcam', 'ambas marcam', 'both teams score'],
-  no: ['btts: nao', 'btts nao', 'btts: não', 'btts não', 'sem btts', 'btts: n', 'ambas nao marcam', 'ambas não marcam'],
-};
-
 const removeDiacritics = (value = '') =>
   value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
-const classifyGoalDirection = (text = '') => {
-  if (!text) return null;
-  const normalized = removeDiacritics(text).toLowerCase();
-  if (GOAL_DIRECTION_KEYWORDS.over.some((kw) => normalized.includes(kw))) {
-    return 'over';
-  }
-  if (GOAL_DIRECTION_KEYWORDS.under.some((kw) => normalized.includes(kw))) {
-    return 'under';
-  }
-  return null;
-};
+const consistencyResultSchema = z.object({
+  consistent: z.boolean().describe('true se as apostas são logicamente coerentes entre si'),
+  reason: z.string().describe('Explicação breve da inconsistência, ou "OK" se consistente'),
+});
 
-const classifyBttsDirection = (text = '') => {
-  if (!text) return null;
-  const normalized = removeDiacritics(text).toLowerCase();
-  if (BTTS_DIRECTION_KEYWORDS.yes.some((kw) => normalized.includes(kw))) {
-    return 'yes';
-  }
-  if (BTTS_DIRECTION_KEYWORDS.no.some((kw) => normalized.includes(kw))) {
-    return 'no';
-  }
-  return null;
-};
+const CONSISTENCY_SYSTEM_PROMPT = `Você é um validador de coerência para análises de apostas esportivas.
 
-const ensureAnalysisConsistency = (structured) => {
+Recebe duas listas:
+- safe_bets: apostas conservadoras (categorias: gols, cartões, escanteios, extra)
+- value_bets: apostas de valor/agressivas (ângulos: vitória, handicap, gols, cartões, escanteios, especial)
+
+Regras de coerência:
+1. Apostas de MERCADOS DIFERENTES nunca conflitam. "Under 2.5 gols" não conflita com "Mais de 9.5 escanteios".
+2. Dentro do MESMO MERCADO de gols, direções opostas conflitam SOMENTE se as faixas forem impossíveis simultaneamente (ex: safe "under 2.5" vs value "over 3.5" = OK pois 3 gols satisfaz ambas; safe "under 2.5" vs value "over 2.5" = CONFLITO pois é impossível ambas serem verdade).
+3. BTTS Sim vs BTTS Não é conflito se ambas aparecem.
+4. Apostas de vitória/handicap NÃO conflitam com totais de gols — são mercados independentes.
+5. Analise apenas os títulos das apostas para determinar a direção. Ignore o campo reasoning.
+
+Responda consistent=true se não houver conflitos impossíveis, ou consistent=false com a razão.`;
+
+const ensureAnalysisConsistency = async (structured) => {
   if (!structured) return;
-  const safeGoalBet = (structured.safe_bets || []).find((bet) => bet.category === 'gols');
-  if (safeGoalBet) {
-    const safeDirection = classifyGoalDirection(`${safeGoalBet.title || ''} ${safeGoalBet.reasoning || ''}`);
-    if (safeDirection) {
-      const conflictingBet = (structured.value_bets || []).find((bet) => {
-        const direction = classifyGoalDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
-        return direction && direction !== safeDirection;
-      });
-      if (conflictingBet) {
-        throw new Error(
-          `a linha segura aponta para "${safeGoalBet.title}" (${safeDirection}) e "${conflictingBet.title}" sugere direção oposta.`,
-        );
-      }
-    }
+  const safeBets = structured.safe_bets || [];
+  const valueBets = structured.value_bets || [];
+  if (!safeBets.length || !valueBets.length) return;
+
+  const betsPayload = JSON.stringify({
+    safe_bets: safeBets.map((b) => ({ title: b.title, category: b.category })),
+    value_bets: valueBets.map((b) => ({ title: b.title, angle: b.angle })),
+  }, null, 2);
+
+  let result;
+  try {
+    const llm = new ChatOpenAI({
+      apiKey: ensureApiKey(),
+      model: config.llm.lightModel,
+      temperature: 0,
+      maxTokens: 200,
+      timeout: 30000,
+    });
+    const structuredLlm = llm.withStructuredOutput(consistencyResultSchema);
+    result = await structuredLlm.invoke([
+      { role: 'system', content: CONSISTENCY_SYSTEM_PROMPT },
+      { role: 'user', content: betsPayload },
+    ]);
+  } catch (err) {
+    infoLog(`[consistency] LLM validation failed, skipping: ${err.message}`);
+    return;
   }
 
-  const safeBttsBet = (structured.safe_bets || []).find((bet) =>
-    classifyBttsDirection(`${bet.title || ''} ${bet.reasoning || ''}`),
-  );
-  if (!safeBttsBet) return;
-  const safeBttsDirection = classifyBttsDirection(`${safeBttsBet.title || ''} ${safeBttsBet.reasoning || ''}`);
-  if (!safeBttsDirection) return;
-  const conflictingBttsBet = (structured.value_bets || []).find((bet) => {
-    const direction = classifyBttsDirection(`${bet.title || ''} ${bet.reasoning || ''}`);
-    return direction && direction !== safeBttsDirection;
-  });
-  if (conflictingBttsBet) {
-    throw new Error(
-      `a linha segura define BTTS como "${safeBttsBet.title}" (${safeBttsDirection}) e "${conflictingBttsBet.title}" aponta para direção contrária.`,
-    );
+  if (!result.consistent) {
+    throw new Error(result.reason);
   }
 };
 
@@ -423,7 +409,7 @@ const ensureSafeCategories = (bets) => {
   return bets;
 };
 
-const normalizeStructuredAnalysisFallback = (rawContent) => {
+const normalizeStructuredAnalysisFallback = async (rawContent) => {
   let parsed;
   try {
     parsed = JSON.parse(rawContent);
@@ -471,7 +457,7 @@ const normalizeStructuredAnalysisFallback = (rawContent) => {
     safe_bets: safeBets,
     value_bets: valueBets,
   };
-  ensureAnalysisConsistency(normalized);
+  await ensureAnalysisConsistency(normalized);
   return normalized;
 };
 
@@ -947,7 +933,7 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
     infoLog(`Structured output tentativa ${attempt + 1}/${MAX_STRUCTURED_RETRIES} (match ${matchId})...`);
     const { raw, parsed } = await llmStructured.invoke(conversation);
     try {
-      ensureAnalysisConsistency(parsed);
+      await ensureAnalysisConsistency(parsed);
       finalMessage = raw;
       finalStructuredAnalysis = parsed;
       infoLog(

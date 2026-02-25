@@ -1,280 +1,379 @@
-# Bets Estatística - Modelos de Dados
+# Modelos de Dados - GuruBet (bets-estatistica)
 
-## Visão Geral
-
-O sistema utiliza PostgreSQL com dois schemas principais:
-- **league_schema.sql** - Dados esportivos (ligas, partidas, times, jogadores)
-- **agent_schema.sql** - Dados do agente de análise (análises, apostas, fila)
-
-## Diagrama ER Simplificado
-
-```
-┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
-│ league_seasons  │───┬──▶│ league_matches  │◀──────│ stats_match_    │
-│                 │   │   │                 │       │ details         │
-│ season_id (PK)  │   │   │ match_id (PK)   │       │                 │
-│ league_name     │   │   │ season_id (FK)  │       │ match_id (FK)   │
-│ country         │   │   │ home_team_id    │       │ raw_payload     │
-│ season_year     │   │   │ away_team_id    │       │ ordered_stats   │
-└─────────────────┘   │   │ kickoff_time    │       └─────────────────┘
-                      │   └────────┬────────┘
-                      │            │
-                      │            ▼
-                      │   ┌─────────────────┐       ┌─────────────────┐
-                      │   │ game_analysis   │       │ suggested_bets  │
-                      │   │                 │       │                 │
-                      │   │ match_id (FK)   │       │ match_id (FK)   │
-                      │   │ analysis_md     │       │ bet_market      │
-                      │   │ analysis_json   │       │ bet_pick        │
-                      │   └─────────────────┘       │ confidence      │
-                      │                             └─────────────────┘
-                      │
-                      │   ┌─────────────────┐       ┌─────────────────┐
-                      ├──▶│ league_team_    │       │ team_lastx_     │
-                      │   │ stats           │       │ stats           │
-                      │   │                 │       │                 │
-                      │   │ season_id (FK)  │       │ team_id         │
-                      │   │ team_id         │       │ window_scope    │
-                      │   │ stats (JSONB)   │       │ last_x_match_num│
-                      │   └─────────────────┘       │ raw_payload     │
-                      │                             └─────────────────┘
-                      │
-                      │   ┌─────────────────┐       ┌─────────────────┐
-                      └──▶│ league_players  │       │ match_analysis_ │
-                          │                 │       │ queue           │
-                          │ season_id (FK)  │       │                 │
-                          │ player_id       │       │ match_id (FK)   │
-                          │ full_name       │       │ status          │
-                          │ position        │       │ error_reason    │
-                          └─────────────────┘       └─────────────────┘
-```
-
-## Tabelas de Dados Esportivos (league_schema.sql)
-
-### league_seasons
-Armazena temporadas de ligas disponíveis.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| season_id | INTEGER | ID único da temporada (API) |
-| league_name | TEXT | Nome da liga |
-| country | TEXT | País |
-| display_name | TEXT | Nome de exibição |
-| season_year | INTEGER | Ano da temporada |
-| raw_league | JSONB | Payload completo da API |
-| active | BOOLEAN | Se está ativa |
-
-### league_matches
-Partidas de cada temporada.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| match_id | BIGINT | ID único da partida (API) |
-| season_id | INTEGER | FK para league_seasons |
-| home_team_id | INTEGER | ID do time da casa |
-| away_team_id | INTEGER | ID do time visitante |
-| home_team_name | TEXT | Nome do time da casa |
-| away_team_name | TEXT | Nome do time visitante |
-| home_score | INTEGER | Gols do mandante |
-| away_score | INTEGER | Gols do visitante |
-| status | TEXT | Status (complete, incomplete, etc) |
-| game_week | INTEGER | Rodada |
-| kickoff_time | TIMESTAMPTZ | Horário do jogo |
-| venue | TEXT | Estádio |
-| raw_match | JSONB | Payload completo |
-
-**View:** `league_matches_br` - Adiciona coluna `kickoff_time_br` com timezone Brasil (UTC-3)
-
-### league_players
-Jogadores de cada temporada.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| season_id | INTEGER | FK para league_seasons |
-| player_id | INTEGER | ID único do jogador |
-| full_name | TEXT | Nome completo |
-| position | TEXT | Posição |
-| club_team_id | INTEGER | ID do time atual |
-| goals_overall | INTEGER | Gols na temporada |
-| assists_overall | INTEGER | Assistências |
-| cards_overall | INTEGER | Total de cartões |
-| raw_player | JSONB | Payload completo |
-
-### league_team_stats
-Estatísticas de times por temporada.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| season_id | INTEGER | FK para league_seasons |
-| team_id | INTEGER | ID do time |
-| team_name | TEXT | Nome do time |
-| table_position | INTEGER | Posição na tabela |
-| fetched_at | TIMESTAMPTZ | Quando foi buscado |
-| stats | JSONB | Estatísticas detalhadas |
-| raw_team | JSONB | Payload completo |
-
-### stats_match_details
-Estatísticas detalhadas de partidas (xG, chutes, posse, etc).
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| match_id | BIGINT | FK para league_matches |
-| season_id | INTEGER | FK para league_seasons |
-| home_team_id | INTEGER | ID do mandante |
-| away_team_id | INTEGER | ID do visitante |
-| referee | TEXT | Árbitro |
-| venue | TEXT | Estádio |
-| attendance | INTEGER | Público |
-| raw_payload | JSONB | Payload completo da API |
-| ordered_stats | JSONB | Estatísticas estruturadas |
-
-**Trigger:** `trg_sync_stats_match_details` - Sincroniza score/status quando league_matches é atualizado.
-
-### team_lastx_stats
-Forma recente dos times (últimos X jogos).
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| team_id | INTEGER | ID do time |
-| team_name | TEXT | Nome do time |
-| window_scope | TEXT | Escopo (overall, home, away) |
-| last_x_match_num | INTEGER | Quantidade de jogos (5, 10, etc) |
-| last_updated_match_timestamp | BIGINT | Timestamp do último jogo |
-| raw_payload | JSONB | Payload completo |
-| ordered_stats | JSONB | Estatísticas estruturadas |
-
-**Constraint:** `uq_team_lastx` (team_id, window_scope, last_x_match_num)
-
-### countries
-Tabela auxiliar de países.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| source_id | INTEGER | ID da fonte |
-| iso | TEXT | Código ISO |
-| name_en | TEXT | Nome em inglês |
-| translations | JSONB | Traduções |
-
-## Tabelas do Agente (agent_schema.sql)
-
-### game_analysis
-Análises geradas pelo agente IA.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| match_id | BIGINT | FK para league_matches (UNIQUE) |
-| analysis_md | TEXT | Análise em Markdown |
-| analysis_json | JSONB | Análise estruturada |
-| created_at | TIMESTAMPTZ | Data de criação |
-| updated_at | TIMESTAMPTZ | Data de atualização |
-
-### suggested_bets
-Apostas sugeridas pelo agente.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | BIGSERIAL | PK interna |
-| match_id | BIGINT | FK para league_matches |
-| bet_market | TEXT | Mercado (gols, cartões, etc) |
-| bet_pick | TEXT | Seleção específica |
-| odds | NUMERIC | Odds (se disponível) |
-| confidence | NUMERIC | Confiança (0-1) |
-| reasoning | TEXT | Justificativa |
-| risk_level | TEXT | Nível de risco |
-| bet_category | TEXT | SAFE ou OPORTUNIDADE |
-
-**Constraint:** `bet_category IN ('SAFE', 'OPORTUNIDADE')`
-
-### match_analysis_queue
-Fila de controle do pipeline de análise.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| match_id | BIGINT | PK e FK para league_matches |
-| status | TEXT | Status atual |
-| last_checked_at | TIMESTAMPTZ | Última verificação |
-| analysis_generated_at | TIMESTAMPTZ | Quando análise foi gerada |
-| error_reason | TEXT | Motivo do erro (se houver) |
-| created_at | TIMESTAMPTZ | Entrada na fila |
-| updated_at | TIMESTAMPTZ | Última atualização |
-
-**Status válidos:**
-- `pending` - Aguardando processamento
-- `dados_importados` - Dados atualizados pelo daily_update
-- `analise_completa` - Análise IA finalizada
-- `relatorio_concluido` - Relatórios gerados
-
-## Campos JSONB Importantes
-
-### ordered_stats (stats_match_details)
-
-```json
-{
-  "meta": { "stadium": "...", "referee_id": 123 },
-  "score": { "ht": { "home": 1, "away": 0 }, "ft": { "home": 2, "away": 1 } },
-  "teams": { "home": { "id": 123, "name": "..." }, "away": {...} },
-  "performance": {
-    "possession": { "home": 55, "away": 45 },
-    "shots": { "total": {...}, "on_target": {...} },
-    "corners": { "home": 5, "away": 3 },
-    "cards": { "yellow": {...}, "red": {...} }
-  },
-  "odds": { "full_time": {...}, "first_half": {...} },
-  "potentials": { "goals": { "over_25": 65 }, "corners": {...} }
-}
-```
-
-### ordered_stats (team_lastx_stats)
-
-```json
-{
-  "meta": { "last_x": 10, "scope": 0 },
-  "form": { "wins": 6, "draws": 2, "losses": 2, "ppg": 2.0 },
-  "goals": { "scored_avg": 1.8, "conceded_avg": 0.9 },
-  "clean_sheet": { "count": 4, "percentage": 40 },
-  "btts": { "count": 5, "percentage": 50 },
-  "overs": { "over_25_percentage": 60 }
-}
-```
-
-### odds_update_history (Story 14.7)
-Historico de atualizacoes de odds nas apostas.
-
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | SERIAL | PK interna |
-| bet_id | BIGINT | FK para suggested_bets |
-| update_type | TEXT | 'odds_change', 'new_analysis', 'manual_update' |
-| old_value | NUMERIC(10,2) | Valor anterior (NULL para new_analysis) |
-| new_value | NUMERIC(10,2) | Novo valor |
-| job_name | TEXT | Nome do job/fonte (enrichOdds_08h, manual_admin) |
-| created_at | TIMESTAMPTZ | Data da atualizacao |
-
-**Constraint:** `update_type IN ('odds_change', 'new_analysis', 'manual_update')`
-
-**Foreign Key:** `bet_id REFERENCES suggested_bets(id) ON DELETE CASCADE`
-
-## Índices
-
-| Tabela | Índice | Colunas |
-|--------|--------|---------|
-| league_seasons | idx_league_seasons_country | country |
-| league_matches | idx_league_matches_season | season_id |
-| league_matches | idx_league_matches_game_week | game_week |
-| league_players | idx_league_players_club | club_team_id |
-| stats_match_details | idx_stats_match_details_season | season_id |
-| team_lastx_stats | idx_team_lastx_team | team_id |
-| match_analysis_queue | idx_match_analysis_queue_status | status |
-| odds_update_history | idx_odds_history_bet_id | bet_id |
-| odds_update_history | idx_odds_history_created | created_at DESC |
-| odds_update_history | idx_odds_history_bet_created | bet_id, created_at DESC |
+Banco PostgreSQL hospedado no Supabase com 27 tabelas distribuidas em 28 migrations sequenciais (`sql/migrations/001..028`).
 
 ---
-*Documentação atualizada em 2026-01-14 - Story 14.7*
+
+## Diagrama de Relacionamentos
+
+```
+groups (tenant)
+  ├── admin_users          (group_id → groups.id)
+  ├── members              (group_id → groups.id)
+  │     ├── member_events         (member_id → members.id)
+  │     └── member_notifications  (member_id → members.id)
+  ├── suggested_bets       (group_id → groups.id)
+  ├── bot_pool             (group_id → groups.id)
+  ├── bot_health           (group_id PK/FK → groups.id)
+  ├── webhook_events       (group_id → groups.id)
+  └── notifications        (group_id → groups.id)
+
+league_seasons
+  ├── league_matches
+  │     ├── stats_match_details   (match_id → league_matches.match_id)
+  │     ├── game_analysis         (match_id → league_matches.match_id)
+  │     ├── match_analysis_queue  (match_id PK/FK → league_matches.match_id)
+  │     └── suggested_bets        (match_id → league_matches.match_id)
+  ├── league_team_stats    (season_id → league_seasons.season_id)
+  └── league_players       (season_id → league_seasons.season_id)
+
+Tabelas independentes:
+  countries, team_lastx_stats, system_config, job_executions,
+  audit_log, mtproto_sessions, super_admin_bot_config, odds_update_history
+```
+
+---
+
+## Tabelas Principais
+
+### Multi-tenant
+
+#### groups
+
+Tenant principal do sistema. Cada grupo Telegram e um tenant isolado.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador do grupo |
+| name | VARCHAR | Nome do grupo |
+| bot_token | VARCHAR | Token do bot Telegram atribuido |
+| telegram_group_id | BIGINT (UNIQUE) | Chat ID do grupo publico |
+| telegram_admin_group_id | BIGINT | Chat ID do grupo admin |
+| telegram_invite_link | VARCHAR | Link de convite do grupo |
+| mp_plan_id | VARCHAR | ID do plano de assinatura no Mercado Pago |
+| render_service_id | VARCHAR | ID do servico no Render (deploy do bot) |
+| checkout_url | VARCHAR | URL de checkout para novos assinantes |
+| posting_schedule | JSONB | Horarios de postagem: `{enabled: bool, times: ["HH:mm"]}` |
+| post_now_requested_at | TIMESTAMPTZ | Flag para postagem manual imediata (bot limpa apos uso) |
+| status | VARCHAR | `creating`, `active`, `paused`, `inactive`, `failed` |
+| created_at | TIMESTAMPTZ | Data de criacao |
+
+#### admin_users
+
+Usuarios do painel administrativo, vinculados ao Supabase Auth.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Mesmo valor de `auth.uid()` do Supabase Auth |
+| email | VARCHAR (UNIQUE) | Email do administrador |
+| role | VARCHAR | `super_admin` ou `group_admin` |
+| group_id | UUID (FK) | Grupo do admin (NULL para super_admin) |
+| created_at | TIMESTAMPTZ | Data de criacao |
+
+#### bot_pool
+
+Pool de bots Telegram disponiveis para atribuicao a grupos.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador do bot |
+| bot_token | VARCHAR (UNIQUE) | Token do bot |
+| bot_username | VARCHAR (UNIQUE) | Username do bot (@) |
+| status | VARCHAR | `available` ou `in_use` |
+| group_id | UUID (FK) | Grupo atribuido (NULL se disponivel) |
+| created_at | TIMESTAMPTZ | Data de criacao |
+
+#### bot_health
+
+Monitoramento de saude dos bots por grupo (1:1 com groups).
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| group_id | UUID (PK/FK) | Referencia ao grupo |
+| last_heartbeat | TIMESTAMPTZ | Ultimo heartbeat recebido |
+| status | VARCHAR | `online` ou `offline` |
+| restart_requested | BOOLEAN | Flag para solicitar restart |
+| error_message | TEXT | Mensagem de erro (se offline) |
+| updated_at | TIMESTAMPTZ | Ultima atualizacao |
+
+---
+
+### Apostas
+
+#### suggested_bets
+
+Apostas geradas pela IA com ciclo de vida completo (geracao -> postagem -> resultado).
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | BIGSERIAL (PK) | Identificador da aposta |
+| match_id | BIGINT (FK) | Partida associada |
+| group_id | UUID (FK) | Grupo tenant |
+| bet_market | TEXT | Mercado (gols, cartoes, escanteios, etc) |
+| bet_pick | TEXT | Selecao especifica (ex: "Over 2.5") |
+| odds | NUMERIC | Odds atuais |
+| confidence | NUMERIC(0-1) | Nivel de confianca da IA |
+| reasoning | TEXT | Justificativa da IA |
+| risk_level | TEXT | Nivel de risco |
+| bet_category | TEXT | `SAFE` ou `OPORTUNIDADE` |
+| bet_status | TEXT | `generated` → `pending_link` → `pending_odds` → `ready` → `posted` |
+| bet_result | TEXT | `pending`, `success`, `failure`, `cancelled`, `unknown` |
+| result_reason | TEXT | Justificativa da LLM para o resultado |
+| deep_link | TEXT | Link de aposta na casa |
+| elegibilidade | TEXT | `elegivel`, `removida`, `expirada` |
+| promovida_manual | BOOLEAN | Ignora filtro de odds >= 1.60 |
+| distributed_at | TIMESTAMPTZ | Quando foi distribuida ao grupo |
+| telegram_posted_at | TIMESTAMPTZ | Quando foi postada no Telegram |
+| telegram_message_id | BIGINT | ID da mensagem no Telegram |
+| created_at | TIMESTAMPTZ | Data de criacao |
+
+#### odds_update_history
+
+Historico de alteracoes de odds nas apostas.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | SERIAL (PK) | Identificador |
+| bet_id | BIGINT (FK CASCADE) | Aposta associada |
+| update_type | TEXT | `odds_change`, `new_analysis`, `manual_update` |
+| old_value | NUMERIC(10,2) | Valor anterior |
+| new_value | NUMERIC(10,2) | Novo valor |
+| job_name | TEXT | Fonte da atualizacao (ex: `enrichOdds_08h`) |
+| created_at | TIMESTAMPTZ | Data da atualizacao |
+
+---
+
+### Membros
+
+#### members
+
+Membros dos grupos Telegram com ciclo de vida de assinatura.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | SERIAL (PK) | Identificador interno |
+| telegram_id | BIGINT (UNIQUE) | ID do usuario no Telegram (nullable) |
+| telegram_username | TEXT | Username sem @ |
+| email | TEXT | Email do membro |
+| status | TEXT | `trial`, `ativo`, `inadimplente`, `removido` |
+| group_id | UUID (FK) | Grupo tenant |
+| mp_subscription_id | TEXT | ID da assinatura no Mercado Pago |
+| mp_payer_id | TEXT | ID do pagador no Mercado Pago |
+| trial_started_at | TIMESTAMPTZ | Inicio do trial |
+| subscription_started_at | TIMESTAMPTZ | Inicio da assinatura paga |
+| subscription_ends_at | TIMESTAMPTZ | Fim da assinatura atual |
+| inadimplente_at | TIMESTAMPTZ | Data que ficou inadimplente |
+| affiliate_coupon | TEXT | Cupom de afiliado usado no checkout |
+| payment_method | TEXT | `pix`, `boleto`, `cartao_recorrente` |
+| last_payment_at | TIMESTAMPTZ | Ultimo pagamento confirmado |
+| kicked_at | TIMESTAMPTZ | Data de remocao do grupo |
+| notes | TEXT | Notas internas |
+| created_at / updated_at | TIMESTAMPTZ | Controle temporal |
+
+#### member_events
+
+Audit log de eventos do ciclo de vida de membros.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | SERIAL (PK) | Identificador |
+| member_id | INT (FK CASCADE) | Membro associado |
+| event_type | TEXT | `join`, `leave`, `kick`, `payment`, `trial_start`, `trial_end`, `reactivate` |
+| payload | JSONB | Dados adicionais do evento |
+| created_at | TIMESTAMPTZ | Data do evento |
+
+#### member_notifications
+
+Historico de notificacoes enviadas aos membros.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | SERIAL (PK) | Identificador |
+| member_id | INT (FK CASCADE) | Membro destinatario |
+| type | TEXT | `trial_reminder`, `renewal_reminder`, `welcome`, `farewell`, `payment_received`, `reactivation`, `payment_rejected` |
+| channel | TEXT | `telegram` ou `email` |
+| sent_at | TIMESTAMPTZ | Data de envio |
+| message_id | TEXT | ID da mensagem no Telegram |
+
+#### webhook_events
+
+Event sourcing para webhooks de pagamento (Mercado Pago).
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | SERIAL (PK) | Identificador |
+| idempotency_key | TEXT (UNIQUE) | Chave para garantir idempotencia |
+| event_type | TEXT | Tipo do evento (ex: `payment.created`) |
+| payload | JSONB | Payload completo do webhook |
+| status | TEXT | `pending`, `processing`, `completed`, `failed` |
+| group_id | UUID (FK) | Grupo tenant |
+| attempts / max_attempts | INT | Controle de retentativas (max: 5) |
+| last_error | TEXT | Ultimo erro de processamento |
+| created_at | TIMESTAMPTZ | Recebimento do webhook |
+| processed_at | TIMESTAMPTZ | Conclusao do processamento |
+
+---
+
+### Dados Esportivos
+
+#### league_seasons
+
+Temporadas de ligas importadas da API FootyStats.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | BIGSERIAL (PK) | PK interna |
+| season_id | INTEGER (UNIQUE) | ID da temporada na API |
+| league_name | TEXT | Nome da liga |
+| country | TEXT | Pais |
+| display_name | TEXT | Nome de exibicao |
+| season_year | INTEGER | Ano da temporada |
+| active | BOOLEAN | Se esta ativa para importacao |
+| raw_league | JSONB | Payload completo da API |
+
+#### league_matches
+
+Partidas de cada temporada.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | BIGSERIAL (PK) | PK interna |
+| match_id | BIGINT (UNIQUE) | ID da partida na API |
+| season_id | INTEGER (FK) | Temporada |
+| home_team_id / away_team_id | INTEGER | IDs dos times |
+| home_team_name / away_team_name | TEXT | Nomes dos times |
+| home_score / away_score | INTEGER | Placar |
+| status | TEXT | `complete`, `incomplete`, etc |
+| game_week | INTEGER | Rodada |
+| kickoff_time | TIMESTAMPTZ | Horario do jogo |
+| venue | TEXT | Estadio |
+| raw_match | JSONB | Payload completo |
+
+#### league_team_stats, league_players, team_lastx_stats, stats_match_details
+
+Estatisticas detalhadas de times, jogadores e partidas. Todas contem campos `raw_payload`/`raw_*` com dados brutos da API e campos `ordered_stats`/`stats` com dados estruturados para consulta.
+
+#### game_analysis
+
+Analises geradas pela IA para cada partida (`match_id` UNIQUE). Armazena versao Markdown (`analysis_md`) e JSON estruturado (`analysis_json`).
+
+#### match_analysis_queue
+
+Fila do pipeline de analise. Status: `pending` → `dados_importados` → `analise_completa` → `relatorio_concluido`.
+
+---
+
+### Sistema
+
+#### audit_log
+
+Log de acoes criticas no painel admin. Retencao de 90 dias.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador |
+| table_name | TEXT | Tabela afetada |
+| record_id | UUID | ID do registro alterado |
+| action | TEXT | Acao realizada |
+| changed_by | UUID (FK) | Admin que executou |
+| changes | JSONB | Diff das alteracoes |
+| created_at | TIMESTAMPTZ | Data da acao |
+
+#### notifications
+
+Alertas do sistema para o painel admin.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador |
+| type | VARCHAR | `bot_offline`, `group_failed`, `onboarding_completed`, `group_paused`, `integration_error`, `telegram_group_created`, `telegram_group_failed`, `telegram_notification_failed`, `mtproto_session_expired` |
+| severity | VARCHAR | `info`, `warning`, `error`, `success` |
+| title | VARCHAR | Titulo do alerta |
+| message | TEXT | Corpo da mensagem |
+| group_id | UUID (FK) | Grupo relacionado |
+| metadata | JSONB | Dados adicionais |
+| read | BOOLEAN | Se foi lida |
+| created_at | TIMESTAMPTZ | Data de criacao |
+
+#### job_executions
+
+Log de execucoes de jobs cron para monitoramento.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador |
+| job_name | TEXT | Nome do job |
+| started_at / finished_at | TIMESTAMPTZ | Inicio e fim |
+| status | TEXT | `running`, `success`, `failed` |
+| duration_ms | INTEGER | Duracao em milissegundos |
+| result | JSONB | Resultado detalhado |
+| error_message | TEXT | Mensagem de erro |
+
+#### system_config
+
+Configuracoes de runtime alteraveis sem redeploy.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| key | TEXT (PK) | Chave da configuracao (ex: `TRIAL_DAYS`) |
+| value | TEXT | Valor (parseado conforme necessidade) |
+| updated_at | TIMESTAMPTZ | Ultima alteracao |
+| updated_by | TEXT | Quem alterou |
+
+#### mtproto_sessions
+
+Sessoes MTProto criptografadas (AES-256-GCM) para criacao de grupos Telegram via conta de founder.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador |
+| phone_number | VARCHAR (UNIQUE) | Numero do telefone |
+| session_string | TEXT | Sessao criptografada (formato: `version:iv:authTag:ciphertext`) |
+| key_version | INT | Versao da chave de criptografia |
+| label | VARCHAR | Identificador legivel (ex: `founder_marcelo`) |
+| is_active | BOOLEAN | Se esta ativa |
+| requires_reauth | BOOLEAN | Se precisa reautenticacao |
+| locked_at / locked_by | TIMESTAMPTZ / VARCHAR | Mutex para concorrencia |
+
+#### super_admin_bot_config
+
+Configuracao do bot dedicado para notificacoes dos founders (separado do pool).
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | UUID (PK) | Identificador |
+| bot_token | TEXT | Token criptografado (AES-256-GCM) |
+| bot_username | VARCHAR | Username do bot |
+| founder_chat_ids | JSONB | Array de chat IDs dos founders |
+| is_active | BOOLEAN | Se esta ativo |
+
+---
+
+## RLS (Row Level Security)
+
+Todas as tabelas com dados sensíveis possuem RLS habilitado. O modelo de acesso:
+
+| Role | Acesso |
+|------|--------|
+| **super_admin** | CRUD completo em todas as tabelas |
+| **group_admin** | CRUD restrito ao seu `group_id` |
+| **service_role** | Bypassa RLS (usado pelo backend: bots, cron, webhooks) |
+
+**Funcoes helper** (SECURITY DEFINER, bypassam RLS para evitar recursao infinita):
+- `get_my_role()` -- retorna a role do usuario autenticado
+- `get_my_group_id()` -- retorna o group_id do usuario autenticado
+
+Tabelas com RLS: `groups`, `admin_users`, `bot_pool`, `bot_health`, `members`, `suggested_bets`, `member_notifications`, `webhook_events`, `audit_log`, `notifications`, `mtproto_sessions`, `super_admin_bot_config`.
+
+---
+
+## Views
+
+| View | Descricao |
+|------|-----------|
+| `league_matches_br` | Adiciona coluna `kickoff_time_br` com timezone Brasil (UTC-3) |
+| `active_bets` | Apostas elegiveis, com odds >= 1.60, dentro de 2 dias do kickoff e antes do inicio da partida |
+
+---
+
+*Documentacao atualizada em 2026-02-25 -- 28 migrations aplicadas*

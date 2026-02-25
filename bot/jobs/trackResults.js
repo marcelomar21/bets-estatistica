@@ -6,7 +6,7 @@
  * - 5.2: Detectar fim jogo (2h after kickoff, then every 5min)
  * - 5.3: Comparar resultado com aposta
  * - 5.4: Atualizar status automaticamente
- * - Tech-Spec: Avaliar resultados com LLM (gpt-4o-mini)
+ * - Tech-Spec: Avaliar resultados com LLM (gpt-5.2 via config.llm.resultEvaluatorModel)
  *
  * Run: node bot/jobs/trackResults.js
  * Cron: hourly 13-23h São Paulo

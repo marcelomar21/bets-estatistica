@@ -37,6 +37,9 @@ data/
 # Backups
 backups/
 
+# Playwright MCP (debug screenshots/logs)
+.playwright-mcp/
+
 # Temporary
 *.tmp
 *.temp

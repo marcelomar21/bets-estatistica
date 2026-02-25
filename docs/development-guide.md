@@ -1,261 +1,302 @@
-# Bets Estatística - Guia de Desenvolvimento
+# GuruBet (bets-estatistica) - Guia de Desenvolvimento
 
-## Pré-requisitos
+## Setup do Ambiente
 
-| Requisito | Versão | Descrição |
+### Pre-requisitos
+
+| Requisito | Versao | Descricao |
 |-----------|--------|-----------|
 | Node.js | 20+ | Runtime JavaScript |
-| PostgreSQL | 14+ | Banco de dados (ou Supabase) |
 | npm | 10+ | Gerenciador de pacotes |
-| Chrome/Chromium | - | Para geração de PDFs (Puppeteer) |
+| Supabase CLI | (opcional) | Para aplicar migrations localmente |
 
-## Instalação
-
-### 1. Clonar o repositório
+### Backend (Bots + Pipeline)
 
 ```bash
-git clone <repo-url>
-cd bets-estatistica
-```
-
-### 2. Instalar dependências
-
-```bash
+# Instalar dependencias na raiz
 npm install
+
+# Configurar variaveis de ambiente
+cp .env.example .env   # editar com suas chaves
+
+# Bot em modo polling (desenvolvimento local)
+npm run dev
+
+# Bot em modo webhook (producao no Render)
+npm start
+
+# Pipeline de analise IA
+npm run pipeline
 ```
 
-### 3. Configurar variáveis de ambiente
+O modo `dev` usa polling (sem necessidade de URL publica). O modo `start` sobe um
+servidor Express que recebe webhooks do Telegram e agenda todos os cron jobs.
 
-Crie um arquivo `.env` na raiz do projeto:
-
-```env
-# API FootyStats
-api_key=sua_chave_aqui
-
-# PostgreSQL
-PGHOST=localhost
-PGPORT=5432
-PGDATABASE=bets_stats
-PGUSER=bets
-PGPASSWORD=bets_pass_123
-PGSSL=false
-PGSSL_REJECT_UNAUTHORIZED=false
-
-# OpenAI
-OPENAI_API_KEY=sk-...
-
-# Agente (opcional)
-AGENT_MODEL=gpt-5.1-2025-11-13
-AGENT_TEMPERATURE=0.3
-AGENT_MAX_TOKENS=4096
-AGENT_TIMEOUT_MS=180000
-AGENT_MAX_STEPS=6
-AGENT_DEBUG=false
-
-# Pipeline (opcional)
-MAX_PENDING_MATCHES=50
-MAIN_AGENT_WINDOW_HOURS=168
-
-# Puppeteer (opcional)
-PUPPETEER_EXECUTABLE_PATH=/path/to/chrome
-PUPPETEER_DISABLE_SANDBOX=false
-```
-
-### 4. Criar tabelas no banco
+### Admin Panel
 
 ```bash
-# Schema de dados esportivos
-psql -f sql/league_schema.sql
+cd admin-panel
+npm install
 
-# Schema do agente
-psql -f sql/agent_schema.sql
+# Configurar variaveis de ambiente
+cp .env.example .env.local   # editar com suas chaves
+
+# Servidor de desenvolvimento
+npm run dev                  # http://localhost:3000
+
+# Build com TypeScript strict
+npm run build
+
+# Testes unitarios (vitest)
+npm test
 ```
 
-## Comandos de Desenvolvimento
+## Variaveis de Ambiente
 
-### Pipeline Completo
+### Backend (.env na raiz)
 
-```bash
-# Executa todo o pipeline (fila → update → análise → persist → report)
-node main.js
-```
-
-### Comandos Individuais
-
-```bash
-# 1. Verificar/atualizar fila de análise
-node scripts/check_analysis_queue.js [--dry-run] [--window-hours=72]
-
-# 2. Atualizar dados (match details, lastx)
-node scripts/daily_update.js
-
-# 3. Executar análise IA
-node agent/analysis/runAnalysis.js today           # Todos da fila
-node agent/analysis/runAnalysis.js 7834664         # Match específico
-node agent/analysis/runAnalysis.js 123,456,789     # Múltiplos
-
-# 4. Persistir análise (Markdown + banco)
-node agent/persistence/main.js 7834664
-
-# 5. Gerar relatórios HTML/PDF
-node agent/persistence/generateReport.js 7834664
-node agent/persistence/generateMissingReports.js   # Todos faltantes
-```
-
-### Scripts de Carga de Dados
-
-```bash
-# Temporadas e ligas
-node scripts/loadLeagueSeasons.js
-
-# Países
-node scripts/loadCountries.js
-
-# Partidas de uma temporada
-node scripts/fetchLeagueMatches.js --season-ids=1234
-node scripts/loadLeagueMatches.js --season-ids=1234
-
-# Times de uma temporada
-node scripts/fetchLeagueTeams.js --season-ids=1234
-node scripts/loadLeagueTeamStats.js --season-ids=1234
-
-# Jogadores
-node scripts/fetchLeaguePlayers.js --season-id=1234
-node scripts/loadLeaguePlayers.js --season-id=1234
-
-# Detalhes de partidas
-node scripts/fetchMatchDetails.js <match_id>
-node scripts/loadMatchDetails.js <match_id>
-
-# Forma recente (lastX)
-node scripts/fetchLastX.js <team_id>
-node scripts/loadLastX.js <team_id>
-```
-
-## Estrutura de Saídas
-
-Após execução do pipeline:
-
-```
-data/
-├── json/
-│   ├── match-details/match-7834664.json
-│   ├── lastx/team-123.json
-│   └── jogos-analisados/2026-01-10_to_2026-01-12.json
-├── analises_intermediarias/
-│   └── 20260110_Palmeiras_x_Corinthians.json
-├── analises_finais/
-│   └── Brasileirao_PalmeirasvsCorinthians_2026-01-10.md
-└── relatorios/
-    ├── html/20260110_Brasileirao_Palmeiras_x_Corinthians.html
-    └── pdf/20260110_Brasileirao_Palmeiras_x_Corinthians.pdf
-```
-
-## Fluxo de Debug
-
-### 1. Verificar fila
-
-```bash
-node scripts/check_analysis_queue.js --dry-run
-```
-
-### 2. Habilitar logs de debug do agente
-
-```bash
-AGENT_DEBUG=true node agent/analysis/runAnalysis.js 7834664
-```
-
-### 3. Verificar dumps SQL
-
-Os dumps de SQL executados ficam em:
-```
-data/sql_debug/<match_id>_<teams>/<timestamp>/
-```
-
-### 4. Consultar status no banco
-
-```sql
--- Fila de análise
-SELECT * FROM match_analysis_queue ORDER BY updated_at DESC LIMIT 10;
-
--- Análises geradas
-SELECT match_id, created_at FROM game_analysis ORDER BY created_at DESC LIMIT 10;
-
--- Apostas sugeridas
-SELECT * FROM suggested_bets WHERE match_id = 7834664;
-```
-
-## Testes
-
-Atualmente o projeto não possui suíte de testes automatizados.
-
-```bash
-npm test  # Retorna erro (não implementado)
-```
-
-## Variáveis de Ambiente
-
-### Obrigatórias
-
-| Variável | Descrição |
+| Variavel | Descricao |
 |----------|-----------|
-| `api_key` | Chave da API FootyStats |
-| `OPENAI_API_KEY` | Chave da API OpenAI |
-| `PGHOST` | Host do PostgreSQL |
-| `PGDATABASE` | Nome do banco |
-| `PGUSER` | Usuário do banco |
-| `PGPASSWORD` | Senha do banco |
+| `SUPABASE_URL` | URL do projeto Supabase |
+| `SUPABASE_SERVICE_KEY` | Service role key do Supabase |
+| `TELEGRAM_BOT_TOKEN` | Token do bot (@BotFather) |
+| `TELEGRAM_ADMIN_GROUP_ID` | Chat ID do grupo admin |
+| `TELEGRAM_PUBLIC_GROUP_ID` | Chat ID do grupo publico |
+| `THE_ODDS_API_KEY` | Chave da API The Odds |
+| `FOOTYSTATS_API_KEY` | Chave da API FootyStats |
+| `OPENAI_API_KEY` | Chave da API OpenAI (GPT-4o) |
+| `GROUP_ID` | (opcional) UUID do grupo para modo multi-tenant |
+| `MP_ACCESS_TOKEN` | Access token do Mercado Pago |
+| `MP_WEBHOOK_SECRET` | Secret para validar webhooks do MP |
 
-### Opcionais
+### Admin Panel (.env.local)
 
-| Variável | Default | Descrição |
-|----------|---------|-----------|
-| `PGPORT` | 5432 | Porta do PostgreSQL |
-| `PGSSL` | false | Habilitar SSL |
-| `AGENT_MODEL` | gpt-5.1-2025-11-13 | Modelo OpenAI |
-| `AGENT_TEMPERATURE` | - | Temperatura do modelo |
-| `AGENT_MAX_TOKENS` | - | Max tokens por resposta |
-| `AGENT_TIMEOUT_MS` | 180000 | Timeout em ms |
-| `AGENT_MAX_STEPS` | 6 | Máximo de passos do agente |
-| `AGENT_DEBUG` | false | Logs de debug |
-| `MAX_PENDING_MATCHES` | 50 | Limite da fila |
-| `MAIN_AGENT_WINDOW_HOURS` | 168 | Janela de análise (horas) |
+| Variavel | Descricao |
+|----------|-----------|
+| `NEXT_PUBLIC_SUPABASE_URL` | URL publica do Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key do Supabase |
+| `SUPABASE_SERVICE_KEY` | Service role key (server-side) |
+| `TELEGRAM_API_ID` | API ID do Telegram (MTProto) |
+| `TELEGRAM_API_HASH` | API Hash do Telegram (MTProto) |
+| `ENCRYPTION_KEY` | Chave para criptografia de sessoes |
+
+## Estrutura de Diretorios
+
+```
+bets-estatistica/
+├── bot/                    # Telegram bot (webhook/polling)
+│   ├── handlers/           # Command handlers
+│   │   ├── admin/          # Modulos do grupo admin (bet, member, action, query)
+│   │   ├── adminGroup.js   # Router de comandos admin
+│   │   ├── memberEvents.js # Eventos de entrada/saida de membros
+│   │   └── startCommand.js # /start no privado
+│   ├── jobs/               # Jobs agendados (cron)
+│   │   ├── membership/     # Jobs de membership (kick, reconciliation, sync)
+│   │   ├── postBets.js     # Publicacao de apostas
+│   │   ├── distributeBets.js # Distribuicao round-robin
+│   │   ├── enrichOdds.js   # Enriquecimento de odds
+│   │   ├── trackResults.js # Rastreamento de resultados
+│   │   └── healthCheck.js  # Health check periodico
+│   ├── services/           # Logica de negocio
+│   ├── server.js           # Entry point (webhook + scheduler)
+│   └── server.scheduler.js # Scheduler dinamico de postagens
+├── agent/                  # Pipeline de analise IA
+│   ├── analysis/           # LangChain + GPT-4o
+│   └── persistence/        # Persistencia dos resultados
+├── scripts/                # Scripts de fetch/sync de dados
+├── sql/migrations/         # 28 migrations PostgreSQL sequenciais
+├── lib/                    # Utilitarios compartilhados
+├── admin-panel/            # Dashboard Next.js
+│   └── src/
+│       ├── app/            # Pages + API routes (App Router)
+│       ├── components/     # Componentes React
+│       ├── lib/            # Utilitarios
+│       ├── middleware/      # Auth + tenant
+│       └── types/          # Tipos TypeScript
+└── docs/                   # Documentacao
+```
+
+## Comandos do Bot (Grupo Admin)
+
+Os comandos sao enviados diretamente no grupo admin do Telegram:
+
+### Apostas
+
+| Comando | Descricao |
+|---------|-----------|
+| `/apostas` | Lista apostas pendentes/prontas para postar |
+| `/odd <id> <valor>` | Define a odd de uma aposta |
+| `/link <id> <url>` | Define o link de afiliado de uma aposta |
+| `/filtrar <criterio>` | Filtra apostas por status ou criterio |
+| `/fila` | Mostra a fila de apostas aguardando publicacao |
+| `/promover <id>` | Promove uma aposta para publicacao |
+| `/remover <id>` | Remove uma aposta da fila |
+
+### Membros
+
+| Comando | Descricao |
+|---------|-----------|
+| `/membros` | Lista membros do grupo com status |
+| `/membro <id>` | Detalhes de um membro especifico |
+| `/trial` | Configuracao do periodo de trial |
+| `/add_trial <user>` | Adiciona membro em trial |
+| `/remover_membro <id>` | Remove membro do grupo |
+| `/estender <id> <dias>` | Estende assinatura de um membro |
+
+### Acoes
+
+| Comando | Descricao |
+|---------|-----------|
+| `/postar` | Publica apostas prontas no grupo publico |
+| `/atualizar` | Atualiza odds de apostas pendentes |
+| `/trocar <id1> <id2>` | Troca posicao de apostas na fila |
+| `/adicionar` | Adiciona aposta manualmente |
+
+### Consultas
+
+| Comando | Descricao |
+|---------|-----------|
+| `/overview` | Visao geral do dia (apostas, membros, metricas) |
+| `/metricas` | Metricas de desempenho (ROI, taxa de acerto) |
+| `/status` | Status do bot e servicos |
+| `/simular` | Simula publicacao sem enviar |
+| `/atualizados` | Lista jogos com odds atualizadas |
+| `/help` | Lista todos os comandos disponiveis |
+
+## Jobs Agendados
+
+O scheduler roda dentro do `server.js` e usa `node-cron` (timezone `America/Sao_Paulo`).
+
+### Jobs de Grupo (BOT_MODE=group ou mixed)
+
+| Schedule | Job | Descricao |
+|----------|-----|-----------|
+| Dinamico (DB) | `post-bets` | Publica apostas nos horarios configurados (default: 10h, 15h, 22h) |
+| Dinamico - 5min | `distribute-bets` | Distribui apostas 5 min antes de cada postagem |
+| `0 10 * * *` | `renewal-reminders` | Lembrete de renovacao de assinatura |
+| `*/30 * * * *` | `sync-group-members` | Sincroniza membros do grupo via Telegram |
+| A cada 30s | `check-post-now` | Verifica flag de postagem manual (admin panel) |
+| A cada 5min | `reload-schedule` | Recarrega horarios de postagem do banco |
+
+### Jobs Centrais (BOT_MODE=central ou mixed)
+
+| Schedule | Job | Descricao |
+|----------|-----|-----------|
+| `*/15 * * * *` | `distribute-bets` | Distribuicao round-robin de apostas |
+| `0 8 * * *` | `enrich-odds` | Enriquecimento de odds via API |
+| `0 13-23 * * *` | `track-results` | Rastreamento de resultados (a cada hora, 13h-23h) |
+| A cada 30s | `process-webhooks` | Processa webhooks do Mercado Pago |
+| `1 0 * * *` | `kick-expired` | Remove membros com assinatura expirada |
+| `30 0 * * *` | `check-affiliate-expiration` | Verifica expiracao de afiliados |
+| `0 3 * * *` | `reconciliation` | Reconciliacao de pagamentos |
+| `0 * * * *` | `cleanup-stuck-jobs` | Limpa execucoes travadas |
+
+### Jobs Gerais
+
+| Schedule | Job | Descricao |
+|----------|-----|-----------|
+| `*/5 * * * *` | `health-check` | Verifica saude do bot e conexoes |
+
+## Validacao Pre-merge (OBRIGATORIO)
+
+Antes de criar PR ou mergear, **todos** os passos abaixo devem passar:
+
+```bash
+# 1. Testes unitarios (vitest)
+cd admin-panel && npm test
+
+# 2. Build com TypeScript strict
+npm run build
+
+# 3. Testes E2E via Playwright
+# Garantir que o dev server esta rodando (npm run dev)
+# Navegar ate a pagina afetada e testar o fluxo completo
+```
+
+Nunca mergear apenas com testes unitarios + build. O teste E2E via Playwright e
+parte obrigatoria da validacao.
+
+## Migrations
+
+As migrations ficam em `sql/migrations/` com numeracao sequencial (ex: `028_descricao.sql`).
+Atualmente existem 28 migrations.
+
+### Como aplicar uma migration
+
+Usar a Supabase Management API via curl:
+
+```bash
+# Extrair o access token do Keychain (macOS)
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w | sed 's/go-keyring-base64://' | base64 -d)
+
+# Aplicar a migration
+curl -s -X POST \
+  "https://api.supabase.com/v1/projects/vqrcuttvcgmozabsqqja/database/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "<SQL_DA_MIGRATION>"}'
+```
+
+Resposta `[]` (array vazio) indica sucesso para comandos DDL (CREATE, ALTER, DROP).
+
+### Criar nova migration
+
+Seguir o padrao de numeracao sequencial:
+
+```bash
+# Verificar o ultimo numero
+ls sql/migrations/ | tail -1
+# Criar arquivo com o proximo numero
+touch sql/migrations/029_descricao_da_mudanca.sql
+```
 
 ## Troubleshooting
 
-### Erro: "OPENAI_API_KEY não configurada"
-Verifique se a variável está no `.env` ou como `openai_api_key`.
+### Bot nao responde no Telegram
 
-### Erro: "match_id não encontrado em league_matches"
-Execute a sincronização de partidas primeiro:
-```bash
-node scripts/fetchLeagueMatches.js --season-ids=<id>
-node scripts/loadLeagueMatches.js --season-ids=<id>
-```
+1. Verificar se o webhook esta ativo:
+   ```bash
+   curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo" | python3 -m json.tool
+   ```
+2. Em desenvolvimento local, usar modo polling (`npm run dev`) — o webhook nao
+   funciona sem URL publica.
+3. Verificar se o `TELEGRAM_ADMIN_GROUP_ID` esta correto.
 
-### Erro: "Agente não produziu resposta final"
-- Aumente `AGENT_MAX_STEPS`
-- Verifique se há dados em `stats_match_details` e `team_lastx_stats`
-- Verifique timeout com `AGENT_TIMEOUT_MS`
+### Erro de conexao com Supabase
 
-### PDF não gera / Puppeteer falha
-- Configure `PUPPETEER_EXECUTABLE_PATH` para o Chrome instalado
-- Em containers, use `PUPPETEER_DISABLE_SANDBOX=true`
+- Verificar `SUPABASE_URL` e `SUPABASE_SERVICE_KEY` no `.env`.
+- Confirmar que o projeto Supabase esta ativo (nao pausado).
 
-### Fila não processa jogos
-Verifique se os jogos são o "próximo compromisso" de ambos os times:
-```bash
-node scripts/check_analysis_queue.js --dry-run --window-hours=168
-```
+### Build do admin-panel falha
 
-## Convenções de Código
+- Verificar erros de TypeScript — o build usa modo strict.
+- Rodar `npm test` primeiro para identificar falhas em testes.
 
-- **Linguagem:** JavaScript (ES2022+)
-- **Módulos:** CommonJS (`require`/`module.exports`)
-- **Async:** async/await
-- **Validação:** Zod schemas
-- **Banco:** Pool de conexões pg
-- **Logs:** Console (sem framework)
+### Jobs nao executam
 
----
-*Documentação gerada em 2026-01-10 via BMM document-project workflow*
+- Verificar o `BOT_MODE` (deve ser `group`, `central` ou `mixed`).
+- Verificar logs no Render para erros de cron.
+- Consultar tabela `job_executions` no Supabase para historico.
+
+### Postagens nao aparecem no grupo
+
+- Verificar se ha apostas com status `ready` na tabela `suggested_bets`.
+- Confirmar que `posting_schedule.enabled = true` na tabela `groups`.
+- Verificar se o bot tem permissao de enviar mensagens no grupo publico.
+
+### Webhooks do Mercado Pago nao processam
+
+- Verificar `MP_ACCESS_TOKEN` e `MP_WEBHOOK_SECRET`.
+- Consultar tabela `webhook_events` para eventos pendentes.
+- O job `process-webhooks` roda a cada 30 segundos.
+
+## Convencoes de Codigo
+
+- **Linguagem:** JavaScript (ES2022+) no backend, TypeScript no admin-panel
+- **Modulos:** CommonJS (`require`/`module.exports`) no backend
+- **Framework web:** Express (bot), Next.js 14 App Router (admin-panel)
+- **Banco:** Supabase (PostgreSQL) via `@supabase/supabase-js`
+- **Async:** async/await em todo o projeto
+- **Validacao:** Zod schemas
+- **Commits:** Conventional commits (`feat(scope):`, `fix(scope):`, `refactor(scope):`)
+- **Branches:** `feature/`, `fix/`, `refactor/`, `chore/` — nunca commitar na main/master
