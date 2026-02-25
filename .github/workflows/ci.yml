@@ -114,8 +114,13 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Vercel CLI
-        run: npm install -g vercel
+        run: npm install -g vercel@latest
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
@@ -146,6 +151,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Check Vercel token configured
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
@@ -155,7 +165,7 @@ jobs:
           fi
 
       - name: Install Vercel CLI
-        run: npm install -g vercel
+        run: npm install -g vercel@latest
 
       - name: Pull Vercel environment
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
