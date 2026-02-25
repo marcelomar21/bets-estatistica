@@ -3,6 +3,7 @@
  * Usa withStructuredOutput para garantir JSON valido (sem regex fragil)
  */
 const { ChatOpenAI } = require('@langchain/openai');
+const { ChatAnthropic } = require('@langchain/anthropic');
 const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const { z } = require('zod');
 const logger = require('../../lib/logger');
@@ -189,6 +190,185 @@ function evaluateDeterministic(bet, matchData) {
 }
 
 /**
+ * Run multi-LLM consensus evaluation for complex markets
+ * Uses 3 distinct providers: OpenAI, Anthropic, Moonshot
+ * @param {object} matchInfo - Match data for the prompt
+ * @param {Array} bets - Bets needing LLM evaluation
+ * @param {object} matchData - Extracted match data
+ * @returns {Promise<{results: Array, confidence: string}>}
+ */
+async function evaluateWithConsensus(matchInfo, bets, matchData) {
+  const prompt = ChatPromptTemplate.fromMessages([
+    ['system', SYSTEM_PROMPT],
+    ['human', HUMAN_TEMPLATE],
+  ]);
+
+  const promptInput = {
+    homeTeam: matchInfo.homeTeamName,
+    awayTeam: matchInfo.awayTeamName,
+    homeScore: matchData.homeScore,
+    awayScore: matchData.awayScore,
+    totalGoals: matchData.totalGoals,
+    homeCorners: matchData.homeCorners ?? 'N/D',
+    awayCorners: matchData.awayCorners ?? 'N/D',
+    totalCorners: matchData.totalCorners ?? 'N/D',
+    homeYellow: matchData.homeYellow ?? 'N/D',
+    awayYellow: matchData.awayYellow ?? 'N/D',
+    totalYellow: matchData.totalYellow ?? 'N/D',
+    homeRed: matchData.homeRed ?? 'N/D',
+    awayRed: matchData.awayRed ?? 'N/D',
+    totalRed: matchData.totalRed ?? 'N/D',
+    totalCards: matchData.totalCards ?? 'N/D',
+    btts: matchData.btts === null ? 'N/D' : (matchData.btts ? 'Sim' : 'Nao'),
+    betsJson: JSON.stringify(bets.map(b => ({ id: b.id, aposta: `${b.betMarket} - ${b.betPick}` })), null, 2),
+  };
+
+  // Create 3 LLM chains with distinct providers
+  const providers = [];
+
+  // Provider A: OpenAI (GPT-5.1-mini)
+  if (config.apis.openaiApiKey) {
+    try {
+      const modelA = process.env.EVALUATOR_MODEL_OPENAI || 'gpt-5.1-mini';
+      const llmA = new ChatOpenAI({ apiKey: config.apis.openaiApiKey, model: modelA, temperature: 0 });
+      providers.push({ name: 'openai', chain: prompt.pipe(llmA.withStructuredOutput(evaluationResponseSchema)) });
+    } catch (err) {
+      logger.warn('Failed to create OpenAI evaluator chain', { error: err.message });
+    }
+  }
+
+  // Provider B: Anthropic (Claude Sonnet 4.6)
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const modelB = process.env.EVALUATOR_MODEL_ANTHROPIC || 'claude-sonnet-4-6-20250514';
+      const llmB = new ChatAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY, model: modelB, temperature: 0 });
+      providers.push({ name: 'anthropic', chain: prompt.pipe(llmB.withStructuredOutput(evaluationResponseSchema)) });
+    } catch (err) {
+      logger.warn('Failed to create Anthropic evaluator chain', { error: err.message });
+    }
+  }
+
+  // Provider C: Moonshot (Kimi 2.5) via OpenAI-compatible API
+  if (process.env.MOONSHOT_API_KEY) {
+    try {
+      const modelC = process.env.EVALUATOR_MODEL_MOONSHOT || 'kimi-2.5';
+      const llmC = new ChatOpenAI({
+        apiKey: process.env.MOONSHOT_API_KEY,
+        model: modelC,
+        temperature: 0,
+        configuration: { baseURL: 'https://api.moonshot.cn/v1' },
+      });
+      providers.push({ name: 'moonshot', chain: prompt.pipe(llmC.withStructuredOutput(evaluationResponseSchema)) });
+    } catch (err) {
+      logger.warn('Failed to create Moonshot evaluator chain', { error: err.message });
+    }
+  }
+
+  if (providers.length === 0) {
+    logger.error('No LLM providers available for consensus evaluation');
+    return { results: bets.map(b => ({ id: b.id, result: 'unknown', reason: 'No LLM providers configured' })), confidence: 'low' };
+  }
+
+  // Execute all providers in parallel
+  const providerResults = await Promise.allSettled(
+    providers.map(p => p.chain.invoke(promptInput))
+  );
+
+  // Collect successful results
+  const successfulResults = [];
+  for (let i = 0; i < providerResults.length; i++) {
+    const pr = providerResults[i];
+    if (pr.status === 'fulfilled') {
+      successfulResults.push({ name: providers[i].name, results: pr.value.results });
+      logger.info('LLM provider succeeded', { provider: providers[i].name, results: pr.value.results.map(r => r.result) });
+    } else {
+      logger.warn('LLM provider failed', { provider: providers[i].name, error: pr.reason?.message || String(pr.reason) });
+    }
+  }
+
+  // Apply consensus logic per bet
+  const consensusResults = [];
+  for (const bet of bets) {
+    const votes = [];
+    for (const sr of successfulResults) {
+      const betResult = sr.results.find(r => r.id === bet.id);
+      if (betResult) {
+        votes.push({ provider: sr.name, result: betResult.result, reason: betResult.reason });
+      }
+    }
+
+    if (votes.length === 0) {
+      consensusResults.push({
+        id: bet.id,
+        result: 'unknown',
+        reason: 'All LLM providers failed',
+        confidence: 'low',
+        votes: [],
+      });
+      continue;
+    }
+
+    // Count results
+    const resultCounts = {};
+    for (const v of votes) {
+      resultCounts[v.result] = (resultCounts[v.result] || 0) + 1;
+    }
+
+    // Find majority result
+    let majorityResult = 'unknown';
+    let majorityCount = 0;
+    for (const [result, count] of Object.entries(resultCounts)) {
+      if (count > majorityCount) {
+        majorityResult = result;
+        majorityCount = count;
+      }
+    }
+
+    // Determine confidence
+    let confidence;
+    const totalVotes = votes.length;
+    const totalProviders = providers.length;
+
+    if (totalVotes >= 3 && majorityCount === totalVotes) {
+      confidence = 'high'; // All agree
+    } else if (majorityCount >= 2) {
+      confidence = totalProviders === totalVotes ? 'medium' : 'medium'; // Majority agrees
+    } else if (totalVotes === 1) {
+      confidence = 'low'; // Only one provider responded
+    } else {
+      confidence = 'low'; // No majority
+      majorityResult = 'unknown';
+    }
+
+    // Use the reason from the majority provider
+    const majorityVote = votes.find(v => v.result === majorityResult);
+    const reason = majorityVote ? majorityVote.reason : 'Consensus unclear';
+
+    consensusResults.push({
+      id: bet.id,
+      result: majorityResult,
+      reason: `[consensus:${confidence}] ${reason}`,
+      confidence,
+      votes,
+    });
+  }
+
+  const overallConfidence = consensusResults.every(r => r.confidence === 'high') ? 'high'
+    : consensusResults.some(r => r.confidence === 'low') ? 'low'
+    : 'medium';
+
+  logger.info('Multi-LLM consensus complete', {
+    matchId: matchInfo.matchId,
+    providersTotal: providers.length,
+    providersSucceeded: successfulResults.length,
+    overallConfidence,
+    results: consensusResults.map(r => ({ id: r.id, result: r.result, confidence: r.confidence })),
+  });
+
+  return { results: consensusResults, confidence: overallConfidence };
+}
+
+/**
  * Avalia multiplas apostas de um mesmo jogo usando LLM
  * @param {object} matchInfo - Informacoes do jogo
  * @param {string} matchInfo.homeTeamName - Nome do time da casa
@@ -266,6 +446,21 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
     needLLM: betsNeedingLLM.length,
   });
 
+  // Use multi-LLM consensus if multiple providers are configured
+  const hasMultipleProviders = config.apis.openaiApiKey &&
+    (process.env.ANTHROPIC_API_KEY || process.env.MOONSHOT_API_KEY);
+
+  if (hasMultipleProviders) {
+    try {
+      const consensusResult = await evaluateWithConsensus(matchInfo, betsNeedingLLM, matchData);
+      return { success: true, data: [...deterministicResults, ...consensusResult.results] };
+    } catch (err) {
+      logger.error('Consensus evaluation failed, falling back to single LLM', { error: err.message });
+      // Fall through to single-LLM below
+    }
+  }
+
+  // Single-LLM fallback (original behavior)
   const MAX_RETRIES = 3;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -346,4 +541,5 @@ module.exports = {
   evaluateBetsWithLLM,
   extractMatchData,
   evaluateDeterministic,
+  evaluateWithConsensus,
 };
