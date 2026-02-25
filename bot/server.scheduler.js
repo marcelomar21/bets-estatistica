@@ -264,10 +264,145 @@ function _getState() {
   return { activePostingJobs, currentSchedule, isManualPostInProgress };
 }
 
+/**
+ * Factory: Create a scheduler instance for a specific group (Phase 5)
+ * Each instance has its own state, independent of the singleton
+ * @param {string} groupId - Group UUID
+ * @param {object} [botCtx] - Optional BotContext for multi-bot
+ * @returns {object} Scheduler instance with the same API as the module exports
+ */
+function createScheduler(groupId, botCtx = null) {
+  let instanceJobs = [];
+  let instanceSchedule = null;
+  let instanceManualPostInProgress = false;
+
+  async function instanceLoadSchedule() {
+    try {
+      const { data, error } = await supabase
+        .from('groups')
+        .select('posting_schedule')
+        .eq('id', groupId)
+        .single();
+
+      if (error) {
+        logger.error('[scheduler:factory] Failed to load posting schedule', { groupId, error: error.message });
+        return DEFAULT_SCHEDULE;
+      }
+      return data?.posting_schedule || DEFAULT_SCHEDULE;
+    } catch (err) {
+      logger.error('[scheduler:factory] Exception loading posting schedule', { groupId, error: err.message });
+      return DEFAULT_SCHEDULE;
+    }
+  }
+
+  function instanceSetup(schedule) {
+    instanceJobs.forEach(job => job.stop());
+    instanceJobs = [];
+
+    for (const time of schedule.times) {
+      const [hours, minutes] = time.split(':').map(Number);
+      const { distHours, distMinutes } = calcDistributionTime(hours, minutes);
+
+      const distJob = cron.schedule(`${distMinutes} ${distHours} * * *`, async () => {
+        logger.info('[scheduler:factory] Running distribute-bets', { postTime: time, groupId });
+        try {
+          await runDistributeBetsWithFailureGuard();
+        } catch (err) {
+          logger.error('[scheduler:factory] distribute-bets failed', { postTime: time, groupId, error: err.message });
+        }
+      }, { timezone: TZ });
+      instanceJobs.push(distJob);
+
+      const postJob = cron.schedule(`${minutes} ${hours} * * *`, async () => {
+        if (!instanceSchedule?.enabled) {
+          logger.info('[scheduler:factory] Posting disabled, skipping', { groupId, postTime: time });
+          return;
+        }
+        logger.info('[scheduler:factory] Running post-bets', { postTime: time, groupId });
+        try {
+          await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: instanceSchedule?.times, groupId }));
+        } catch (err) {
+          logger.error('[scheduler:factory] post-bets failed', { postTime: time, groupId, error: err.message });
+        }
+      }, { timezone: TZ });
+      instanceJobs.push(postJob);
+    }
+
+    instanceSchedule = schedule;
+    logger.info('[scheduler:factory] Scheduler configured', { groupId, enabled: schedule.enabled, times: schedule.times });
+  }
+
+  async function instanceReload() {
+    try {
+      const newSchedule = await instanceLoadSchedule();
+      if (JSON.stringify(newSchedule) !== JSON.stringify(instanceSchedule)) {
+        logger.info('[scheduler:factory] Schedule changed, reconfiguring', { groupId });
+        instanceSetup(newSchedule);
+      }
+    } catch (err) {
+      logger.error('[scheduler:factory] Failed to reload schedule', { groupId, error: err.message });
+    }
+  }
+
+  async function instanceCheckPostNow() {
+    try {
+      if (instanceManualPostInProgress) return;
+
+      const { data, error } = await supabase
+        .from('groups')
+        .select('post_now_requested_at')
+        .eq('id', groupId)
+        .single();
+
+      if (error || !data?.post_now_requested_at) return;
+
+      const requestedAt = data.post_now_requested_at;
+      logger.info('[scheduler:factory] Post Now requested', { groupId, requestedAt });
+
+      instanceManualPostInProgress = true;
+      try {
+        await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: instanceSchedule?.times, groupId }));
+      } catch (err) {
+        logger.error('[scheduler:factory] Post Now failed', { groupId, error: err.message });
+      } finally {
+        await supabase
+          .from('groups')
+          .update({ post_now_requested_at: null })
+          .eq('id', groupId)
+          .eq('post_now_requested_at', requestedAt);
+        instanceManualPostInProgress = false;
+      }
+    } catch (err) {
+      logger.error('[scheduler:factory] checkPostNow exception', { groupId, error: err.message });
+      instanceManualPostInProgress = false;
+    }
+  }
+
+  function instanceStop() {
+    instanceJobs.forEach(job => job.stop());
+    instanceJobs = [];
+    instanceSchedule = null;
+    logger.info('[scheduler:factory] Scheduler stopped', { groupId });
+  }
+
+  return {
+    groupId,
+    botCtx,
+    loadPostingSchedule: instanceLoadSchedule,
+    setupDynamicScheduler: instanceSetup,
+    reloadPostingSchedule: instanceReload,
+    checkPostNow: instanceCheckPostNow,
+    stop: instanceStop,
+    getState: () => ({ activePostingJobs: instanceJobs, currentSchedule: instanceSchedule, isManualPostInProgress: instanceManualPostInProgress }),
+  };
+}
+
 module.exports = {
   loadPostingSchedule,
   setupDynamicScheduler,
   reloadPostingSchedule,
   checkPostNow,
+  createScheduler,
+  calcDistributionTime,
   _getState,
 };
