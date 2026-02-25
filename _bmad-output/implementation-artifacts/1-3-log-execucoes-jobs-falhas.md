@@ -1,6 +1,6 @@
 # Story 1.3: Log de Execuções de Jobs e Identificação de Falhas
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -31,53 +31,53 @@ So that eu possa agir proativamente quando algo dá errado no envio automático.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar API route GET /api/job-executions (AC: #1, #3)
-  - [ ] 1.1 Criar `admin-panel/src/app/api/job-executions/route.ts` usando `createApiHandler`
-  - [ ] 1.2 Query `job_executions` com paginação, filtro por `job_name` e `status`
-  - [ ] 1.3 Retornar: id, job_name, started_at, finished_at, status, duration_ms, result (JSONB), error_message
-  - [ ] 1.4 Incluir counters: total, success, failed, success_rate
-  - [ ] 1.5 Ordenar por `started_at DESC` (mais recente primeiro)
-  - [ ] 1.6 Apenas `super_admin` pode acessar (jobs são dados globais do sistema)
+- [x] Task 1: Criar API route GET /api/job-executions (AC: #1, #3)
+  - [x] 1.1 Criar `admin-panel/src/app/api/job-executions/route.ts` usando `createApiHandler`
+  - [x] 1.2 Query `job_executions` com paginação, filtro por `job_name` e `status`
+  - [x] 1.3 Retornar: id, job_name, started_at, finished_at, status, duration_ms, result (JSONB), error_message
+  - [x] 1.4 Incluir counters: total, success, failed, success_rate
+  - [x] 1.5 Ordenar por `started_at DESC` (mais recente primeiro)
+  - [x] 1.6 Apenas `super_admin` pode acessar (jobs são dados globais do sistema)
 
-- [ ] Task 2: Criar API route GET /api/job-executions/summary (AC: #2, #4)
-  - [ ] 2.1 Criar `admin-panel/src/app/api/job-executions/summary/route.ts`
-  - [ ] 2.2 Retornar: última execução de cada job (job_name, status, started_at, duration_ms, error_message)
-  - [ ] 2.3 Incluir saúde geral: total_jobs, failed_count, status (healthy/degraded)
-  - [ ] 2.4 `degraded` se qualquer job tem última execução com `status='failed'`
+- [x] Task 2: Criar API route GET /api/job-executions/summary (AC: #2, #4)
+  - [x] 2.1 Criar `admin-panel/src/app/api/job-executions/summary/route.ts`
+  - [x] 2.2 Retornar: última execução de cada job (job_name, status, started_at, duration_ms, error_message)
+  - [x] 2.3 Incluir saúde geral: total_jobs, failed_count, status (healthy/degraded)
+  - [x] 2.4 `degraded` se qualquer job tem última execução com `status='failed'`
 
-- [ ] Task 3: Criar componente JobExecutionsTable (AC: #1, #3)
-  - [ ] 3.1 Criar `admin-panel/src/components/features/jobs/JobExecutionsTable.tsx`
-  - [ ] 3.2 Colunas: Job, Início, Duração, Resultado, Status, Erro
-  - [ ] 3.3 Status badge: `success` → verde, `failed` → vermelho, `running` → amarelo
-  - [ ] 3.4 Resultado formatado via lógica similar a `formatResult` do bot
-  - [ ] 3.5 Erro exibido truncado com tooltip/expandir no clique
+- [x] Task 3: Criar componente JobExecutionsTable (AC: #1, #3)
+  - [x] 3.1 Criar `admin-panel/src/components/features/jobs/JobExecutionsTable.tsx`
+  - [x] 3.2 Colunas: Job, Início, Duração, Resultado, Status, Erro
+  - [x] 3.3 Status badge: `success` → verde, `failed` → vermelho, `running` → amarelo
+  - [x] 3.4 Resultado formatado via lógica similar a `formatResult` do bot
+  - [x] 3.5 Erro exibido truncado com tooltip/expandir no clique
 
-- [ ] Task 4: Criar componente JobHealthSummary (AC: #2, #4)
-  - [ ] 4.1 Criar `admin-panel/src/components/features/jobs/JobHealthSummary.tsx`
-  - [ ] 4.2 Cards: Total execuções, Taxa de sucesso, Status geral (healthy/degraded badge)
-  - [ ] 4.3 Lista de jobs com última execução — badge de status por job
-  - [ ] 4.4 Jobs com falha destacados em vermelho, clicáveis para ver detalhes
+- [x] Task 4: Criar componente JobHealthSummary (AC: #2, #4)
+  - [x] 4.1 Criar `admin-panel/src/components/features/jobs/JobHealthSummary.tsx`
+  - [x] 4.2 Cards: Total execuções, Taxa de sucesso, Status geral (healthy/degraded badge)
+  - [x] 4.3 Lista de jobs com última execução — badge de status por job
+  - [x] 4.4 Jobs com falha destacados em vermelho, clicáveis para ver detalhes
 
-- [ ] Task 5: Criar página /job-executions (AC: #1, #2, #3, #4)
-  - [ ] 5.1 Criar `admin-panel/src/app/(auth)/job-executions/page.tsx`
-  - [ ] 5.2 Seção superior: JobHealthSummary (resumo de saúde)
-  - [ ] 5.3 Seção inferior: JobExecutionsTable (lista detalhada com paginação)
-  - [ ] 5.4 Filtro por job_name (dropdown com todos os jobs)
-  - [ ] 5.5 Filtro por status (all/success/failed)
+- [x] Task 5: Criar página /job-executions (AC: #1, #2, #3, #4)
+  - [x] 5.1 Criar `admin-panel/src/app/(auth)/job-executions/page.tsx`
+  - [x] 5.2 Seção superior: JobHealthSummary (resumo de saúde)
+  - [x] 5.3 Seção inferior: JobExecutionsTable (lista detalhada com paginação)
+  - [x] 5.4 Filtro por job_name (dropdown com todos os jobs)
+  - [x] 5.5 Filtro por status (all/success/failed)
 
-- [ ] Task 6: Adicionar link na sidebar e badge no dashboard (AC: #2)
-  - [ ] 6.1 Adicionar item "Jobs" na sidebar após "Historico", apenas `super_admin`
-  - [ ] 6.2 No dashboard existente, adicionar card de saúde dos jobs com link para /job-executions
+- [x] Task 6: Adicionar link na sidebar e badge no dashboard (AC: #2)
+  - [x] 6.1 Adicionar item "Jobs" na sidebar após "Historico", apenas `super_admin`
+  - [x] 6.2 No dashboard existente, adicionar card de saúde dos jobs com link para /job-executions
 
-- [ ] Task 7: Escrever testes unitários (AC: #1, #2, #3, #4)
-  - [ ] 7.1 Testar API /api/job-executions: paginação, filtros, counters
-  - [ ] 7.2 Testar API /api/job-executions/summary: saúde geral, última execução por job
-  - [ ] 7.3 Testar componente JobExecutionsTable: renderização, status badges
-  - [ ] 7.4 Testar componente JobHealthSummary: healthy/degraded display
+- [x] Task 7: Escrever testes unitários (AC: #1, #2, #3, #4)
+  - [x] 7.1 Testar API /api/job-executions: paginação, filtros, counters
+  - [x] 7.2 Testar API /api/job-executions/summary: saúde geral, última execução por job
+  - [x] 7.3 Testar componente JobExecutionsTable: renderização, status badges
+  - [x] 7.4 Testar componente JobHealthSummary: healthy/degraded display
 
-- [ ] Task 8: Validação completa
-  - [ ] 8.1 `npm test` — todos os testes passam
-  - [ ] 8.2 `npm run build` — TypeScript strict build OK
+- [x] Task 8: Validação completa
+  - [x] 8.1 `npm test` — todos os testes passam
+  - [x] 8.2 `npm run build` — TypeScript strict build OK
 
 ## Dev Notes
 
