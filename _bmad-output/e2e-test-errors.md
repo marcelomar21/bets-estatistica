@@ -29,6 +29,17 @@ PR: #69
 - **Descrição:** Telegram Web pede QR code login, impossibilitando screenshot automático das mensagens enviadas nos grupos.
 - **Evidência alternativa:** Confirmado via API que msg 93 chegou no Osmar e msg 383 no Guru. Isolamento confirmado: bot Osmar não tem acesso ao grupo Guru (`ok: false`).
 
+### Erro 5: Peer dependency conflict — `langchain@1.2.15` vs `@langchain/core@1.1.28`
+- **Severidade:** Bug de build (bloqueante para deploy)
+- **Descrição:** `@langchain/anthropic@1.3.20` foi adicionado na branch `feature/phase1-bug-fixes`, exigindo `@langchain/core@^1.1.28`. Porém `langchain@^1.1.1` resolvia para `1.2.15` que exigia peer `@langchain/core@1.1.17`. Resultado: `npm install` falhava com peer dependency conflict.
+- **Fix aplicado:** Atualizado `langchain` para `^1.2.27` (aceita `@langchain/core@^1.1.28`). Commit `e9d2046`.
+- **Impacto:** Todos os 3 serviços no Render (Guru, Osmar, Unified) falhavam build.
+
+### Erro 6: Osmar `telegram_group_id` sem prefixo `-100` no banco Prod
+- **Severidade:** Bug de dados (impacta matching de chat ID)
+- **Descrição:** Grupo Osmar Palpites tinha `telegram_group_id = 3647535811` no banco, mas Telegram envia chat IDs com prefixo `-100` para supergrupos (`-1003647535811`). GuruBet estava correto (`-1003659711655`).
+- **Fix aplicado:** `UPDATE groups SET telegram_group_id = -1003647535811 WHERE id = '22daeff7-...'`
+
 ---
 
 ## Resumo dos Testes
@@ -59,12 +70,30 @@ PR: #69
 
 ## Fase 2 de Testes — Após Tasks 4.2, 4.5, 5.6, 1.1, 5.7
 
-### Deploy Status
-- **Guru bot** (srv-d5hp23a4d50c7397o1q0): Env vars configuradas, redeploy em progresso
-- **Unified bot** (srv-d6fliv6a2pns7382ckd0): Criado, deploy em progresso, URL: https://bets-bot-unified.onrender.com
-- **Osmar bot** (srv-d6678u1r0fns73ciknn0): Funcionando normalmente
+### Deploy Status (Final)
+- **Unified bot** (srv-d6fliv6a2pns7382ckd0): LIVE, branch `feature/phase1-bug-fixes`, URL: https://bets-bot-unified.onrender.com
+  - Webhooks de AMBOS os bots apontam para o unified
+  - Osmar: `https://bets-bot-unified.onrender.com/webhook/7763796098:...`
+  - Guru: `https://bets-bot-unified.onrender.com/webhook/8470882097:...`
+- **Guru bot** (srv-d5hp23a4d50c7397o1q0): SUSPENSO
+- **Osmar bot** (srv-d6678u1r0fns73ciknn0): SUSPENSO
 
-### Pendente verificação
-- [ ] Guru bot responde a /status no grupo admin
-- [ ] Unified bot webhook registra ambos os tokens
-- [ ] Suspender serviços antigos após validação do unified
+### Verificações Fase 2
+
+| # | Teste | Resultado | Evidência |
+|---|-------|-----------|-----------|
+| F2-1 | Tom de Voz — página Osmar | PASS | `e2e-evidence/05-tone-page-osmar.png` |
+| F2-2 | Tom de Voz — salvar config | PASS | `e2e-evidence/06-tone-save-success-osmar.png` |
+| F2-3 | Tom de Voz — isolamento Guru (vazio) | PASS | `e2e-evidence/07-tone-guru-empty-isolation.png` |
+| F2-4 | Postagem — página com bets | PASS | `e2e-evidence/08-postagem-page-osmar.png` |
+| F2-5 | Preview — Preparar Postagem (2 bets) | PASS | `e2e-evidence/09-preview-flow-osmar.png` |
+| F2-6 | Preview — Edit/Regenerar/Remover buttons | PASS | Visíveis no snapshot |
+| F2-7 | Sidebar — link Tom de Voz | PASS | `e2e-evidence/04-dashboard-sidebar-with-tone.png` |
+| F2-8 | Unified service — health check | PASS | `{"status":"healthy"}` |
+| F2-9 | Unified — Osmar webhook registered | PASS | Webhook URL aponta para unified |
+| F2-10 | Unified — Guru webhook registered | PASS | Webhook URL aponta para unified |
+| F2-11 | Individual services — suspended | PASS | Guru: suspended, Osmar: suspended |
+| F2-12 | Dep fix — langchain peer deps | PASS | Commit `e9d2046`, builds passam |
+| F2-13 | Data fix — Osmar telegram_group_id | PASS | Corrigido para `-1003647535811` |
+
+**Total Fase 2: 13 verificações, 13 PASS.**
