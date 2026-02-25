@@ -83,7 +83,7 @@ const {
  * @param {TelegramBot} bot - Bot instance
  * @param {object} msg - Telegram message object
  */
-async function handleAdminMessage(bot, msg) {
+async function handleAdminMessage(bot, msg, botCtx = null) {
   const text = msg.text?.trim();
   if (!text) return;
 

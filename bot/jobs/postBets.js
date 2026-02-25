@@ -426,10 +426,11 @@ function validateBetForPosting(bet) {
  * Garante que /postar posta EXATAMENTE o que /fila mostra
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
-async function runPostBets(skipConfirmation = false) {
+async function runPostBets(skipConfirmation = false, options = {}) {
+  const { botCtx = null } = options;
   const period = getPeriod();
   const now = new Date().toISOString();
-  const groupId = config.membership.groupId;
+  const groupId = botCtx?.groupId || config.membership.groupId;
   logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
@@ -441,7 +442,7 @@ async function runPostBets(skipConfirmation = false) {
     logger.error('[postBets] Failed to get fila status', { groupId, error: filaResult.error?.message });
 
     // Warn failure (Story 14.3 AC5)
-    await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`);
+    await sendToAdmin(`⚠️ *ERRO NA POSTAGEM*\n\nFalha ao buscar fila de apostas.\nErro: ${filaResult.error?.message || 'Desconhecido'}\n\nVerifique o banco de dados.`, botCtx);
 
     return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
   }
@@ -501,7 +502,7 @@ async function runPostBets(skipConfirmation = false) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template);
 
-      const sendResult = await sendToPublic(message);
+      const sendResult = await sendToPublic(message, botCtx);
 
       if (sendResult.success) {
         // Registrar repost no histórico (não muda status, já é posted)
@@ -546,7 +547,7 @@ async function runPostBets(skipConfirmation = false) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template);
 
-      const sendResult = await sendToPublic(message);
+      const sendResult = await sendToPublic(message, botCtx);
 
       if (sendResult.success) {
         // Mark as posted (updates status and timestamp)

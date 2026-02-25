@@ -64,7 +64,7 @@ function canSendJobAlert(jobName) {
  * @param {string} executionId - Execution ID from job_executions table
  * @returns {Promise<{success: boolean, debounced?: boolean}>}
  */
-async function jobFailureAlert(jobName, errorMessage, executionId) {
+async function jobFailureAlert(jobName, errorMessage, executionId, botCtx = null) {
   if (!canSendJobAlert(jobName)) {
     logger.info('[alertService] Job failure alert debounced', { jobName, executionId });
     return { success: true, debounced: true };
@@ -82,7 +82,7 @@ ${errorMessage}
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -91,11 +91,12 @@ ${errorMessage}
  * @param {string} errorMessage - Error details
  * @param {number} attempts - Number of retry attempts made
  */
-async function apiErrorAlert(service, errorMessage, attempts) {
+async function apiErrorAlert(service, errorMessage, attempts, botCtx = null) {
   return alertAdmin(
     'ERROR',
     `${service} falhou após ${attempts} tentativas: ${errorMessage}`,
-    `O serviço ${service} está com problemas. As apostas podem não ter odds atualizadas.`
+    `O serviço ${service} está com problemas. As apostas podem não ter odds atualizadas.`,
+    botCtx
   );
 }
 
@@ -104,11 +105,12 @@ async function apiErrorAlert(service, errorMessage, attempts) {
  * @param {string} operation - Operation that failed
  * @param {string} errorMessage - Error details
  */
-async function dbErrorAlert(operation, errorMessage) {
+async function dbErrorAlert(operation, errorMessage, botCtx = null) {
   return alertAdmin(
     'ERROR',
     `DB Error em ${operation}: ${errorMessage}`,
-    `Problema no banco de dados. Verifique o Supabase.`
+    `Problema no banco de dados. Verifique o Supabase.`,
+    botCtx
   );
 }
 
@@ -117,9 +119,9 @@ async function dbErrorAlert(operation, errorMessage) {
  * @param {object} bet - Bet object
  * @param {number} reminderNumber - Which reminder this is (1, 2, 3...)
  */
-async function linkReminderAlert(bet, reminderNumber) {
+async function linkReminderAlert(bet, reminderNumber, botCtx = null) {
   const emoji = reminderNumber >= 3 ? '🔴' : '🟡';
-  
+
   const text = `
 ${emoji} *LEMBRETE #${reminderNumber}*
 
@@ -132,7 +134,7 @@ ${emoji} *LEMBRETE #${reminderNumber}*
 Responda com o link da aposta (Bet365 ou Betano).
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -140,7 +142,7 @@ Responda com o link da aposta (Bet365 ou Betano).
  * @param {Array} bets - Array of bets needing links
  * @param {string} period - Period (morning, afternoon, night)
  */
-async function requestLinksAlert(bets, period) {
+async function requestLinksAlert(bets, period, botCtx = null) {
   const periodNames = {
     morning: 'MANHÃ (10h)',
     afternoon: 'TARDE (15h)',
@@ -165,14 +167,14 @@ ${betsList}
 Exemplo: \`123: https://bet365.com/...\`
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
  * Confirm link received
  * @param {object} bet - Bet object
  */
-async function confirmLinkReceived(bet) {
+async function confirmLinkReceived(bet, botCtx = null) {
   const text = `
 ✅ *Link recebido!*
 
@@ -181,7 +183,7 @@ async function confirmLinkReceived(bet) {
 🔗 Link salvo com sucesso
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -189,7 +191,7 @@ async function confirmLinkReceived(bet) {
  * @param {object} bet - Bet with result
  * @param {boolean} won - Whether bet won
  */
-async function trackingResultAlert(bet, won) {
+async function trackingResultAlert(bet, won, botCtx = null) {
   const emoji = won ? '✅' : '❌';
   const result = won ? 'ACERTOU' : 'ERROU';
 
@@ -201,7 +203,7 @@ ${emoji} *RESULTADO: ${result}*
 💰 Odd: ${bet.oddsAtPost?.toFixed(2)}
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -210,7 +212,7 @@ ${emoji} *RESULTADO: ${result}*
  * @param {string} detectedAt - When the failure was detected
  * @param {string} reason - Reason for failure (optional)
  */
-async function postingFailureAlert(period, detectedAt, reason = null) {
+async function postingFailureAlert(period, detectedAt, reason = null, botCtx = null) {
   const operatorUsername = config.membership?.operatorUsername || 'operador';
 
   const reasonText = reason ? `\n📋 Motivo: ${reason}` : '';
@@ -227,7 +229,7 @@ async function postingFailureAlert(period, detectedAt, reason = null) {
 \`/status\` para mais detalhes
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -240,7 +242,7 @@ async function postingFailureAlert(period, detectedAt, reason = null) {
  * @param {number} attempts - Number of processing attempts made
  * @returns {Promise<{success: boolean, debounced?: boolean}>}
  */
-async function webhookProcessingAlert(eventId, eventType, errorMessage, attempts) {
+async function webhookProcessingAlert(eventId, eventType, errorMessage, attempts, botCtx = null) {
   // Debounce check - prevent duplicate alerts for same event
   if (!canSendWebhookAlert(eventId)) {
     logger.info('[alertService] webhookProcessingAlert: debounced', { eventId });
@@ -262,7 +264,7 @@ ${errorMessage}
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -270,7 +272,7 @@ ${errorMessage}
  * @param {Array} alerts - Array of alert objects { severity, check, message, action }
  * @param {boolean} hasErrors - Whether any errors (vs just warnings)
  */
-async function healthCheckAlert(alerts, hasErrors) {
+async function healthCheckAlert(alerts, hasErrors, botCtx = null) {
   const emoji = hasErrors ? '🔴' : '🟡';
   const type = hasErrors ? 'ERROR' : 'WARN';
 
@@ -287,7 +289,7 @@ ${alertsList}
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 /**
@@ -296,7 +298,7 @@ ${alertsList}
  * @param {object} results - { tracked, success, failure, unknown }
  * @param {object} rate7Days - { rate, successCount, total } or null
  */
-async function trackingSummaryAlert(results, rate7Days) {
+async function trackingSummaryAlert(results, rate7Days, botCtx = null) {
   const { tracked, success, failure, unknown } = results;
 
   if (tracked === 0) {
@@ -319,7 +321,7 @@ async function trackingSummaryAlert(results, rate7Days) {
 🕐 ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
   `.trim();
 
-  return sendToAdmin(text);
+  return botCtx ? sendToAdmin(text, botCtx) : sendToAdmin(text);
 }
 
 module.exports = {

@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
+const { config } = require('../../../lib/config');
 const {
   hasNotificationToday,
   registerNotification,
@@ -189,7 +190,7 @@ async function sendRenewalReminder(member) {
  * Main entry point - runs the renewal reminders job with lock
  * @returns {Promise<{success: boolean, sent?: number, skipped?: number, failed?: number, error?: string}>}
  */
-async function runRenewalReminders() {
+async function runRenewalReminders(groupId = null, botCtx = null) {
   // Prevent concurrent runs
   if (renewalRemindersRunning) {
     logger.debug('[membership:renewal-reminders] Already running, skipping');
@@ -198,7 +199,7 @@ async function runRenewalReminders() {
   renewalRemindersRunning = true;
 
   try {
-    return await _runRenewalRemindersInternal();
+    return await _runRenewalRemindersInternal(groupId, botCtx);
   } finally {
     renewalRemindersRunning = false;
   }
@@ -208,10 +209,11 @@ async function runRenewalReminders() {
  * Internal processor - handles the actual reminder sending
  * @returns {Promise<{success: boolean, sent: number, skipped: number, failed: number}>}
  */
-async function _runRenewalRemindersInternal() {
+async function _runRenewalRemindersInternal(overrideGroupId = null, botCtx = null) {
   const startTime = Date.now();
   const today = new Date().toISOString().split('T')[0];
-  logger.info('[membership:renewal-reminders] Starting', { date: today });
+  const effectiveGroupId = overrideGroupId || config.membership?.groupId || null;
+  logger.info('[membership:renewal-reminders] Starting', { date: today, groupId: effectiveGroupId || 'single-tenant' });
 
   let sent = 0;
   let skipped = 0;

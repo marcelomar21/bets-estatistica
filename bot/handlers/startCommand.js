@@ -116,7 +116,7 @@ async function isUserInGroup(bot, groupId, telegramId) {
  * @param {object} msg - Telegram message object
  * @returns {Promise<{success: boolean, action?: string, error?: object}>}
  */
-async function handleStartCommand(msg) {
+async function handleStartCommand(msg, botCtx = null) {
   const bot = getBot();
   const telegramId = msg.from.id;
   const username = msg.from.username;
@@ -146,7 +146,7 @@ async function handleStartCommand(msg) {
 
   if (existingResult.success) {
     const member = existingResult.data;
-    return await handleExistingMember(bot, chatId, telegramId, firstName, member, payload);
+    return await handleExistingMember(bot, chatId, telegramId, firstName, member, payload, botCtx);
   }
 
   // Member not found - check if error was something other than NOT_FOUND
@@ -166,7 +166,7 @@ async function handleStartCommand(msg) {
 /**
  * Handle existing member based on their status
  */
-async function handleExistingMember(bot, chatId, telegramId, firstName, member, _payload) {
+async function handleExistingMember(bot, chatId, telegramId, firstName, member, _payload, botCtx = null) {
   const { status } = member;
 
   logger.info('[membership:start-command] Existing member', {
@@ -179,7 +179,7 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
     case 'trial':
     case 'ativo':
       // Member already in good standing - check if needs invite link
-      return await handleActiveOrTrialMember(bot, chatId, firstName, member);
+      return await handleActiveOrTrialMember(bot, chatId, firstName, member, botCtx);
 
     case 'inadimplente':
       // Defaulted - send payment link
@@ -187,7 +187,7 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
 
     case 'removido':
       // Check if can rejoin (< 24h since kick)
-      return await handleRemovedMember(bot, chatId, telegramId, firstName, member);
+      return await handleRemovedMember(bot, chatId, telegramId, firstName, member, botCtx);
 
     default:
       logger.warn('[membership:start-command] Unknown status', { status, memberId: member.id });
@@ -199,9 +199,9 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
 /**
  * Handle trial or active member - show status and offer invite if needed
  */
-async function handleActiveOrTrialMember(bot, chatId, firstName, member) {
+async function handleActiveOrTrialMember(bot, chatId, firstName, member, botCtx = null) {
   const isTrialMember = member.status === 'trial';
-  const groupId = config.telegram.publicGroupId;
+  const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
 
   // Check if member has joined the group according to DB
   const hasJoinedGroupInDb = !!member.joined_group_at;
@@ -223,7 +223,7 @@ async function handleActiveOrTrialMember(bot, chatId, firstName, member) {
       await clearJoinedGroupAt(member.id);
 
       // Generate new invite link
-      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member);
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member, botCtx);
       return inviteResult;
     }
 
@@ -266,14 +266,14 @@ Obrigado por fazer parte do GuruBet! 🎯
   }
 
   // Not in group yet - generate invite link
-  const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member);
+  const inviteResult = await generateAndSendInvite(bot, chatId, firstName, member, botCtx);
   return inviteResult;
 }
 
 /**
  * Handle removed member - check if can rejoin
  */
-async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
+async function handleRemovedMember(bot, chatId, telegramId, firstName, member, botCtx = null) {
   const rejoinResult = await canRejoinGroup(member.id);
 
   if (rejoinResult.success && rejoinResult.data.canRejoin) {
@@ -282,7 +282,7 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
 
     if (reactivateResult.success) {
       // Unban user from group before sending invite (they were banned when kicked)
-      const groupId = config.telegram.publicGroupId;
+      const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
       try {
         await bot.unbanChatMember(groupId, telegramId, { only_if_banned: true });
         logger.info('[membership:start-command] User unbanned for reactivation', {
@@ -307,7 +307,7 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member) {
       });
 
       // Generate invite
-      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, reactivateResult.data);
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, reactivateResult.data, botCtx);
 
       logger.info('[membership:start-command] Member reactivated', {
         memberId: member.id,
@@ -365,7 +365,7 @@ _(Se você ainda não é assinante, digite qualquer email para começar seu tria
  * @param {object} msg - Telegram message object
  * @returns {Promise<{success: boolean, action?: string, error?: object}>}
  */
-async function handleEmailInput(msg) {
+async function handleEmailInput(msg, botCtx = null) {
   const bot = getBot();
   const telegramId = msg.from.id;
   const username = msg.from.username;
@@ -456,13 +456,13 @@ Seu email ${email} foi vinculado a este Telegram.
       `.trim(), { parse_mode: 'Markdown' });
 
       // Then send invite
-      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, linkResult.data);
+      const inviteResult = await generateAndSendInvite(bot, chatId, firstName, linkResult.data, botCtx);
 
       return { success: true, action: 'linked_and_invited', ...inviteResult };
     }
 
     // Member is not in active/trial status - handle accordingly
-    return await handleExistingMember(bot, chatId, telegramId, firstName, linkResult.data, null);
+    return await handleExistingMember(bot, chatId, telegramId, firstName, linkResult.data, null, botCtx);
   }
 
   // Email not found - user hasn't paid yet, send payment link
@@ -524,8 +524,8 @@ Envie /start novamente e informe o mesmo email que usou no checkout.
 /**
  * Generate invite link and send welcome message
  */
-async function generateAndSendInvite(bot, chatId, firstName, member) {
-  const groupId = config.telegram.publicGroupId;
+async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = null) {
+  const groupId = botCtx?.publicGroupId || config.telegram.publicGroupId;
   // Get trial days from system_config (database)
   const trialDaysResult = await getTrialDays();
   const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
@@ -780,7 +780,7 @@ async function recordNotification(memberId, type, messageId) {
 /**
  * Handle /status command in private chat
  */
-async function handleStatusCommand(msg) {
+async function handleStatusCommand(msg, botCtx = null) {
   const bot = getBot();
   const telegramId = msg.from.id;
   const chatId = msg.chat.id;

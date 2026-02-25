@@ -40,8 +40,8 @@ function normalizeChatId(id) {
  * Uses GROUP_ID env var (multi-tenant) or falls back to config.
  * @returns {Promise<{groupId: string|null, chatId: string|null}>}
  */
-async function resolveGroup() {
-  const groupId = config.membership.groupId || null;
+async function resolveGroup(overrideGroupId = null) {
+  const groupId = overrideGroupId || config.membership.groupId || null;
 
   if (groupId) {
     // Multi-tenant: fetch from DB
@@ -107,7 +107,7 @@ async function checkTelegramMembership(bot, chatId, telegramId) {
  * 3. For each active/trial member in DB, verify they're still in the group
  * @returns {Promise<object>} Sync results
  */
-async function runSyncGroupMembers() {
+async function runSyncGroupMembers(groupId = null, botCtx = null) {
   if (syncRunning) {
     logger.debug(`[${JOB_NAME}] Already running, skipping`);
     return { success: true, skipped: true };
@@ -116,20 +116,20 @@ async function runSyncGroupMembers() {
   syncRunning = true;
 
   try {
-    return await _runSyncInternal();
+    return await _runSyncInternal(groupId, botCtx);
   } finally {
     syncRunning = false;
   }
 }
 
-async function _runSyncInternal() {
-  const bot = getBot();
+async function _runSyncInternal(overrideGroupId = null, botCtx = null) {
+  const bot = botCtx?.bot || getBot();
   if (!bot) {
     logger.error(`[${JOB_NAME}] Bot not initialized`);
     return { success: false, error: 'Bot not initialized' };
   }
 
-  const { groupId, chatId } = await resolveGroup();
+  const { groupId, chatId } = await resolveGroup(overrideGroupId);
   if (!chatId) {
     return { success: false, error: 'No group configured' };
   }
