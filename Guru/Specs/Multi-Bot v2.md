@@ -1,9 +1,13 @@
+> [!info] Fonte original
+> `_bmad-output/implementation-artifacts/tech-spec-evolucao-plataforma-multi-bot-v2.md`
+
 ---
 title: 'Evolução Plataforma Multi-Bot v2'
 slug: 'evolucao-plataforma-multi-bot-v2'
 created: '2026-02-25'
 status: 'ready-for-dev'
 stepsCompleted: [1, 2, 3, 4]
+tags: [spec]
 tech_stack:
   - Node.js 20+ (bots - CommonJS)
   - Next.js 16.x (admin panel - App Router + TypeScript)
@@ -21,7 +25,7 @@ files_to_modify:
   - bot/server.js                    # webhook singleton → multi-bot registry
   - bot/server.scheduler.js          # module globals → factory per group
   - bot/telegram.js                  # singleton bot → Map<groupId, botInstance>
-  - lib/config.js                    # env-var config → DB-loaded per-group config
+  - lib/config.js                    # env-var config → DB-loaded per-group
   # Postagem + distribuição
   - bot/jobs/postBets.js             # pendingConfirmations Map → per-group scope
   - bot/jobs/distributeBets.js       # round-robin → fair distribution com offset

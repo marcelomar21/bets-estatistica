@@ -54,3 +54,12 @@ supabase/
 
 # Ralph Loop state (generated at runtime)
 .claude/ralph-loop.local.md
+
+# Obsidian (workspace/config local)
+.obsidian/
+
+# Render env (contains API keys)
+admin-panel/.env.render
+
+# Temporary images
+telegram-login-qr.png
