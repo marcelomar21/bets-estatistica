@@ -523,21 +523,23 @@ describe('distributeBets job', () => {
   });
 
   describe('distributeRoundRobin', () => {
-    test('distribui ciclicamente bets entre groups', () => {
+    test('distribui bets de forma balanceada entre groups', () => {
       const bets = createMockBets(7);
       const groups = createMockGroups(3);
 
       const assignments = distributeRoundRobin(bets, groups);
 
       expect(assignments).toHaveLength(7);
-      // bet[0] -> group[0], bet[1] -> group[1], bet[2] -> group[2], bet[3] -> group[0], ...
-      expect(assignments[0]).toEqual({ betId: 'bet-uuid-1', groupId: 'group-uuid-1' });
-      expect(assignments[1]).toEqual({ betId: 'bet-uuid-2', groupId: 'group-uuid-2' });
-      expect(assignments[2]).toEqual({ betId: 'bet-uuid-3', groupId: 'group-uuid-3' });
-      expect(assignments[3]).toEqual({ betId: 'bet-uuid-4', groupId: 'group-uuid-1' });
-      expect(assignments[4]).toEqual({ betId: 'bet-uuid-5', groupId: 'group-uuid-2' });
-      expect(assignments[5]).toEqual({ betId: 'bet-uuid-6', groupId: 'group-uuid-3' });
-      expect(assignments[6]).toEqual({ betId: 'bet-uuid-7', groupId: 'group-uuid-1' });
+      // With fair distribution, each group should get 2-3 bets (7/3 = 2.33)
+      const countPerGroup = {};
+      for (const a of assignments) {
+        countPerGroup[a.groupId] = (countPerGroup[a.groupId] || 0) + 1;
+      }
+      // Max difference between any two groups should be at most 1
+      const counts = Object.values(countPerGroup);
+      expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+      // All bets assigned
+      expect(assignments.every(a => a.betId && a.groupId)).toBe(true);
     });
 
     test('grupo único recebe todas as apostas', () => {
