@@ -1,6 +1,6 @@
 # Story 1.2: Histórico de Postagens no Dashboard
 
-Status: review
+Status: done
 
 ## Story
 

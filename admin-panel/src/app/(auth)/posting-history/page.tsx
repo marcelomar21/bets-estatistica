@@ -114,7 +114,7 @@ export default function PostingHistoryPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Historico de Postagens</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Histórico de Postagens</h1>
       </div>
 
       {/* Summary counters */}

@@ -1,7 +1,5 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-
 export interface HistoryBet {
   id: number;
   bet_market: string;
@@ -29,8 +27,6 @@ interface PostingHistoryTableProps {
   onSort: (field: string) => void;
   emptyMessage?: string;
 }
-
-type SortField = 'match' | 'kickoff_time' | 'odds_at_post' | 'group' | 'telegram_posted_at' | 'status';
 
 function formatDateTime(isoString: string | null) {
   if (!isoString) return '—';
