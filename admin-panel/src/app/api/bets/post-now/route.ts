@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 
-const MIN_ODDS = 1.60;
+const MIN_ODDS = Number(process.env.MIN_ODDS) || 1.60;
 
 /**
  * POST /api/bets/post-now

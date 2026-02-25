@@ -15,7 +15,7 @@ jest.mock('../../lib/config', () => ({
   config: {
     betting: {
       minOdds: 1.60,
-      maxActiveBets: 3,
+      maxActiveBets: 50,
       maxDaysAhead: 2,
     },
   },

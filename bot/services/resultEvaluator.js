@@ -38,7 +38,19 @@ TIPOS DE APOSTAS COMUNS:
 - "pelo menos um time sem marcar" = pelo menos um time nao marcou (mesmo que BTTS nao)
 - "apenas uma equipe marca" = exatamente um time marcou (nao empate 0x0)
 - "mais de X escanteios" = total de escanteios > X
-- "mais de X cartoes" = total de cartoes (amarelos + vermelhos) > X`;
+- "mais de X cartoes" = total de cartoes (amarelos + vermelhos) > X
+- "handicap asiatico -X" = time vence por mais de X gols de diferenca
+- "handicap asiatico +X" = time nao perde por mais de X gols de diferenca
+- "handicap europeu -X" = resultado final com handicap aplicado (ex: -1 = precisa vencer por 2+)
+- "resultado exato X-Y" = placar final exatamente X a Y
+- "intervalo de gols X-Y" = total de gols entre X e Y (inclusive)
+- "cartoes por equipe mais de X" = time especifico recebe mais de X cartoes
+- "escanteios por equipe mais de X" = time especifico tem mais de X escanteios
+- "jogador marca gol" / "anytime scorer" = jogador especifico marcou pelo menos 1 gol
+- "1X2" / "resultado final" = 1 (casa vence), X (empate), 2 (fora vence)
+- "dupla chance" = 1X (casa ou empate), 12 (casa ou fora), X2 (empate ou fora)
+
+IMPORTANTE: Se o mercado da aposta NAO esta na lista acima e voce nao tem certeza absoluta de como avalia-lo, retorne "unknown". Nunca tente interpretar mercados desconhecidos.`;
 
 const HUMAN_TEMPLATE = `DADOS DO JOGO:
 - Partida: {homeTeam} {homeScore} x {awayScore} {awayTeam}
@@ -105,6 +117,78 @@ function extractMatchData(rawMatch) {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * Deterministic evaluation for simple markets
+ * Returns result directly without LLM for markets that can be computed from scores
+ * @param {object} bet - { id, betMarket, betPick }
+ * @param {object} matchData - extracted match data from extractMatchData()
+ * @returns {{ result: string, reason: string } | null} - null if market needs LLM
+ */
+function evaluateDeterministic(bet, matchData) {
+  const { homeScore, awayScore, totalGoals, btts } = matchData;
+
+  if (homeScore === null || awayScore === null) return null;
+
+  const market = (bet.betMarket || '').toLowerCase();
+  const pick = (bet.betPick || '').toLowerCase();
+  const combined = `${market} ${pick}`.toLowerCase();
+
+  // Over/Under X.5 goals
+  const overUnderMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:\.\d+)?)\s*(?:gols?|goals?)?/);
+  if (overUnderMatch) {
+    const threshold = parseFloat(overUnderMatch[1]);
+    const won = totalGoals > threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de gols: ${totalGoals} ${won ? '>' : '<='} ${threshold} (deterministic)`,
+    };
+  }
+
+  const underMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:\.\d+)?)\s*(?:gols?|goals?)?/);
+  if (underMatch) {
+    const threshold = parseFloat(underMatch[1]);
+    const won = totalGoals < threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de gols: ${totalGoals} ${won ? '<' : '>='} ${threshold} (deterministic)`,
+    };
+  }
+
+  // BTTS (Both Teams To Score)
+  if (/btts|ambas?\s*(?:marcam|marcar|equipes?\s*marcam)/.test(combined)) {
+    if (btts === null) return null;
+    const expectYes = /sim|yes/.test(combined) || !/n[aã]o|no/.test(combined);
+    const won = expectYes ? btts : !btts;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `BTTS: ${btts ? 'Sim' : 'Nao'}, aposta: ${expectYes ? 'Sim' : 'Nao'} (deterministic)`,
+    };
+  }
+
+  // 1X2 (Match Result)
+  if (/resultado\s*final|1x2|match\s*result|moneyline/.test(market)) {
+    let expectedResult;
+    if (/casa|home|1(?!\d)/.test(pick) && !/empate|draw|x/i.test(pick)) {
+      expectedResult = 'home';
+    } else if (/empate|draw|x(?!\d)/i.test(pick) && !/casa|home|fora|away/.test(pick)) {
+      expectedResult = 'draw';
+    } else if (/fora|away|2(?!\d)/.test(pick) && !/empate|draw|x/i.test(pick)) {
+      expectedResult = 'away';
+    }
+
+    if (expectedResult) {
+      const actualResult = homeScore > awayScore ? 'home' : awayScore > homeScore ? 'away' : 'draw';
+      const won = actualResult === expectedResult;
+      return {
+        result: won ? 'success' : 'failure',
+        reason: `Placar: ${homeScore}x${awayScore}, resultado: ${actualResult}, aposta: ${expectedResult} (deterministic)`,
+      };
+    }
+  }
+
+  return null; // Market needs LLM evaluation
+}
+
+/**
  * Avalia multiplas apostas de um mesmo jogo usando LLM
  * @param {object} matchInfo - Informacoes do jogo
  * @param {string} matchInfo.homeTeamName - Nome do time da casa
@@ -145,6 +229,43 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
     };
   }
 
+  // Deterministic first-pass: evaluate simple markets without LLM
+  const deterministicResults = [];
+  const betsNeedingLLM = [];
+
+  for (const bet of bets) {
+    const deterResult = evaluateDeterministic(bet, matchData);
+    if (deterResult) {
+      deterministicResults.push({
+        id: bet.id,
+        result: deterResult.result,
+        reason: deterResult.reason,
+      });
+      logger.info('Bet evaluated deterministically', {
+        betId: bet.id,
+        market: bet.betMarket,
+        result: deterResult.result,
+      });
+    } else {
+      betsNeedingLLM.push(bet);
+    }
+  }
+
+  // If all bets were evaluated deterministically, skip LLM entirely
+  if (betsNeedingLLM.length === 0) {
+    logger.info('All bets evaluated deterministically, skipping LLM', {
+      matchId: matchInfo.matchId,
+      count: deterministicResults.length,
+    });
+    return { success: true, data: deterministicResults };
+  }
+
+  logger.info('Deterministic evaluation partial', {
+    matchId: matchInfo.matchId,
+    deterministic: deterministicResults.length,
+    needLLM: betsNeedingLLM.length,
+  });
+
   const MAX_RETRIES = 3;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -163,7 +284,7 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
         ['human', HUMAN_TEMPLATE],
       ]);
 
-      const betsForPrompt = bets.map(bet => ({
+      const betsForPrompt = betsNeedingLLM.map(bet => ({
         id: bet.id,
         aposta: `${bet.betMarket} - ${bet.betPick}`,
       }));
@@ -193,12 +314,12 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
       // withStructuredOutput ja retorna objeto validado pelo Zod
       logger.info('Bets evaluated with LLM', {
         matchId: matchInfo.matchId,
-        betsCount: bets.length,
+        betsCount: betsNeedingLLM.length,
         results: response.results.map(r => r.result),
         attempt,
       });
 
-      return { success: true, data: response.results };
+      return { success: true, data: [...deterministicResults, ...response.results] };
 
     } catch (err) {
       logger.warn('LLM evaluation attempt failed', {
@@ -224,4 +345,5 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
 module.exports = {
   evaluateBetsWithLLM,
   extractMatchData,
+  evaluateDeterministic,
 };

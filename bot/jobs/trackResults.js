@@ -27,8 +27,8 @@ const FOOTYSTATS_API_URL = 'https://api.football-data-api.com/match';
 // How long after kickoff to start checking (2 hours)
 const CHECK_DELAY_MS = 2 * 60 * 60 * 1000;
 
-// Max time to keep checking (4 hours after kickoff)
-const MAX_CHECK_DURATION_MS = 4 * 60 * 60 * 1000;
+// Max time to keep checking (8 hours after kickoff)
+const MAX_CHECK_DURATION_MS = 8 * 60 * 60 * 1000;
 
 // Match status values that indicate completion
 const COMPLETED_STATUSES = ['complete', 'finished', 'ft', 'aet', 'pen'];
@@ -61,7 +61,7 @@ async function getBetsToTrack() {
     .eq('bet_status', 'posted')
     .eq('bet_result', 'pending')  // F2: Somente bets pendentes
     .lte('league_matches.kickoff_time', checkAfter.toISOString())  // 2h+ desde kickoff
-    .gte('league_matches.kickoff_time', checkBefore.toISOString()); // Menos de 4h
+    .gte('league_matches.kickoff_time', checkBefore.toISOString()); // Menos de 8h
 
   if (error) {
     logger.error('Failed to fetch bets to track', { error: error.message });
@@ -208,6 +208,51 @@ async function refreshMatchIfNeeded(matchId, currentStatus) {
 }
 
 /**
+ * Recovery sweep: find bets that escaped the normal tracking window
+ * Bets with kickoff_time > 8h ago that are still pending get one more chance
+ */
+async function getRecoveryBets() {
+  const now = new Date();
+  const recoveryThreshold = new Date(now.getTime() - MAX_CHECK_DURATION_MS);
+
+  const { data, error } = await supabase
+    .from('suggested_bets')
+    .select(`
+      id,
+      match_id,
+      bet_market,
+      bet_pick,
+      odds_at_post,
+      league_matches!inner (
+        home_team_name,
+        away_team_name,
+        kickoff_time,
+        status
+      )
+    `)
+    .eq('bet_status', 'posted')
+    .eq('bet_result', 'pending')
+    .lt('league_matches.kickoff_time', recoveryThreshold.toISOString());
+
+  if (error) {
+    logger.error('Failed to fetch recovery bets', { error: error.message });
+    return [];
+  }
+
+  return (data || []).map(bet => ({
+    id: bet.id,
+    matchId: bet.match_id,
+    betMarket: bet.bet_market,
+    betPick: bet.bet_pick,
+    oddsAtPost: bet.odds_at_post,
+    homeTeamName: bet.league_matches.home_team_name,
+    awayTeamName: bet.league_matches.away_team_name,
+    kickoffTime: bet.league_matches.kickoff_time,
+    matchStatus: bet.league_matches.status,
+  }));
+}
+
+/**
  * Main job - usa LLM para avaliar resultados em batch por jogo
  */
 async function runTrackResults() {
@@ -251,7 +296,11 @@ async function runTrackResults() {
 
     // Verificar novamente após refresh
     if (!matchData || !isMatchComplete(matchData.status)) {
-      logger.debug('Match still not complete after API check', { matchId, status: matchData?.status });
+      logger.info('Match still not complete, will retry in next cycle', {
+        matchId,
+        status: matchData?.status,
+        betsAffected: matchBets.length,
+      });
       continue;
     }
 
@@ -353,6 +402,112 @@ async function runTrackResults() {
     unknown: unknownCount,
     errors: errorCount,
   });
+
+  // Recovery sweep: process bets that escaped the normal tracking window
+  const recoveryBets = await getRecoveryBets();
+  if (recoveryBets.length > 0) {
+    logger.info('Recovery sweep: found abandoned bets', { count: recoveryBets.length });
+
+    const recoveryByMatch = new Map();
+    for (const bet of recoveryBets) {
+      if (!recoveryByMatch.has(bet.matchId)) {
+        recoveryByMatch.set(bet.matchId, []);
+      }
+      recoveryByMatch.get(bet.matchId).push(bet);
+    }
+
+    for (const [matchId, matchBets] of recoveryByMatch) {
+      let matchData = await getMatchRawData(matchId);
+
+      if (!matchData || !isMatchComplete(matchData.status)) {
+        const refreshedData = await refreshMatchIfNeeded(matchId, matchData?.status);
+        if (refreshedData) matchData = refreshedData;
+      }
+
+      if (!matchData || !isMatchComplete(matchData.status)) {
+        logger.warn('Recovery: match still not complete, marking as unknown', {
+          matchId,
+          betsAffected: matchBets.length,
+        });
+        // Mark as unknown so they don't pile up forever
+        for (const bet of matchBets) {
+          await markBetResult(bet.id, 'unknown', 'Match data unavailable after recovery window');
+          tracked++;
+          unknownCount++;
+        }
+        continue;
+      }
+
+      if (!matchData.raw_match) {
+        logger.warn('Recovery: no raw_match data', { matchId });
+        for (const bet of matchBets) {
+          await markBetResult(bet.id, 'unknown', 'No match data available for evaluation');
+          tracked++;
+          unknownCount++;
+        }
+        continue;
+      }
+
+      const betsForEval = matchBets.map(bet => ({
+        id: bet.id,
+        betMarket: bet.betMarket,
+        betPick: bet.betPick,
+      }));
+
+      const evalResult = await evaluateBetsWithLLM(
+        {
+          matchId,
+          homeTeamName: matchData.home_team_name,
+          awayTeamName: matchData.away_team_name,
+          rawMatch: matchData.raw_match,
+        },
+        betsForEval
+      );
+
+      if (!evalResult.success) {
+        logger.error('Recovery: failed to evaluate', { matchId, error: evalResult.error });
+        continue;
+      }
+
+      const validBetIds = new Set(matchBets.map(b => b.id));
+
+      for (const result of evalResult.data) {
+        if (!validBetIds.has(result.id)) continue;
+
+        const updateResult = await markBetResult(result.id, result.result, `[recovery] ${result.reason}`);
+        if (updateResult.success) {
+          tracked++;
+          if (result.result === 'success') successCount++;
+          else if (result.result === 'failure') failureCount++;
+          else unknownCount++;
+
+          if (result.result !== 'unknown') {
+            const bet = matchBets.find(b => b.id === result.id);
+            if (bet) {
+              try {
+                await trackingResultAlert({
+                  homeTeamName: matchData.home_team_name,
+                  awayTeamName: matchData.away_team_name,
+                  betMarket: bet.betMarket,
+                  betPick: bet.betPick,
+                  oddsAtPost: bet.oddsAtPost,
+                }, result.result === 'success');
+              } catch (alertErr) {
+                logger.warn('Recovery: failed to send alert', { betId: result.id, error: alertErr.message });
+              }
+            }
+          }
+        } else {
+          errorCount++;
+        }
+      }
+    }
+
+    logger.info('Recovery sweep complete', {
+      recoveryBetsFound: recoveryBets.length,
+      totalTracked: tracked,
+    });
+  }
 
   // Enviar alerta de resumo para admin se houve resultados
   if (tracked > 0) {
