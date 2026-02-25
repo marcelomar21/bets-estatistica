@@ -88,12 +88,18 @@ export default async function GroupDetailPage({
           </div>
         </dl>
 
-        <div className="mt-6 pt-6 border-t border-gray-200">
+        <div className="mt-6 pt-6 border-t border-gray-200 flex items-center gap-3">
           <Link
             href={`/groups/${typedGroup.id}/edit`}
             className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             Editar
+          </Link>
+          <Link
+            href={`/groups/${typedGroup.id}/tone`}
+            className="inline-block rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Tom de Voz
           </Link>
         </div>
       </div>
