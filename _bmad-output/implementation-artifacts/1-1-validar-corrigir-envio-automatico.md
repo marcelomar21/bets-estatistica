@@ -1,6 +1,6 @@
 # Story 1.1: Validar e Corrigir Envio Automático de Apostas
 
-Status: review
+Status: done
 
 ## Story
 
