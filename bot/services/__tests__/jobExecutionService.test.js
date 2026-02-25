@@ -197,6 +197,18 @@ describe('jobExecutionService', () => {
       expect(formatResult('post-bets', { posted: 3, reposted: 2 })).toBe('3 posted, 2 repost');
     });
 
+    it('should format post-bets result with sendFailed', () => {
+      expect(formatResult('post-bets', { posted: 2, reposted: 1, sendFailed: 1 })).toBe('2 posted, 1 repost, 1 fail');
+    });
+
+    it('should format post-bets-manual result (same as post-bets)', () => {
+      expect(formatResult('post-bets-manual', { posted: 1, reposted: 0 })).toBe('1 posted, 0 repost');
+    });
+
+    it('should show "N failed" for post-bets with only send failures', () => {
+      expect(formatResult('post-bets', { posted: 0, reposted: 0, sendFailed: 3 })).toBe('3 failed');
+    });
+
     it('should show "nenhuma" for post-bets with 0 posted', () => {
       expect(formatResult('post-bets', { posted: 0, reposted: 0 })).toBe('nenhuma');
     });

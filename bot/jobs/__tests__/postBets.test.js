@@ -78,7 +78,7 @@ jest.mock('../jobWarn', () => ({
 }));
 
 const { runPostBets, validateBetForPosting } = require('../postBets');
-const { sendToPublic } = require('../../telegram');
+const { sendToPublic, sendToAdmin } = require('../../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem } = require('../../services/betService');
 
 // Helper: create a bet fixture
@@ -383,6 +383,31 @@ describe('postBets', () => {
       expect(result.posted).toBe(0);
       expect(result.sendFailed).toBe(0);
       expect(result.skipped).toBe(1);
+    });
+
+    it('should throw when all ativas fail to repost via Telegram (Code Review finding)', async () => {
+      const activeBet1 = makeBet({ id: 'active-1' });
+      const activeBet2 = makeBet({ id: 'active-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [activeBet1, activeBet2], novas: [] },
+      });
+      sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram 429' } });
+
+      await expect(runPostBets(true)).rejects.toThrow('Telegram send failures');
+    });
+
+    it('should call sendToAdmin with error message when getFilaStatus fails (Code Review finding)', async () => {
+      getFilaStatus.mockResolvedValue({
+        success: false,
+        error: { message: 'Connection refused' },
+      });
+
+      await expect(runPostBets(true)).rejects.toThrow();
+      expect(sendToAdmin).toHaveBeenCalledWith(
+        expect.stringContaining('Connection refused'),
+        null,
+      );
     });
   });
 });

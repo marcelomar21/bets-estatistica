@@ -460,7 +460,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   // If nothing to post, skip confirmation
   if (ativas.length === 0 && novas.length === 0) {
     logger.info('[postBets] No bets to post, skipping', { groupId });
-    return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: false };
+    return { reposted: 0, posted: 0, skipped: 0, sendFailed: 0, totalSent: 0, cancelled: false };
   }
 
   // Step 2: Request confirmation (unless skipped)
@@ -469,7 +469,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
 
     if (!confirmation.confirmed) {
       logger.info('[postBets] Post bets cancelled by admin', { groupId });
-      return { reposted: 0, posted: 0, skipped: 0, totalSent: 0, cancelled: true };
+      return { reposted: 0, posted: 0, skipped: 0, sendFailed: 0, totalSent: 0, cancelled: true };
     }
 
     if (confirmation.autoPosted) {
