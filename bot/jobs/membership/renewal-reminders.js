@@ -96,9 +96,11 @@ function getDaysUntilRenewal(subscriptionEndsAt) {
 /**
  * Send renewal reminder to a single member
  * @param {object} member - Member object with telegram_id, subscription_ends_at
+ * @param {object} [groupConfig] - Optional group config with checkoutUrl, operatorUsername, etc.
+ * @param {object} [botInstance] - Optional bot instance for multi-tenant
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function sendRenewalReminder(member) {
+async function sendRenewalReminder(member, groupConfig = null, botInstance = null) {
   const { id: memberId, telegram_id: telegramId, subscription_ends_at: subscriptionEndsAt } = member;
 
   // Validate telegram_id exists
@@ -126,7 +128,8 @@ async function sendRenewalReminder(member) {
 
   // Get payment link with affiliate tracking (Story 18.3)
   // Note: Active members may not have valid affiliate_code (expired after 14 days)
-  const linkResult = getPaymentLinkForMember(member);
+  const checkoutUrlOverride = groupConfig?.checkoutUrl || null;
+  const linkResult = getPaymentLinkForMember(member, checkoutUrlOverride);
   if (!linkResult.success) {
     logger.warn('[membership:renewal-reminders] sendRenewalReminder: no checkout URL', { memberId });
     return linkResult;
@@ -144,10 +147,10 @@ async function sendRenewalReminder(member) {
   const daysUntilRenewal = getDaysUntilRenewal(subscriptionEndsAt);
 
   // Format message
-  const message = formatRenewalReminder(member, daysUntilRenewal, checkoutUrl);
+  const message = formatRenewalReminder(member, daysUntilRenewal, checkoutUrl, groupConfig);
 
   // Send message
-  const sendResult = await sendPrivateMessage(telegramId, message);
+  const sendResult = await sendPrivateMessage(telegramId, message, 'Markdown', botInstance);
 
   if (!sendResult.success) {
     // USER_BLOCKED_BOT is expected - log but don't treat as failure
@@ -239,9 +242,16 @@ async function _runRenewalRemindersInternal(overrideGroupId = null, botCtx = nul
 
     logger.info('[membership:renewal-reminders] Processing members', { count: members.length });
 
+    // Build groupConfig from botCtx for multi-tenant support
+    const groupConfig = botCtx ? {
+      checkoutUrl: botCtx.checkoutUrl || null,
+      operatorUsername: botCtx.operatorUsername || null,
+      subscriptionPrice: botCtx.subscriptionPrice || null,
+    } : null;
+
     // Process each member
     for (const member of members) {
-      const result = await sendRenewalReminder(member);
+      const result = await sendRenewalReminder(member, groupConfig, botCtx?.bot || null);
 
       if (result.success) {
         sent++;

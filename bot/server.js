@@ -166,7 +166,7 @@ async function processWebhookUpdate(update, botCtx = null) {
     // Story 3.1: Use cached group chat ID for multi-tenant, fallback to config
     const expectedGroupChatId = publicGroupId;
     if (msg.new_chat_members && msg.chat.id.toString() === expectedGroupChatId) {
-      await handleNewChatMembers(msg);
+      await handleNewChatMembers(msg, botCtx?.groupId);
     }
 
     // Story 16.9: Handle /start command in private chats (Gate Entry)

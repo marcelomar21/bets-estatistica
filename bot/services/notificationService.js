@@ -25,7 +25,8 @@
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { getBot } = require('../telegram');
-const { config } = require('../../lib/config');
+// NOTE: config import removed — global config.membership.* fallbacks eliminated for multi-tenant safety.
+// Group-specific config must be passed explicitly via groupConfig parameter.
 
 /**
  * Check if a notification of a given type was already sent to a member today
@@ -127,6 +128,11 @@ async function registerNotification(memberId, type, channel, messageId = null) {
  * @returns {Promise<{success: boolean, data?: {messageId: number}, error?: object}>}
  */
 async function sendPrivateMessage(telegramId, message, parseMode = 'Markdown', botInstance = null) {
+  if (!botInstance) {
+    logger.warn('[notificationService] sendPrivateMessage: no botInstance provided, falling back to singleton getBot() — may send from wrong bot in multi-tenant', {
+      telegramId,
+    });
+  }
   const bot = botInstance || getBot();
 
   try {
@@ -164,20 +170,21 @@ async function sendPrivateMessage(telegramId, message, parseMode = 'Markdown', b
 
 /**
  * Get the checkout link for Cakto
+ *
+ * SAFETY: This function no longer falls back to global config.membership.checkoutUrl
+ * to prevent cross-group data leaks in multi-tenant setups. Callers must provide
+ * a group-specific checkout URL via getPaymentLinkForMember(member, checkoutUrlOverride)
+ * or sendKickWarningNotification(member, days, groupConfig).
+ *
+ * @deprecated Use getPaymentLinkForMember() with checkoutUrlOverride instead.
  * @returns {{success: boolean, data?: {checkoutUrl: string}, error?: object}}
  */
 function getCheckoutLink() {
-  const checkoutUrl = config.membership?.checkoutUrl;
-
-  if (!checkoutUrl) {
-    logger.warn('[notificationService] getCheckoutLink: CAKTO_CHECKOUT_URL not configured');
-    return {
-      success: false,
-      error: { code: 'CONFIG_MISSING', message: 'CAKTO_CHECKOUT_URL not configured' },
-    };
-  }
-
-  return { success: true, data: { checkoutUrl } };
+  logger.warn('[notificationService] getCheckoutLink: called without group-specific URL — global config fallback removed for multi-tenant safety');
+  return {
+    success: false,
+    error: { code: 'CONFIG_MISSING', message: 'No group-specific checkout URL provided. Global fallback removed for multi-tenant safety.' },
+  };
 }
 
 /**
@@ -224,21 +231,25 @@ function getPaymentLinkForMember(member, checkoutUrlOverride = null) {
 }
 
 /**
- * Get operator username from config or group-specific override
+ * Get operator username from group-specific config
+ * Falls back to generic 'operador' if no groupConfig provided.
+ * Global config fallback removed for multi-tenant safety.
  * @param {object} [groupConfig] - Optional group config with operatorUsername
  * @returns {string} - Operator username without @
  */
 function getOperatorUsername(groupConfig = null) {
-  return groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+  return groupConfig?.operatorUsername || 'operador';
 }
 
 /**
- * Get subscription price text from config or group-specific override
+ * Get subscription price text from group-specific config
+ * Returns null if no groupConfig with subscriptionPrice is provided.
+ * Global config fallback removed for multi-tenant safety.
  * @param {object} [groupConfig] - Optional group config with subscriptionPrice
- * @returns {string} - Price text (e.g., "R$50/mes")
+ * @returns {string|null} - Price text (e.g., "R$50/mes") or null if not configured
  */
 function getSubscriptionPrice(groupConfig = null) {
-  return groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mes';
+  return groupConfig?.subscriptionPrice || null;
 }
 
 /**
@@ -254,6 +265,8 @@ function formatTrialReminder(member, daysRemaining, checkoutUrl, successRate = n
   const operatorUsername = getOperatorUsername(groupConfig);
   const price = getSubscriptionPrice(groupConfig);
   const rateText = successRate ? `*${successRate.toFixed(1)}%*` : '_calculando_';
+  const priceLabel = price ? `POR ${price.toUpperCase()}` : 'AGORA';
+  const priceInline = price || 'um valor acessivel';
 
   if (daysRemaining === 1) {
     // Ultimo dia
@@ -262,7 +275,7 @@ function formatTrialReminder(member, daysRemaining, checkoutUrl, successRate = n
 Amanha voce perdera acesso ao grupo.
 
 Para continuar recebendo nossas apostas:
-[ASSINAR POR ${price.toUpperCase()}](${checkoutUrl})
+[ASSINAR ${priceLabel}](${checkoutUrl})
 
 Duvidas? @${operatorUsername}`;
   }
@@ -273,7 +286,7 @@ Duvidas? @${operatorUsername}`;
 
 Nao perca o acesso as nossas apostas.
 
-Continue recebendo analises diarias por ${price}:
+Continue recebendo analises diarias por ${priceInline}:
 [ASSINAR AGORA](${checkoutUrl})
 
 Duvidas? @${operatorUsername}`;
@@ -287,7 +300,7 @@ Voce esta aproveitando as apostas?
 Receba 3 apostas diarias com analise estatistica
 Taxa de acerto historica: ${rateText}
 
-Continue por ${price}:
+Continue por ${priceInline}:
 [ASSINAR AGORA](${checkoutUrl})
 
 Duvidas? Fale com @${operatorUsername}`;
@@ -304,6 +317,7 @@ Duvidas? Fale com @${operatorUsername}`;
  */
 function formatFarewellMessage(member, reason, checkoutUrl, groupConfig = null) {
   const price = getSubscriptionPrice(groupConfig);
+  const priceLabel = price ? `POR ${price.toUpperCase()}` : 'AGORA';
 
   if (reason === 'trial_expired') {
     return `Seu trial terminou
@@ -311,7 +325,7 @@ function formatFarewellMessage(member, reason, checkoutUrl, groupConfig = null) 
 Sentiremos sua falta!
 
 Para voltar a receber nossas apostas:
-[ASSINAR POR ${price.toUpperCase()}](${checkoutUrl})
+[ASSINAR ${priceLabel}](${checkoutUrl})
 
 Voce tem 24h para reativar e voltar ao grupo.`;
   }
@@ -676,18 +690,14 @@ async function sendKickWarningNotification(member, daysRemaining, groupConfig = 
     };
   }
 
-  // Get checkout URL: prefer group-specific, fall back to global config
-  const effectiveCheckoutUrl = groupConfig?.checkoutUrl || null;
-  let checkoutUrl;
-  if (effectiveCheckoutUrl) {
-    checkoutUrl = effectiveCheckoutUrl;
-  } else {
-    const checkoutResult = getCheckoutLink();
-    if (!checkoutResult.success) {
-      logger.warn('[notificationService] sendKickWarningNotification: no checkout URL', { memberId });
-      return checkoutResult;
-    }
-    checkoutUrl = checkoutResult.data.checkoutUrl;
+  // Get checkout URL: group-specific only (no global fallback for multi-tenant safety)
+  const checkoutUrl = groupConfig?.checkoutUrl || null;
+  if (!checkoutUrl) {
+    logger.warn('[notificationService] sendKickWarningNotification: no group-specific checkout URL available', { memberId });
+    return {
+      success: false,
+      error: { code: 'CONFIG_MISSING', message: 'No group-specific checkout URL provided' },
+    };
   }
 
   const message = formatKickWarning(member, daysRemaining, checkoutUrl, groupConfig);

@@ -30,22 +30,16 @@ const VALID_TRANSITIONS = {
 
 /**
  * Resolve group context for multi-tenant lookups/inserts.
- * If caller omits groupId, use configured GROUP_ID from bot process.
- * Explicit null disables tenant filtering for backward-compatible/global paths.
+ * Callers MUST pass an explicit groupId. Undefined/null/empty returns null
+ * (no tenant filtering). No global config fallback — each bot context
+ * is responsible for providing its own groupId.
  * @param {string|null|undefined} groupId
  * @returns {string|null}
  */
 function resolveGroupId(groupId) {
-  const configuredGroupId = config.membership?.groupId || null;
-
-  if (groupId === undefined) {
-    return configuredGroupId;
-  }
-
-  if (groupId === null || groupId === '') {
+  if (groupId === undefined || groupId === null || groupId === '') {
     return null;
   }
-
   return groupId;
 }
 
@@ -1897,13 +1891,13 @@ async function clearExpiredAffiliates() {
  * @returns {{success: boolean, data?: {url: string, hasAffiliate: boolean, affiliateCode: string|null}, error?: object}}
  */
 function generatePaymentLink(member, checkoutUrlOverride = null) {
-  const checkoutUrl = checkoutUrlOverride || config.membership?.checkoutUrl;
+  const checkoutUrl = checkoutUrlOverride;
 
   if (!checkoutUrl) {
-    logger.warn('[membership:payment-link] generatePaymentLink: checkout URL not configured');
+    logger.warn('[membership:payment-link] generatePaymentLink: no checkout URL provided (checkoutUrlOverride is required)');
     return {
       success: false,
-      error: { code: 'CONFIG_MISSING', message: 'Checkout URL not configured' }
+      error: { code: 'NO_CHECKOUT_URL', message: 'Checkout URL not provided' }
     };
   }
 

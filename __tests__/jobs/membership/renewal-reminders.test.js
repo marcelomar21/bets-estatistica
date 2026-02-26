@@ -221,6 +221,11 @@ describe('renewal-reminders job', () => {
         subscription_ends_at: new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
       };
 
+      const groupConfig = {
+        checkoutUrl: 'https://pay.cakto.com.br/checkout/123',
+        operatorUsername: 'operador_test',
+      };
+
       const mockBot = {
         sendMessage: jest.fn().mockResolvedValue({ message_id: 999 }),
       };
@@ -246,7 +251,7 @@ describe('renewal-reminders job', () => {
         .mockReturnValueOnce(mockNotifChain)  // hasNotificationToday
         .mockReturnValueOnce(mockInsertChain); // registerNotification
 
-      const result = await sendRenewalReminder(member);
+      const result = await sendRenewalReminder(member, groupConfig);
 
       expect(result.success).toBe(true);
       expect(mockBot.sendMessage).toHaveBeenCalled();
@@ -262,6 +267,11 @@ describe('renewal-reminders job', () => {
         telegram_username: 'testuser',
         payment_method: 'boleto',
         subscription_ends_at: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      const groupConfig = {
+        checkoutUrl: 'https://pay.cakto.com.br/checkout/123',
+        operatorUsername: 'operador_test',
       };
 
       const mockBot = {
@@ -284,7 +294,7 @@ describe('renewal-reminders job', () => {
       };
       supabase.from.mockReturnValue(mockNotifChain);
 
-      const result = await sendRenewalReminder(member);
+      const result = await sendRenewalReminder(member, groupConfig);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('USER_BLOCKED_BOT');

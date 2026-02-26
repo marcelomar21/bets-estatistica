@@ -53,18 +53,8 @@ jest.mock('../../bot/services/memberService', () => ({
   generatePaymentLink: jest.fn(),
 }));
 
-jest.mock('../../lib/config', () => ({
-  config: {
-    membership: {
-      checkoutUrl: 'https://pay.cakto.com.br/checkout/123',
-      operatorUsername: 'operador_test',
-      subscriptionPrice: 'R$50/mes',
-    },
-    telegram: {
-      publicGroupId: '-1001234567890',
-    },
-  },
-}));
+// NOTE: config.membership fallbacks were removed from notificationService for multi-tenant safety.
+// This mock is kept minimal — no membership properties since they should NOT be used.
 
 const {
   hasNotificationToday,
@@ -234,69 +224,56 @@ describe('notificationService', () => {
   });
 
   describe('getCheckoutLink', () => {
-    it('should return checkout URL from config', () => {
-      const result = getCheckoutLink();
-
-      expect(result.success).toBe(true);
-      expect(result.data.checkoutUrl).toBe('https://pay.cakto.com.br/checkout/123');
-    });
-
-    it('should return error when checkout URL is not configured', () => {
-      // Temporarily override config
-      const { config } = require('../../lib/config');
-      const originalUrl = config.membership.checkoutUrl;
-      config.membership.checkoutUrl = null;
-
+    it('should always return failure (global config fallback removed for multi-tenant safety)', () => {
       const result = getCheckoutLink();
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('CONFIG_MISSING');
-
-      // Restore
-      config.membership.checkoutUrl = originalUrl;
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('global config fallback removed'),
+      );
     });
   });
 
   describe('getOperatorUsername', () => {
-    it('should return operator username from config', () => {
-      const result = getOperatorUsername();
-      expect(result).toBe('operador_test');
-    });
-
-    it('should return default when not configured', () => {
-      const { config } = require('../../lib/config');
-      const original = config.membership.operatorUsername;
-      config.membership.operatorUsername = null;
-
+    it('should return generic default when no groupConfig provided', () => {
       const result = getOperatorUsername();
       expect(result).toBe('operador');
+    });
 
-      config.membership.operatorUsername = original;
+    it('should return group-specific operator username when provided', () => {
+      const result = getOperatorUsername({ operatorUsername: 'osmar_admin' });
+      expect(result).toBe('osmar_admin');
+    });
+
+    it('should return generic default when groupConfig has no operatorUsername', () => {
+      const result = getOperatorUsername({ someOtherProp: 'value' });
+      expect(result).toBe('operador');
     });
   });
 
   describe('getSubscriptionPrice', () => {
-    it('should return subscription price from config', () => {
+    it('should return null when no groupConfig provided', () => {
       const result = getSubscriptionPrice();
-      expect(result).toBe('R$50/mes');
+      expect(result).toBeNull();
     });
 
-    it('should return default when not configured', () => {
-      const { config } = require('../../lib/config');
-      const original = config.membership.subscriptionPrice;
-      config.membership.subscriptionPrice = null;
+    it('should return group-specific price when provided', () => {
+      const result = getSubscriptionPrice({ subscriptionPrice: 'R$79/mes' });
+      expect(result).toBe('R$79/mes');
+    });
 
-      const result = getSubscriptionPrice();
-      expect(result).toBe('R$50/mes');
-
-      config.membership.subscriptionPrice = original;
+    it('should return null when groupConfig has no subscriptionPrice', () => {
+      const result = getSubscriptionPrice({ someOtherProp: 'value' });
+      expect(result).toBeNull();
     });
   });
 
   describe('formatTrialReminder', () => {
     it('should format reminder for 3 days remaining', () => {
       const member = { telegram_username: 'testuser' };
-      const message = formatTrialReminder(member, 3, 'https://pay.cakto.com.br/checkout/123', 75.5);
+      const groupConfig = { operatorUsername: 'operador_test', subscriptionPrice: 'R$50/mes' };
+      const message = formatTrialReminder(member, 3, 'https://pay.cakto.com.br/checkout/123', 75.5, groupConfig);
 
       expect(message).toContain('*3 dias*');
       expect(message).toContain('75.5%');
@@ -539,21 +516,27 @@ describe('notificationService', () => {
       generatePaymentLink.mockClear();
     });
 
-    it('should return generic checkout link when member is null', () => {
+    it('should fail when member is null and no checkoutUrlOverride (global fallback removed)', () => {
       const result = getPaymentLinkForMember(null);
 
-      expect(result.success).toBe(true);
-      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
-      expect(result.data.hasAffiliate).toBe(false);
-      expect(result.data.affiliateCode).toBeNull();
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_MISSING');
       expect(generatePaymentLink).not.toHaveBeenCalled();
     });
 
-    it('should return generic checkout link when member is undefined', () => {
+    it('should fail when member is undefined and no checkoutUrlOverride (global fallback removed)', () => {
       const result = getPaymentLinkForMember(undefined);
 
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_MISSING');
+      expect(generatePaymentLink).not.toHaveBeenCalled();
+    });
+
+    it('should return checkoutUrlOverride when member is null but override provided', () => {
+      const result = getPaymentLinkForMember(null, 'https://pay.cakto.com.br/group-specific/456');
+
       expect(result.success).toBe(true);
-      expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
+      expect(result.data.url).toBe('https://pay.cakto.com.br/group-specific/456');
       expect(result.data.hasAffiliate).toBe(false);
       expect(result.data.affiliateCode).toBeNull();
       expect(generatePaymentLink).not.toHaveBeenCalled();
@@ -645,7 +628,7 @@ describe('notificationService', () => {
       jest.clearAllMocks();
     });
 
-    it('should send kick warning notification successfully', async () => {
+    it('should send kick warning notification successfully with group-specific checkout URL', async () => {
       const mockBot = {
         sendMessage: jest.fn().mockResolvedValue({ message_id: 2001 }),
       };
@@ -675,7 +658,8 @@ describe('notificationService', () => {
       });
 
       const member = { id: 1, telegram_id: 123456789, email: 'test@example.com' };
-      const result = await sendKickWarningNotification(member, 2);
+      const groupConfig = { checkoutUrl: 'https://pay.cakto.com.br/group-specific/789' };
+      const result = await sendKickWarningNotification(member, 2, groupConfig);
 
       expect(result.success).toBe(true);
       expect(result.data.messageId).toBe(2001);
@@ -685,6 +669,24 @@ describe('notificationService', () => {
         expect.stringContaining('Pagamento Pendente'),
         { parse_mode: 'Markdown' }
       );
+    });
+
+    it('should fail when no group-specific checkout URL is available', async () => {
+      // Mock hasNotificationToday returning false
+      const mockSelectChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      supabase.from.mockReturnValue(mockSelectChain);
+
+      const member = { id: 1, telegram_id: 123456789, email: 'test@example.com' };
+      const result = await sendKickWarningNotification(member, 2);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('CONFIG_MISSING');
     });
 
     it('should skip if already notified today', async () => {

@@ -225,6 +225,27 @@ describe('kick-expired job', () => {
   });
 
   describe('processMemberKick', () => {
+    // Shared groupData fixture for multi-tenant processMemberKick
+    const testGroupData = {
+      id: 'test-group-uuid',
+      name: 'Test Group',
+      telegram_group_id: '-100123456789',
+      checkout_url: 'https://checkout.example.com',
+      operator_username: 'operador_test',
+      subscription_price: 'R$50/mes',
+    };
+    const testBotCtx = {
+      bot: mockBotInstance,
+      groupId: 'test-group-uuid',
+      publicGroupId: '-100123456789',
+      groupConfig: {
+        name: 'Test Group',
+        checkoutUrl: 'https://checkout.example.com',
+        operatorUsername: 'operador_test',
+        subscriptionPrice: 'R$50/mes',
+      },
+    };
+
     it('should skip member without telegram_id and mark as removed', async () => {
       const member = {
         id: 'member-no-tg',
@@ -258,7 +279,7 @@ describe('kick-expired job', () => {
         .mockReturnValueOnce(mockGetChain)     // getMemberById
         .mockReturnValueOnce(mockUpdateChain); // update
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData);
 
       expect(result.success).toBe(true);
       expect(result.data.skipped).toBe(true);
@@ -305,7 +326,7 @@ describe('kick-expired job', () => {
         .mockReturnValueOnce(mockGetChain)     // getMemberById
         .mockReturnValueOnce(mockUpdateChain); // update
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData, mockBot, testBotCtx);
 
       expect(result.success).toBe(true);
       expect(result.data.kicked).toBe(true);
@@ -361,7 +382,7 @@ describe('kick-expired job', () => {
         .mockReturnValueOnce(mockGetChain)     // getMemberById for markAsRemoved
         .mockReturnValueOnce(mockUpdateChain); // update
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData, mockBot, testBotCtx);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('USER_NOT_IN_GROUP');
@@ -415,7 +436,7 @@ describe('kick-expired job', () => {
         .mockReturnValueOnce(mockGetChain)
         .mockReturnValueOnce(mockUpdateChain);
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData, mockBot, testBotCtx);
 
       // Should still succeed - message failed (403 USER_BLOCKED_BOT) but kick succeeded
       expect(result.success).toBe(true);
@@ -443,7 +464,7 @@ describe('kick-expired job', () => {
       };
       getBot.mockReturnValue(mockBot);
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData, mockBot, testBotCtx);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('BOT_NO_PERMISSION');
@@ -472,7 +493,7 @@ describe('kick-expired job', () => {
       };
       getBot.mockReturnValue(mockBot);
 
-      const result = await processMemberKick(member, 'trial_expired');
+      const result = await processMemberKick(member, 'trial_expired', testGroupData, mockBot, testBotCtx);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('TELEGRAM_ERROR');
@@ -612,8 +633,9 @@ describe('formatFarewellMessage', () => {
   it('should format trial_expired message correctly', () => {
     const member = { id: 'member-1', telegram_username: 'testuser' };
     const checkoutUrl = 'https://checkout.example.com';
+    const groupConfig = { subscriptionPrice: 'R$50/mes' };
 
-    const message = formatFarewellMessage(member, 'trial_expired', checkoutUrl);
+    const message = formatFarewellMessage(member, 'trial_expired', checkoutUrl, groupConfig);
 
     expect(message).toContain('trial terminou');
     expect(message).toContain('Sentiremos sua falta');
