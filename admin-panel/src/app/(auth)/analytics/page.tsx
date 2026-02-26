@@ -96,7 +96,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [role, setRole] = useState<'super_admin' | 'group_admin'>('super_admin');
+  const [role, setRole] = useState<'super_admin' | 'group_admin' | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -192,6 +192,7 @@ export default function AnalyticsPage() {
             rows={marketSort.sorted}
             labelHeader="Mercado"
             labelFn={(r) => (r as MarketRow).market}
+            keyFn={(r) => (r as MarketRow).market}
             toggleSort={marketSort.toggleSort}
             sortIcon={marketSort.sortIcon}
           />
@@ -205,17 +206,22 @@ export default function AnalyticsPage() {
               const cr = r as ChampionshipRow;
               return `${cr.league_name} (${cr.country})`;
             }}
+            keyFn={(r) => {
+              const cr = r as ChampionshipRow;
+              return `${cr.country}|${cr.league_name}`;
+            }}
             toggleSort={champSort.toggleSort}
             sortIcon={champSort.sortIcon}
           />
 
           {/* By Group Table — super_admin only */}
-          {role === 'super_admin' && data.byGroup.length > 0 && (
+          {role !== null && role === 'super_admin' && data.byGroup.length > 0 && (
             <BreakdownTable
               title="Acerto por Grupo"
               rows={groupSort.sorted}
               labelHeader="Grupo"
               labelFn={(r) => (r as GroupRow).group_name}
+              keyFn={(r) => (r as GroupRow).group_id}
               toggleSort={groupSort.toggleSort}
               sortIcon={groupSort.sortIcon}
             />
@@ -231,6 +237,7 @@ function BreakdownTable({
   rows,
   labelHeader,
   labelFn,
+  keyFn,
   toggleSort,
   sortIcon,
 }: {
@@ -238,6 +245,7 @@ function BreakdownTable({
   rows: BreakdownRow[];
   labelHeader: string;
   labelFn: (row: BreakdownRow) => string;
+  keyFn: (row: BreakdownRow) => string;
   toggleSort: (field: SortField) => void;
   sortIcon: (field: SortField) => string;
 }) {
@@ -274,8 +282,8 @@ function BreakdownTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {rows.map((row, i) => (
-              <tr key={i} className="hover:bg-gray-50">
+            {rows.map((row) => (
+              <tr key={keyFn(row)} className="hover:bg-gray-50">
                 <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-gray-900">
                   {labelFn(row)}
                 </td>
