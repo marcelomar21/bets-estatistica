@@ -1,6 +1,6 @@
 # Story 2.3: Lembretes de Expiração do Trial
 
-Status: review
+Status: done
 
 ## Story
 
