@@ -69,6 +69,14 @@ export const POST = createApiHandler(
       );
     }
 
+    // Validate media_storage_path belongs to the target group
+    if (body.media_storage_path && !body.media_storage_path.startsWith(`${body.group_id}/`)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Media path does not match group' } },
+        { status: 400 },
+      );
+    }
+
     const { data, error } = await supabase
       .from('scheduled_messages')
       .insert({

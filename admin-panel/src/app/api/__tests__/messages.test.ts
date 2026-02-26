@@ -189,13 +189,15 @@ describe('POST /api/messages', () => {
   });
 
   it('creates message with media fields', async () => {
+    const groupId = '550e8400-e29b-41d4-a716-446655440001';
+    const mediaPath = `${groupId}/abc.pdf`;
     const createdMessage = {
       id: '550e8400-e29b-41d4-a716-446655440000',
       status: 'pending',
       scheduled_at: futureDate,
-      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      group_id: groupId,
       message_text: 'See attached',
-      media_storage_path: 'group-uuid-1/abc.pdf',
+      media_storage_path: mediaPath,
       media_type: 'pdf',
       created_at: new Date().toISOString(),
     };
@@ -217,8 +219,8 @@ describe('POST /api/messages', () => {
     const req = createMockRequest('POST', 'http://localhost/api/messages', {
       message_text: 'See attached',
       scheduled_at: futureDate,
-      group_id: '550e8400-e29b-41d4-a716-446655440001',
-      media_storage_path: 'group-uuid-1/abc.pdf',
+      group_id: groupId,
+      media_storage_path: mediaPath,
       media_type: 'pdf',
     });
 
@@ -227,18 +229,20 @@ describe('POST /api/messages', () => {
 
     expect(response.status).toBe(201);
     expect(body.success).toBe(true);
-    expect(body.data.media_storage_path).toBe('group-uuid-1/abc.pdf');
+    expect(body.data.media_storage_path).toBe(mediaPath);
     expect(body.data.media_type).toBe('pdf');
   });
 
   it('creates media-only message (no text)', async () => {
+    const groupId = '550e8400-e29b-41d4-a716-446655440001';
+    const mediaPath = `${groupId}/img.png`;
     const createdMessage = {
       id: '550e8400-e29b-41d4-a716-446655440000',
       status: 'pending',
       scheduled_at: futureDate,
-      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      group_id: groupId,
       message_text: null,
-      media_storage_path: 'group-uuid-1/img.png',
+      media_storage_path: mediaPath,
       media_type: 'image',
       created_at: new Date().toISOString(),
     };
@@ -259,8 +263,8 @@ describe('POST /api/messages', () => {
     const { POST } = await import('@/app/api/messages/route');
     const req = createMockRequest('POST', 'http://localhost/api/messages', {
       scheduled_at: futureDate,
-      group_id: '550e8400-e29b-41d4-a716-446655440001',
-      media_storage_path: 'group-uuid-1/img.png',
+      group_id: groupId,
+      media_storage_path: mediaPath,
       media_type: 'image',
     });
 
@@ -271,6 +275,26 @@ describe('POST /api/messages', () => {
     expect(body.success).toBe(true);
     expect(body.data.message_text).toBeNull();
     expect(body.data.media_type).toBe('image');
+  });
+
+  it('rejects media_storage_path from different group', async () => {
+    const context = createMockContext('super_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/messages/route');
+    const req = createMockRequest('POST', 'http://localhost/api/messages', {
+      message_text: 'Test',
+      scheduled_at: futureDate,
+      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      media_storage_path: 'other-group-id/file.pdf',
+      media_type: 'pdf',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('group_admin cannot schedule for other group', async () => {

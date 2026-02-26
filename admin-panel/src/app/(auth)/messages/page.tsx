@@ -157,6 +157,14 @@ export default function MessagesPage() {
 
       const json = await res.json();
       if (!json.success) {
+        // Clean up orphaned file if upload succeeded but message creation failed
+        if (mediaStoragePath) {
+          fetch('/api/messages/upload', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_storage_path: mediaStoragePath }),
+          }).catch(() => { /* best effort cleanup */ });
+        }
         setFormError(json.error?.message ?? 'Erro ao agendar mensagem');
         return;
       }
