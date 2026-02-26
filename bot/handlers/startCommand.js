@@ -152,8 +152,9 @@ async function handleStartCommand(msg, botCtx = null) {
     return { success: false, action: 'ignored_non_private' };
   }
 
-  // Check if member exists
-  const existingResult = await getMemberByTelegramId(telegramId);
+  // Check if member exists — filter by group to avoid cross-group matches
+  const effectiveGroupId = (botCtx || getDefaultBotCtx())?.groupId || undefined;
+  const existingResult = await getMemberByTelegramId(telegramId, effectiveGroupId);
 
   if (existingResult.success) {
     const member = existingResult.data;
@@ -556,8 +557,9 @@ Envie /start para tentar novamente.
     email
   });
 
-  // Check if member exists with this email
-  const emailResult = await getMemberByEmail(email);
+  // Check if member exists with this email — filter by group
+  const emailGroupId = (botCtx || getDefaultBotCtx())?.groupId || undefined;
+  const emailResult = await getMemberByEmail(email, emailGroupId);
 
   if (emailResult.success) {
     const member = emailResult.data;
@@ -998,7 +1000,8 @@ async function handleStatusCommand(msg, botCtx = null) {
     return { success: false, action: 'ignored_non_private' };
   }
 
-  const memberResult = await getMemberByTelegramId(telegramId);
+  const statusGroupId = (botCtx || getDefaultBotCtx())?.groupId || undefined;
+  const memberResult = await getMemberByTelegramId(telegramId, statusGroupId);
 
   if (!memberResult.success) {
     await bot.sendMessage(chatId, `
