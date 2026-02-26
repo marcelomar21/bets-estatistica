@@ -1,6 +1,6 @@
 # Story 3.1: Tabela terms_acceptance com Imutabilidade
 
-Status: review
+Status: done
 
 ## Story
 
