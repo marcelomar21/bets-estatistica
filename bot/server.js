@@ -24,6 +24,7 @@ const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminG
 const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput, handleTermsAcceptCallback } = require('./handlers/startCommand');
+const { handleCancelCommand, handleCancelCallback } = require('./handlers/cancelCommand');
 const { supabase } = require('../lib/supabase');
 
 // Validate config
@@ -175,6 +176,8 @@ async function processWebhookUpdate(update, botCtx = null) {
         await handleStartCommand(msg, botCtx);
       } else if (msg.text === '/status') {
         await handleStatusCommand(msg, botCtx);
+      } else if (msg.text === '/cancelar') {
+        await handleCancelCommand(msg, botCtx);
       } else if (shouldHandleAsEmailInput(msg)) {
         // Handle email verification flow (MP payment before /start)
         await handleEmailInput(msg, botCtx);
@@ -196,6 +199,12 @@ async function processWebhookUpdate(update, botCtx = null) {
     // Story 3-2: Private chat callbacks (terms acceptance)
     if (chatType === 'private' && data.startsWith('terms_accept')) {
       await handleTermsAcceptCallback(bot, callbackQuery, botCtx);
+      return;
+    }
+
+    // Story 9-2: Cancel membership callbacks (private chat)
+    if (chatType === 'private' && data.startsWith('cancel_membership_')) {
+      await handleCancelCallback(bot, callbackQuery, botCtx);
       return;
     }
 

@@ -1,6 +1,6 @@
 # Story 9.1: Cancelamento pelo Operador no Painel Admin
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -158,7 +158,27 @@ await supabase.from('audit_log').insert({
 ## Dev Agent Record
 
 ### Agent Model Used
+claude-opus-4-6
 
 ### Completion Notes List
+- Migration 039: added `cancelado` status, `cancellation_reason`, `cancelled_by` columns
+- API POST /api/members/[id]/cancel with optimistic locking and reason validation
+- CancelMemberModal component with required reason textarea
+- MemberList: Cancelar button, Acoes column, cancelado status filter
+- Bot state machine updated with cancelado transitions
+- Telegram ban + farewell DM (best-effort)
+- Audit log entry with member_id in JSONB changes
+- Code review: race condition fix (optimistic locking), reason max length (500 chars)
+- E2E tested: cancel flow, status badge, filter, data restore
 
 ### File List
+- `sql/migrations/039_member_cancellation.sql`
+- `admin-panel/src/types/database.ts`
+- `admin-panel/src/components/features/members/member-utils.ts`
+- `admin-panel/src/components/features/members/MemberList.tsx`
+- `admin-panel/src/components/features/members/CancelMemberModal.tsx`
+- `admin-panel/src/app/api/members/route.ts`
+- `admin-panel/src/app/api/members/[id]/cancel/route.ts`
+- `admin-panel/src/app/(auth)/members/page.tsx`
+- `admin-panel/src/app/api/__tests__/member-cancel.test.ts`
+- `bot/services/memberService.js`
