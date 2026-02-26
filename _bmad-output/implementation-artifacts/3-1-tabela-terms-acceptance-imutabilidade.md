@@ -1,6 +1,6 @@
 # Story 3.1: Tabela terms_acceptance com Imutabilidade
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -36,44 +36,44 @@ So that exista registro legal de que cada membro concordou com os termos antes d
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar migration 035_terms_acceptance.sql (AC: #1, #2, #3)
-  - [ ] 1.1 Criar arquivo `sql/migrations/035_terms_acceptance.sql`
-  - [ ] 1.2 CREATE TABLE `terms_acceptance` com todas as colunas (id UUID PK, telegram_id BIGINT NOT NULL, group_id UUID FK, terms_version VARCHAR NOT NULL, terms_url TEXT NOT NULL, accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ip_metadata JSONB DEFAULT '{}')
-  - [ ] 1.3 CREATE INDEX `idx_terms_acceptance_telegram_group` ON terms_acceptance(telegram_id, group_id)
-  - [ ] 1.4 ALTER TABLE terms_acceptance ENABLE ROW LEVEL SECURITY
-  - [ ] 1.5 RLS policies: super_admin SELECT ALL, group_admin SELECT own group_id, authenticated INSERT, UPDATE/DELETE `USING (false)` for all roles
-  - [ ] 1.6 CREATE FUNCTION `fn_terms_acceptance_immutable()` — RETURNS TRIGGER, RAISE EXCEPTION 'terms_acceptance records are immutable — UPDATE and DELETE are not allowed'
-  - [ ] 1.7 CREATE TRIGGER `trg_terms_acceptance_no_update` BEFORE UPDATE ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION fn_terms_acceptance_immutable()
-  - [ ] 1.8 CREATE TRIGGER `trg_terms_acceptance_no_delete` BEFORE DELETE ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION fn_terms_acceptance_immutable()
+- [x] Task 1: Criar migration 035_terms_acceptance.sql (AC: #1, #2, #3)
+  - [x] 1.1 Criar arquivo `sql/migrations/035_terms_acceptance.sql`
+  - [x] 1.2 CREATE TABLE `terms_acceptance` com todas as colunas (id UUID PK, telegram_id BIGINT NOT NULL, group_id UUID FK, terms_version VARCHAR NOT NULL, terms_url TEXT NOT NULL, accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), ip_metadata JSONB DEFAULT '{}')
+  - [x] 1.3 CREATE INDEX `idx_terms_acceptance_telegram_group` ON terms_acceptance(telegram_id, group_id)
+  - [x] 1.4 ALTER TABLE terms_acceptance ENABLE ROW LEVEL SECURITY
+  - [x] 1.5 RLS policies: super_admin SELECT ALL, group_admin SELECT own group_id, authenticated INSERT, UPDATE/DELETE `USING (false)` for all roles
+  - [x] 1.6 CREATE FUNCTION `fn_terms_acceptance_immutable()` — RETURNS TRIGGER, RAISE EXCEPTION 'terms_acceptance records are immutable — UPDATE and DELETE are not allowed'
+  - [x] 1.7 CREATE TRIGGER `trg_terms_acceptance_no_update` BEFORE UPDATE ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION fn_terms_acceptance_immutable()
+  - [x] 1.8 CREATE TRIGGER `trg_terms_acceptance_no_delete` BEFORE DELETE ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION fn_terms_acceptance_immutable()
 
-- [ ] Task 2: Aplicar migration no Supabase (AC: #1, #2, #3)
-  - [ ] 2.1 Aplicar migration 035 via Supabase Management API (curl)
-  - [ ] 2.2 Verificar tabela criada: consultar terms_acceptance via API
-  - [ ] 2.3 Verificar imutabilidade: tentar UPDATE via API e confirmar rejeição
-  - [ ] 2.4 Verificar imutabilidade: tentar DELETE via API e confirmar rejeição
+- [x] Task 2: Aplicar migration no Supabase (AC: #1, #2, #3)
+  - [x] 2.1 Aplicar migration 035 via Supabase Management API (curl)
+  - [x] 2.2 Verificar tabela criada: consultar terms_acceptance via API — 7 columns confirmed
+  - [x] 2.3 Verificar imutabilidade: tentar UPDATE via API e confirmar rejeição — RAISE EXCEPTION confirmed
+  - [x] 2.4 Verificar imutabilidade: tentar DELETE via API e confirmar rejeição — RAISE EXCEPTION confirmed
 
-- [ ] Task 3: Criar termsService.js (AC: #4, #5)
-  - [ ] 3.1 Criar `bot/services/termsService.js`
-  - [ ] 3.2 Implementar `acceptTerms(telegramId, groupId, termsVersion, termsUrl, ipMetadata)` — INSERT + retorna `{ success: true, data: { id, accepted_at } }`
-  - [ ] 3.3 Implementar `getLatestAcceptance(telegramId, groupId)` — SELECT mais recente por telegram_id + group_id, retorna `{ success: true, data: record | null }`
-  - [ ] 3.4 Implementar `hasAcceptedVersion(telegramId, groupId, termsVersion)` — verifica se aceitou versão específica, retorna `{ success: true, data: { accepted: boolean, acceptance?: record } }`
-  - [ ] 3.5 Usar `resolveGroupId()` pattern para multi-tenancy (mesma lógica de memberService)
-  - [ ] 3.6 Exportar todas as funções via module.exports
+- [x] Task 3: Criar termsService.js (AC: #4, #5)
+  - [x] 3.1 Criar `bot/services/termsService.js`
+  - [x] 3.2 Implementar `acceptTerms(telegramId, groupId, termsVersion, termsUrl, ipMetadata)` — INSERT + retorna `{ success: true, data: { id, accepted_at } }`
+  - [x] 3.3 Implementar `getLatestAcceptance(telegramId, groupId)` — SELECT mais recente por telegram_id + group_id, retorna `{ success: true, data: record | null }`
+  - [x] 3.4 Implementar `hasAcceptedVersion(telegramId, groupId, termsVersion)` — verifica se aceitou versão específica, retorna `{ success: true, data: { accepted: boolean, acceptance?: record } }`
+  - [x] 3.5 Usar `resolveGroupId()` pattern para multi-tenancy (mesma lógica de memberService)
+  - [x] 3.6 Exportar todas as funções via module.exports
 
-- [ ] Task 4: Escrever testes unitários para termsService (AC: #4, #5)
-  - [ ] 4.1 Criar `__tests__/services/termsService.test.js`
-  - [ ] 4.2 Testar `acceptTerms` — insere registro e retorna id + accepted_at
-  - [ ] 4.3 Testar `acceptTerms` — falha no DB retorna `{ success: false, error }`
-  - [ ] 4.4 Testar `getLatestAcceptance` — retorna registro mais recente
-  - [ ] 4.5 Testar `getLatestAcceptance` — retorna null quando não existe aceite
-  - [ ] 4.6 Testar `hasAcceptedVersion` — retorna accepted: true quando versão existe
-  - [ ] 4.7 Testar `hasAcceptedVersion` — retorna accepted: false quando versão não existe
-  - [ ] 4.8 Testar `resolveGroupId` — usa config.membership.groupId como fallback
+- [x] Task 4: Escrever testes unitários para termsService (AC: #4, #5)
+  - [x] 4.1 Criar `__tests__/services/termsService.test.js`
+  - [x] 4.2 Testar `acceptTerms` — insere registro e retorna id + accepted_at
+  - [x] 4.3 Testar `acceptTerms` — falha no DB retorna `{ success: false, error }`
+  - [x] 4.4 Testar `getLatestAcceptance` — retorna registro mais recente
+  - [x] 4.5 Testar `getLatestAcceptance` — retorna null quando não existe aceite
+  - [x] 4.6 Testar `hasAcceptedVersion` — retorna accepted: true quando versão existe
+  - [x] 4.7 Testar `hasAcceptedVersion` — retorna accepted: false quando versão não existe
+  - [x] 4.8 Testar `resolveGroupId` — usa config.membership.groupId como fallback
 
-- [ ] Task 5: Validação completa
-  - [ ] 5.1 `npm test` no bot — todos os testes passam (incluindo novos)
-  - [ ] 5.2 `cd admin-panel && npm test` — todos os testes passam
-  - [ ] 5.3 `cd admin-panel && npm run build` — TypeScript strict OK
+- [x] Task 5: Validação completa
+  - [x] 5.1 `npm test` no bot — 924 testes passam (45 suites)
+  - [x] 5.2 `cd admin-panel && npm test` — 578 testes passam (53 suites)
+  - [x] 5.3 `cd admin-panel && npm run build` — TypeScript strict OK
 
 ## Dev Notes
 
@@ -213,7 +213,16 @@ Esta story cria a infraestrutura (tabela + service). A Story 3-2 integrará o `t
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Created migration 035_terms_acceptance.sql with table, composite index, RLS (5 policies including USING(false) for UPDATE/DELETE), immutability trigger function, and two triggers (BEFORE UPDATE + BEFORE DELETE).
+- Task 2: Migration applied to Supabase production. Table schema verified (7 columns). Immutability verified — both UPDATE and DELETE raise exception as expected.
+- Task 3: Created termsService.js with 3 functions (acceptTerms, getLatestAcceptance, hasAcceptedVersion) following project service pattern with resolveGroupId multi-tenancy support.
+- Task 4: Created 14 unit tests covering all 3 functions including success, DB error, unexpected error, ipMetadata, and groupId fallback scenarios.
+- Task 5: 924 bot tests pass (45 suites), 578 admin-panel tests pass (53 suites), TypeScript build clean.
 
 ### File List
+- `sql/migrations/035_terms_acceptance.sql` — CREATED (table + RLS + triggers)
+- `bot/services/termsService.js` — CREATED (acceptTerms, getLatestAcceptance, hasAcceptedVersion)
+- `__tests__/services/termsService.test.js` — CREATED (14 tests)
