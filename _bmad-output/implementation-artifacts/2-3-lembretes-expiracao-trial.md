@@ -1,6 +1,6 @@
 # Story 2.3: Lembretes de Expiração do Trial
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -38,32 +38,32 @@ So that membros tenham oportunidade de assinar antes de perder acesso.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Adicionar TRIAL_MODE check no job trial-reminders (AC: #4)
-  - [ ] 1.1 No `_runTrialRemindersInternal()`, ler `TRIAL_MODE` via `getConfig('TRIAL_MODE', 'mercadopago')`
-  - [ ] 1.2 Se `'mercadopago'`: retornar early com `{ success: true, sent: 0, skipped: 0, failed: 0, skippedReason: 'mercadopago_mode' }`
-  - [ ] 1.3 Se `'internal'`: prosseguir com a lógica de envio
+- [x] Task 1: Adicionar TRIAL_MODE check no job trial-reminders (AC: #4)
+  - [x] 1.1 No `_runTrialRemindersInternal()`, ler `TRIAL_MODE` via `getConfig('TRIAL_MODE', 'mercadopago')`
+  - [x] 1.2 Se `'mercadopago'`: retornar early com `{ success: true, sent: 0, skipped: 0, failed: 0, skippedReason: 'mercadopago_mode' }`
+  - [x] 1.3 Se `'internal'`: prosseguir com a lógica de envio
 
-- [ ] Task 2: Envolver o job com withExecutionLogging (AC: #5)
-  - [ ] 2.1 Importar `withExecutionLogging` de `jobExecutionService`
-  - [ ] 2.2 No `runTrialReminders()`, envolver `_runTrialRemindersInternal()` com `withExecutionLogging('trial-reminders', ...)`
-  - [ ] 2.3 Garantir que o resultado inclui `sent`, `skipped`, `failed` para formatação no dashboard
+- [x] Task 2: Envolver o job com withExecutionLogging (AC: #5)
+  - [x] 2.1 Importar `withExecutionLogging` de `jobExecutionService`
+  - [x] 2.2 No `runTrialReminders()`, envolver `_runTrialRemindersInternal()` com `withExecutionLogging('trial-reminders', ...)`
+  - [x] 2.3 Garantir que o resultado inclui `sent`, `skipped`, `failed` para formatação no dashboard
 
-- [ ] Task 3: Verificar mensagens para dias 1, 2, 3 (AC: #1, #2, #3)
-  - [ ] 3.1 Verificar que `formatTrialReminder()` cobre os 3 cenários corretos: days=1 (último dia), days=2 (acaba em 2 dias), days=3 (3 dias restantes)
-  - [ ] 3.2 As mensagens existentes já mapeiam para os ACs (day 5 trial = 2 days remaining, day 6 = 1 day, day 7 = último dia → esses mapeiam para os cases de daysRemaining 1, 2 e 3 no código existente)
-  - [ ] 3.3 Nenhuma mudança necessária nas mensagens — o mapeamento é: `daysRemaining=3` → "Seu trial termina em 3 dias" (dia 5 de 7), `daysRemaining=2` → "Faltam apenas 2 dias" (dia 6 de 7), `daysRemaining=1` → "Último dia" (dia 7 de 7)
+- [x] Task 3: Verificar mensagens para dias 1, 2, 3 (AC: #1, #2, #3)
+  - [x] 3.1 Verificar que `formatTrialReminder()` cobre os 3 cenários corretos: days=1 (último dia), days=2 (acaba em 2 dias), days=3 (3 dias restantes)
+  - [x] 3.2 As mensagens existentes já mapeiam para os ACs (day 5 trial = 2 days remaining, day 6 = 1 day, day 7 = último dia → esses mapeiam para os cases de daysRemaining 1, 2 e 3 no código existente)
+  - [x] 3.3 Nenhuma mudança necessária nas mensagens — o mapeamento é: `daysRemaining=3` → "Seu trial termina em 3 dias" (dia 5 de 7), `daysRemaining=2` → "Faltam apenas 2 dias" (dia 6 de 7), `daysRemaining=1` → "Último dia" (dia 7 de 7)
 
-- [ ] Task 4: Escrever testes unitários (AC: #1-#6)
-  - [ ] 4.1 Testar: TRIAL_MODE=internal → processa membros e envia lembretes
-  - [ ] 4.2 Testar: TRIAL_MODE=mercadopago → pula e retorna early
-  - [ ] 4.3 Testar: membro com 1 dia restante → recebe mensagem correta
-  - [ ] 4.4 Testar: falha de envio → continua processando demais membros (AC #6)
-  - [ ] 4.5 Testar: withExecutionLogging é chamado com 'trial-reminders'
+- [x] Task 4: Escrever testes unitários (AC: #1-#6)
+  - [x] 4.1 Testar: TRIAL_MODE=internal → processa membros e envia lembretes
+  - [x] 4.2 Testar: TRIAL_MODE=mercadopago → pula e retorna early
+  - [x] 4.3 Testar: membro com 1 dia restante → recebe mensagem correta (pre-existing test)
+  - [x] 4.4 Testar: falha de envio → continua processando demais membros (AC #6) (pre-existing test)
+  - [x] 4.5 Testar: withExecutionLogging é chamado com 'trial-reminders'
 
-- [ ] Task 5: Validação completa
-  - [ ] 5.1 `npm test` no admin-panel — todos os testes passam
-  - [ ] 5.2 `npm run build` no admin-panel — TypeScript strict OK
-  - [ ] 5.3 Testes do bot passam (jest bot/)
+- [x] Task 5: Validação completa
+  - [x] 5.1 `npm test` no admin-panel — todos os testes passam (578 pass)
+  - [x] 5.2 `npm run build` no admin-panel — TypeScript strict OK
+  - [x] 5.3 Testes do bot passam (906 pass across 44 suites)
 
 ## Dev Notes
 
@@ -136,7 +136,15 @@ async function runTrialReminders() {
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Added TRIAL_MODE check via getConfig at start of _runTrialRemindersInternal(). When not 'internal', returns early with skippedReason: 'mercadopago_mode'.
+- Task 2: Wrapped _runTrialRemindersInternal with withExecutionLogging('trial-reminders') so executions are logged to job_executions table.
+- Task 3: Verified existing formatTrialReminder covers all 3 day scenarios. No changes needed — messages already map correctly (1 day = último dia, 2 days = faltam 2 dias, 3 days = termina em 3 dias).
+- Task 4: Added 3 new tests to existing test file + mocks for configHelper and jobExecutionService. All 17 trial-reminders tests pass.
+- Task 5: 906 bot tests pass, 578 admin-panel tests pass, build clean.
 
 ### File List
+- `bot/jobs/membership/trial-reminders.js` — MODIFIED (added getConfig import, withExecutionLogging import, TRIAL_MODE check, execution logging wrapper)
+- `__tests__/jobs/membership/trial-reminders.test.js` — MODIFIED (added configHelper/jobExecutionService mocks, 3 new TRIAL_MODE tests)

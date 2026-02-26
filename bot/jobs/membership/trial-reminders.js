@@ -11,6 +11,8 @@ require('dotenv').config();
 
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
+const { getConfig } = require('../../lib/configHelper');
+const { withExecutionLogging } = require('../../services/jobExecutionService');
 const { getSuccessRateForDays } = require('../../services/metricsService');
 const { getTrialDays } = require('../../services/memberService');
 const {
@@ -232,7 +234,8 @@ async function runTrialReminders() {
   trialRemindersRunning = true;
 
   try {
-    return await _runTrialRemindersInternal();
+    // Story 2-3: Register execution in job_executions
+    return await withExecutionLogging('trial-reminders', _runTrialRemindersInternal);
   } finally {
     trialRemindersRunning = false;
   }
@@ -252,6 +255,13 @@ async function _runTrialRemindersInternal() {
   let failed = 0;
 
   try {
+    // Story 2-3: Skip when TRIAL_MODE is not 'internal' (delegated to MP)
+    const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+    if (trialMode !== 'internal') {
+      logger.info('[membership:trial-reminders] Skipping — TRIAL_MODE is not internal', { trialMode });
+      return { success: true, sent: 0, skipped: 0, failed: 0, skippedReason: 'mercadopago_mode' };
+    }
+
     // Get members needing reminders
     const membersResult = await getMembersNeedingTrialReminder();
 
