@@ -79,10 +79,10 @@ development_status:
   # ========================================
   # Epic 4: Distribuição Manual de Apostas
   # ========================================
-  epic-4: in-progress
+  epic-4: done
   4-1-visualizar-pool-apostas-distribuicao: done
   4-2-distribuir-redistribuir-apostas: done
-  4-3-distribuicao-em-lote: ready-for-dev
+  4-3-distribuicao-em-lote: done
   epic-4-retrospective: optional
 
   # ========================================

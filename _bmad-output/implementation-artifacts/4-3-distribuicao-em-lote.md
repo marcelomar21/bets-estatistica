@@ -1,6 +1,6 @@
 # Story 4.3: Distribuicao em Lote
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -191,7 +191,18 @@ A bets page ja tem uma barra de acoes bulk que aparece quando `selectedIds.size 
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Created POST /api/bets/bulk/distribute with Zod validation, sequential processing, audit_log
+- Task 2: Created BulkDistributeModal with group selector and count display
+- Task 3: Added "Distribuir Selecionadas" emerald button in bulk action bar
+- Task 4: 7 API tests (bulk distribute, redistribute+audit, invalid group, empty array, >50, 403, partial failure) + 3 component tests
+- Task 5: All 562 admin-panel tests pass, build OK
 
 ### File List
+- admin-panel/src/app/api/bets/bulk/distribute/route.ts (NEW — bulk distribute API)
+- admin-panel/src/components/features/bets/BulkDistributeModal.tsx (NEW — bulk distribute modal)
+- admin-panel/src/app/(auth)/bets/page.tsx (MODIFIED — handleBulkDistribute + modal + button)
+- admin-panel/src/app/api/__tests__/bets.test.ts (MODIFIED — 7 new bulk distribute tests)
+- admin-panel/src/components/features/bets/__tests__/BetComponents.test.tsx (MODIFIED — 3 new tests)
