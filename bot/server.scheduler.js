@@ -320,7 +320,7 @@ function createScheduler(groupId, botCtx = null) {
         }
         logger.info('[scheduler:factory] Running post-bets', { postTime: time, groupId });
         try {
-          await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: instanceSchedule?.times, groupId }));
+          await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: instanceSchedule?.times, botCtx: botCtx || { groupId } }));
         } catch (err) {
           logger.error('[scheduler:factory] post-bets failed', { postTime: time, groupId, error: err.message });
         }
@@ -361,7 +361,7 @@ function createScheduler(groupId, botCtx = null) {
 
       instanceManualPostInProgress = true;
       try {
-        await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: instanceSchedule?.times, groupId }));
+        await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: instanceSchedule?.times, botCtx: botCtx || { groupId } }));
       } catch (err) {
         logger.error('[scheduler:factory] Post Now failed', { groupId, error: err.message });
       } finally {
