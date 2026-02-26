@@ -1,5 +1,6 @@
 /**
  * Tests: startCommand.js - Story 2-2: TRIAL_MODE branching + internal trial flow
+ *                        + Story 3-2: Terms acceptance in /start flow
  */
 
 // Mock dependencies
@@ -19,6 +20,8 @@ const mockSendMessage = jest.fn().mockResolvedValue({});
 const mockCreateChatInviteLink = jest.fn().mockResolvedValue({ invite_link: 'https://t.me/+abc123' });
 const mockGetChatMember = jest.fn();
 const mockUnbanChatMember = jest.fn().mockResolvedValue({});
+const mockAnswerCallbackQuery = jest.fn().mockResolvedValue({});
+const mockEditMessageText = jest.fn().mockResolvedValue({});
 
 jest.mock('../../telegram', () => ({
   getBot: () => ({
@@ -26,6 +29,8 @@ jest.mock('../../telegram', () => ({
     createChatInviteLink: mockCreateChatInviteLink,
     getChatMember: mockGetChatMember,
     unbanChatMember: mockUnbanChatMember,
+    answerCallbackQuery: mockAnswerCallbackQuery,
+    editMessageText: mockEditMessageText,
   }),
   getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890' }),
 }));
@@ -58,6 +63,14 @@ jest.mock('../../services/metricsService', () => ({
   getSuccessRateForDays: mockGetSuccessRateForDays,
 }));
 
+// Story 3-2: Mock termsService
+const mockAcceptTerms = jest.fn();
+const mockHasAcceptedVersion = jest.fn();
+jest.mock('../../services/termsService', () => ({
+  acceptTerms: mockAcceptTerms,
+  hasAcceptedVersion: mockHasAcceptedVersion,
+}));
+
 jest.mock('../../../lib/config', () => ({
   config: {
     membership: {
@@ -81,7 +94,7 @@ jest.mock('../../../lib/supabase', () => ({
   },
 }));
 
-const { handleStartCommand } = require('../startCommand');
+const { handleStartCommand, handleTermsAcceptCallback } = require('../startCommand');
 
 // Helper to create a mock Telegram message
 function createMsg(overrides = {}) {
@@ -93,10 +106,41 @@ function createMsg(overrides = {}) {
   };
 }
 
+// Helper to create a mock bot for callback tests
+function createMockBot() {
+  return {
+    sendMessage: mockSendMessage,
+    createChatInviteLink: mockCreateChatInviteLink,
+    getChatMember: mockGetChatMember,
+    unbanChatMember: mockUnbanChatMember,
+    answerCallbackQuery: mockAnswerCallbackQuery,
+    editMessageText: mockEditMessageText,
+  };
+}
+
+// Helper to create a mock callback query
+function createCallbackQuery(overrides = {}) {
+  return {
+    id: 'callback-123',
+    from: { id: 12345, username: 'testuser', first_name: 'João' },
+    message: {
+      chat: { id: 12345, type: 'private' },
+      message_id: 999,
+    },
+    data: 'terms_accept',
+    ...overrides,
+  };
+}
+
 describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetTrialDays.mockResolvedValue({ success: true, data: { days: 7, source: 'system_config' } });
+    // Story 3-2: Default to terms already accepted for Story 2-2 tests
+    mockHasAcceptedVersion.mockResolvedValue({
+      success: true,
+      data: { accepted: true, acceptance: { id: 'existing-acceptance' } },
+    });
   });
 
   describe('TRIAL_MODE=internal, new user', () => {
@@ -341,6 +385,234 @@ describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
       expect(result.success).toBe(false);
       expect(result.action).toBe('ignored_non_private');
       expect(mockGetMemberByTelegramId).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('Story 3-2: Terms acceptance in /start flow', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetTrialDays.mockResolvedValue({ success: true, data: { days: 7, source: 'system_config' } });
+  });
+
+  describe('new user + internal → shows terms (AC #1)', () => {
+    it('shows terms when user has NOT accepted current version', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: false },
+      });
+
+      const result = await handleStartCommand(createMsg());
+
+      expect(result.success).toBe(true);
+      expect(result.action).toBe('terms_shown');
+      // Should NOT create trial member yet
+      expect(mockCreateTrialMember).not.toHaveBeenCalled();
+      // Should send terms message with inline button
+      const termsCall = mockSendMessage.mock.calls.find(c =>
+        typeof c[1] === 'string' && c[1].includes('Termo de Adesão')
+      );
+      expect(termsCall).toBeDefined();
+      expect(termsCall[1]).toContain('Leia o termo completo');
+      // Verify inline keyboard with accept button
+      const opts = termsCall[2];
+      expect(opts.parse_mode).toBe('Markdown');
+      const keyboard = opts.reply_markup.inline_keyboard;
+      expect(keyboard).toHaveLength(1);
+      expect(keyboard[0][0].text).toContain('Li e aceito');
+      expect(keyboard[0][0].callback_data).toBe('terms_accept');
+    });
+
+    it('does NOT add member to group before accepting terms (AC #1 FR6)', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: false },
+      });
+
+      await handleStartCommand(createMsg());
+
+      expect(mockCreateTrialMember).not.toHaveBeenCalled();
+      expect(mockCreateChatInviteLink).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('callback accept → registers + creates trial (AC #2)', () => {
+    it('registers acceptance and proceeds with trial creation', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockAcceptTerms.mockResolvedValue({
+        success: true,
+        data: { id: 'acceptance-uuid-1', accepted_at: '2026-02-25T12:00:00Z' },
+      });
+      mockCreateTrialMember.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'uuid-1',
+          telegram_id: '12345',
+          status: 'trial',
+          trial_ends_at: '2026-03-04T00:00:00.000Z',
+        },
+      });
+
+      const bot = createMockBot();
+      const result = await handleTermsAcceptCallback(bot, createCallbackQuery());
+
+      // Should register acceptance
+      expect(mockAcceptTerms).toHaveBeenCalledWith(
+        12345,
+        '-1001234567890',
+        expect.any(String), // termsVersion from getConfig
+        expect.any(String)  // termsUrl from getConfig
+      );
+      // Should answer callback
+      expect(mockAnswerCallbackQuery).toHaveBeenCalledWith('callback-123', { text: '✅ Termos aceitos!' });
+      // Should edit original message
+      expect(mockEditMessageText).toHaveBeenCalledWith(
+        '✅ Termos aceitos! Preparando seu acesso...',
+        { chat_id: 12345, message_id: 999 }
+      );
+      // Should proceed with trial creation
+      expect(mockCreateTrialMember).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+    });
+
+    it('sends error on acceptance failure', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockAcceptTerms.mockResolvedValue({
+        success: false,
+        error: { code: 'DB_ERROR', message: 'connection refused' },
+      });
+
+      const bot = createMockBot();
+      const result = await handleTermsAcceptCallback(bot, createCallbackQuery());
+
+      expect(result.success).toBe(false);
+      expect(result.action).toBe('terms_accept_failed');
+      expect(mockAnswerCallbackQuery).toHaveBeenCalledWith('callback-123', {
+        text: '❌ Erro ao registrar aceite. Tente novamente.',
+      });
+      // Should NOT create trial
+      expect(mockCreateTrialMember).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('already accepted current version → skips terms (AC #4)', () => {
+    it('proceeds directly to trial when terms already accepted', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: true, acceptance: { id: 'prev-acceptance' } },
+      });
+      mockCreateTrialMember.mockResolvedValue({
+        success: true,
+        data: {
+          id: 'uuid-1',
+          telegram_id: '12345',
+          status: 'trial',
+          trial_ends_at: '2026-03-04T00:00:00.000Z',
+        },
+      });
+
+      const result = await handleStartCommand(createMsg());
+
+      expect(result.success).toBe(true);
+      // Should go straight to trial — no terms message
+      const termsCall = mockSendMessage.mock.calls.find(c =>
+        typeof c[1] === 'string' && c[1].includes('Termo de Adesão')
+      );
+      expect(termsCall).toBeUndefined();
+      // Should create trial directly
+      expect(mockCreateTrialMember).toHaveBeenCalled();
+    });
+  });
+
+  describe('terms version changed → re-shows terms (AC #5)', () => {
+    it('shows terms again when version is updated', async () => {
+      // getConfig returns 'internal' for all calls — termsVersion will be 'internal'
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      // User accepted old version, NOT the current one
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: false },
+      });
+
+      const result = await handleStartCommand(createMsg());
+
+      expect(result.action).toBe('terms_shown');
+      expect(mockCreateTrialMember).not.toHaveBeenCalled();
+      // hasAcceptedVersion was called (with current version)
+      expect(mockHasAcceptedVersion).toHaveBeenCalledWith(
+        12345,
+        '-1001234567890',
+        expect.any(String) // termsVersion from getConfig
+      );
+    });
+  });
+
+  describe('TRIAL_MODE=mercadopago → no terms shown (AC #5)', () => {
+    it('does not check terms in mercadopago flow', async () => {
+      mockGetConfig.mockResolvedValue('mercadopago');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+
+      await handleStartCommand(createMsg());
+
+      // Should NOT call hasAcceptedVersion
+      expect(mockHasAcceptedVersion).not.toHaveBeenCalled();
+      expect(mockAcceptTerms).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('/start re-entry without acceptance (AC #3)', () => {
+    it('re-shows terms when user sends /start again without accepting', async () => {
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: false },
+      });
+
+      // First /start
+      const result1 = await handleStartCommand(createMsg());
+      expect(result1.action).toBe('terms_shown');
+
+      jest.clearAllMocks();
+      mockGetConfig.mockResolvedValue('internal');
+      mockGetMemberByTelegramId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+      mockHasAcceptedVersion.mockResolvedValue({
+        success: true,
+        data: { accepted: false },
+      });
+
+      // Second /start — should re-show terms
+      const result2 = await handleStartCommand(createMsg());
+      expect(result2.action).toBe('terms_shown');
+      expect(mockCreateTrialMember).not.toHaveBeenCalled();
     });
   });
 });

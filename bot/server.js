@@ -23,7 +23,7 @@ const { initBots, getBotForGroup, getAllBots } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
-const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput } = require('./handlers/startCommand');
+const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput, handleTermsAcceptCallback } = require('./handlers/startCommand');
 const { supabase } = require('../lib/supabase');
 
 // Validate config
@@ -158,10 +158,17 @@ async function processWebhookUpdate(update, botCtx = null) {
   // Story 16.7: Process callback queries (inline keyboard buttons)
   if (update.callback_query) {
     const callbackQuery = update.callback_query;
-    // Only handle from admin group
-    if (callbackQuery.message?.chat?.id?.toString() === adminGroupId) {
-      const data = callbackQuery.data || '';
+    const data = callbackQuery.data || '';
+    const chatType = callbackQuery.message?.chat?.type;
 
+    // Story 3-2: Private chat callbacks (terms acceptance)
+    if (chatType === 'private' && data.startsWith('terms_accept')) {
+      await handleTermsAcceptCallback(bot, callbackQuery, botCtx);
+      return;
+    }
+
+    // Admin group callbacks
+    if (callbackQuery.message?.chat?.id?.toString() === adminGroupId) {
       // Handle post confirmation callbacks
       if (data.startsWith('postbets_confirm:') || data.startsWith('postbets_cancel:')) {
         const [actionFull, confirmationId] = data.split(':');
