@@ -216,7 +216,7 @@ async function handleExistingMember(bot, chatId, telegramId, firstName, member, 
 
     case 'inadimplente':
       // Defaulted - send payment link
-      return await sendPaymentRequired(bot, chatId, firstName, member);
+      return await sendPaymentRequired(bot, chatId, firstName, member, botCtx);
 
     case 'removido':
       // Check if can rejoin (< 24h since kick)
@@ -362,7 +362,7 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member, b
   }
 
   // Cannot rejoin - need to pay
-  return await sendPaymentRequired(bot, chatId, firstName, member);
+  return await sendPaymentRequired(bot, chatId, firstName, member, botCtx);
 }
 
 /**
@@ -633,8 +633,10 @@ Seu email ${email} foi vinculado a este Telegram.
     email
   });
 
-  const checkoutUrl = config.membership?.checkoutUrl;
-  const subscriptionPrice = config.membership?.subscriptionPrice || 'R$50/mês';
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupConfig = effectiveBotCtx?.groupConfig || null;
+  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
+  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
 
   // Get trial days from system_config (database)
   const trialDaysResult = await getTrialDays();
@@ -661,7 +663,7 @@ Para ter acesso ao grupo, você precisa assinar primeiro.
       ]]
     };
   } else {
-    const operatorUsername = config.membership?.operatorUsername || 'operador';
+    const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
 
@@ -692,7 +694,9 @@ async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = nu
   // Get trial days from system_config (database)
   const trialDaysResult = await getTrialDays();
   const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
-  const operatorUsername = config.membership?.operatorUsername || 'operador';
+  const groupConfig = effectiveBotCtx?.groupConfig || null;
+  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
 
   // Generate unique invite link
   let inviteLink;
@@ -743,7 +747,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
 
   // Story 2-2: Check TRIAL_MODE for customized welcome message
   const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
-  const checkoutUrl = config.membership?.checkoutUrl;
+  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
 
   let welcomeMessage;
   let inlineKeyboard;
@@ -765,7 +769,7 @@ Seu trial de *${trialDays} dias* começa agora!
 • Análise estatística completa
 • Taxa de acerto histórica: *${successRateText}%*
 
-💰 Para continuar após o trial, assine por apenas *R$50/mês*.
+💰 Para continuar após o trial, assine por apenas *${subscriptionPrice}*.
 
 👇 *Clique no botão abaixo para entrar no grupo:*
     `.trim();
@@ -788,7 +792,7 @@ Você tem *${daysText}* para experimentar nossas apostas.
 • Análise estatística completa
 • Taxa de acerto histórica: *${successRateText}%*
 
-💰 Após o trial, continue por apenas *R$50/mês*.
+💰 Após o trial, continue por apenas *${subscriptionPrice}*.
 
 👇 *Clique no botão abaixo para entrar no grupo:*
     `.trim();
@@ -815,10 +819,11 @@ Você tem *${daysText}* para experimentar nossas apostas.
 /**
  * Send payment required message
  */
-async function sendPaymentRequired(bot, chatId, firstName, member) {
-  const checkoutUrl = config.membership?.checkoutUrl;
-  const operatorUsername = config.membership?.operatorUsername || 'operador';
-  const subscriptionPrice = config.membership?.subscriptionPrice || 'R$50/mês';
+async function sendPaymentRequired(bot, chatId, firstName, member, botCtx = null) {
+  const groupConfig = botCtx?.groupConfig || null;
+  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
+  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
 
   let message;
   let replyMarkup = null;

@@ -33,6 +33,7 @@ jest.mock('../../lib/config', () => ({
 
 jest.mock('../../bot/telegram', () => ({
   getBot: jest.fn(),
+  getBotForGroup: jest.fn(() => null),
 }));
 
 jest.mock('../../bot/services/memberService', () => ({
