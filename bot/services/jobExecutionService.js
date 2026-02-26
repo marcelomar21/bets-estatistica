@@ -211,6 +211,15 @@ function formatResult(jobName, result) {
         return `${requested} requested`;
       }
 
+      case 'send-scheduled-messages': {
+        const sent = result.sent || 0;
+        const failed = result.failed || 0;
+        if (sent > 0 || failed > 0) {
+          return `${sent} sent, ${failed} failed`;
+        }
+        return 'nenhuma';
+      }
+
       case 'healthCheck':
         if (result.alerts && result.alerts.length > 0) {
           return `${result.alerts.length} warns`;
