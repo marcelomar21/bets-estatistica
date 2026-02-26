@@ -22,10 +22,11 @@ const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido'];
  *   └─────────────┴──────────► removido
  */
 const VALID_TRANSITIONS = {
-  trial: ['ativo', 'removido'],
-  ativo: ['inadimplente', 'removido'],
+  trial: ['ativo', 'removido', 'cancelado'],
+  ativo: ['inadimplente', 'removido', 'cancelado'],
   inadimplente: ['ativo', 'removido'],
-  removido: []  // Estado final - sem transições permitidas
+  removido: [],    // Estado final - sem transições permitidas
+  cancelado: ['ativo'],   // Reativação pelo operador
 };
 
 /**
