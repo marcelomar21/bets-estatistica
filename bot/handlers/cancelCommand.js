@@ -126,8 +126,8 @@ async function handleCancelCallback(bot, callbackQuery, botCtx) {
     return;
   }
 
-  // Update member status
-  const { error: updateError } = await supabase
+  // Update member status with optimistic locking
+  const { data: updated, error: updateError } = await supabase
     .from('members')
     .update({
       status: 'cancelado',
@@ -136,7 +136,9 @@ async function handleCancelCallback(bot, callbackQuery, botCtx) {
       cancelled_by: null,
     })
     .eq('id', member.id)
-    .eq('status', member.status); // Optimistic locking
+    .eq('status', member.status)
+    .select('id')
+    .maybeSingle();
 
   if (updateError) {
     logger.error('[cancelCommand] Failed to update member status', {
@@ -144,6 +146,12 @@ async function handleCancelCallback(bot, callbackQuery, botCtx) {
       error: updateError.message,
     });
     await bot.sendMessage(chatId, 'Erro ao processar cancelamento. Tente novamente.');
+    return;
+  }
+
+  if (!updated) {
+    logger.warn('[cancelCommand] Status changed concurrently', { memberId: member.id });
+    await bot.sendMessage(chatId, 'Seu status foi alterado. Tente novamente.');
     return;
   }
 
