@@ -118,17 +118,17 @@ development_status:
   # ========================================
   # Epic 8: Mensagens com Mídia e Preview
   # ========================================
-  epic-8: in-progress
+  epic-8: done
   8-1-upload-arquivo-schema-midia: done
   8-2-preview-mensagem-agendada: done
-  8-3-envio-midia-bot-telegram: backlog
+  8-3-envio-midia-bot-telegram: done
   epic-8-retrospective: optional
 
   # ========================================
   # Epic 9: Fluxo de Cancelamento de Membros
   # ========================================
-  epic-9: backlog
-  9-1-cancelamento-operador-painel: backlog
+  epic-9: in-progress
+  9-1-cancelamento-operador-painel: ready-for-dev
   9-2-cancelamento-self-service-bot: backlog
   9-3-historico-cancelamentos-reativacao: backlog
   epic-9-retrospective: optional
