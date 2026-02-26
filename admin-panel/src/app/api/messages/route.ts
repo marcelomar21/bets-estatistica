@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
 
+// Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const createMessageSchema = z.object({
   message_text: z.string().min(1, 'Texto da mensagem e obrigatorio'),
   scheduled_at: z.string().datetime({ message: 'Data deve estar no formato ISO 8601' }).refine(
     (val) => new Date(val) > new Date(),
     'Data de agendamento deve ser no futuro',
   ),
-  group_id: z.string().uuid('group_id deve ser um UUID valido'),
+  group_id: z.string().regex(UUID_RE, 'group_id deve ser um UUID valido'),
 });
 
 export const GET = createApiHandler(
