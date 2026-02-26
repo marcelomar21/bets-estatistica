@@ -11,7 +11,7 @@ const { getConfig } = require('../lib/configHelper');
 /**
  * Valid status values for members
  */
-const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido'];
+const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido', 'cancelado'];
 
 /**
  * State Machine: Valid transitions between member statuses
