@@ -3,6 +3,7 @@ import { createApiHandler } from '@/middleware/api-handler';
 import { categorizeMarket } from '@/lib/bet-categories';
 
 const MIN_BETS_DISPLAY = 3;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RawBet {
   bet_market: string;
@@ -51,11 +52,19 @@ export const GET = createApiHandler(
         bet_result,
         result_updated_at,
         group_id,
-        league_matches!inner(league_seasons!inner(league_name, country)),
+        league_matches(league_seasons(league_name, country)),
         groups(name)
       `)
       .eq('bet_status', 'posted')
       .in('bet_result', ['success', 'failure']);
+
+    // Validate group_id param if provided
+    if (groupIdParam && !UUID_PATTERN.test(groupIdParam)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_PARAM', message: 'group_id inválido' } },
+        { status: 400 },
+      );
+    }
 
     // RLS: group admin can only see own group
     if (groupFilter) {

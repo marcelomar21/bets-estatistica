@@ -165,6 +165,48 @@ describe('GET /api/analytics/accuracy', () => {
     expect(escanteios).toBeUndefined(); // Below MIN_BETS_DISPLAY of 3
   });
 
+  it('returns 400 for invalid group_id UUID', async () => {
+    const mock = createSupabaseMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { GET } = await import('../analytics/accuracy/route');
+    const req = createMockRequest('http://localhost/api/analytics/accuracy?group_id=not-a-uuid');
+    const res = await GET(req, { params: Promise.resolve({}) });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('INVALID_PARAM');
+  });
+
+  it('includes bets without league data in total and market aggregations', async () => {
+    const betsWithNullLeague = [
+      { bet_market: 'Gols Over 2.5', bet_result: 'success', result_updated_at: daysAgo(2), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+      { bet_market: 'Gols Over 1.5', bet_result: 'success', result_updated_at: daysAgo(3), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+      { bet_market: 'Gols Under 1.5', bet_result: 'failure', result_updated_at: daysAgo(4), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+    ];
+    const mock = createSupabaseMock(betsWithNullLeague as typeof sampleBets);
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { GET } = await import('../analytics/accuracy/route');
+    const req = createMockRequest('http://localhost/api/analytics/accuracy');
+    const res = await GET(req, { params: Promise.resolve({}) });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    // All 3 bets should be counted in total
+    expect(body.data.total.total).toBe(3);
+    expect(body.data.total.wins).toBe(2);
+    // Gols market should appear (3 bets >= MIN_BETS_DISPLAY)
+    const golsMarket = body.data.byMarket.find((m: { market: string }) => m.market === 'Gols');
+    expect(golsMarket).toBeDefined();
+    expect(golsMarket.total).toBe(3);
+    // No championship data
+    expect(body.data.byChampionship).toEqual([]);
+  });
+
   it('returns 500 on database error', async () => {
     const chain: Record<string, unknown> = {};
     chain.select = vi.fn().mockReturnValue(chain);

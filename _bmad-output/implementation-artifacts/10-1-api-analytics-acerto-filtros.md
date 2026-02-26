@@ -1,6 +1,6 @@
 # Story 10.1: API de Analytics de Acerto com Filtros
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -36,24 +36,31 @@ So that o frontend possa exibir analytics detalhados.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar `admin-panel/src/app/api/analytics/accuracy/route.ts`
-  - [ ] 1.1 Implementar GET handler com createApiHandler
-  - [ ] 1.2 Parse query params: group_id, market, championship, date_from, date_to
-  - [ ] 1.3 Buscar apostas com JOIN league_matches -> league_seasons
-  - [ ] 1.4 Calcular total (rate, wins, losses, total)
-  - [ ] 1.5 Calcular byGroup (com nome do grupo via JOIN)
-  - [ ] 1.6 Calcular byMarket usando categorizeMarket()
-  - [ ] 1.7 Calcular byChampionship via league_seasons
-  - [ ] 1.8 Calcular periods (last7d, last30d, allTime)
-  - [ ] 1.9 Aplicar RLS (groupFilter para Group Admin)
+- [x] Task 1: Criar `admin-panel/src/app/api/analytics/accuracy/route.ts`
+  - [x] 1.1 Implementar GET handler com createApiHandler
+  - [x] 1.2 Parse query params: group_id, market, championship, date_from, date_to
+  - [x] 1.3 Buscar apostas com LEFT JOIN league_matches -> league_seasons
+  - [x] 1.4 Calcular total (rate, wins, losses, total)
+  - [x] 1.5 Calcular byGroup (com nome do grupo via JOIN)
+  - [x] 1.6 Calcular byMarket usando categorizeMarket()
+  - [x] 1.7 Calcular byChampionship via league_seasons
+  - [x] 1.8 Calcular periods (last7d, last30d, allTime)
+  - [x] 1.9 Aplicar RLS (groupFilter para Group Admin)
 
-- [ ] Task 2: Testes unitarios
-  - [ ] 2.1 Testes para filtros individuais
-  - [ ] 2.2 Teste para RLS enforcement
-  - [ ] 2.3 `cd admin-panel && npm test` — todos passando
+- [x] Task 2: Testes unitarios (8 tests)
+  - [x] 2.1 Testes para filtros individuais
+  - [x] 2.2 Teste para RLS enforcement
+  - [x] 2.3 Teste para UUID validation
+  - [x] 2.4 Teste para bets without league data
+  - [x] 2.5 `cd admin-panel && npm test` — 663 passed (58 files)
 
-- [ ] Task 3: Validacao
-  - [ ] 3.1 `cd admin-panel && npm run build` — build OK
+- [x] Task 3: Validacao
+  - [x] 3.1 `cd admin-panel && npm run build` — build OK
+
+- [x] Task 4: Code Review (adversarial)
+  - [x] 4.1 Added UUID validation for group_id param (MEDIUM)
+  - [x] 4.2 Changed !inner JOIN to left JOIN to include bets without league data (MEDIUM)
+  - [x] 4.3 Added 2 new tests covering review fixes
 
 ## Dev Notes
 
@@ -93,7 +100,13 @@ So that o frontend possa exibir analytics detalhados.
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Implemented GET /api/analytics/accuracy with full breakdown (total, byGroup, byMarket, byChampionship, periods)
+- Adversarial review: added UUID validation for group_id param, changed inner join to left join
+- 8 unit tests covering all breakdowns, RLS, edge cases, and review fixes
 
 ### File List
+- admin-panel/src/app/api/analytics/accuracy/route.ts (NEW)
+- admin-panel/src/app/api/__tests__/analytics-accuracy.test.ts (NEW)
