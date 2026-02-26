@@ -166,8 +166,12 @@ export default function MembersPage() {
     }));
   }
 
+  const [reactivateLoading, setReactivateLoading] = useState(false);
+
   async function handleReactivate(member: MemberListItem) {
+    if (reactivateLoading) return;
     if (!confirm(`Reativar membro ${member.telegram_username || member.telegram_id}?`)) return;
+    setReactivateLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/members/${member.id}/reactivate`, {
@@ -181,6 +185,8 @@ export default function MembersPage() {
       fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
     } catch {
       setError('Erro de conexao ao reativar membro');
+    } finally {
+      setReactivateLoading(false);
     }
   }
 

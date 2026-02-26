@@ -61,7 +61,7 @@ export const POST = createApiHandler(
 
     if (updateError) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
+        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao atualizar status do membro' } },
         { status: 500 },
       );
     }

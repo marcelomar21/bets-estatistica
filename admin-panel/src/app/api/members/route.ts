@@ -127,18 +127,21 @@ export const GET = createApiHandler(
           .map((m) => m.cancelled_by as string | null)
           .filter((id): id is string => !!id),
       )];
+      let emailMap = new Map<string, string>();
       if (cancelledByIds.length > 0) {
         const { data: admins } = await supabase
           .from('admin_users')
           .select('id, email')
           .in('id', cancelledByIds);
-        const emailMap = new Map((admins ?? []).map((a: { id: string; email: string }) => [a.id, a.email]));
-        items = rawItems.map((m) => ({
-          ...m,
-          cancelled_by_email: emailMap.get(m.cancelled_by as string) ?? null,
-          cancelled_by: undefined,
-        }));
+        emailMap = new Map((admins ?? []).map((a: { id: string; email: string }) => [a.id, a.email]));
       }
+      items = rawItems.map((m) => {
+        const { cancelled_by, ...rest } = m;
+        return {
+          ...rest,
+          cancelled_by_email: emailMap.get(cancelled_by as string) ?? null,
+        };
+      });
     }
 
     return NextResponse.json({
