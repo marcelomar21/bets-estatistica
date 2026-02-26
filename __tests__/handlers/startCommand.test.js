@@ -287,15 +287,15 @@ describe('Start Command Handler', () => {
           123456789,
           expect.stringContaining('período de acesso terminou'),
           expect.objectContaining({
-            reply_markup: expect.objectContaining({
-              inline_keyboard: expect.arrayContaining([
-                expect.arrayContaining([
-                  expect.objectContaining({ text: '💳 ASSINAR AGORA' })
-                ])
-              ])
-            })
+            parse_mode: 'Markdown'
           })
         );
+        // No checkoutUrl available (no botCtx/groupConfig), so no inline keyboard button
+        const paymentCall = mockBot.sendMessage.mock.calls.find(c =>
+          typeof c[1] === 'string' && c[1].includes('período de acesso terminou')
+        );
+        expect(paymentCall[1]).toContain('@operador');
+        expect(paymentCall[2].reply_markup).toBeNull();
       });
     });
 
@@ -475,19 +475,13 @@ describe('Start Command Handler', () => {
 
       expect(result.success).toBe(true);
       expect(result.action).toBe('payment_link_sent');
-      expect(mockBot.sendMessage).toHaveBeenCalledWith(
-        123456789,
-        expect.stringContaining('Não encontramos uma assinatura'),
-        expect.objectContaining({
-          reply_markup: expect.objectContaining({
-            inline_keyboard: expect.arrayContaining([
-              expect.arrayContaining([
-                expect.objectContaining({ text: '💳 ASSINAR AGORA' })
-              ])
-            ])
-          })
-        })
+      // No checkoutUrl available (no botCtx/groupConfig), so plain text with @operador contact
+      const paymentCall = mockBot.sendMessage.mock.calls.find(c =>
+        typeof c[1] === 'string' && c[1].includes('Não encontramos uma assinatura')
       );
+      expect(paymentCall).toBeDefined();
+      expect(paymentCall[1]).toContain('@operador');
+      expect(paymentCall[2].reply_markup).toBeNull();
     });
 
     it('should reject invalid email format', async () => {

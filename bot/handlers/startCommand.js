@@ -14,7 +14,6 @@
  * not via Telegram deep links. The /start command is simplified.
  */
 const logger = require('../../lib/logger');
-const { config } = require('../../lib/config');
 const { getBot, getDefaultBotCtx } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
 const { getConfig } = require('../lib/configHelper');
@@ -637,8 +636,8 @@ Seu email ${email} foi vinculado a este Telegram.
 
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
   const groupConfig = effectiveBotCtx?.groupConfig || null;
-  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
-  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
+  const checkoutUrl = groupConfig?.checkoutUrl || null;
+  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
 
   // Get trial days from system_config (database)
   const trialDaysResult = await getTrialDays();
@@ -648,12 +647,12 @@ Seu email ${email} foi vinculado a este Telegram.
   let replyMarkup = null;
 
   if (checkoutUrl) {
+    const priceLineEmail = subscriptionPrice ? `\n💰 *Valor:* ${subscriptionPrice}` : '';
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
 
 Para ter acesso ao grupo, você precisa assinar primeiro.
-
-💰 *Valor:* ${subscriptionPrice}
+${priceLineEmail}
 🎁 *Inclui ${trialDays} dias grátis para testar!*
 
 👇 *Clique no botão abaixo para assinar:*
@@ -665,7 +664,7 @@ Para ter acesso ao grupo, você precisa assinar primeiro.
       ]]
     };
   } else {
-    const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+    const operatorUsername = groupConfig?.operatorUsername || 'operador';
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
 
@@ -697,8 +696,8 @@ async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = nu
   const trialDaysResult = await getTrialDays();
   const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
   const groupConfig = effectiveBotCtx?.groupConfig || null;
-  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
-  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
+  const operatorUsername = groupConfig?.operatorUsername || 'operador';
+  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
 
   // Generate unique invite link
   let inviteLink;
@@ -749,7 +748,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
 
   // Story 2-2: Check TRIAL_MODE for customized welcome message
   const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
-  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
+  const checkoutUrl = groupConfig?.checkoutUrl || null;
 
   let welcomeMessage;
   let inlineKeyboard;
@@ -759,6 +758,10 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
     const trialEndsAt = member.trial_ends_at
       ? new Date(member.trial_ends_at).toLocaleDateString('pt-BR')
       : '—';
+
+    const priceLineInternalTrial = subscriptionPrice
+      ? `\n💰 Para continuar após o trial, assine por apenas *${subscriptionPrice}*.`
+      : '\n💰 Para continuar após o trial, consulte o operador.';
 
     welcomeMessage = `
 🎉 Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}!
@@ -770,8 +773,7 @@ Seu trial de *${trialDays} dias* começa agora!
 • 3 sugestões de apostas diárias
 • Análise estatística completa
 • Taxa de acerto histórica: *${successRateText}%*
-
-💰 Para continuar após o trial, assine por apenas *${subscriptionPrice}*.
+${priceLineInternalTrial}
 
 👇 *Clique no botão abaixo para entrar no grupo:*
     `.trim();
@@ -784,6 +786,10 @@ Seu trial de *${trialDays} dias* começa agora!
     }
   } else {
     // Mercadopago flow: original welcome message
+    const priceLineMp = subscriptionPrice
+      ? `\n💰 Após o trial, continue por apenas *${subscriptionPrice}*.`
+      : '\n💰 Após o trial, consulte o operador para assinar.';
+
     welcomeMessage = `
 Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}! 🎯
 
@@ -793,8 +799,7 @@ Você tem *${daysText}* para experimentar nossas apostas.
 • 3 sugestões de apostas diárias
 • Análise estatística completa
 • Taxa de acerto histórica: *${successRateText}%*
-
-💰 Após o trial, continue por apenas *${subscriptionPrice}*.
+${priceLineMp}
 
 👇 *Clique no botão abaixo para entrar no grupo:*
     `.trim();
@@ -823,20 +828,23 @@ Você tem *${daysText}* para experimentar nossas apostas.
  */
 async function sendPaymentRequired(bot, chatId, firstName, member, botCtx = null) {
   const groupConfig = botCtx?.groupConfig || null;
-  const checkoutUrl = groupConfig?.checkoutUrl || config.membership?.checkoutUrl;
-  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
-  const subscriptionPrice = groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
+  const checkoutUrl = groupConfig?.checkoutUrl || null;
+  const operatorUsername = groupConfig?.operatorUsername || 'operador';
+  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
 
   let message;
   let replyMarkup = null;
 
   if (checkoutUrl) {
+    const priceLinePayment = subscriptionPrice
+      ? `assine por apenas *${subscriptionPrice}*`
+      : 'assine para continuar';
     message = `
 Olá, ${firstName}! 👋
 
 Seu período de acesso terminou.
 
-Para continuar recebendo nossas apostas com análise estatística, assine por apenas *${subscriptionPrice}*.
+Para continuar recebendo nossas apostas com análise estatística, ${priceLinePayment}.
 
 👇 *Clique no botão abaixo para assinar:*
     `.trim();
@@ -847,12 +855,15 @@ Para continuar recebendo nossas apostas com análise estatística, assine por ap
       ]]
     };
   } else {
+    const priceInfoContact = subscriptionPrice
+      ? ` por *${subscriptionPrice}*`
+      : '';
     message = `
 Olá, ${firstName}! 👋
 
 Seu período de acesso terminou.
 
-Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar por *${subscriptionPrice}*.
+Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar${priceInfoContact}.
     `.trim();
   }
 

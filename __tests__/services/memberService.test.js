@@ -2155,7 +2155,7 @@ describe('memberService', () => {
         affiliate_clicked_at: now.toISOString(), // Today - valid
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(true);
@@ -2171,7 +2171,7 @@ describe('memberService', () => {
         affiliate_clicked_at: null,
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);
@@ -2190,7 +2190,7 @@ describe('memberService', () => {
         affiliate_clicked_at: fifteenDaysAgo.toISOString(), // Expired
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);
@@ -2206,7 +2206,7 @@ describe('memberService', () => {
         affiliate_clicked_at: null,
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);
@@ -2223,7 +2223,7 @@ describe('memberService', () => {
         affiliate_clicked_at: now.toISOString(),
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(true);
@@ -2241,7 +2241,7 @@ describe('memberService', () => {
         affiliate_clicked_at: thirteenDaysAgo.toISOString(), // Still valid (< 14)
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(true);
@@ -2259,7 +2259,7 @@ describe('memberService', () => {
         affiliate_clicked_at: fourteenDaysAgo.toISOString(), // Expired (>= 14)
       };
 
-      const result = generatePaymentLink(member);
+      const result = generatePaymentLink(member, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);
@@ -2267,7 +2267,7 @@ describe('memberService', () => {
     });
 
     test('retorna link generico quando member e null', () => {
-      const result = generatePaymentLink(null);
+      const result = generatePaymentLink(null, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);
@@ -2276,7 +2276,7 @@ describe('memberService', () => {
     });
 
     test('retorna link generico quando member e undefined', () => {
-      const result = generatePaymentLink(undefined);
+      const result = generatePaymentLink(undefined, MOCK_CHECKOUT_URL);
 
       expect(result.success).toBe(true);
       expect(result.data.hasAffiliate).toBe(false);

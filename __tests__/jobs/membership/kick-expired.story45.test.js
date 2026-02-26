@@ -262,7 +262,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       );
     });
 
-    it('should fall back to config checkout_url when group has no checkout_url', async () => {
+    it('should skip farewell message when group has no checkout_url (no global fallback for multi-tenant safety)', async () => {
       const groupWithoutCheckout = { ...mockGroupData, checkout_url: null };
       const ctxWithoutCheckout = {
         ...mockBotCtx,
@@ -271,12 +271,14 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
 
       await processMemberKick(baseMember, 'payment_failed', groupWithoutCheckout, mockBotInstance, ctxWithoutCheckout);
 
-      expect(getCheckoutLink).toHaveBeenCalled();
-      expect(formatFarewellMessage).toHaveBeenCalledWith(
-        baseMember,
-        'payment_failed',
-        'https://checkout-fallback.example.com',
-        ctxWithoutCheckout.groupConfig
+      // Global fallback removed — getCheckoutLink should NOT be called
+      expect(getCheckoutLink).not.toHaveBeenCalled();
+      // Farewell message should NOT be sent (no checkout URL available)
+      expect(formatFarewellMessage).not.toHaveBeenCalled();
+      // Should log a warning about missing checkout URL
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[membership:kick-expired] processMemberKick: no checkout URL configured',
+        expect.objectContaining({ memberId: 'member-1' })
       );
     });
 

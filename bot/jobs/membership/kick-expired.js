@@ -29,7 +29,6 @@ const { getConfig } = require('../../lib/configHelper');
 const { getAllBots } = require('../../telegram');
 const {
   sendPrivateMessage,
-  getCheckoutLink,
   formatFarewellMessage,
   sendKickWarningNotification,
 } = require('../../services/notificationService');
@@ -87,15 +86,13 @@ async function resolveGroupData(groupId) {
  */
 async function getAllInadimplenteMembers(groupId = null) {
   try {
-    const effectiveGroupId = groupId || config.membership?.groupId;
-
     let query = supabase
       .from('members')
       .select('*')
       .eq('status', 'inadimplente');
 
-    if (effectiveGroupId) {
-      query = query.eq('group_id', effectiveGroupId);
+    if (groupId) {
+      query = query.eq('group_id', groupId);
     }
 
     const { data: members, error } = await query;
@@ -109,7 +106,7 @@ async function getAllInadimplenteMembers(groupId = null) {
 
     logger.debug('[membership:kick-expired] getAllInadimplenteMembers: found members', {
       count: members?.length || 0,
-      groupId: effectiveGroupId || 'all',
+      groupId: groupId || 'all',
     });
 
     return { success: true, data: { members: members || [] } };
@@ -128,8 +125,6 @@ async function getAllInadimplenteMembers(groupId = null) {
  */
 async function getExpiredTrialMembers(groupId = null) {
   try {
-    const effectiveGroupId = groupId || config.membership?.groupId;
-
     let query = supabase
       .from('members')
       .select('*')
@@ -137,8 +132,8 @@ async function getExpiredTrialMembers(groupId = null) {
       .not('trial_ends_at', 'is', null)
       .lte('trial_ends_at', new Date().toISOString());
 
-    if (effectiveGroupId) {
-      query = query.eq('group_id', effectiveGroupId);
+    if (groupId) {
+      query = query.eq('group_id', groupId);
     }
 
     const { data: members, error } = await query;
@@ -152,7 +147,7 @@ async function getExpiredTrialMembers(groupId = null) {
 
     logger.debug('[membership:kick-expired] getExpiredTrialMembers: found members', {
       count: members?.length || 0,
-      groupId: effectiveGroupId || 'all',
+      groupId: groupId || 'all',
     });
 
     return { success: true, data: { members: members || [] } };
@@ -203,17 +198,11 @@ function resolveKickChatId(groupData, botCtx = null) {
     return { success: true, data: { chatId: botCtx.publicGroupId } };
   }
 
-  const { getDefaultBotCtx } = require('../../telegram');
-  const fallbackChatId = getDefaultBotCtx()?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
-  if (fallbackChatId) {
-    return { success: true, data: { chatId: fallbackChatId } };
-  }
-
   return {
     success: false,
     error: {
       code: 'GROUP_CHAT_ID_MISSING',
-      message: 'No Telegram group chat ID available for kick',
+      message: 'No Telegram group chat ID available for kick (groupData and botCtx both missing)',
     },
   };
 }
@@ -299,10 +288,9 @@ async function processMemberKick(member, reason, groupData, botInstance = null, 
   const chatId = chatResult.data.chatId;
 
   // 2. Send farewell message (best effort)
+  // NOTE: No global config fallback — group-specific checkout URL only (multi-tenant safety)
   const groupConfig = botCtx?.groupConfig || null;
-  const checkoutUrl = groupData?.checkout_url || groupConfig?.checkoutUrl || null;
-  const fallbackResult = !checkoutUrl ? getCheckoutLink() : null;
-  const effectiveCheckoutUrl = checkoutUrl || (fallbackResult?.success ? fallbackResult.data.checkoutUrl : null);
+  const effectiveCheckoutUrl = groupData?.checkout_url || groupConfig?.checkoutUrl || null;
 
   if (effectiveCheckoutUrl) {
     const farewellMessage = formatFarewellMessage(member, reason, effectiveCheckoutUrl, groupConfig);

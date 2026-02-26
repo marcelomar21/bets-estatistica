@@ -340,7 +340,7 @@ describe('memberEvents', () => {
       expect(result.data.messageId).toBe(12345);
       expect(mockBot.sendMessage).toHaveBeenCalledTimes(1);
       expect(mockBot.sendMessage.mock.calls[0][1]).toContain('ASSINAR');
-      expect(mockBot.sendMessage.mock.calls[0][1]).toContain('R$50/MÊS');
+      expect(mockBot.sendMessage.mock.calls[0][1]).toContain('CONSULTE O OPERADOR');
       expect(mockBot.sendMessage.mock.calls[0][1]).toContain('test.checkout.com');
     });
 

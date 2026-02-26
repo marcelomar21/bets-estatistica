@@ -109,7 +109,7 @@ describe('memberEvents - Multi-tenant (Story 3.1)', () => {
         ],
       };
 
-      await handleNewChatMembers(msg);
+      await handleNewChatMembers(msg, groupId);
 
       // Verify getMemberByTelegramId was called with groupId
       expect(getMemberByTelegramId).toHaveBeenCalledWith(555, groupId);

@@ -149,7 +149,7 @@ describe('Story 4.2: Boas-vindas e Registro com Status Trial', () => {
         ],
       };
 
-      const result = await handleNewChatMembers(msg);
+      const result = await handleNewChatMembers(msg, groupId);
 
       // AC1: Member was processed and created as trial
       expect(result.processed).toBe(1);

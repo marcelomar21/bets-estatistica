@@ -118,7 +118,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(insertCall.status).toBe('trial');
     });
 
-    test('uses config.membership.groupId when groupId is omitted', async () => {
+    test('does not filter by group_id when groupId is omitted (no global fallback)', async () => {
       const selectChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -132,7 +132,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
         insert: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
-          data: { id: 10, telegram_id: '999', group_id: 'test-group-uuid', status: 'trial' },
+          data: { id: 10, telegram_id: '999', group_id: null, status: 'trial' },
           error: null,
         }),
       };
@@ -151,7 +151,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
 
       expect(result.success).toBe(true);
       const insertCall = insertChain.insert.mock.calls[0][0];
-      expect(insertCall.group_id).toBe('test-group-uuid');
+      expect(insertCall.group_id).toBeUndefined();
     });
 
     // Task 7.2: createTrialMember with groupId = null (backward compat explícito)
@@ -222,9 +222,9 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(eqCalls).toContainEqual(['group_id', groupId]);
     });
 
-    test('uses config.membership.groupId when groupId is omitted', async () => {
+    test('does not filter by group_id when groupId is omitted (no global fallback)', async () => {
       const chain = mockSupabaseChain({
-        data: { id: 99, telegram_id: '123', group_id: 'test-group-uuid' },
+        data: { id: 99, telegram_id: '123', group_id: null },
         error: null,
       });
 
@@ -233,7 +233,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(result.success).toBe(true);
       const eqCalls = chain.eq.mock.calls;
       expect(eqCalls).toContainEqual(['telegram_id', 123]);
-      expect(eqCalls).toContainEqual(['group_id', 'test-group-uuid']);
+      expect(eqCalls).not.toContainEqual(expect.arrayContaining(['group_id']));
     });
 
     // Task 7.4: getMemberByTelegramId sem group (backward compat explícito)
@@ -410,9 +410,9 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(eqCalls).toContainEqual(['group_id', 'group-email']);
     });
 
-    test('uses config.membership.groupId when groupId is omitted', async () => {
+    test('does not filter by group_id when groupId is omitted (no global fallback)', async () => {
       const chain = mockSupabaseChain({
-        data: { id: 2, email: 'tenant@x.com', group_id: 'test-group-uuid' },
+        data: { id: 2, email: 'tenant@x.com', group_id: null },
         error: null,
       });
 
@@ -421,7 +421,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(result.success).toBe(true);
       const eqCalls = chain.eq.mock.calls;
       expect(eqCalls).toContainEqual(['email', 'tenant@x.com']);
-      expect(eqCalls).toContainEqual(['group_id', 'test-group-uuid']);
+      expect(eqCalls).not.toContainEqual(expect.arrayContaining(['group_id']));
     });
   });
 
@@ -443,9 +443,9 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(eqCalls).toContainEqual(['group_id', 'group-payer']);
     });
 
-    test('uses config.membership.groupId when groupId is omitted', async () => {
+    test('does not filter by group_id when groupId is omitted (no global fallback)', async () => {
       const chain = mockSupabaseChain({
-        data: { id: 7, mp_payer_id: 'payer-tenant', group_id: 'test-group-uuid' },
+        data: { id: 7, mp_payer_id: 'payer-tenant', group_id: null },
         error: null,
       });
 
@@ -454,7 +454,7 @@ describe('memberService - Multi-tenant (Story 3.1)', () => {
       expect(result.success).toBe(true);
       const eqCalls = chain.eq.mock.calls;
       expect(eqCalls).toContainEqual(['mp_payer_id', 'payer-tenant']);
-      expect(eqCalls).toContainEqual(['group_id', 'test-group-uuid']);
+      expect(eqCalls).not.toContainEqual(expect.arrayContaining(['group_id']));
     });
   });
 

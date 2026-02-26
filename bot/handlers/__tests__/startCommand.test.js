@@ -210,11 +210,9 @@ describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
       expect(welcomeCall).toBeDefined();
       const opts = welcomeCall[2];
       const keyboard = opts.reply_markup.inline_keyboard;
-      // Two buttons: enter group + subscribe
-      expect(keyboard).toHaveLength(2);
+      // Only one button: enter group — no checkoutUrl because getDefaultBotCtx has no groupConfig
+      expect(keyboard).toHaveLength(1);
       expect(keyboard[0][0].text).toContain('ENTRAR NO GRUPO');
-      expect(keyboard[1][0].text).toContain('ASSINAR');
-      expect(keyboard[1][0].url).toBe('https://checkout.mp/test');
     });
   });
 

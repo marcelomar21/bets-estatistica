@@ -19,7 +19,7 @@ const { registerNotification } = require('../services/notificationService');
 const MP_TRIAL_DAYS = 7;
 
 function getSubscriptionPrice(groupConfig = null) {
-  return groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
+  return groupConfig?.subscriptionPrice || null;
 }
 
 /**
@@ -29,10 +29,8 @@ function getSubscriptionPrice(groupConfig = null) {
  * @param {object} msg - Telegram message with new_chat_members array
  * @returns {Promise<{processed: number, skipped: number}>}
  */
-async function handleNewChatMembers(msg) {
+async function handleNewChatMembers(msg, groupId = null) {
   const newMembers = msg.new_chat_members || [];
-  // Story 3.1: Get groupId from config (null for single-tenant)
-  const groupId = config.membership.groupId || null;
   let processed = 0;
   let skipped = 0;
 
@@ -302,11 +300,16 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
   const subscriptionPrice = getSubscriptionPrice(groupConfig);
   const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
   const groupName = groupConfig?.name || 'o grupo';
+  const priceLabel = subscriptionPrice || 'consulte o operador';
 
   // Format message (4.3)
   const paymentCta = checkoutUrl
-    ? `💳 [ASSINAR POR ${subscriptionPrice}](${checkoutUrl})`
+    ? `💳 [ASSINAR POR ${priceLabel.toUpperCase()}](${checkoutUrl})`
     : `💳 Para assinar, fale com @${operatorUsername}`;
+
+  const trialSuffix = subscriptionPrice
+    ? `continue por apenas *${subscriptionPrice}*.`
+    : `fale com @${operatorUsername} para assinar.`;
 
   const message = `
 Bem-vindo ao *${groupName}*, ${firstName || 'apostador'}! 🎯
@@ -318,7 +321,7 @@ Você tem *${trialDays} dias grátis* para experimentar nossas apostas.
 • Horários: 10h, 15h e 22h
 • Taxa de acerto (7 dias): *${successRateText}%*
 
-💰 Após o trial, continue por apenas *${subscriptionPrice}*.
+💰 Após o trial, ${trialSuffix}
 ${paymentCta}
 
 ❓ Dúvidas? Fale com @${operatorUsername}
@@ -484,6 +487,7 @@ async function sendPaymentRequiredMessage(telegramId, memberId = null, groupId =
   const subscriptionPrice = getSubscriptionPrice(groupConfig);
 
   // Issue #3: Handle missing checkout URL gracefully
+  const priceLabel = subscriptionPrice || 'consulte o operador';
   let message;
   if (checkoutUrl) {
     message = `
@@ -492,7 +496,7 @@ Olá! Notamos que você voltou ao grupo. 👋
 Seu período de trial já terminou há mais de 24 horas.
 
 Para continuar recebendo nossas apostas:
-[ASSINAR POR ${subscriptionPrice}](${checkoutUrl})
+[ASSINAR POR ${priceLabel.toUpperCase()}](${checkoutUrl})
 
 ❓ Dúvidas? Fale com @${operatorUsername}
     `.trim();
@@ -503,7 +507,7 @@ Olá! Notamos que você voltou ao grupo. 👋
 
 Seu período de trial já terminou há mais de 24 horas.
 
-Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar por *${subscriptionPrice}*.
+Para continuar recebendo nossas apostas, entre em contato com @${operatorUsername} para assinar.
     `.trim();
     logger.warn('[membership:member-events] Checkout URL not configured, using fallback message');
   }
