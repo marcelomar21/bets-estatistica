@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { ScheduledMessageListItem, MessageStatus } from '@/types/database';
+import type { ScheduledMessageListItem, MessageStatus, MediaType } from '@/types/database';
+import { FileUpload } from '@/components/features/messages/FileUpload';
+import { MessagePreview, MediaPreviewModal } from '@/components/features/messages/MessagePreview';
 
 const STATUS_STYLES: Record<MessageStatus, { label: string; className: string }> = {
   pending: { label: 'Pendente', className: 'bg-yellow-100 text-yellow-800' },
@@ -25,6 +27,16 @@ export default function MessagesPage() {
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Media state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState('');
+
+  // Preview state
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Media preview state (for viewing existing message media)
+  const [mediaPreview, setMediaPreview] = useState<{ url: string; type: 'pdf' | 'image' } | null>(null);
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -82,46 +94,92 @@ export default function MessagesPage() {
     fetchMessages();
   }, [fetchMessages]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function validateForm(): { valid: false } | { valid: true; scheduledAt: Date; groupId: string } {
     setFormError('');
+    setUploadError('');
 
-    if (!messageText.trim()) {
-      setFormError('Texto da mensagem e obrigatorio');
-      return;
+    const hasText = messageText.trim().length > 0;
+    const hasFile = selectedFile !== null;
+
+    if (!hasText && !hasFile) {
+      setFormError('Mensagem deve conter texto ou arquivo');
+      return { valid: false };
     }
 
     if (!scheduledDate || !scheduledTime) {
       setFormError('Data e hora sao obrigatorios');
-      return;
+      return { valid: false };
     }
 
     const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}`);
     if (scheduledAt <= new Date()) {
       setFormError('Data de agendamento deve ser no futuro');
-      return;
+      return { valid: false };
     }
 
     const groupId = role === 'super_admin' ? selectedGroupId : groups[0]?.id;
     if (!groupId) {
       setFormError('Selecione um grupo destino');
-      return;
+      return { valid: false };
     }
+
+    return { valid: true, scheduledAt, groupId };
+  }
+
+  async function doSubmit() {
+    const result = validateForm();
+    if (!result.valid) return;
+
+    const { scheduledAt, groupId } = result;
 
     setSubmitting(true);
     try {
+      let mediaStoragePath: string | undefined;
+      let mediaType: MediaType | undefined;
+
+      // Upload file first if selected
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('group_id', groupId);
+
+        const uploadRes = await fetch('/api/messages/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.success) {
+          setUploadError(uploadJson.error?.message ?? 'Erro ao fazer upload');
+          return;
+        }
+
+        mediaStoragePath = uploadJson.data.media_storage_path;
+        mediaType = uploadJson.data.media_type;
+      }
+
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message_text: messageText,
+          message_text: messageText || undefined,
           scheduled_at: scheduledAt.toISOString(),
           group_id: groupId,
+          media_storage_path: mediaStoragePath,
+          media_type: mediaType,
         }),
       });
 
       const json = await res.json();
       if (!json.success) {
+        // Clean up orphaned file if upload succeeded but message creation failed
+        if (mediaStoragePath) {
+          fetch('/api/messages/upload', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_storage_path: mediaStoragePath }),
+          }).catch(() => { /* best effort cleanup */ });
+        }
         setFormError(json.error?.message ?? 'Erro ao agendar mensagem');
         return;
       }
@@ -131,12 +189,45 @@ export default function MessagesPage() {
       setScheduledDate('');
       setScheduledTime('');
       setSelectedGroupId('');
+      setSelectedFile(null);
       setShowForm(false);
+      setShowPreview(false);
       fetchMessages();
     } catch {
       setFormError('Erro de conexao');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await doSubmit();
+  }
+
+  function handlePreview() {
+    const result = validateForm();
+    if (result.valid) {
+      setShowPreview(true);
+    }
+  }
+
+  async function handlePreviewConfirm() {
+    setShowPreview(false);
+    await doSubmit();
+  }
+
+  async function handleMediaClick(messageId: string) {
+    try {
+      const res = await fetch(`/api/messages/${messageId}/media`);
+      const json = await res.json();
+      if (!json.success) {
+        showToast(json.error?.message ?? 'Erro ao carregar midia', 'error');
+        return;
+      }
+      setMediaPreview({ url: json.data.url, type: json.data.media_type });
+    } catch {
+      showToast('Erro ao carregar midia', 'error');
     }
   }
 
@@ -186,7 +277,7 @@ export default function MessagesPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="message-text" className="block text-sm font-medium text-gray-700">
-                Texto da mensagem
+                Texto da mensagem {selectedFile ? '(opcional)' : ''}
               </label>
               <textarea
                 id="message-text"
@@ -252,6 +343,12 @@ export default function MessagesPage() {
               </p>
             ) : null}
 
+            <FileUpload
+              onFileSelected={setSelectedFile}
+              disabled={submitting}
+              error={uploadError}
+            />
+
             {formError && (
               <p className="text-sm text-red-600">{formError}</p>
             )}
@@ -264,6 +361,14 @@ export default function MessagesPage() {
                 disabled={submitting}
               >
                 Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handlePreview}
+                className="rounded-md border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                disabled={submitting}
+              >
+                Preview
               </button>
               <button
                 type="submit"
@@ -295,6 +400,7 @@ export default function MessagesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mensagem</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Midia</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Agendada para</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Status</th>
@@ -306,8 +412,20 @@ export default function MessagesPage() {
                 const statusStyle = STATUS_STYLES[msg.status as MessageStatus] ?? STATUS_STYLES.pending;
                 return (
                   <tr key={msg.id} className="hover:bg-gray-50">
-                    <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-900" title={msg.message_text}>
-                      {msg.message_text.length > 80 ? msg.message_text.slice(0, 80) + '...' : msg.message_text}
+                    <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-900" title={msg.message_text ?? ''}>
+                      {msg.message_text
+                        ? msg.message_text.length > 80 ? msg.message_text.slice(0, 80) + '...' : msg.message_text
+                        : <span className="text-gray-400 italic">Apenas midia</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                      {msg.media_type ? (
+                        <button
+                          onClick={() => handleMediaClick(msg.id)}
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {msg.media_type === 'pdf' ? 'PDF' : 'Imagem'}
+                        </button>
+                      ) : '-'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                       {msg.groups?.name ?? '-'}
@@ -336,6 +454,33 @@ export default function MessagesPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Form Preview Modal */}
+      {showPreview && (
+        <MessagePreview
+          messageText={messageText}
+          mediaFile={selectedFile}
+          mediaType={selectedFile?.type.startsWith('image/') ? 'image' : selectedFile?.type === 'application/pdf' ? 'pdf' : null}
+          groupName={
+            role === 'super_admin'
+              ? groups.find((g) => g.id === selectedGroupId)?.name ?? ''
+              : groups[0]?.name ?? ''
+          }
+          scheduledAt={`${scheduledDate}T${scheduledTime}`}
+          onClose={() => setShowPreview(false)}
+          onConfirm={handlePreviewConfirm}
+          submitting={submitting}
+        />
+      )}
+
+      {/* Media Preview Modal (for existing messages) */}
+      {mediaPreview && (
+        <MediaPreviewModal
+          mediaUrl={mediaPreview.url}
+          mediaType={mediaPreview.type}
+          onClose={() => setMediaPreview(null)}
+        />
       )}
 
       {/* Toast */}

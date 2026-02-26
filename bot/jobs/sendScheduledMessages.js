@@ -12,7 +12,7 @@ require('dotenv').config();
 
 const logger = require('../../lib/logger');
 const { supabase } = require('../../lib/supabase');
-const { getBotForGroup, sendToPublic, sendToAdmin } = require('../telegram');
+const { getBotForGroup, sendToPublic, sendMediaToPublic, sendToAdmin } = require('../telegram');
 
 /**
  * Main job function — sends scheduled messages that are due
@@ -72,8 +72,34 @@ async function runSendScheduledMessages(options = {}) {
         continue;
       }
 
-      // Send via Telegram (sendToPublic already uses parse_mode: 'Markdown')
-      const result = await sendToPublic(msg.message_text, botCtx);
+      // Send via Telegram — media or text-only
+      let result;
+
+      if (msg.media_storage_path && msg.media_type) {
+        // Generate signed URL for the media file
+        const { data: signedData, error: signError } = await supabase.storage
+          .from('message-media')
+          .createSignedUrl(msg.media_storage_path, 300); // 5-min expiry
+
+        if (signError || !signedData?.signedUrl) {
+          logger.error('[sendScheduledMessages] Failed to generate signed URL', {
+            messageId: msg.id,
+            path: msg.media_storage_path,
+            error: signError?.message,
+          });
+          result = { success: false, error: { code: 'STORAGE_ERROR', message: 'Failed to generate signed URL' } };
+        } else {
+          result = await sendMediaToPublic(
+            msg.media_type,
+            signedData.signedUrl,
+            msg.message_text || null,
+            botCtx,
+          );
+        }
+      } else {
+        // Text-only message (original behavior)
+        result = await sendToPublic(msg.message_text, botCtx);
+      }
 
       if (result.success) {
         // Update to sent

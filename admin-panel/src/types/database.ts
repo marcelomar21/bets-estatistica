@@ -368,18 +368,22 @@ export interface BulkLinksUpdateResponse {
 // ============================================================
 
 export type MessageStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
+export type MediaType = 'pdf' | 'image';
 
 export interface ScheduledMessage {
   id: string;
   group_id: string;
   created_by: string;
-  message_text: string;
+  message_text: string | null;
   scheduled_at: string;
   sent_at: string | null;
   status: MessageStatus;
   telegram_message_id: number | null;
   attempts: number;
   created_at: string;
+  media_url: string | null;
+  media_type: MediaType | null;
+  media_storage_path: string | null;
 }
 
 export interface ScheduledMessageListItem extends ScheduledMessage {
