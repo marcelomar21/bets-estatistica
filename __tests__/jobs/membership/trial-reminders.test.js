@@ -1,6 +1,7 @@
 /**
  * Tests for trial-reminders job
  * Story 16.5: Implementar Notificacoes de Cobranca
+ * Story 2-3: TRIAL_MODE check + withExecutionLogging
  */
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
@@ -58,6 +59,16 @@ jest.mock('../../../bot/services/memberService', () => ({
     success: true,
     data: { url: 'https://pay.test.com/checkout', hasAffiliate: false, affiliateCode: null },
   }),
+}));
+
+// Story 2-3: Mock configHelper and jobExecutionService
+const mockGetConfig = jest.fn().mockResolvedValue('internal');
+jest.mock('../../../bot/lib/configHelper', () => ({
+  getConfig: mockGetConfig,
+}));
+
+jest.mock('../../../bot/services/jobExecutionService', () => ({
+  withExecutionLogging: jest.fn((jobName, fn) => fn()),
 }));
 
 const {
@@ -374,6 +385,59 @@ describe('trial-reminders job', () => {
       expect(logger.info).toHaveBeenCalledWith(
         '[membership:trial-reminders] Starting',
         expect.any(Object)
+      );
+    });
+  });
+
+  // Story 2-3: TRIAL_MODE check tests
+  describe('TRIAL_MODE check (Story 2-3)', () => {
+    it('should skip processing when TRIAL_MODE=mercadopago', async () => {
+      mockGetConfig.mockResolvedValueOnce('mercadopago');
+
+      const result = await runTrialReminders();
+
+      expect(result.success).toBe(true);
+      expect(result.sent).toBe(0);
+      expect(result.skippedReason).toBe('mercadopago_mode');
+      // Should NOT query members
+      expect(supabase.from).not.toHaveBeenCalledWith('members');
+    });
+
+    it('should process when TRIAL_MODE=internal', async () => {
+      mockGetConfig.mockResolvedValueOnce('internal');
+
+      const mockChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockResolvedValue({
+          data: [],
+          error: null,
+        }),
+      };
+      supabase.from.mockReturnValue(mockChain);
+
+      const result = await runTrialReminders();
+
+      expect(result.success).toBe(true);
+      expect(result.skippedReason).toBeUndefined();
+    });
+
+    it('should use withExecutionLogging wrapper', async () => {
+      const { withExecutionLogging } = require('../../../bot/services/jobExecutionService');
+      mockGetConfig.mockResolvedValueOnce('internal');
+
+      const mockChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      supabase.from.mockReturnValue(mockChain);
+
+      await runTrialReminders();
+
+      expect(withExecutionLogging).toHaveBeenCalledWith(
+        'trial-reminders',
+        expect.any(Function)
       );
     });
   });

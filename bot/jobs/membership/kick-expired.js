@@ -26,6 +26,7 @@ require('dotenv').config();
 const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 const { config } = require('../../../lib/config');
+const { getConfig } = require('../../lib/configHelper');
 const {
   sendPrivateMessage,
   getCheckoutLink,
@@ -116,6 +117,49 @@ async function getAllInadimplenteMembers() {
     return { success: true, data: { members: members || [] } };
   } catch (err) {
     logger.error('[membership:kick-expired] getAllInadimplenteMembers: unexpected error', {
+      error: err.message,
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Get trial members whose trial has expired (Story 2-4)
+ * Returns members with status='trial' and trial_ends_at <= NOW()
+ * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
+ */
+async function getExpiredTrialMembers() {
+  try {
+    const groupId = config.membership?.groupId;
+
+    let query = supabase
+      .from('members')
+      .select('*')
+      .eq('status', 'trial')
+      .not('trial_ends_at', 'is', null)
+      .lte('trial_ends_at', new Date().toISOString());
+
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data: members, error } = await query;
+
+    if (error) {
+      logger.error('[membership:kick-expired] getExpiredTrialMembers: database error', {
+        error: error.message,
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.debug('[membership:kick-expired] getExpiredTrialMembers: found members', {
+      count: members?.length || 0,
+      groupId: groupId || 'all (single-tenant)',
+    });
+
+    return { success: true, data: { members: members || [] } };
+  } catch (err) {
+    logger.error('[membership:kick-expired] getExpiredTrialMembers: unexpected error', {
       error: err.message,
     });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
@@ -453,6 +497,42 @@ async function _runKickExpiredInternal(botCtx = null) {
       }
     }
 
+    // Story 2-4: Process expired trial members when TRIAL_MODE='internal'
+    const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+
+    if (trialMode === 'internal') {
+      const trialResult = await getExpiredTrialMembers();
+
+      if (trialResult.success && trialResult.data.members.length > 0) {
+        const trialMembers = trialResult.data.members;
+        logger.info('[membership:kick-expired] Processing expired trial members', {
+          count: trialMembers.length,
+        });
+
+        for (const member of trialMembers) {
+          if (groupId && !groupData) {
+            blockedByMissingGroup++;
+            failed++;
+            continue;
+          }
+
+          const result = await processMemberKick(member, 'trial_expired', groupData);
+
+          if (result.success) {
+            kicked++;
+          } else if (result.error?.code === 'USER_NOT_IN_GROUP') {
+            alreadyRemoved++;
+          } else {
+            failed++;
+          }
+        }
+      } else if (!trialResult.success) {
+        logger.error('[membership:kick-expired] Failed to get expired trial members', {
+          error: trialResult.error,
+        });
+      }
+    }
+
     // Get inadimplente members (filtered by group_id if multi-tenant)
     const inadimplenteResult = await getAllInadimplenteMembers();
 
@@ -579,6 +659,7 @@ module.exports = {
   runKickExpired,
   resolveGroupData,
   getAllInadimplenteMembers,
+  getExpiredTrialMembers,
   calculateDaysRemaining,
   shouldKickMember,
   processMemberKick,

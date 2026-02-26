@@ -81,6 +81,11 @@ jest.mock('../../../bot/handlers/memberEvents', () => ({
   registerMemberEvent: jest.fn().mockResolvedValue({ success: true }),
 }));
 
+// Story 2-4: Mock configHelper
+jest.mock('../../../bot/lib/configHelper', () => ({
+  getConfig: jest.fn().mockResolvedValue('mercadopago'),
+}));
+
 const {
   runKickExpired,
   resolveGroupData,

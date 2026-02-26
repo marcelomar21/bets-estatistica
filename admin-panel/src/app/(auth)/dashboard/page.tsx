@@ -2,11 +2,19 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import type { DashboardData, Notification } from '@/types/database';
+import Link from 'next/link';
 import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
 import AlertsSection from '@/components/features/dashboard/AlertsSection';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
 import GroupAdminDashboard from '@/components/features/dashboard/GroupAdminDashboard';
+
+interface JobHealthData {
+  total_jobs: number;
+  failed_count: number;
+  status: 'healthy' | 'degraded';
+  last_error: { job_name: string; error_message: string | null; started_at: string } | null;
+}
 
 function DashboardSkeleton() {
   return (
@@ -55,6 +63,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [jobHealth, setJobHealth] = useState<JobHealthData | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -89,6 +98,19 @@ export default function DashboardPage() {
       setUnreadCount(json.data.unread_count);
     } catch {
       /* notifications are non-critical — fail silently */
+    }
+  }, []);
+
+  const fetchJobHealth = useCallback(async () => {
+    try {
+      const res = await fetch('/api/job-executions/summary');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success) {
+        setJobHealth(json.data.health);
+      }
+    } catch {
+      /* job health is non-critical */
     }
   }, []);
 
@@ -167,13 +189,14 @@ export default function DashboardPage() {
       setRoleResolved(true);
       fetchDashboard();
       fetchNotifications();
+      fetchJobHealth();
     }
 
     initialize();
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, fetchNotifications]);
+  }, [fetchDashboard, fetchNotifications, fetchJobHealth]);
 
   // Render GroupAdminDashboard for group_admin role
   if (role === 'group_admin') {
@@ -205,7 +228,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg shadow p-6 text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={() => { fetchDashboard(); fetchNotifications(); }}
+            onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tentar Novamente
@@ -229,6 +252,37 @@ export default function DashboardPage() {
           <StatCard title="Bots em Uso" value={data.summary.bots.in_use} subtitle={`${data.summary.bots.total} total`} icon="🤖" />
           <StatCard title="Bots Online" value={data.summary.bots.online} subtitle={data.summary.bots.offline > 0 ? `${data.summary.bots.offline} offline` : undefined} icon="📡" />
         </div>
+
+        {/* Job health card */}
+        {jobHealth && (
+          <Link href="/job-executions" className="block">
+            <div className={`rounded-lg shadow p-4 flex items-center justify-between transition-colors ${
+              jobHealth.status === 'degraded'
+                ? 'bg-red-50 border border-red-200 hover:bg-red-100'
+                : 'bg-green-50 border border-green-200 hover:bg-green-100'
+            }`}>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{jobHealth.status === 'degraded' ? '🔴' : '🟢'}</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    Jobs: {jobHealth.status === 'healthy' ? 'Saudável' : 'Degradado'}
+                  </p>
+                  {jobHealth.status === 'degraded' && jobHealth.last_error && (
+                    <p className="text-xs text-red-600 mt-0.5">
+                      Falha em {jobHealth.last_error.job_name}: {jobHealth.last_error.error_message ?? 'Erro desconhecido'}
+                    </p>
+                  )}
+                  {jobHealth.status === 'healthy' && (
+                    <p className="text-xs text-green-700 mt-0.5">
+                      {jobHealth.total_jobs} jobs monitorados — todos OK
+                    </p>
+                  )}
+                </div>
+              </div>
+              <span className="text-sm text-gray-500">Ver detalhes →</span>
+            </div>
+          </Link>
+        )}
 
         {/* Group cards */}
         {data.groups.length > 0 && (

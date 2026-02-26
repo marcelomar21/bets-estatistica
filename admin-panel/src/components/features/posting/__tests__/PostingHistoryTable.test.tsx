@@ -1,0 +1,192 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { PostingHistoryTable } from '../PostingHistoryTable';
+import type { HistoryBet } from '../PostingHistoryTable';
+
+function makeBet(overrides: Partial<HistoryBet> = {}): HistoryBet {
+  return {
+    id: 1,
+    bet_market: 'Over 2.5',
+    bet_pick: 'Over',
+    odds: 1.85,
+    odds_at_post: 1.80,
+    bet_status: 'posted',
+    telegram_posted_at: '2026-02-25T14:30:00Z',
+    telegram_message_id: 12345,
+    group_id: 'group-1',
+    historico_postagens: [],
+    created_at: '2026-02-25T10:00:00Z',
+    league_matches: {
+      home_team_name: 'Flamengo',
+      away_team_name: 'Palmeiras',
+      kickoff_time: new Date(Date.now() + 3600000).toISOString(),
+    },
+    groups: { name: 'Grupo Principal' },
+    ...overrides,
+  };
+}
+
+describe('PostingHistoryTable', () => {
+  it('renders empty message when no bets', () => {
+    render(
+      <PostingHistoryTable
+        bets={[]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Nenhuma postagem encontrada')).toBeInTheDocument();
+  });
+
+  it('renders custom empty message', () => {
+    render(
+      <PostingHistoryTable
+        bets={[]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+        emptyMessage="Sem dados"
+      />
+    );
+
+    expect(screen.getByText('Sem dados')).toBeInTheDocument();
+  });
+
+  it('renders bet rows with correct data', () => {
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Flamengo vs Palmeiras')).toBeInTheDocument();
+    expect(screen.getByText('Over 2.5 — Over')).toBeInTheDocument();
+    expect(screen.getByText('1.80')).toBeInTheDocument();
+    expect(screen.getByText('Grupo Principal')).toBeInTheDocument();
+    expect(screen.getByText('12345')).toBeInTheDocument();
+  });
+
+  it('shows "Postada" badge for posted bets', () => {
+    const bet = makeBet({ bet_status: 'posted', telegram_posted_at: '2026-02-25T14:30:00Z' });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Postada')).toBeInTheDocument();
+  });
+
+  it('shows "Pendente" badge for ready bets with future kickoff', () => {
+    const bet = makeBet({
+      bet_status: 'ready',
+      telegram_posted_at: null,
+      telegram_message_id: null,
+      league_matches: {
+        home_team_name: 'Flamengo',
+        away_team_name: 'Palmeiras',
+        kickoff_time: new Date(Date.now() + 86400000).toISOString(), // tomorrow
+      },
+    });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Pendente')).toBeInTheDocument();
+  });
+
+  it('shows "Não postada" badge for ready bets with past kickoff', () => {
+    const bet = makeBet({
+      bet_status: 'ready',
+      telegram_posted_at: null,
+      telegram_message_id: null,
+      league_matches: {
+        home_team_name: 'Flamengo',
+        away_team_name: 'Palmeiras',
+        kickoff_time: new Date(Date.now() - 86400000).toISOString(), // yesterday
+      },
+    });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Não postada')).toBeInTheDocument();
+  });
+
+  it('shows dash for missing odds_at_post, falls back to odds', () => {
+    const bet = makeBet({ odds_at_post: null, odds: 2.10 });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('2.10')).toBeInTheDocument();
+  });
+
+  it('calls onSort when clicking sortable column header', async () => {
+    const user = userEvent.setup();
+    const onSort = vi.fn();
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={onSort}
+      />
+    );
+
+    await user.click(screen.getByText(/Postado em/));
+
+    expect(onSort).toHaveBeenCalledWith('telegram_posted_at');
+  });
+
+  it('renders multiple bets correctly', () => {
+    const bets = [
+      makeBet({ id: 1, league_matches: { home_team_name: 'Flamengo', away_team_name: 'Palmeiras', kickoff_time: new Date().toISOString() } }),
+      makeBet({ id: 2, league_matches: { home_team_name: 'Corinthians', away_team_name: 'Santos', kickoff_time: new Date().toISOString() } }),
+    ];
+
+    render(
+      <PostingHistoryTable
+        bets={bets}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Flamengo vs Palmeiras')).toBeInTheDocument();
+    expect(screen.getByText('Corinthians vs Santos')).toBeInTheDocument();
+  });
+});

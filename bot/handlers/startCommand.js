@@ -17,6 +17,7 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { getBot, getDefaultBotCtx } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
+const { getConfig } = require('../lib/configHelper');
 const {
   getMemberByTelegramId,
   getMemberByEmail,
@@ -24,9 +25,11 @@ const {
   reactivateMember,
   getTrialDaysRemaining,
   linkTelegramId,
-  getTrialDays
+  getTrialDays,
+  createTrialMember
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
+const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
 
 /**
  * In-memory conversation state for email verification flow
@@ -159,7 +162,28 @@ async function handleStartCommand(msg, botCtx = null) {
     return { success: false, action: 'error', error: existingResult.error };
   }
 
-  // New member - create trial and send welcome with invite
+  // Story 2-2: Branch by TRIAL_MODE (Pattern P3)
+  const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+
+  if (trialMode === 'internal') {
+    // Story 3-2: Check terms acceptance before creating trial
+    const termsVersion = await getConfig('TERMS_VERSION', '1.0');
+    const effectiveBotCtx = botCtx || getDefaultBotCtx();
+    const groupId = effectiveBotCtx?.publicGroupId;
+
+    const acceptedResult = await hasAcceptedVersion(telegramId, groupId, termsVersion);
+
+    if (acceptedResult.success && acceptedResult.data.accepted) {
+      // Already accepted current version — proceed to trial
+      return await handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx);
+    }
+
+    // Show terms for acceptance
+    const termsUrl = await getConfig('TERMS_URL', 'https://docs.google.com/document/d/terms');
+    return await showTermsForAcceptance(bot, chatId, termsVersion, termsUrl);
+  }
+
+  // Mercadopago flow: ask for email to verify payment
   return await handleNewMember(bot, chatId, telegramId, username, firstName);
 }
 
@@ -330,6 +354,131 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member, b
 
   // Cannot rejoin - need to pay
   return await sendPaymentRequired(bot, chatId, firstName, member);
+}
+
+/**
+ * Handle internal trial start - create trial member directly without email (Story 2-2)
+ * When TRIAL_MODE='internal', new users get immediate trial access.
+ */
+async function handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx = null) {
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupId = effectiveBotCtx?.publicGroupId;
+
+  // Get trial duration
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+
+  // Create trial member (no email required)
+  const createResult = await createTrialMember({
+    telegramId,
+    telegramUsername: username,
+    email: null,
+    groupId
+  }, trialDays);
+
+  if (!createResult.success) {
+    logger.error('[membership:start-command] Failed to create internal trial member', {
+      telegramId,
+      error: createResult.error
+    });
+    await bot.sendMessage(chatId, '❌ Erro ao criar seu trial. Tente novamente.');
+    return { success: false, action: 'trial_creation_failed', error: createResult.error };
+  }
+
+  const member = createResult.data;
+
+  logger.info('[membership:start-command] Internal trial member created', {
+    memberId: member.id,
+    telegramId,
+    trialDays
+  });
+
+  // Register event
+  await registerMemberEvent(member.id, 'trial_started', {
+    telegram_id: telegramId,
+    telegram_username: username,
+    source: 'internal_trial',
+    trial_days: trialDays
+  });
+
+  // Generate invite link and send welcome
+  return await generateAndSendInvite(bot, chatId, firstName, member, botCtx);
+}
+
+/**
+ * Show terms of adhesion for user acceptance (Story 3-2)
+ * Sends a message with the terms summary and an inline "accept" button.
+ */
+async function showTermsForAcceptance(bot, chatId, termsVersion, termsUrl) {
+  const message = `📋 *Termo de Adesão*\n\nAntes de entrar no grupo, é necessário aceitar nosso termo de adesão.\n\n📄 [Leia o termo completo](${termsUrl})\n\nAo clicar em "Li e aceito", você confirma que leu e concorda com os termos.`;
+
+  await bot.sendMessage(chatId, message, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '✅ Li e aceito os termos', callback_data: 'terms_accept' }]
+      ]
+    }
+  });
+
+  logger.info('[membership:start-command] Terms shown for acceptance', { chatId, termsVersion });
+
+  return { success: true, action: 'terms_shown', termsVersion };
+}
+
+/**
+ * Handle callback when user clicks "Li e aceito" button (Story 3-2)
+ * Registers terms acceptance and proceeds with trial creation.
+ */
+async function handleTermsAcceptCallback(bot, callbackQuery, botCtx = null) {
+  const telegramId = callbackQuery.from.id;
+  const chatId = callbackQuery.message.chat.id;
+  const username = callbackQuery.from.username;
+  const firstName = callbackQuery.from.first_name;
+
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupId = effectiveBotCtx?.publicGroupId;
+
+  // Read terms config
+  const termsVersion = await getConfig('TERMS_VERSION', '1.0');
+  const termsUrl = await getConfig('TERMS_URL', 'https://docs.google.com/document/d/terms');
+
+  // Register acceptance
+  const acceptResult = await acceptTerms(telegramId, groupId, termsVersion, termsUrl);
+
+  if (!acceptResult.success) {
+    logger.error('[membership:start-command] Failed to register terms acceptance', {
+      telegramId,
+      error: acceptResult.error
+    });
+    await bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Erro ao registrar aceite. Tente novamente.' });
+    return { success: false, action: 'terms_accept_failed', error: acceptResult.error };
+  }
+
+  // Answer callback to remove loading state
+  await bot.answerCallbackQuery(callbackQuery.id, { text: '✅ Termos aceitos!' });
+
+  // Edit original message to confirm acceptance
+  await bot.editMessageText('✅ Termos aceitos! Preparando seu acesso...', {
+    chat_id: chatId,
+    message_id: callbackQuery.message.message_id
+  });
+
+  logger.info('[membership:start-command] Terms accepted via callback', {
+    telegramId,
+    termsVersion,
+    acceptanceId: acceptResult.data.id
+  });
+
+  // Register event
+  await registerMemberEvent(null, 'terms_accepted', {
+    telegram_id: telegramId,
+    terms_version: termsVersion,
+    acceptance_id: acceptResult.data.id
+  });
+
+  // Proceed with trial creation (same as Story 2-2)
+  return await handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx);
 }
 
 /**
@@ -581,8 +730,44 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   const isTrialMember = member.status === 'trial';
   const daysText = isTrialMember ? `${trialDays} dias grátis` : 'acesso ativo';
 
-  // Build welcome message
-  const welcomeMessage = `
+  // Story 2-2: Check TRIAL_MODE for customized welcome message
+  const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+  const checkoutUrl = config.membership?.checkoutUrl;
+
+  let welcomeMessage;
+  let inlineKeyboard;
+
+  if (trialMode === 'internal' && isTrialMember) {
+    // Internal trial: show expiration date and checkout link
+    const trialEndsAt = member.trial_ends_at
+      ? new Date(member.trial_ends_at).toLocaleDateString('pt-BR')
+      : '—';
+
+    welcomeMessage = `
+🎉 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}!
+
+Seu trial de *${trialDays} dias* começa agora!
+📅 *Válido até:* ${trialEndsAt}
+
+📊 *O que você recebe:*
+• 3 sugestões de apostas diárias
+• Análise estatística completa
+• Taxa de acerto histórica: *${successRateText}%*
+
+💰 Para continuar após o trial, assine por apenas *R$50/mês*.
+
+👇 *Clique no botão abaixo para entrar no grupo:*
+    `.trim();
+
+    inlineKeyboard = [
+      [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
+    ];
+    if (checkoutUrl) {
+      inlineKeyboard.push([{ text: '💳 ASSINAR AGORA', url: checkoutUrl }]);
+    }
+  } else {
+    // Mercadopago flow: original welcome message
+    welcomeMessage = `
 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
 
 Você tem *${daysText}* para experimentar nossas apostas.
@@ -595,15 +780,18 @@ Você tem *${daysText}* para experimentar nossas apostas.
 💰 Após o trial, continue por apenas *R$50/mês*.
 
 👇 *Clique no botão abaixo para entrar no grupo:*
-  `.trim();
+    `.trim();
 
-  // Send with inline button
+    inlineKeyboard = [
+      [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
+    ];
+  }
+
+  // Send with inline button(s)
   await bot.sendMessage(chatId, welcomeMessage, {
     parse_mode: 'Markdown',
     reply_markup: {
-      inline_keyboard: [[
-        { text: '🚀 ENTRAR NO GRUPO', url: inviteLink }
-      ]]
+      inline_keyboard: inlineKeyboard
     }
   });
 
@@ -883,5 +1071,6 @@ module.exports = {
   handleStatusCommand,
   handleEmailInput,
   shouldHandleAsEmailInput,
-  getConversationState
+  getConversationState,
+  handleTermsAcceptCallback
 };

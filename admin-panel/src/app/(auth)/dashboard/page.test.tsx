@@ -183,6 +183,12 @@ describe('DashboardPage', () => {
           json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
         } as Response);
       }
+      if (url.includes('/api/job-executions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: { jobs: [], health: { total_jobs: 0, failed_count: 0, status: 'healthy', last_error: null } } }),
+        } as Response);
+      }
       statsCallCount++;
       if (statsCallCount === 1) {
         return Promise.resolve({

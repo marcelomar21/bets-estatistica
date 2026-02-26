@@ -78,7 +78,7 @@ jest.mock('../jobWarn', () => ({
 }));
 
 const { runPostBets, validateBetForPosting } = require('../postBets');
-const { sendToPublic } = require('../../telegram');
+const { sendToPublic, sendToAdmin } = require('../../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem } = require('../../services/betService');
 
 // Helper: create a bet fixture
@@ -174,7 +174,7 @@ describe('postBets', () => {
       expect(registrarPostagem).toHaveBeenCalledWith('bet-1');
     });
 
-    it('should skip bet without deep_link (validation fail)', async () => {
+    it('should skip bet without deep_link and return without throwing (validation fail, not send fail)', async () => {
       const bet = makeBet({ deepLink: null });
       getFilaStatus.mockResolvedValue({
         success: true,
@@ -185,10 +185,11 @@ describe('postBets', () => {
 
       expect(result.posted).toBe(0);
       expect(result.skipped).toBe(1);
+      expect(result.sendFailed).toBe(0);
       expect(sendToPublic).not.toHaveBeenCalled();
     });
 
-    it('should skip bet with odds < 1.60 (except promovida_manual)', async () => {
+    it('should skip bet with odds < 1.60 and return without throwing (validation fail)', async () => {
       const bet = makeBet({ odds: 1.40 });
       getFilaStatus.mockResolvedValue({
         success: true,
@@ -199,10 +200,11 @@ describe('postBets', () => {
 
       expect(result.posted).toBe(0);
       expect(result.skipped).toBe(1);
+      expect(result.sendFailed).toBe(0);
       expect(sendToPublic).not.toHaveBeenCalled();
     });
 
-    it('should skip bet with kickoff in the past', async () => {
+    it('should skip bet with kickoff in the past and return without throwing (validation fail)', async () => {
       const bet = makeBet({ kickoffTime: new Date(Date.now() - 3600000).toISOString() });
       getFilaStatus.mockResolvedValue({
         success: true,
@@ -213,6 +215,7 @@ describe('postBets', () => {
 
       expect(result.posted).toBe(0);
       expect(result.skipped).toBe(1);
+      expect(result.sendFailed).toBe(0);
       expect(sendToPublic).not.toHaveBeenCalled();
     });
 
@@ -307,17 +310,104 @@ describe('postBets', () => {
       expect(markBetAsPosted).not.toHaveBeenCalled();
     });
 
-    it('should handle getFilaStatus failure gracefully', async () => {
+    it('should throw on getFilaStatus failure (Story 1.1: surfaces to withExecutionLogging)', async () => {
       getFilaStatus.mockResolvedValue({
         success: false,
         error: { message: 'Database error' },
       });
 
+      await expect(runPostBets(true)).rejects.toThrow('Failed to get fila status: Database error');
+      expect(sendToPublic).not.toHaveBeenCalled();
+    });
+
+    it('should throw when all eligible bets fail to send (Story 1.1: AC#2)', async () => {
+      const bet1 = makeBet({ id: 'bet-1' });
+      const bet2 = makeBet({ id: 'bet-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1, bet2] },
+      });
+      sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram timeout' } });
+
+      await expect(runPostBets(true)).rejects.toThrow('Telegram send failures');
+    });
+
+    it('should attach jobResult to error when all bets fail to send (Story 1.1)', async () => {
+      const bet = makeBet({ id: 'bet-1' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram timeout' } });
+
+      try {
+        await runPostBets(true);
+        throw new Error('Should have thrown');
+      } catch (err) {
+        expect(err.jobResult).toBeDefined();
+        expect(err.jobResult.posted).toBe(0);
+        expect(err.jobResult.sendFailed).toBe(1);
+        expect(err.jobResult.totalSent).toBe(0);
+      }
+    });
+
+    it('should NOT throw when some bets succeed (partial success)', async () => {
+      const bet1 = makeBet({ id: 'bet-1' });
+      const bet2 = makeBet({ id: 'bet-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1, bet2] },
+      });
+      sendToPublic
+        .mockResolvedValueOnce({ success: false, error: { message: 'Telegram error' } })
+        .mockResolvedValueOnce({ success: true, data: { messageId: 888 } });
+
       const result = await runPostBets(true);
 
+      // Should NOT throw — partial success is still success
+      expect(result.posted).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(result.sendFailed).toBe(1);
+      expect(result.totalSent).toBe(1);
+    });
+
+    it('should NOT throw when all bets fail validation (no Telegram send failures)', async () => {
+      const bet = makeBet({ deepLink: null });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+
+      // Validation failures are not send failures — should return without throwing
+      const result = await runPostBets(true);
       expect(result.posted).toBe(0);
-      expect(result.totalSent).toBe(0);
-      expect(sendToPublic).not.toHaveBeenCalled();
+      expect(result.sendFailed).toBe(0);
+      expect(result.skipped).toBe(1);
+    });
+
+    it('should throw when all ativas fail to repost via Telegram (Code Review finding)', async () => {
+      const activeBet1 = makeBet({ id: 'active-1' });
+      const activeBet2 = makeBet({ id: 'active-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [activeBet1, activeBet2], novas: [] },
+      });
+      sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram 429' } });
+
+      await expect(runPostBets(true)).rejects.toThrow('Telegram send failures');
+    });
+
+    it('should call sendToAdmin with error message when getFilaStatus fails (Code Review finding)', async () => {
+      getFilaStatus.mockResolvedValue({
+        success: false,
+        error: { message: 'Connection refused' },
+      });
+
+      await expect(runPostBets(true)).rejects.toThrow();
+      expect(sendToAdmin).toHaveBeenCalledWith(
+        expect.stringContaining('Connection refused'),
+        null,
+      );
     });
   });
 });

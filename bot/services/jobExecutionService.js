@@ -108,7 +108,7 @@ async function withExecutionLogging(jobName, fn) {
     return result;
   } catch (err) {
     if (executionId) {
-      await finishExecution(executionId, 'failed', null, err.message);
+      await finishExecution(executionId, 'failed', err.jobResult || null, err.message);
       await jobFailureAlert(jobName, err.message, executionId);
     } else {
       // Still send alert even if logging failed
@@ -159,11 +159,17 @@ function formatResult(jobName, result) {
         return 'ok';
       }
 
-      case 'post-bets': {
+      case 'post-bets':
+      case 'post-bets-manual': {
         const posted = result.posted || 0;
         const reposted = result.reposted || 0;
+        const sf = result.sendFailed || 0;
         if (posted > 0 || reposted > 0) {
-          return `${posted} posted, ${reposted} repost`;
+          const failPart = sf > 0 ? `, ${sf} fail` : '';
+          return `${posted} posted, ${reposted} repost${failPart}`;
+        }
+        if (sf > 0) {
+          return `${sf} failed`;
         }
         return 'nenhuma';
       }
