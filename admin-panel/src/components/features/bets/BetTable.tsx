@@ -15,6 +15,7 @@ interface BetTableProps {
   onPageChange: (page: number) => void;
   onEditOdds: (bet: SuggestedBetListItem) => void;
   onEditLink?: (bet: SuggestedBetListItem) => void;
+  onDistribute?: (bet: SuggestedBetListItem) => void;
   onSort: (field: string) => void;
   sortBy: string;
   sortDir: string;
@@ -54,6 +55,7 @@ export function BetTable({
   onPageChange,
   onEditOdds,
   onEditLink,
+  onDistribute,
   onSort,
   sortBy,
   sortDir,
@@ -272,6 +274,14 @@ export function BetTable({
                             className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                           >
                             Editar Link
+                          </button>
+                        )}
+                        {onDistribute && (
+                          <button
+                            onClick={() => onDistribute(bet)}
+                            className="rounded px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50"
+                          >
+                            {bet.group_id ? 'Redistribuir' : 'Distribuir'}
                           </button>
                         )}
                       </div>

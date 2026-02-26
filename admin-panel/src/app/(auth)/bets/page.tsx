@@ -9,6 +9,7 @@ import { OddsEditModal } from '@/components/features/bets/OddsEditModal';
 import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
 import { LinkEditModal } from '@/components/features/bets/LinkEditModal';
 import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
+import { DistributeModal } from '@/components/features/bets/DistributeModal';
 
 const DEFAULT_FILTERS: BetFilterValues = {
   status: '',
@@ -65,6 +66,9 @@ export default function BetsPage() {
   // Link modal state
   const [linkEditBet, setLinkEditBet] = useState<SuggestedBetListItem | null>(null);
   const [showBulkLinks, setShowBulkLinks] = useState(false);
+
+  // Distribute modal state
+  const [distributeBet, setDistributeBet] = useState<SuggestedBetListItem | null>(null);
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -271,6 +275,30 @@ export default function BetsPage() {
     fetchBets(pagination.page);
   }
 
+  async function handleDistribute(betId: number, groupId: string) {
+    const res = await fetch(`/api/bets/${betId}/distribute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupId }),
+    });
+
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error?.message ?? 'Erro ao distribuir');
+    }
+
+    const { redistributed, groupName } = json.data;
+    showToast(
+      redistributed
+        ? `Aposta redistribuida para ${groupName}`
+        : `Aposta distribuida para ${groupName}`,
+      'success',
+    );
+
+    setDistributeBet(null);
+    fetchBets(pagination.page);
+  }
+
   async function handleBulkSave(odds: number) {
     const updates = Array.from(selectedIds).map((id) => ({ id, odds }));
 
@@ -356,6 +384,7 @@ export default function BetsPage() {
           onPageChange={handlePageChange}
           onEditOdds={handleEditOdds}
           onEditLink={handleEditLink}
+          onDistribute={role === 'super_admin' ? setDistributeBet : undefined}
           onSort={handleSort}
           sortBy={sortBy}
           sortDir={sortDir}
@@ -388,6 +417,16 @@ export default function BetsPage() {
           bet={linkEditBet}
           onClose={() => setLinkEditBet(null)}
           onSave={handleSaveLink}
+        />
+      )}
+
+      {/* Distribute Modal */}
+      {distributeBet && (
+        <DistributeModal
+          bet={distributeBet}
+          groups={groups}
+          onClose={() => setDistributeBet(null)}
+          onDistribute={handleDistribute}
         />
       )}
 

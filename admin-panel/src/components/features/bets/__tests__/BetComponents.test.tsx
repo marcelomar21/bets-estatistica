@@ -7,6 +7,7 @@ import { BetFilters, type BetFilterValues } from '../BetFilters';
 import { BetTable } from '../BetTable';
 import { OddsEditModal } from '../OddsEditModal';
 import { BulkOddsModal } from '../BulkOddsModal';
+import { DistributeModal } from '../DistributeModal';
 import type { SuggestedBetListItem, BetPagination, BetCounters } from '@/types/database';
 
 const sampleBet: SuggestedBetListItem = {
@@ -247,6 +248,27 @@ describe('BetTable', () => {
     await user.click(screen.getByText('Odds'));
     expect(onSort).toHaveBeenCalledWith('odds');
   });
+
+  it('shows Distribuir button when onDistribute is provided', () => {
+    render(<BetTable {...defaultProps} role="super_admin" onDistribute={vi.fn()} />);
+    // sampleBet has group_id so button text should be "Redistribuir"
+    expect(screen.getByText('Redistribuir')).toBeInTheDocument();
+  });
+
+  it('shows Distribuir for pool bets', () => {
+    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null };
+    render(<BetTable {...defaultProps} bets={[poolBet]} role="super_admin" onDistribute={vi.fn()} />);
+    expect(screen.getByText('Distribuir')).toBeInTheDocument();
+  });
+
+  it('calls onDistribute when distribute button clicked', async () => {
+    const user = userEvent.setup();
+    const onDistribute = vi.fn();
+    render(<BetTable {...defaultProps} role="super_admin" onDistribute={onDistribute} />);
+
+    await user.click(screen.getByText('Redistribuir'));
+    expect(onDistribute).toHaveBeenCalledWith(sampleBet);
+  });
 });
 
 // ============================================================
@@ -308,6 +330,72 @@ describe('OddsEditModal', () => {
     render(<OddsEditModal {...defaultProps} oddsHistory={history} />);
     expect(screen.getByText('Historico de Odds')).toBeInTheDocument();
     expect(screen.getByText('enrichOdds_08h')).toBeInTheDocument();
+  });
+});
+
+// ============================================================
+// DistributeModal (Story 4-2)
+// ============================================================
+describe('DistributeModal', () => {
+  const groups = [
+    { id: 'group-uuid-1', name: 'Guru da Bet' },
+    { id: 'group-uuid-2', name: 'Osmar Palpites' },
+  ];
+
+  const poolBet: SuggestedBetListItem = {
+    ...sampleBet,
+    group_id: null,
+    distributed_at: null,
+    groups: null,
+  };
+
+  it('renders group select with options', () => {
+    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
+    expect(screen.getByLabelText(/Grupo destino/i)).toBeInTheDocument();
+    expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
+    expect(screen.getByText('Osmar Palpites')).toBeInTheDocument();
+  });
+
+  it('shows "Distribuir" title for pool bet', () => {
+    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
+    expect(screen.getByText('Distribuir Aposta')).toBeInTheDocument();
+  });
+
+  it('shows "Redistribuir" title for already-distributed bet', () => {
+    render(<DistributeModal bet={sampleBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
+    expect(screen.getByText('Redistribuir Aposta')).toBeInTheDocument();
+  });
+
+  it('shows current group info for redistribution', () => {
+    render(<DistributeModal bet={sampleBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
+    expect(screen.getByText(/Atualmente distribuida para/i)).toBeInTheDocument();
+    expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
+  });
+
+  it('calls onDistribute with betId and groupId', async () => {
+    const user = userEvent.setup();
+    const onDistribute = vi.fn().mockResolvedValue(undefined);
+    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={onDistribute} />);
+
+    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-2');
+    await user.click(screen.getByText('Distribuir'));
+
+    expect(onDistribute).toHaveBeenCalledWith(poolBet.id, 'group-uuid-2');
+  });
+
+  it('shows error when no group selected', async () => {
+    const user = userEvent.setup();
+    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
+
+    // Submit button should be disabled when no group is selected
+    const submitBtn = screen.getByRole('button', { name: /Distribuir/i });
+    expect(submitBtn).toBeDisabled();
+
+    // Force a submit by selecting then deselecting
+    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-1');
+    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), '');
+
+    expect(submitBtn).toBeDisabled();
   });
 });
 
