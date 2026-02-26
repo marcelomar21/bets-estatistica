@@ -99,6 +99,6 @@ development_status:
   # ========================================
   epic-6: in-progress
   6-1-setup-supabase-storage-upload-pipeline: done
-  6-2-api-analises-signed-urls: backlog
+  6-2-api-analises-signed-urls: done
   6-3-pagina-analises-admin-panel: backlog
   epic-6-retrospective: optional
