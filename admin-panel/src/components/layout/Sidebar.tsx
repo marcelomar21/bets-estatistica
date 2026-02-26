@@ -18,6 +18,7 @@ const navigation: NavItem[] = [
   { name: 'Mensagens', href: '/messages', icon: '✉️' },
   { name: 'Analises', href: '/analyses', icon: '📄' },
   { name: 'Historico', href: '/posting-history', icon: '📋' },
+  { name: 'Analytics', href: '/analytics', icon: '📈' },
   { name: 'Jobs', href: '/job-executions', icon: '⚙️', roles: ['super_admin'] },
   { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },
   { name: 'Tom de Voz', href: '/tone', icon: '🎙️' },
