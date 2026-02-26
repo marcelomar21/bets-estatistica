@@ -32,6 +32,14 @@ const { getSuccessRateForDays } = require('../services/metricsService');
 const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
 
 /**
+ * Get the group display name from botCtx, with fallback.
+ */
+function getGroupName(botCtx) {
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  return effectiveBotCtx?.groupConfig?.name || 'o grupo';
+}
+
+/**
  * In-memory conversation state for email verification flow
  * Key: telegramId, Value: { state: 'waiting_email', timestamp: Date }
  * States expire after 5 minutes
@@ -283,7 +291,7 @@ Olá, ${firstName}! 👋
 📊 *Seu status:* Assinante ativo
 📅 *Válido até:* ${subscriptionEnds}
 
-Obrigado por fazer parte do GuruBet! 🎯
+Obrigado por fazer parte de ${getGroupName(botCtx)}! 🎯
       `.trim();
     }
 
@@ -639,7 +647,7 @@ Seu email ${email} foi vinculado a este Telegram.
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
 
-Para ter acesso ao grupo do GuruBet, você precisa assinar primeiro.
+Para ter acesso ao grupo, você precisa assinar primeiro.
 
 💰 *Valor:* ${subscriptionPrice}
 🎁 *Inclui ${trialDays} dias grátis para testar!*
@@ -711,7 +719,7 @@ async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = nu
 
     // Fallback message without invite link
     const fallbackMessage = `
-Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
+Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}! 🎯
 
 ⚠️ Não foi possível gerar seu link de convite automaticamente.
 
@@ -747,7 +755,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
       : '—';
 
     welcomeMessage = `
-🎉 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}!
+🎉 Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}!
 
 Seu trial de *${trialDays} dias* começa agora!
 📅 *Válido até:* ${trialEndsAt}
@@ -771,7 +779,7 @@ Seu trial de *${trialDays} dias* começa agora!
   } else {
     // Mercadopago flow: original welcome message
     welcomeMessage = `
-Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
+Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}! 🎯
 
 Você tem *${daysText}* para experimentar nossas apostas.
 
@@ -1036,7 +1044,7 @@ Envie /start para começar seu trial gratuito!
   }
 
   const statusMessage = `
-${statusEmoji} *Seu Status no GuruBet*
+${statusEmoji} *Seu Status em ${getGroupName(botCtx)}*
 
 📊 Status: *${statusText}*
 ${extraInfo}
