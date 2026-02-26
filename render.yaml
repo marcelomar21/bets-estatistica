@@ -1,17 +1,18 @@
 # Render Blueprint - bets-estatistica
 # Deploy: https://render.com/docs/blueprint-spec
 #
-# Arquitetura 100% gratuita:
-# - Web Service (free): Roda o bot + scheduler interno
-# 
-# O Web Service faz spin down após 15min sem tráfego,
-# mas o Telegram webhook acorda ele quando há mensagens.
-# O scheduler interno roda os jobs nos horários programados.
+# Arquitetura multi-bot unificada:
+# - bets-bot-unified: Servidor único que gerencia todos os bots via tabela bot_pool
+# - bets-webhook: Webhook de pagamentos (Cakto/MercadoPago)
+#
+# O bets-bot-unified lê bot_pool no Supabase e registra webhooks
+# para cada bot automaticamente. Não precisa de TELEGRAM_BOT_TOKEN
+# como env var — os tokens ficam no banco.
 
 services:
-  # Main bot server (Telegram)
+  # Multi-bot unified server (Telegram)
   - type: web
-    name: bets-bot
+    name: bets-bot-unified
     runtime: node
     plan: free
     nodeVersion: "20"
@@ -25,7 +26,7 @@ services:
         value: America/Sao_Paulo
       - fromGroup: bets-secrets
 
-  # Cakto webhook server (Payments)
+  # Payment webhook server (Cakto/MercadoPago)
   - type: web
     name: bets-webhook
     runtime: node
@@ -56,11 +57,7 @@ envVarGroups:
         sync: false
       - key: THE_ODDS_API_KEY
         sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
       - key: TELEGRAM_ADMIN_GROUP_ID
-        sync: false
-      - key: TELEGRAM_PUBLIC_GROUP_ID
         sync: false
       - key: CAKTO_CLIENT_ID
         sync: false

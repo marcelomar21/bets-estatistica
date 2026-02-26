@@ -32,7 +32,7 @@ jest.mock('../../telegram', () => ({
     answerCallbackQuery: mockAnswerCallbackQuery,
     editMessageText: mockEditMessageText,
   }),
-  getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890' }),
+  getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890', groupId: 'test-group-uuid' }),
 }));
 
 const mockGetMemberByTelegramId = jest.fn();
@@ -469,7 +469,7 @@ describe('Story 3-2: Terms acceptance in /start flow', () => {
       // Should register acceptance
       expect(mockAcceptTerms).toHaveBeenCalledWith(
         12345,
-        '-1001234567890',
+        'test-group-uuid',
         expect.any(String), // termsVersion from getConfig
         expect.any(String)  // termsUrl from getConfig
       );
@@ -560,7 +560,7 @@ describe('Story 3-2: Terms acceptance in /start flow', () => {
       // hasAcceptedVersion was called (with current version)
       expect(mockHasAcceptedVersion).toHaveBeenCalledWith(
         12345,
-        '-1001234567890',
+        'test-group-uuid',
         expect.any(String) // termsVersion from getConfig
       );
     });
