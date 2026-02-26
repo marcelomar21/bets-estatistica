@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import type { MarketCategory } from '@/lib/bet-categories';
 
@@ -128,6 +128,13 @@ function useSortable<T extends BreakdownRow>(data: T[]) {
   return { sorted, toggleSort, sortIcon };
 }
 
+function csvEscape(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
 function generateCsv(data: AnalyticsData): string {
   const lines: string[] = [];
 
@@ -138,15 +145,15 @@ function generateCsv(data: AnalyticsData): string {
   lines.push(`Resumo,Ultimos 30d,${data.periods.last30d.rate},${data.periods.last30d.wins},,${data.periods.last30d.total}`);
 
   for (const m of data.byMarket) {
-    lines.push(`Mercado,${m.market},${m.rate},${m.wins},${m.losses},${m.total}`);
+    lines.push(`Mercado,${csvEscape(m.market)},${m.rate},${m.wins},${m.losses},${m.total}`);
   }
 
   for (const c of data.byChampionship) {
-    lines.push(`Campeonato,"${c.league_name} (${c.country})",${c.rate},${c.wins},${c.losses},${c.total}`);
+    lines.push(`Campeonato,${csvEscape(`${c.league_name} (${c.country})`)},${c.rate},${c.wins},${c.losses},${c.total}`);
   }
 
   for (const g of data.byGroup) {
-    lines.push(`Grupo,${g.group_name},${g.rate},${g.wins},${g.losses},${g.total}`);
+    lines.push(`Grupo,${csvEscape(g.group_name)},${g.rate},${g.wins},${g.losses},${g.total}`);
   }
 
   return lines.join('\n');
@@ -162,7 +169,19 @@ function downloadCsv(csv: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function AnalyticsPage() {
+export default function AnalyticsPageWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center py-12">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+      </div>
+    }>
+      <AnalyticsPage />
+    </Suspense>
+  );
+}
+
+function AnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
