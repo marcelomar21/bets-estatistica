@@ -67,7 +67,12 @@ function createTableMock(tableResponses: Record<string, {
     });
     chain.update = vi.fn().mockImplementation(() => {
       const updateChain: Record<string, unknown> = {};
-      updateChain.eq = vi.fn().mockResolvedValue({ error: response.updateError ?? null });
+      updateChain.eq = vi.fn().mockReturnValue(updateChain);
+      updateChain.select = vi.fn().mockReturnValue(updateChain);
+      updateChain.maybeSingle = vi.fn().mockResolvedValue({
+        data: response.updateError ? null : { id: 1 },
+        error: response.updateError ?? null,
+      });
       return updateChain;
     });
     chain.insert = vi.fn().mockResolvedValue({ error: response.insertError ?? null });

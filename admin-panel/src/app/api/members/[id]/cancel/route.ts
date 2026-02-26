@@ -38,6 +38,12 @@ export const POST = createApiHandler(
         { status: 400 },
       );
     }
+    if (reason.length > 500) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Motivo deve ter no maximo 500 caracteres' } },
+        { status: 400 },
+      );
+    }
 
     // Fetch member with group filter (RLS enforcement)
     let query = supabase
@@ -65,8 +71,8 @@ export const POST = createApiHandler(
       );
     }
 
-    // Update member status
-    const { error: updateError } = await supabase
+    // Update member status with optimistic locking (WHERE status = current)
+    const { data: updated, error: updateError } = await supabase
       .from('members')
       .update({
         status: 'cancelado',
@@ -74,12 +80,22 @@ export const POST = createApiHandler(
         cancellation_reason: reason,
         cancelled_by: user.id,
       })
-      .eq('id', memberId);
+      .eq('id', memberId)
+      .eq('status', member.status)
+      .select('id')
+      .maybeSingle();
 
     if (updateError) {
       return NextResponse.json(
         { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
         { status: 500 },
+      );
+    }
+
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message: 'Status do membro foi alterado por outra operacao' } },
+        { status: 409 },
       );
     }
 
