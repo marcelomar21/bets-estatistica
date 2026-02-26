@@ -923,6 +923,207 @@ describe('POST /api/bets/[id]/distribute', () => {
 });
 
 // ============================================================
+// POST /api/bets/bulk/distribute (Story 4-3)
+// ============================================================
+describe('POST /api/bets/bulk/distribute', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  function createBulkDistributeQueryBuilder(options: {
+    groupData?: unknown;
+    groupError?: { message: string } | null;
+    bets?: Array<{ id: number; group_id: string | null }>;
+    updateError?: { message: string } | null;
+  } = {}) {
+    let fromCallIndex = 0;
+    let betIndex = 0;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn((_table: string) => {
+      fromCallIndex++;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.update = vi.fn(() => chain);
+      chain.insert = vi.fn(() => ({ data: null, error: null }));
+      chain.single = vi.fn(() => {
+        if (fromCallIndex === 1) {
+          // Group lookup
+          return { data: options.groupData ?? null, error: options.groupError ?? null };
+        }
+        // Bet fetches (each bet: fetch + update cycles)
+        const bets = options.bets ?? [];
+        const bet = bets[betIndex];
+        betIndex++;
+        if (!bet) {
+          return { data: null, error: { message: 'Not found' } };
+        }
+        return { data: bet, error: null };
+      });
+      return chain;
+    });
+
+    return { from: mockFrom };
+  }
+
+  it('distributes multiple pool bets to a group', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createBulkDistributeQueryBuilder({
+      groupData: { id: groupUuid, name: 'Guru da Bet' },
+      bets: [
+        { id: 1, group_id: null },
+        { id: 2, group_id: null },
+        { id: 3, group_id: null },
+      ],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1, 2, 3],
+      groupId: groupUuid,
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.data.distributed).toBe(3);
+    expect(body.data.redistributed).toBe(0);
+    expect(body.data.failed).toBe(0);
+    expect(body.data.groupName).toBe('Guru da Bet');
+  });
+
+  it('writes audit_log for redistributed bets', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440002';
+    const oldGroupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createBulkDistributeQueryBuilder({
+      groupData: { id: groupUuid, name: 'Osmar Palpites' },
+      bets: [
+        { id: 1, group_id: oldGroupUuid },
+        { id: 2, group_id: null },
+      ],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1, 2],
+      groupId: groupUuid,
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.distributed).toBe(2);
+    expect(body.data.redistributed).toBe(1);
+    expect(qb.from).toHaveBeenCalledWith('audit_log');
+  });
+
+  it('returns 400 for invalid group', async () => {
+    const qb = createBulkDistributeQueryBuilder({
+      groupData: null,
+      groupError: { message: 'Not found' },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1],
+      groupId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 for empty betIds', async () => {
+    const context = createMockContext('super_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [],
+      groupId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 400 for more than 50 items', async () => {
+    const context = createMockContext('super_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const betIds = Array.from({ length: 51 }, (_, i) => i + 1);
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds,
+      groupId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 403 for group_admin', async () => {
+    mockWithTenant.mockResolvedValue({
+      success: true,
+      context: createMockContext('group_admin'),
+    });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1],
+      groupId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(403);
+  });
+
+  it('handles partial failure gracefully', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createBulkDistributeQueryBuilder({
+      groupData: { id: groupUuid, name: 'Guru da Bet' },
+      bets: [
+        { id: 1, group_id: null },
+        // bet 2 not in array → will return NOT_FOUND
+      ],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1, 999],
+      groupId: groupUuid,
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.distributed).toBe(1);
+    expect(body.data.failed).toBe(1);
+    expect(body.data.errors).toHaveLength(1);
+    expect(body.data.errors[0].id).toBe(999);
+  });
+});
+
+// ============================================================
 // Story 4-1: Pool and distribution visibility
 // ============================================================
 describe('Story 4-1: Pool and distribution visibility', () => {

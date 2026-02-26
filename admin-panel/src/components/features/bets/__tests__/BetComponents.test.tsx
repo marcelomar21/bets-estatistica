@@ -8,6 +8,7 @@ import { BetTable } from '../BetTable';
 import { OddsEditModal } from '../OddsEditModal';
 import { BulkOddsModal } from '../BulkOddsModal';
 import { DistributeModal } from '../DistributeModal';
+import { BulkDistributeModal } from '../BulkDistributeModal';
 import type { SuggestedBetListItem, BetPagination, BetCounters } from '@/types/database';
 
 const sampleBet: SuggestedBetListItem = {
@@ -395,6 +396,43 @@ describe('DistributeModal', () => {
     await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-1');
     await user.selectOptions(screen.getByLabelText(/Grupo destino/i), '');
 
+    expect(submitBtn).toBeDisabled();
+  });
+});
+
+// ============================================================
+// BulkDistributeModal (Story 4-3)
+// ============================================================
+describe('BulkDistributeModal', () => {
+  const groups = [
+    { id: 'group-uuid-1', name: 'Guru da Bet' },
+    { id: 'group-uuid-2', name: 'Osmar Palpites' },
+  ];
+
+  it('renders selected count and group selector', () => {
+    render(<BulkDistributeModal selectedCount={5} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
+    const paragraph = screen.getByText((_content, element) =>
+      element?.tagName === 'P' && /5.*apostas selecionadas/i.test(element.textContent ?? ''),
+    );
+    expect(paragraph).toBeInTheDocument();
+    expect(screen.getByLabelText(/Grupo destino/i)).toBeInTheDocument();
+    expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
+  });
+
+  it('calls onSave with groupId', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<BulkDistributeModal selectedCount={3} groups={groups} onClose={vi.fn()} onSave={onSave} />);
+
+    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-2');
+    await user.click(screen.getByText(/Distribuir 3 Apostas/i));
+
+    expect(onSave).toHaveBeenCalledWith('group-uuid-2');
+  });
+
+  it('disables submit when no group selected', () => {
+    render(<BulkDistributeModal selectedCount={2} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
+    const submitBtn = screen.getByRole('button', { name: /Distribuir 2 Apostas/i });
     expect(submitBtn).toBeDisabled();
   });
 });

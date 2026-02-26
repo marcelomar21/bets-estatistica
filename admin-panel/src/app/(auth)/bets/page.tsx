@@ -10,6 +10,7 @@ import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
 import { LinkEditModal } from '@/components/features/bets/LinkEditModal';
 import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
 import { DistributeModal } from '@/components/features/bets/DistributeModal';
+import { BulkDistributeModal } from '@/components/features/bets/BulkDistributeModal';
 
 const DEFAULT_FILTERS: BetFilterValues = {
   status: '',
@@ -69,6 +70,7 @@ export default function BetsPage() {
 
   // Distribute modal state
   const [distributeBet, setDistributeBet] = useState<SuggestedBetListItem | null>(null);
+  const [showBulkDistribute, setShowBulkDistribute] = useState(false);
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -299,6 +301,31 @@ export default function BetsPage() {
     fetchBets(pagination.page);
   }
 
+  async function handleBulkDistribute(groupId: string) {
+    const betIds = Array.from(selectedIds);
+
+    const res = await fetch('/api/bets/bulk/distribute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ betIds, groupId }),
+    });
+
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error?.message ?? 'Erro ao distribuir em lote');
+    }
+
+    const { distributed, redistributed, failed, groupName } = json.data;
+    showToast(
+      `${distributed} distribuida${distributed > 1 ? 's' : ''}${redistributed > 0 ? ` (${redistributed} redistribuida${redistributed > 1 ? 's' : ''})` : ''} para ${groupName}${failed > 0 ? `, ${failed} falha${failed > 1 ? 's' : ''}` : ''}`,
+      failed > 0 ? 'error' : 'success',
+    );
+
+    setShowBulkDistribute(false);
+    setSelectedIds(new Set());
+    fetchBets(pagination.page);
+  }
+
   async function handleBulkSave(odds: number) {
     const updates = Array.from(selectedIds).map((id) => ({ id, odds }));
 
@@ -356,6 +383,12 @@ export default function BetsPage() {
             className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
           >
             Adicionar Links em Lote
+          </button>
+          <button
+            onClick={() => setShowBulkDistribute(true)}
+            className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+          >
+            Distribuir Selecionadas
           </button>
           <button
             onClick={() => setSelectedIds(new Set())}
@@ -427,6 +460,16 @@ export default function BetsPage() {
           groups={groups}
           onClose={() => setDistributeBet(null)}
           onDistribute={handleDistribute}
+        />
+      )}
+
+      {/* Bulk Distribute Modal */}
+      {showBulkDistribute && (
+        <BulkDistributeModal
+          selectedCount={selectedIds.size}
+          groups={groups}
+          onClose={() => setShowBulkDistribute(false)}
+          onSave={handleBulkDistribute}
         />
       )}
 
