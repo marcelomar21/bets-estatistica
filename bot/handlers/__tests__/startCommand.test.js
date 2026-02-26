@@ -168,7 +168,7 @@ describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
           telegramId: 12345,
           telegramUsername: 'testuser',
           email: null,
-          groupId: '-1001234567890',
+          groupId: 'test-group-uuid',
         },
         7
       );
