@@ -6,7 +6,7 @@ const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido']);
+const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
   if (!rawValue) return fallback;

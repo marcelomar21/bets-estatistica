@@ -58,7 +58,7 @@ export interface Member {
   telegram_id: number;
   telegram_username: string | null;
   email: string | null;
-  status: 'trial' | 'ativo' | 'inadimplente' | 'removido';
+  status: 'trial' | 'ativo' | 'inadimplente' | 'removido' | 'cancelado';
   mp_subscription_id: string | null;
   mp_payer_id: string | null;
   trial_started_at: string | null;
@@ -69,6 +69,8 @@ export interface Member {
   kicked_at: string | null;
   notes: string | null;
   group_id: string | null;
+  cancellation_reason: string | null;
+  cancelled_by: string | null;
   created_at: string;
   updated_at: string;
 }

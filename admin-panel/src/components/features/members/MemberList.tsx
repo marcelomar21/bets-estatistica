@@ -5,9 +5,10 @@ import { getDisplayStatus, memberStatusConfig } from './member-utils';
 interface MemberListProps {
   members: MemberListItem[];
   role: 'super_admin' | 'group_admin';
+  onCancelClick?: (member: MemberListItem) => void;
 }
 
-export function MemberList({ members, role }: MemberListProps) {
+export function MemberList({ members, role, onCancelClick }: MemberListProps) {
   if (members.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
@@ -41,6 +42,9 @@ export function MemberList({ members, role }: MemberListProps) {
                 Grupo
               </th>
             )}
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+              Acoes
+            </th>
           </tr>
         </thead>
 
@@ -51,6 +55,7 @@ export function MemberList({ members, role }: MemberListProps) {
               subscription_ends_at: member.subscription_ends_at,
             });
             const statusBadge = memberStatusConfig[displayStatus];
+            const canCancel = member.status === 'trial' || member.status === 'ativo';
 
             return (
               <tr key={member.id} className="hover:bg-gray-50">
@@ -76,6 +81,17 @@ export function MemberList({ members, role }: MemberListProps) {
                     {member.groups?.name ?? '-'}
                   </td>
                 )}
+                <td className="px-4 py-3 text-sm">
+                  {canCancel && onCancelClick && (
+                    <button
+                      type="button"
+                      onClick={() => onCancelClick(member)}
+                      className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </td>
               </tr>
             );
           })}

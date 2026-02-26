@@ -3,8 +3,9 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import type { MemberListItem } from '@/types/database';
 import { MemberList } from '@/components/features/members/MemberList';
+import { CancelMemberModal } from '@/components/features/members/CancelMemberModal';
 
-type StatusFilter = 'todos' | 'trial' | 'ativo' | 'vencendo' | 'expirado' | 'inadimplente' | 'removido';
+type StatusFilter = 'todos' | 'trial' | 'ativo' | 'vencendo' | 'expirado' | 'inadimplente' | 'removido' | 'cancelado';
 
 interface MembersApiPayload {
   items: MemberListItem[];
@@ -50,6 +51,8 @@ export default function MembersPage() {
   const [searchFilter, setSearchFilter] = useState('');
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [cancelTarget, setCancelTarget] = useState<MemberListItem | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const fetchMembers = useCallback(async (page: number, status: StatusFilter, search: string, groupId: string) => {
     setLoading(true);
@@ -163,6 +166,29 @@ export default function MembersPage() {
     }));
   }
 
+  async function handleCancelConfirm(reason: string) {
+    if (!cancelTarget) return;
+    setCancelLoading(true);
+    try {
+      const response = await fetch(`/api/members/${cancelTarget.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        setError(payload?.error?.message ?? 'Erro ao cancelar membro');
+        return;
+      }
+      setCancelTarget(null);
+      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
+    } catch {
+      setError('Erro de conexao ao cancelar membro');
+    } finally {
+      setCancelLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -206,6 +232,7 @@ export default function MembersPage() {
               <option value="expirado">Expirados</option>
               <option value="inadimplente">Inadimplentes</option>
               <option value="removido">Removidos</option>
+              <option value="cancelado">Cancelados</option>
             </select>
           </div>
 
@@ -265,7 +292,16 @@ export default function MembersPage() {
           <p className="text-sm text-gray-500">Carregando membros...</p>
         </div>
       ) : (
-        <MemberList members={members} role={role} />
+        <MemberList members={members} role={role} onCancelClick={setCancelTarget} />
+      )}
+
+      {cancelTarget && (
+        <CancelMemberModal
+          member={cancelTarget}
+          onConfirm={handleCancelConfirm}
+          onClose={() => setCancelTarget(null)}
+          isLoading={cancelLoading}
+        />
       )}
 
       <div className="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between">
