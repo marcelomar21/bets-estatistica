@@ -1032,9 +1032,9 @@ async function reactivateMember(memberId) {
  * @param {string} chatId - Telegram chat/group ID
  * @returns {Promise<{success: boolean, data?: {until_date: number}, error?: object}>}
  */
-async function kickMemberFromGroup(telegramId, chatId) {
+async function kickMemberFromGroup(telegramId, chatId, botInstance = null) {
   const { getBot } = require('../telegram');
-  const bot = getBot();
+  const bot = botInstance || getBot();
 
   try {
     // Ban temporario de 24h (permite reentrada depois)
@@ -1896,14 +1896,14 @@ async function clearExpiredAffiliates() {
  * @param {object} member - Member object with affiliate_code and affiliate_clicked_at
  * @returns {{success: boolean, data?: {url: string, hasAffiliate: boolean, affiliateCode: string|null}, error?: object}}
  */
-function generatePaymentLink(member) {
-  const checkoutUrl = config.membership?.checkoutUrl;
+function generatePaymentLink(member, checkoutUrlOverride = null) {
+  const checkoutUrl = checkoutUrlOverride || config.membership?.checkoutUrl;
 
   if (!checkoutUrl) {
-    logger.warn('[membership:payment-link] generatePaymentLink: CAKTO_CHECKOUT_URL not configured');
+    logger.warn('[membership:payment-link] generatePaymentLink: checkout URL not configured');
     return {
       success: false,
-      error: { code: 'CONFIG_MISSING', message: 'CAKTO_CHECKOUT_URL not configured' }
+      error: { code: 'CONFIG_MISSING', message: 'Checkout URL not configured' }
     };
   }
 

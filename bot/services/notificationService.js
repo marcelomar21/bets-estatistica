@@ -123,10 +123,11 @@ async function registerNotification(memberId, type, channel, messageId = null) {
  * @param {number|string} telegramId - Telegram user ID
  * @param {string} message - Message text (supports Markdown)
  * @param {string} parseMode - Parse mode (default: 'Markdown')
+ * @param {object} [botInstance] - Optional bot instance for multi-tenant (overrides singleton)
  * @returns {Promise<{success: boolean, data?: {messageId: number}, error?: object}>}
  */
-async function sendPrivateMessage(telegramId, message, parseMode = 'Markdown') {
-  const bot = getBot();
+async function sendPrivateMessage(telegramId, message, parseMode = 'Markdown', botInstance = null) {
+  const bot = botInstance || getBot();
 
   try {
     const sentMessage = await bot.sendMessage(telegramId, message, {
@@ -187,11 +188,15 @@ function getCheckoutLink() {
  * Falls back to generic checkout URL if member is null/undefined.
  *
  * @param {object|null} member - Member object with affiliate_code and affiliate_clicked_at
+ * @param {string} [checkoutUrlOverride] - Optional group-specific checkout URL
  * @returns {{success: boolean, data?: {url: string, hasAffiliate: boolean, affiliateCode: string|null}, error?: object}}
  */
-function getPaymentLinkForMember(member) {
+function getPaymentLinkForMember(member, checkoutUrlOverride = null) {
   // If no member provided, fall back to generic checkout link
   if (!member) {
+    if (checkoutUrlOverride) {
+      return { success: true, data: { url: checkoutUrlOverride, hasAffiliate: false, affiliateCode: null } };
+    }
     const checkoutResult = getCheckoutLink();
     if (!checkoutResult.success) {
       return checkoutResult;
@@ -205,7 +210,7 @@ function getPaymentLinkForMember(member) {
 
   // Use generatePaymentLink from memberService for affiliate tracking
   const { generatePaymentLink } = require('./memberService');
-  const result = generatePaymentLink(member);
+  const result = generatePaymentLink(member, checkoutUrlOverride);
 
   if (result.success) {
     logger.debug('[membership:payment-link] getPaymentLinkForMember: link generated', {
@@ -219,19 +224,21 @@ function getPaymentLinkForMember(member) {
 }
 
 /**
- * Get operator username from config
+ * Get operator username from config or group-specific override
+ * @param {object} [groupConfig] - Optional group config with operatorUsername
  * @returns {string} - Operator username without @
  */
-function getOperatorUsername() {
-  return config.membership?.operatorUsername || 'operador';
+function getOperatorUsername(groupConfig = null) {
+  return groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
 }
 
 /**
- * Get subscription price text from config
+ * Get subscription price text from config or group-specific override
+ * @param {object} [groupConfig] - Optional group config with subscriptionPrice
  * @returns {string} - Price text (e.g., "R$50/mes")
  */
-function getSubscriptionPrice() {
-  return config.membership?.subscriptionPrice || 'R$50/mes';
+function getSubscriptionPrice(groupConfig = null) {
+  return groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mes';
 }
 
 /**
@@ -240,11 +247,12 @@ function getSubscriptionPrice() {
  * @param {number} daysRemaining - Days until trial ends (1, 2, or 3)
  * @param {string} checkoutUrl - Cakto checkout URL
  * @param {number|null} successRate - Historical success rate percentage
+ * @param {object} [groupConfig] - Optional group config for operator/price overrides
  * @returns {string} - Formatted message for Telegram (Markdown)
  */
-function formatTrialReminder(member, daysRemaining, checkoutUrl, successRate = null) {
-  const operatorUsername = getOperatorUsername();
-  const price = getSubscriptionPrice();
+function formatTrialReminder(member, daysRemaining, checkoutUrl, successRate = null, groupConfig = null) {
+  const operatorUsername = getOperatorUsername(groupConfig);
+  const price = getSubscriptionPrice(groupConfig);
   const rateText = successRate ? `*${successRate.toFixed(1)}%*` : '_calculando_';
 
   if (daysRemaining === 1) {
@@ -291,10 +299,11 @@ Duvidas? Fale com @${operatorUsername}`;
  * @param {object} member - Member object
  * @param {string} reason - Removal reason: 'trial_expired' or 'payment_failed'
  * @param {string} checkoutUrl - Cakto checkout URL for reactivation
+ * @param {object} [groupConfig] - Optional group config for price override
  * @returns {string} - Formatted message for Telegram (Markdown)
  */
-function formatFarewellMessage(member, reason, checkoutUrl) {
-  const price = getSubscriptionPrice();
+function formatFarewellMessage(member, reason, checkoutUrl, groupConfig = null) {
+  const price = getSubscriptionPrice(groupConfig);
 
   if (reason === 'trial_expired') {
     return `Seu trial terminou
@@ -323,10 +332,11 @@ Regularize em 24h para voltar automaticamente.`;
  * @param {object} member - Member object
  * @param {number} daysUntilRenewal - Days until subscription ends (1, 3, or 5)
  * @param {string} checkoutUrl - Cakto checkout URL
+ * @param {object} [groupConfig] - Optional group config for operator override
  * @returns {string} - Formatted message for Telegram (Markdown)
  */
-function formatRenewalReminder(member, daysUntilRenewal, checkoutUrl) {
-  const operatorUsername = getOperatorUsername();
+function formatRenewalReminder(member, daysUntilRenewal, checkoutUrl, groupConfig = null) {
+  const operatorUsername = getOperatorUsername(groupConfig);
 
   if (daysUntilRenewal === 1) {
     // Ultimo dia
@@ -602,10 +612,11 @@ async function sendPaymentRejectedNotification(member, rejectionReason) {
  * @param {object} member - Member object
  * @param {number} daysRemaining - Days remaining before kick (1 or 2)
  * @param {string} checkoutUrl - Checkout URL for payment
+ * @param {object} [groupConfig] - Optional group config for operator override
  * @returns {string} Formatted message
  */
-function formatKickWarning(member, daysRemaining, checkoutUrl) {
-  const operatorUsername = getOperatorUsername();
+function formatKickWarning(member, daysRemaining, checkoutUrl, groupConfig = null) {
+  const operatorUsername = getOperatorUsername(groupConfig);
 
   if (daysRemaining <= 1) {
     return `🚨 *ÚLTIMO AVISO*
@@ -640,9 +651,11 @@ Dúvidas? @${operatorUsername}`;
  * Sends daily reminder during grace period
  * @param {object} member - Member object with telegram_id
  * @param {number} daysRemaining - Days remaining before kick
+ * @param {object} [groupConfig] - Optional group config for checkout URL, operator, price
+ * @param {object} [botInstance] - Optional bot instance for multi-tenant
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function sendKickWarningNotification(member, daysRemaining) {
+async function sendKickWarningNotification(member, daysRemaining, groupConfig = null, botInstance = null) {
   const { id: memberId, telegram_id: telegramId, email } = member;
 
   if (!telegramId) {
@@ -663,15 +676,22 @@ async function sendKickWarningNotification(member, daysRemaining) {
     };
   }
 
-  // Get checkout URL
-  const checkoutResult = getCheckoutLink();
-  if (!checkoutResult.success) {
-    logger.warn('[notificationService] sendKickWarningNotification: no checkout URL', { memberId });
-    return checkoutResult;
+  // Get checkout URL: prefer group-specific, fall back to global config
+  const effectiveCheckoutUrl = groupConfig?.checkoutUrl || null;
+  let checkoutUrl;
+  if (effectiveCheckoutUrl) {
+    checkoutUrl = effectiveCheckoutUrl;
+  } else {
+    const checkoutResult = getCheckoutLink();
+    if (!checkoutResult.success) {
+      logger.warn('[notificationService] sendKickWarningNotification: no checkout URL', { memberId });
+      return checkoutResult;
+    }
+    checkoutUrl = checkoutResult.data.checkoutUrl;
   }
 
-  const message = formatKickWarning(member, daysRemaining, checkoutResult.data.checkoutUrl);
-  const sendResult = await sendPrivateMessage(telegramId, message);
+  const message = formatKickWarning(member, daysRemaining, checkoutUrl, groupConfig);
+  const sendResult = await sendPrivateMessage(telegramId, message, 'Markdown', botInstance);
 
   if (!sendResult.success) {
     logger.warn('[notificationService] sendKickWarningNotification: failed', {

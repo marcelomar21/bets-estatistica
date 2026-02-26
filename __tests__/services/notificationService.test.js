@@ -572,7 +572,7 @@ describe('notificationService', () => {
       expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123?affiliate=TEST123');
       expect(result.data.hasAffiliate).toBe(true);
       expect(result.data.affiliateCode).toBe('TEST123');
-      expect(generatePaymentLink).toHaveBeenCalledWith(member);
+      expect(generatePaymentLink).toHaveBeenCalledWith(member, null);
     });
 
     it('should call generatePaymentLink and return result without affiliate', () => {
@@ -588,21 +588,21 @@ describe('notificationService', () => {
       expect(result.data.url).toBe('https://pay.cakto.com.br/checkout/123');
       expect(result.data.hasAffiliate).toBe(false);
       expect(result.data.affiliateCode).toBeNull();
-      expect(generatePaymentLink).toHaveBeenCalledWith(member);
+      expect(generatePaymentLink).toHaveBeenCalledWith(member, null);
     });
 
     it('should propagate error from generatePaymentLink', () => {
       const member = { id: 3, telegram_id: 345678 };
       generatePaymentLink.mockReturnValue({
         success: false,
-        error: { code: 'CONFIG_MISSING', message: 'CAKTO_CHECKOUT_URL not configured' }
+        error: { code: 'CONFIG_MISSING', message: 'Checkout URL not configured' }
       });
 
       const result = getPaymentLinkForMember(member);
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('CONFIG_MISSING');
-      expect(generatePaymentLink).toHaveBeenCalledWith(member);
+      expect(generatePaymentLink).toHaveBeenCalledWith(member, null);
     });
   });
 
