@@ -1,6 +1,6 @@
 # Story 5.1: Tabela scheduled_messages e API de CRUD
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -274,7 +274,19 @@ Soft-delete: UPDATE status='cancelled', not actual DELETE.
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Migration 034 applied — table, indexes, RLS policies (fixed admin_users.id not user_id)
+- Task 2: Added ScheduledMessage, ScheduledMessageListItem, MessageStatus types
+- Task 3: GET /api/messages with multi-tenant filtering, POST with Zod (future date, group access)
+- Task 4: DELETE /api/messages/[id] — cancel pending only, rejects sent/failed/cancelled
+- Task 5: 10 tests — GET list, group filtering, POST create, past date rejection, empty text, group_admin forbidden, DELETE cancel/reject sent/404/invalid UUID
+- Task 6: 572 admin-panel tests pass, build OK
 
 ### File List
+- sql/migrations/034_scheduled_messages.sql (NEW — table + RLS + indexes)
+- admin-panel/src/types/database.ts (MODIFIED — ScheduledMessage types)
+- admin-panel/src/app/api/messages/route.ts (NEW — GET/POST messages CRUD)
+- admin-panel/src/app/api/messages/[id]/route.ts (NEW — DELETE cancel message)
+- admin-panel/src/app/api/__tests__/messages.test.ts (NEW — 10 tests)
