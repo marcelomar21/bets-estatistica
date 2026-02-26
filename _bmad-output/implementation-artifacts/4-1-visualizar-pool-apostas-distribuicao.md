@@ -1,6 +1,6 @@
 # Story 4.1: Visualizar Pool de Apostas e Distribuição por Grupo
 
-Status: review
+Status: done
 
 ## Story
 
