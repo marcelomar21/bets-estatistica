@@ -74,17 +74,17 @@ describe('memberService', () => {
   // ============================================
   describe('MEMBER_STATUSES', () => {
     test('contém todos os status válidos', () => {
-      expect(MEMBER_STATUSES).toEqual(['trial', 'ativo', 'inadimplente', 'removido']);
+      expect(MEMBER_STATUSES).toEqual(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado']);
     });
   });
 
   describe('VALID_TRANSITIONS', () => {
-    test('trial pode ir para ativo ou removido', () => {
-      expect(VALID_TRANSITIONS.trial).toEqual(['ativo', 'removido']);
+    test('trial pode ir para ativo, removido ou cancelado', () => {
+      expect(VALID_TRANSITIONS.trial).toEqual(['ativo', 'removido', 'cancelado']);
     });
 
-    test('ativo pode ir para inadimplente ou removido', () => {
-      expect(VALID_TRANSITIONS.ativo).toEqual(['inadimplente', 'removido']);
+    test('ativo pode ir para inadimplente, removido ou cancelado', () => {
+      expect(VALID_TRANSITIONS.ativo).toEqual(['inadimplente', 'removido', 'cancelado']);
     });
 
     test('inadimplente pode ir para ativo ou removido', () => {
@@ -93,6 +93,10 @@ describe('memberService', () => {
 
     test('removido é estado final (sem transições)', () => {
       expect(VALID_TRANSITIONS.removido).toEqual([]);
+    });
+
+    test('cancelado pode ser reativado para ativo', () => {
+      expect(VALID_TRANSITIONS.cancelado).toEqual(['ativo']);
     });
   });
 
