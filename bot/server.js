@@ -246,37 +246,64 @@ async function setupScheduler() {
   logger.info('[scheduler] Bot mode', { mode, runCentral, runGroup });
 
   // =========================================================
-  // GROUP JOBS: Dynamic posting scheduler
+  // GROUP JOBS: Dynamic posting scheduler (multi-tenant aware)
   // =========================================================
-  if (runGroup && config.membership.groupId) {
+  if (runGroup) {
     const {
       loadPostingSchedule,
       setupDynamicScheduler,
       reloadPostingSchedule,
       checkPostNow,
+      createScheduler,
     } = require('./server.scheduler');
-    const schedule = await loadPostingSchedule();
-    setupDynamicScheduler(schedule);
 
-    // Reload posting schedule every 5 minutes
-    setInterval(async () => {
-      try {
-        await reloadPostingSchedule();
-      } catch (err) {
-        logger.error('[scheduler] reloadPostingSchedule interval error', { error: err.message });
-      }
-    }, 5 * 60 * 1000);
-    logger.info('[scheduler] Posting schedule reload interval started (every 5min)');
+    // Legacy singleton scheduler for config.membership.groupId
+    if (config.membership.groupId) {
+      const schedule = await loadPostingSchedule();
+      setupDynamicScheduler(schedule);
 
-    // Story 5.5: Post-now polling every 30 seconds
-    setInterval(async () => {
+      setInterval(async () => {
+        try { await reloadPostingSchedule(); } catch (err) {
+          logger.error('[scheduler] reloadPostingSchedule interval error', { error: err.message });
+        }
+      }, 5 * 60 * 1000);
+
+      setInterval(async () => {
+        try { await checkPostNow(); } catch (err) {
+          logger.error('[scheduler] checkPostNow interval error', { error: err.message });
+        }
+      }, 30000);
+      logger.info('[scheduler] Legacy scheduler started', { groupId: config.membership.groupId });
+    }
+
+    // Multi-tenant: create factory schedulers for all OTHER groups in bot registry
+    const allBots = getAllBots();
+    const legacyGroupId = config.membership.groupId;
+    for (const [groupId, botCtx] of allBots) {
+      if (groupId === legacyGroupId) continue; // already handled by singleton
+
       try {
-        await checkPostNow();
+        const scheduler = createScheduler(groupId, botCtx);
+        const schedule = await scheduler.loadPostingSchedule();
+        scheduler.setupDynamicScheduler(schedule);
+
+        setInterval(async () => {
+          try { await scheduler.reloadPostingSchedule(); } catch (err) {
+            logger.error('[scheduler:factory] reload error', { groupId, error: err.message });
+          }
+        }, 5 * 60 * 1000);
+
+        setInterval(async () => {
+          try { await scheduler.checkPostNow(); } catch (err) {
+            logger.error('[scheduler:factory] checkPostNow error', { groupId, error: err.message });
+          }
+        }, 30000);
+
+        logger.info('[scheduler:factory] Scheduler started for group', { groupId });
       } catch (err) {
-        logger.error('[scheduler] checkPostNow interval error', { error: err.message });
+        logger.error('[scheduler:factory] Failed to init scheduler for group', { groupId, error: err.message });
       }
-    }, 30000);
-    logger.info('[scheduler] Post-now polling started (every 30s)');
+    }
   }
 
   // =========================================================
