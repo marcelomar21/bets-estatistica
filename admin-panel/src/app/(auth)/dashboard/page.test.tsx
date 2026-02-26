@@ -125,8 +125,6 @@ describe('DashboardPage', () => {
     // Verify group cards
     expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
     expect(screen.getByText('Grupo Beta')).toBeInTheDocument();
-    // Verify alerts
-    expect(screen.getByText('Bot offline')).toBeInTheDocument();
   });
 
   it('renders GroupAdminDashboard for group_admin and skips super_admin fetches', async () => {
@@ -292,13 +290,14 @@ describe('DashboardPage', () => {
 
     // Verify the NotificationsPanel heading appears
     expect(screen.getByText(/Notifica/)).toBeInTheDocument();
-    // Verify notification content from mock data
+    // Verify unread notification content from mock data
     expect(screen.getByText('Bot Offline')).toBeInTheDocument();
     expect(screen.getByText('Bot do grupo Alpha esta offline')).toBeInTheDocument();
-    expect(screen.getByText('Onboarding OK')).toBeInTheDocument();
+    // Read notification (n2) should NOT appear — dashboard shows only unread
+    expect(screen.queryByText('Onboarding OK')).not.toBeInTheDocument();
   });
 
-  it('mark as read updates UI optimistically', async () => {
+  it('mark as read removes notification from dashboard (unread only)', async () => {
     mockFetchByUrl();
 
     render(<DashboardPage />);
@@ -307,28 +306,18 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
     });
 
-    // Unread notification (n1) should have a "Marcar lida" button
+    // Unread notification (n1) should be visible with a "Marcar lida" button
+    expect(screen.getByText('Bot Offline')).toBeInTheDocument();
     const markReadButtons = screen.getAllByText('Marcar lida');
     expect(markReadButtons.length).toBeGreaterThan(0);
-
-    // The unread notification (n1 "Bot Offline") should have border-l-4
-    const unreadItem = screen.getByText('Bot Offline').closest('li');
-    expect(unreadItem).toHaveClass('border-l-4');
 
     // Click the "Marcar lida" button for the first unread notification
     await userEvent.click(markReadButtons[0]);
 
-    // After clicking, the notification should become read optimistically:
-    // - border-l-4 should be removed and opacity-60 should be applied
+    // After clicking, notification becomes read and disappears from unread-only list
     await waitFor(() => {
-      const updatedItem = screen.getByText('Bot Offline').closest('li');
-      expect(updatedItem).toHaveClass('opacity-60');
-      expect(updatedItem).not.toHaveClass('border-l-4');
+      expect(screen.queryByText('Bot Offline')).not.toBeInTheDocument();
     });
-
-    // The "Marcar lida" button for that notification should disappear
-    // Both notifications are now read so no "Marcar lida" buttons
-    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
 
     // Verify fetch was called with the correct notification URL and PATCH method
     expect(global.fetch).toHaveBeenCalledWith(
@@ -337,7 +326,7 @@ describe('DashboardPage', () => {
     );
   });
 
-  it('mark all as read updates UI optimistically and calls API', async () => {
+  it('mark all as read clears notifications from dashboard and calls API', async () => {
     mockFetchByUrl();
 
     render(<DashboardPage />);
@@ -350,27 +339,19 @@ describe('DashboardPage', () => {
     const markAllButton = screen.getByText('Marcar todas como lidas');
     expect(markAllButton).toBeInTheDocument();
 
-    // Verify there is at least one unread notification with border-l-4
-    const unreadItem = screen.getByText('Bot Offline').closest('li');
-    expect(unreadItem).toHaveClass('border-l-4');
+    // Unread notification visible
+    expect(screen.getByText('Bot Offline')).toBeInTheDocument();
 
     // Click "Marcar todas como lidas"
     await userEvent.click(markAllButton);
 
-    // After clicking, all notifications should become read optimistically:
-    // - All notifications should have opacity-60 (read state)
-    // - No more border-l-4 (unread indicator)
+    // After clicking, all notifications become read and disappear from unread-only view
     await waitFor(() => {
-      const botOfflineItem = screen.getByText('Bot Offline').closest('li');
-      expect(botOfflineItem).toHaveClass('opacity-60');
-      expect(botOfflineItem).not.toHaveClass('border-l-4');
+      expect(screen.queryByText('Bot Offline')).not.toBeInTheDocument();
     });
 
     // "Marcar todas como lidas" button should disappear when unreadCount = 0
     expect(screen.queryByText('Marcar todas como lidas')).not.toBeInTheDocument();
-
-    // No individual "Marcar lida" buttons should remain
-    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
 
     // Verify fetch was called with the mark-all-read endpoint
     expect(global.fetch).toHaveBeenCalledWith(

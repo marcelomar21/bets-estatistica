@@ -5,7 +5,6 @@ import type { DashboardData, Notification } from '@/types/database';
 import Link from 'next/link';
 import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
-import AlertsSection from '@/components/features/dashboard/AlertsSection';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
 import GroupAdminDashboard from '@/components/features/dashboard/GroupAdminDashboard';
 
@@ -296,12 +295,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Alerts (legacy — kept for Story 2.4 compatibility) */}
-        <AlertsSection alerts={data.alerts} />
-
-        {/* Notifications */}
+        {/* Notifications (unread only) */}
         <NotificationsPanel
-          notifications={notifications}
+          notifications={notifications.filter(n => !n.read)}
           unreadCount={unreadCount}
           onMarkAsRead={handleMarkAsRead}
           onMarkAllRead={handleMarkAllRead}
