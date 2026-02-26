@@ -15,6 +15,7 @@ const navigation: NavItem[] = [
   { name: 'Membros', href: '/members', icon: '👤' },
   { name: 'Apostas', href: '/bets', icon: '🎯' },
   { name: 'Postagem', href: '/postagem', icon: '📤' },
+  { name: 'Mensagens', href: '/messages', icon: '✉️' },
   { name: 'Historico', href: '/posting-history', icon: '📋' },
   { name: 'Jobs', href: '/job-executions', icon: '⚙️', roles: ['super_admin'] },
   { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },

@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
 
+// Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const distributeSchema = z.object({
-  groupId: z.string().uuid('groupId deve ser um UUID valido'),
+  groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido'),
 });
 
 export const POST = createApiHandler(

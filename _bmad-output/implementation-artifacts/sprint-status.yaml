@@ -88,10 +88,10 @@ development_status:
   # ========================================
   # Epic 5: Mensagens Avulsas
   # ========================================
-  epic-5: backlog
-  5-1-tabela-scheduled-messages-api-crud: backlog
-  5-2-interface-agendamento-listagem: backlog
-  5-3-job-envio-mensagens-agendadas: backlog
+  epic-5: done
+  5-1-tabela-scheduled-messages-api-crud: done
+  5-2-interface-agendamento-listagem: done
+  5-3-job-envio-mensagens-agendadas: done
   epic-5-retrospective: optional
 
   # ========================================

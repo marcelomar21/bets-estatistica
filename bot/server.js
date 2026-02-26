@@ -304,6 +304,17 @@ async function setupScheduler() {
         logger.error('[scheduler:factory] Failed to init scheduler for group', { groupId, error: err.message });
       }
     }
+
+    // Story 5.3: Send scheduled messages every 30 seconds
+    const { runSendScheduledMessages } = require('./jobs/sendScheduledMessages');
+    setInterval(async () => {
+      try {
+        await withExecutionLogging('send-scheduled-messages', runSendScheduledMessages);
+      } catch (err) {
+        logger.error('[scheduler] send-scheduled-messages failed', { error: err.message });
+      }
+    }, 30000);
+    logger.info('[scheduler] Send scheduled messages started (every 30s)');
   }
 
   // =========================================================
@@ -472,6 +483,7 @@ async function setupScheduler() {
   if (runGroup) {
     console.log('   10:00 - Renewal reminders');
     console.log('   */30s - Post-now polling (story 5.5)');
+    console.log('   */30s - Send scheduled messages (story 5.3)');
     console.log('   */5m  - Posting schedule reload (story 5.5)');
     console.log('   [dynamic] - Posting + distribution (story 5.5)');
   }

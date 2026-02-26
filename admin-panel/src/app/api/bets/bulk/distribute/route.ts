@@ -4,9 +4,12 @@ import { z } from 'zod';
 
 const MAX_BULK_ITEMS = 50;
 
+// Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const bulkDistributeSchema = z.object({
   betIds: z.array(z.number().int().positive()).min(1).max(MAX_BULK_ITEMS),
-  groupId: z.string().uuid('groupId deve ser um UUID valido'),
+  groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido'),
 });
 
 export const POST = createApiHandler(
