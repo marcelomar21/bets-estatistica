@@ -342,3 +342,26 @@ export interface BulkLinksUpdateResponse {
     errors: Array<{ id: number; error: string }>;
   };
 }
+
+// ============================================================
+// Scheduled Messages (Story 5.1)
+// ============================================================
+
+export type MessageStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
+
+export interface ScheduledMessage {
+  id: string;
+  group_id: string;
+  created_by: string;
+  message_text: string;
+  scheduled_at: string;
+  sent_at: string | null;
+  status: MessageStatus;
+  telegram_message_id: number | null;
+  attempts: number;
+  created_at: string;
+}
+
+export interface ScheduledMessageListItem extends ScheduledMessage {
+  groups: { name: string } | null;
+}
