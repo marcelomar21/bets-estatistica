@@ -3,6 +3,9 @@
  * Story 16.6: Implementar Remocao Automatica de Inadimplentes
  * Tech-Spec: Migração MP - With grace period
  *
+ * Multi-tenant: iterates over all registered bots, processes each group's
+ * members using the correct bot instance and group-specific config.
+ *
  * Processes:
  * - Members in grace period: sends daily kick warning
  * - Members past grace period: kicks from group
@@ -14,10 +17,6 @@
  * 2. Day 1-2: Daily warning notification
  * 3. Day 3+: Kicked from group
  *
- * Note: With Mercado Pago, trial expiration is handled via webhooks.
- * When MP cancels a subscription (trial not converted), the webhook
- * handler (handleSubscriptionCancelled) processes the removal.
- *
  * Run: node bot/jobs/membership/kick-expired.js
  * Schedule: 00:01 BRT daily
  */
@@ -27,6 +26,7 @@ const { supabase } = require('../../../lib/supabase');
 const logger = require('../../../lib/logger');
 const { config } = require('../../../lib/config');
 const { getConfig } = require('../../lib/configHelper');
+const { getAllBots } = require('../../telegram');
 const {
   sendPrivateMessage,
   getCheckoutLink,
@@ -51,7 +51,6 @@ let kickExpiredRunning = false;
 
 /**
  * Resolve group data from database by group ID
- * Story 4.5: Multi-tenant group resolution for kick job
  * @param {string} groupId - UUID of the group
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
@@ -59,7 +58,7 @@ async function resolveGroupData(groupId) {
   try {
     const { data: group, error } = await supabase
       .from('groups')
-      .select('id, name, telegram_group_id, checkout_url, status')
+      .select('id, name, telegram_group_id, checkout_url, operator_username, subscription_price, status')
       .eq('id', groupId)
       .single();
 
@@ -83,21 +82,20 @@ async function resolveGroupData(groupId) {
 
 /**
  * Get all members marked as inadimplente (defaulted)
- * Returns all inadimplente members for processing (warnings + kicks)
- * Story 4.5: Filters by group_id when GROUP_ID is configured (multi-tenant)
+ * @param {string} [groupId] - Group UUID to filter by (multi-tenant)
  * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
  */
-async function getAllInadimplenteMembers() {
+async function getAllInadimplenteMembers(groupId = null) {
   try {
-    const groupId = config.membership?.groupId;
+    const effectiveGroupId = groupId || config.membership?.groupId;
 
     let query = supabase
       .from('members')
       .select('*')
       .eq('status', 'inadimplente');
 
-    if (groupId) {
-      query = query.eq('group_id', groupId);
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
     }
 
     const { data: members, error } = await query;
@@ -111,7 +109,7 @@ async function getAllInadimplenteMembers() {
 
     logger.debug('[membership:kick-expired] getAllInadimplenteMembers: found members', {
       count: members?.length || 0,
-      groupId: groupId || 'all (single-tenant)',
+      groupId: effectiveGroupId || 'all',
     });
 
     return { success: true, data: { members: members || [] } };
@@ -124,13 +122,13 @@ async function getAllInadimplenteMembers() {
 }
 
 /**
- * Get trial members whose trial has expired (Story 2-4)
- * Returns members with status='trial' and trial_ends_at <= NOW()
+ * Get trial members whose trial has expired
+ * @param {string} [groupId] - Group UUID to filter by (multi-tenant)
  * @returns {Promise<{success: boolean, data?: {members: Array}, error?: object}>}
  */
-async function getExpiredTrialMembers() {
+async function getExpiredTrialMembers(groupId = null) {
   try {
-    const groupId = config.membership?.groupId;
+    const effectiveGroupId = groupId || config.membership?.groupId;
 
     let query = supabase
       .from('members')
@@ -139,8 +137,8 @@ async function getExpiredTrialMembers() {
       .not('trial_ends_at', 'is', null)
       .lte('trial_ends_at', new Date().toISOString());
 
-    if (groupId) {
-      query = query.eq('group_id', groupId);
+    if (effectiveGroupId) {
+      query = query.eq('group_id', effectiveGroupId);
     }
 
     const { data: members, error } = await query;
@@ -154,7 +152,7 @@ async function getExpiredTrialMembers() {
 
     logger.debug('[membership:kick-expired] getExpiredTrialMembers: found members', {
       count: members?.length || 0,
-      groupId: groupId || 'all (single-tenant)',
+      groupId: effectiveGroupId || 'all',
     });
 
     return { success: true, data: { members: members || [] } };
@@ -177,10 +175,7 @@ function calculateDaysRemaining(member) {
   const inadimplenteDate = new Date(inadimplenteAt);
   const now = new Date();
 
-  // Calculate days since inadimplente
   const daysSinceInadimplente = Math.floor((now - inadimplenteDate) / (24 * 60 * 60 * 1000));
-
-  // Days remaining = grace period - days since inadimplente
   return gracePeriodDays - daysSinceInadimplente;
 }
 
@@ -195,40 +190,36 @@ function shouldKickMember(member) {
 
 /**
  * Resolve chat ID for kick operation
- * Multi-tenant mode (GROUP_ID set): requires group.telegram_group_id from DB
- * Single-tenant mode: falls back to default bot context publicGroupId
  * @param {object|null} groupData - Resolved group data from DB
+ * @param {object|null} botCtx - BotContext with publicGroupId
  * @returns {{success: boolean, data?: {chatId: string|number}, error?: object}}
  */
-function resolveKickChatId(groupData) {
-  const configuredGroupId = config.membership?.groupId || null;
-  const isMultiTenant = Boolean(configuredGroupId);
-
+function resolveKickChatId(groupData, botCtx = null) {
   if (groupData?.telegram_group_id) {
     return { success: true, data: { chatId: groupData.telegram_group_id } };
   }
 
-  if (!isMultiTenant) {
-    const { getDefaultBotCtx } = require('../../telegram');
-    const fallbackChatId = getDefaultBotCtx()?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
-    if (fallbackChatId) {
-      return { success: true, data: { chatId: fallbackChatId } };
-    }
+  if (botCtx?.publicGroupId) {
+    return { success: true, data: { chatId: botCtx.publicGroupId } };
+  }
+
+  const { getDefaultBotCtx } = require('../../telegram');
+  const fallbackChatId = getDefaultBotCtx()?.publicGroupId || process.env.TELEGRAM_PUBLIC_GROUP_ID;
+  if (fallbackChatId) {
+    return { success: true, data: { chatId: fallbackChatId } };
   }
 
   return {
     success: false,
     error: {
       code: 'GROUP_CHAT_ID_MISSING',
-      message: isMultiTenant
-        ? `Missing telegram_group_id for GROUP_ID=${configuredGroupId}`
-        : 'Group ID not configured',
+      message: 'No Telegram group chat ID available for kick',
     },
   };
 }
 
 /**
- * Register kick audit event and return normalized result
+ * Register kick audit event
  * @param {string} memberId - Internal member UUID
  * @param {string} reason - Kick reason
  * @param {object|null} groupData - Resolved group data
@@ -262,21 +253,15 @@ async function registerKickAuditEvent(memberId, reason, groupData, extraPayload 
 
 /**
  * Process a single member kick
- * Sends farewell message and kicks from group
- *
- * Retry Strategy:
- * - Transient errors (TELEGRAM_ERROR): Retried naturally on next daily run
- * - Persistent errors (BOT_NO_PERMISSION, CONFIG_MISSING): Alert admin immediately
- * - USER_NOT_IN_GROUP: Not an error - member already removed from group
- *
  * @param {object} member - Member object
- * @param {string} reason - 'payment_failed' or 'subscription_cancelled'
- * @param {object} [groupData] - Resolved group data (multi-tenant). If null, falls back to single-tenant config.
+ * @param {string} reason - 'payment_failed' or 'trial_expired'
+ * @param {object} [groupData] - Resolved group data
+ * @param {object} [botInstance] - Bot instance for multi-tenant
+ * @param {object} [botCtx] - Full BotContext for resolving chat ID
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function processMemberKick(member, reason, groupData) {
+async function processMemberKick(member, reason, groupData, botInstance = null, botCtx = null) {
   const { id: memberId, telegram_id: telegramId, telegram_username: username } = member;
-  const configuredGroupId = config.membership?.groupId || null;
 
   // If no telegram_id, just mark as removed in DB
   if (!telegramId) {
@@ -300,50 +285,45 @@ async function processMemberKick(member, reason, groupData) {
   }
 
   // 1. Resolve chat ID for kick
-  const chatResult = resolveKickChatId(groupData);
+  const chatResult = resolveKickChatId(groupData, botCtx);
   if (!chatResult.success) {
     logger.error('[membership:kick-expired] processMemberKick: no group chat ID available', {
       memberId,
-      configuredGroupId,
       hasGroupData: Boolean(groupData),
     });
     await alertAdmin(
-      `ERRO DE CONFIGURACAO: Nenhum group chat ID disponivel.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.\nGROUP_ID: ${configuredGroupId || 'n/a'}`
+      `ERRO DE CONFIGURACAO: Nenhum group chat ID disponivel.\n\nMembro ${username ? `@${username}` : memberId} nao pode ser removido.`
     );
     return { success: false, error: chatResult.error };
   }
   const chatId = chatResult.data.chatId;
 
   // 2. Send farewell message (best effort)
-  // Story 4.5: Use group's checkout_url (multi-tenant) or fall back to config
-  const checkoutUrl = groupData?.checkout_url || null;
+  const groupConfig = botCtx?.groupConfig || null;
+  const checkoutUrl = groupData?.checkout_url || groupConfig?.checkoutUrl || null;
   const fallbackResult = !checkoutUrl ? getCheckoutLink() : null;
   const effectiveCheckoutUrl = checkoutUrl || (fallbackResult?.success ? fallbackResult.data.checkoutUrl : null);
 
   if (effectiveCheckoutUrl) {
-    const farewellMessage = formatFarewellMessage(member, reason, effectiveCheckoutUrl);
-    const sendResult = await sendPrivateMessage(telegramId, farewellMessage);
+    const farewellMessage = formatFarewellMessage(member, reason, effectiveCheckoutUrl, groupConfig);
+    const sendResult = await sendPrivateMessage(telegramId, farewellMessage, 'Markdown', botInstance);
 
     if (!sendResult.success && sendResult.error?.code !== 'USER_BLOCKED_BOT') {
       logger.warn('[membership:kick-expired] processMemberKick: failed to send farewell', {
         memberId,
         error: sendResult.error,
       });
-      // Continue - kick is more important than farewell message
     }
   } else {
     logger.warn('[membership:kick-expired] processMemberKick: no checkout URL configured', {
       memberId,
     });
-    // Continue without farewell message
   }
 
   // 3. Kick from group
-
-  const kickResult = await kickMemberFromGroup(telegramId, chatId);
+  const kickResult = await kickMemberFromGroup(telegramId, chatId, botInstance);
 
   if (!kickResult.success) {
-    // User already not in group - just mark as removed
     if (kickResult.error?.code === 'USER_NOT_IN_GROUP') {
       logger.info('[membership:kick-expired] processMemberKick: member already not in group', {
         memberId,
@@ -368,7 +348,6 @@ async function processMemberKick(member, reason, groupData) {
       return { success: false, error: { code: 'USER_NOT_IN_GROUP' }, data: removeResult.data };
     }
 
-    // Alert admin immediately for persistent errors that won't resolve on retry
     if (CONFIG.PERSISTENT_ERROR_CODES.includes(kickResult.error?.code)) {
       const memberIdentifier = username ? `@${username}` : memberId;
       await alertAdmin(
@@ -380,7 +359,6 @@ async function processMemberKick(member, reason, groupData) {
         errorCode: kickResult.error?.code,
       });
     } else {
-      // Transient error - will be retried on next daily run
       logger.warn('[membership:kick-expired] processMemberKick: transient error, will retry next run', {
         memberId,
         telegramId,
@@ -412,7 +390,7 @@ async function processMemberKick(member, reason, groupData) {
     };
   }
 
-  // 5. Audit log (Story 4.5: AC1)
+  // 5. Audit log
   const auditResult = await registerKickAuditEvent(memberId, reason, groupData, {
     untilDate: kickResult.data?.until_date || null,
   });
@@ -439,7 +417,6 @@ async function processMemberKick(member, reason, groupData) {
  * @returns {Promise<{success: boolean, kicked?: number, alreadyRemoved?: number, failed?: number, error?: string}>}
  */
 async function runKickExpired(botCtx = null) {
-  // Prevent concurrent runs
   if (kickExpiredRunning) {
     logger.debug('[membership:kick-expired] Already running, skipping');
     return { success: true, skipped: true };
@@ -454,137 +431,42 @@ async function runKickExpired(botCtx = null) {
 }
 
 /**
- * Internal processor - handles warnings and kicks
- * - Members still in grace period: send daily warning
- * - Members past grace period: kick from group
- * @returns {Promise<{success: boolean, kicked: number, warned: number, alreadyRemoved: number, failed: number}>}
+ * Process a single group's expired and inadimplente members
+ * @param {string} groupId - Group UUID
+ * @param {object} botCtx - BotContext for this group
+ * @param {string} trialMode - Current TRIAL_MODE value
+ * @returns {Promise<{kicked: number, warned: number, alreadyRemoved: number, failed: number}>}
  */
-async function _runKickExpiredInternal(botCtx = null) {
-  const startTime = Date.now();
-  const today = new Date().toISOString().split('T')[0];
-  const gracePeriodDays = config.membership?.gracePeriodDays || 2;
-  const groupId = botCtx?.groupId || config.membership?.groupId;
-  logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays, groupId: groupId || 'single-tenant' });
-
+async function _processGroup(groupId, botCtx, trialMode) {
   let kicked = 0;
   let warned = 0;
   let alreadyRemoved = 0;
   let failed = 0;
-  let blockedByMissingGroup = 0;
+  const groupName = botCtx.groupConfig?.name || groupId;
 
-  try {
-    // Story 4.5: Resolve group data for multi-tenant
-    let groupData = null;
-    let groupResolutionFailed = false;
-    if (groupId) {
-      const groupResult = await resolveGroupData(groupId);
-      if (!groupResult.success) {
-        groupResolutionFailed = true;
-        logger.error('[membership:kick-expired] Failed to resolve group, aborting', {
-          groupId,
-          error: groupResult.error,
-        });
-        await alertAdmin(
-          `ERRO: Grupo ${groupId} nao encontrado no banco.\n\nJob kick-expired abortado. Verifique a configuracao GROUP_ID.`
-        );
-      } else {
-        groupData = groupResult.data;
-        logger.info('[membership:kick-expired] Group resolved', {
-          groupId: groupData.id,
-          groupName: groupData.name,
-          telegramGroupId: groupData.telegram_group_id,
-        });
-      }
-    }
+  // Resolve group data from DB (includes checkout_url, operator_username, etc.)
+  const groupResult = await resolveGroupData(groupId);
+  let groupData = null;
+  if (!groupResult.success) {
+    logger.error('[membership:kick-expired] Failed to resolve group', { groupId, groupName, error: groupResult.error });
+    return { kicked, warned, alreadyRemoved, failed: 1 };
+  }
+  groupData = groupResult.data;
 
-    // Story 2-4: Process expired trial members when TRIAL_MODE='internal'
-    const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+  // Process expired trial members when TRIAL_MODE='internal'
+  if (trialMode === 'internal') {
+    const trialResult = await getExpiredTrialMembers(groupId);
 
-    if (trialMode === 'internal') {
-      const trialResult = await getExpiredTrialMembers();
-
-      if (trialResult.success && trialResult.data.members.length > 0) {
-        const trialMembers = trialResult.data.members;
-        logger.info('[membership:kick-expired] Processing expired trial members', {
-          count: trialMembers.length,
-        });
-
-        for (const member of trialMembers) {
-          if (groupId && !groupData) {
-            blockedByMissingGroup++;
-            failed++;
-            continue;
-          }
-
-          const result = await processMemberKick(member, 'trial_expired', groupData);
-
-          if (result.success) {
-            kicked++;
-          } else if (result.error?.code === 'USER_NOT_IN_GROUP') {
-            alreadyRemoved++;
-          } else {
-            failed++;
-          }
-        }
-      } else if (!trialResult.success) {
-        logger.error('[membership:kick-expired] Failed to get expired trial members', {
-          error: trialResult.error,
-        });
-      }
-    }
-
-    // Get inadimplente members (filtered by group_id if multi-tenant)
-    const inadimplenteResult = await getAllInadimplenteMembers();
-
-    if (!inadimplenteResult.success) {
-      logger.error('[membership:kick-expired] Failed to get inadimplente members', {
-        error: inadimplenteResult.error,
+    if (trialResult.success && trialResult.data.members.length > 0) {
+      const trialMembers = trialResult.data.members;
+      logger.info('[membership:kick-expired] Processing expired trial members', {
+        count: trialMembers.length,
+        groupId,
+        groupName,
       });
-      return { success: false, kicked, warned, alreadyRemoved, failed, error: inadimplenteResult.error?.message };
-    }
 
-    const members = inadimplenteResult.data.members;
-
-    if (members.length === 0) {
-      logger.info('[membership:kick-expired] No inadimplente members to process');
-      return {
-        success: !groupResolutionFailed,
-        kicked,
-        warned,
-        alreadyRemoved,
-        failed,
-        blockedByMissingGroup,
-        error: groupResolutionFailed ? `Failed to resolve group ${groupId}` : undefined,
-      };
-    }
-
-    logger.info('[membership:kick-expired] Processing inadimplente members', {
-      count: members.length,
-      groupId: groupId || 'all',
-    });
-
-    for (const member of members) {
-      const daysRemaining = calculateDaysRemaining(member);
-
-      if (shouldKickMember(member)) {
-        if (groupId && !groupData) {
-          blockedByMissingGroup++;
-          failed++;
-          logger.error('[membership:kick-expired] Cannot kick member: group could not be resolved', {
-            memberId: member.id,
-            configuredGroupId: groupId,
-          });
-          continue;
-        }
-
-        // Past grace period - KICK
-        logger.info('[membership:kick-expired] Kicking member (grace period exceeded)', {
-          memberId: member.id,
-          daysRemaining,
-          inadimplente_at: member.inadimplente_at,
-        });
-
-        const result = await processMemberKick(member, 'payment_failed', groupData);
+      for (const member of trialMembers) {
+        const result = await processMemberKick(member, 'trial_expired', groupData, botCtx.bot, botCtx);
 
         if (result.success) {
           kicked++;
@@ -593,28 +475,109 @@ async function _runKickExpiredInternal(botCtx = null) {
         } else {
           failed++;
         }
-      } else {
-        // Still in grace period - WARN
-        logger.info('[membership:kick-expired] Sending warning to member', {
-          memberId: member.id,
-          daysRemaining,
-          inadimplente_at: member.inadimplente_at,
-        });
-
-        const warnResult = await sendKickWarningNotification(member, daysRemaining);
-
-        if (warnResult.success) {
-          if (!warnResult.data?.skipped) {
-            warned++;
-          }
-        } else {
-          logger.warn('[membership:kick-expired] Failed to send warning', {
-            memberId: member.id,
-            error: warnResult.error,
-          });
-          // Don't count as failed - warning is best effort
-        }
       }
+    } else if (!trialResult.success) {
+      logger.error('[membership:kick-expired] Failed to get expired trial members', {
+        error: trialResult.error,
+        groupId,
+      });
+    }
+  }
+
+  // Process inadimplente members
+  const inadimplenteResult = await getAllInadimplenteMembers(groupId);
+
+  if (!inadimplenteResult.success) {
+    logger.error('[membership:kick-expired] Failed to get inadimplente members', {
+      error: inadimplenteResult.error,
+      groupId,
+    });
+    return { kicked, warned, alreadyRemoved, failed: failed + 1 };
+  }
+
+  const members = inadimplenteResult.data.members;
+
+  for (const member of members) {
+    const daysRemaining = calculateDaysRemaining(member);
+
+    if (shouldKickMember(member)) {
+      logger.info('[membership:kick-expired] Kicking member (grace period exceeded)', {
+        memberId: member.id,
+        daysRemaining,
+        groupId,
+      });
+
+      const result = await processMemberKick(member, 'payment_failed', groupData, botCtx.bot, botCtx);
+
+      if (result.success) {
+        kicked++;
+      } else if (result.error?.code === 'USER_NOT_IN_GROUP') {
+        alreadyRemoved++;
+      } else {
+        failed++;
+      }
+    } else {
+      logger.info('[membership:kick-expired] Sending warning to member', {
+        memberId: member.id,
+        daysRemaining,
+        groupId,
+      });
+
+      const groupConfig = botCtx.groupConfig || null;
+      const warnResult = await sendKickWarningNotification(member, daysRemaining, groupConfig, botCtx.bot);
+
+      if (warnResult.success) {
+        if (!warnResult.data?.skipped) {
+          warned++;
+        }
+      } else {
+        logger.warn('[membership:kick-expired] Failed to send warning', {
+          memberId: member.id,
+          error: warnResult.error,
+        });
+      }
+    }
+  }
+
+  return { kicked, warned, alreadyRemoved, failed };
+}
+
+/**
+ * Internal processor - iterates over all groups
+ * @returns {Promise<{success: boolean, kicked: number, warned: number, alreadyRemoved: number, failed: number}>}
+ */
+async function _runKickExpiredInternal(botCtx = null) {
+  const startTime = Date.now();
+  const today = new Date().toISOString().split('T')[0];
+  const gracePeriodDays = config.membership?.gracePeriodDays || 2;
+  logger.info('[membership:kick-expired] Starting', { date: today, gracePeriodDays });
+
+  let kicked = 0;
+  let warned = 0;
+  let alreadyRemoved = 0;
+  let failed = 0;
+
+  try {
+    const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+
+    // Multi-tenant: iterate over all registered bots
+    const allBots = getAllBots();
+
+    if (allBots.size === 0) {
+      logger.warn('[membership:kick-expired] No bots registered in registry');
+      return { success: true, kicked, warned, alreadyRemoved, failed };
+    }
+
+    for (const [groupId, groupBotCtx] of allBots) {
+      const groupName = groupBotCtx.groupConfig?.name || groupId;
+      logger.debug('[membership:kick-expired] Processing group', { groupId, groupName });
+
+      const result = await _processGroup(groupId, groupBotCtx, trialMode);
+
+      kicked += result.kicked;
+      warned += result.warned;
+      alreadyRemoved += result.alreadyRemoved;
+      failed += result.failed;
     }
 
     const duration = Date.now() - startTime;
@@ -623,19 +586,11 @@ async function _runKickExpiredInternal(botCtx = null) {
       warned,
       alreadyRemoved,
       failed,
-      blockedByMissingGroup,
+      groupsProcessed: allBots.size,
       durationMs: duration,
     });
 
-    return {
-      success: !groupResolutionFailed,
-      kicked,
-      warned,
-      alreadyRemoved,
-      failed,
-      blockedByMissingGroup,
-      error: groupResolutionFailed ? `Failed to resolve group ${groupId}` : undefined,
-    };
+    return { success: true, kicked, warned, alreadyRemoved, failed };
   } catch (err) {
     logger.error('[membership:kick-expired] Unexpected error', { error: err.message });
     return { success: false, kicked, warned, alreadyRemoved, failed, error: err.message };

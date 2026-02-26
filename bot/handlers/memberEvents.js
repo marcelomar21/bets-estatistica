@@ -4,7 +4,7 @@
  */
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
-const { getBot } = require('../telegram');
+const { getBot, getBotForGroup } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
 const {
   getMemberByTelegramId,
@@ -18,8 +18,8 @@ const { registerNotification } = require('../services/notificationService');
 // Story 4.2 requires a fixed 7-day MP trial period for registration/welcome messaging.
 const MP_TRIAL_DAYS = 7;
 
-function getSubscriptionPrice() {
-  return config.membership?.subscriptionPrice || 'R$50/mês';
+function getSubscriptionPrice(groupConfig = null) {
+  return groupConfig?.subscriptionPrice || config.membership?.subscriptionPrice || 'R$50/mês';
 }
 
 /**
@@ -286,7 +286,9 @@ async function resolveCheckoutUrl(groupId = null) {
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = null) {
-  const bot = getBot();
+  const botCtx = groupId ? getBotForGroup(groupId) : null;
+  const bot = botCtx?.bot || getBot();
+  const groupConfig = botCtx?.groupConfig || null;
   const checkoutUrl = await resolveCheckoutUrl(groupId);
 
   // Get success rate for message (últimos 7 dias)
@@ -297,8 +299,9 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
   }
 
   const trialDays = MP_TRIAL_DAYS;
-  const subscriptionPrice = getSubscriptionPrice();
-  const operatorUsername = config.membership?.operatorUsername || 'operador';
+  const subscriptionPrice = getSubscriptionPrice(groupConfig);
+  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+  const groupName = groupConfig?.name || 'o grupo';
 
   // Format message (4.3)
   const paymentCta = checkoutUrl
@@ -306,7 +309,7 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
     : `💳 Para assinar, fale com @${operatorUsername}`;
 
   const message = `
-Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
+Bem-vindo ao *${groupName}*, ${firstName || 'apostador'}! 🎯
 
 Você tem *${trialDays} dias grátis* para experimentar nossas apostas.
 
@@ -473,10 +476,12 @@ async function registerReactivationJoinNotification(memberId) {
  * @returns {Promise<{success: boolean, error?: object}>}
  */
 async function sendPaymentRequiredMessage(telegramId, memberId = null, groupId = null) {
-  const bot = getBot();
+  const botCtx = groupId ? getBotForGroup(groupId) : null;
+  const bot = botCtx?.bot || getBot();
+  const groupConfig = botCtx?.groupConfig || null;
   const checkoutUrl = await resolveCheckoutUrl(groupId);
-  const operatorUsername = config.membership?.operatorUsername || 'operador';
-  const subscriptionPrice = getSubscriptionPrice();
+  const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
+  const subscriptionPrice = getSubscriptionPrice(groupConfig);
 
   // Issue #3: Handle missing checkout URL gracefully
   let message;

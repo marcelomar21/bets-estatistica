@@ -2,7 +2,8 @@
  * Job: Trial Reminders - Send reminders to members in trial period
  * Story 16.5: Implementar Notificacoes de Cobranca
  *
- * Sends reminders to members whose trial ends in 1-3 days (day 5, 6, 7 of trial).
+ * Multi-tenant: iterates over all registered bots, queries members per group,
+ * sends reminders from the correct bot with group-specific checkout URL and config.
  *
  * Run: node bot/jobs/membership/trial-reminders.js
  * Schedule: 09:00 BRT daily
@@ -15,6 +16,7 @@ const { getConfig } = require('../../lib/configHelper');
 const { withExecutionLogging } = require('../../services/jobExecutionService');
 const { getSuccessRateForDays } = require('../../services/metricsService');
 const { getTrialDays } = require('../../services/memberService');
+const { getAllBots } = require('../../telegram');
 const {
   hasNotificationToday,
   registerNotification,
@@ -33,37 +35,41 @@ const CONFIG = {
 let trialRemindersRunning = false;
 
 /**
- * Get members needing trial reminder
+ * Get members needing trial reminder for a specific group
  * Returns members whose trial ends in 1-3 days
- * Calculates trial_ends_at dynamically from trial_started_at + TRIAL_DAYS
+ * @param {string} groupId - Group UUID to filter by
  * @returns {Promise<{success: boolean, data?: {members: Array, trialDays: number}, error?: object}>}
  */
-async function getMembersNeedingTrialReminder() {
+async function getMembersNeedingTrialReminder(groupId) {
   try {
-    // Get trial days from system_config
     const trialDaysResult = await getTrialDays();
     const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
 
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-    // Get all trial members with trial_started_at
-    const { data: members, error } = await supabase
+    let query = supabase
       .from('members')
       .select('*')
       .eq('status', 'trial')
       .not('trial_started_at', 'is', null);
 
+    if (groupId) {
+      query = query.eq('group_id', groupId);
+    }
+
+    const { data: members, error } = await query;
+
     if (error) {
       logger.error('[membership:trial-reminders] getMembersNeedingTrialReminder: database error', {
         error: error.message,
+        groupId,
       });
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
     // Filter members whose trial ends in 1-3 days
     const membersNeedingReminder = (members || []).filter(member => {
-      // Skip if no valid trial_started_at
       if (!member.trial_started_at) {
         return false;
       }
@@ -84,7 +90,6 @@ async function getMembersNeedingTrialReminder() {
       // Add computed trial_ends_at to member object for later use
       member.trial_ends_at = trialEndsAt.toISOString();
 
-      // Return true if 1-3 days remaining
       return daysRemaining >= 1 && daysRemaining <= 3;
     });
 
@@ -92,12 +97,14 @@ async function getMembersNeedingTrialReminder() {
       total: members?.length || 0,
       needingReminder: membersNeedingReminder.length,
       trialDays,
+      groupId,
     });
 
     return { success: true, data: { members: membersNeedingReminder, trialDays } };
   } catch (err) {
     logger.error('[membership:trial-reminders] getMembersNeedingTrialReminder: unexpected error', {
       error: err.message,
+      groupId,
     });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
   }
@@ -119,12 +126,13 @@ function getDaysRemaining(trialEndsAt) {
 /**
  * Send trial reminder to a single member
  * @param {object} member - Member object with telegram_id, trial_ends_at
+ * @param {object} [groupConfig] - Group-specific config (checkoutUrl, operatorUsername, subscriptionPrice)
+ * @param {object} [botInstance] - Bot instance to send from
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function sendTrialReminder(member) {
+async function sendTrialReminder(member, groupConfig = null, botInstance = null) {
   const { id: memberId, telegram_id: telegramId, trial_ends_at: trialEndsAt } = member;
 
-  // Validate telegram_id exists
   if (!telegramId) {
     logger.warn('[membership:trial-reminders] sendTrialReminder: member has no telegram_id', { memberId });
     return {
@@ -144,22 +152,22 @@ async function sendTrialReminder(member) {
   }
 
   if (!hasResult.success) {
-    return hasResult; // Pass through error
+    return hasResult;
   }
 
-  // Get payment link with affiliate tracking (Story 18.3)
-  const linkResult = getPaymentLinkForMember(member);
+  // Get payment link — prefer group-specific checkout URL
+  const checkoutUrlOverride = groupConfig?.checkoutUrl || null;
+  const linkResult = getPaymentLinkForMember(member, checkoutUrlOverride);
   if (!linkResult.success) {
     logger.warn('[membership:trial-reminders] sendTrialReminder: no checkout URL', { memberId });
     return linkResult;
   }
   const checkoutUrl = linkResult.data.url;
 
-  // Log affiliate tracking status
   logger.debug('[membership:trial-reminders] Payment link generated', {
     memberId,
     hasAffiliate: linkResult.data.hasAffiliate,
-    affiliateCode: linkResult.data.affiliateCode
+    affiliateCode: linkResult.data.affiliateCode,
   });
 
   // Get success rate for message (all-time)
@@ -175,17 +183,11 @@ async function sendTrialReminder(member) {
     });
   }
 
-  // Calculate days remaining
   const daysRemaining = getDaysRemaining(trialEndsAt);
-
-  // Format message
-  const message = formatTrialReminder(member, daysRemaining, checkoutUrl, successRate);
-
-  // Send message
-  const sendResult = await sendPrivateMessage(telegramId, message);
+  const message = formatTrialReminder(member, daysRemaining, checkoutUrl, successRate, groupConfig);
+  const sendResult = await sendPrivateMessage(telegramId, message, 'Markdown', botInstance);
 
   if (!sendResult.success) {
-    // USER_BLOCKED_BOT is expected - log but don't treat as failure
     if (sendResult.error?.code === 'USER_BLOCKED_BOT') {
       logger.warn('[membership:trial-reminders] sendTrialReminder: user blocked bot', {
         memberId,
@@ -208,7 +210,6 @@ async function sendTrialReminder(member) {
       memberId,
       error: registerResult.error,
     });
-    // Message was sent, so return success even if registration fails
   }
 
   logger.info('[membership:trial-reminders] sendTrialReminder: success', {
@@ -226,7 +227,6 @@ async function sendTrialReminder(member) {
  * @returns {Promise<{success: boolean, sent?: number, skipped?: number, failed?: number, error?: string}>}
  */
 async function runTrialReminders() {
-  // Prevent concurrent runs
   if (trialRemindersRunning) {
     logger.debug('[membership:trial-reminders] Already running, skipping');
     return { success: true, skipped: true };
@@ -234,7 +234,6 @@ async function runTrialReminders() {
   trialRemindersRunning = true;
 
   try {
-    // Story 2-3: Register execution in job_executions
     return await withExecutionLogging('trial-reminders', _runTrialRemindersInternal);
   } finally {
     trialRemindersRunning = false;
@@ -242,7 +241,7 @@ async function runTrialReminders() {
 }
 
 /**
- * Internal processor - handles the actual reminder sending
+ * Internal processor - iterates over all groups and sends reminders
  * @returns {Promise<{success: boolean, sent: number, skipped: number, failed: number}>}
  */
 async function _runTrialRemindersInternal() {
@@ -255,44 +254,62 @@ async function _runTrialRemindersInternal() {
   let failed = 0;
 
   try {
-    // Story 2-3: Skip when TRIAL_MODE is not 'internal' (delegated to MP)
+    // Skip when TRIAL_MODE is not 'internal'
     const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
     if (trialMode !== 'internal') {
       logger.info('[membership:trial-reminders] Skipping — TRIAL_MODE is not internal', { trialMode });
       return { success: true, sent: 0, skipped: 0, failed: 0, skippedReason: 'mercadopago_mode' };
     }
 
-    // Get members needing reminders
-    const membersResult = await getMembersNeedingTrialReminder();
+    // Multi-tenant: iterate over all registered bots
+    const allBots = getAllBots();
 
-    if (!membersResult.success) {
-      logger.error('[membership:trial-reminders] Failed to get members', {
-        error: membersResult.error,
-      });
-      return { success: false, sent: 0, skipped: 0, failed: 0, error: membersResult.error.message };
-    }
-
-    const members = membersResult.data.members;
-
-    if (members.length === 0) {
-      logger.info('[membership:trial-reminders] No members need reminders');
+    if (allBots.size === 0) {
+      logger.warn('[membership:trial-reminders] No bots registered in registry');
       return { success: true, sent: 0, skipped: 0, failed: 0 };
     }
 
-    logger.info('[membership:trial-reminders] Processing members', { count: members.length });
+    for (const [groupId, botCtx] of allBots) {
+      const groupName = botCtx.groupConfig?.name || groupId;
+      logger.debug('[membership:trial-reminders] Processing group', { groupId, groupName });
 
-    // Process each member
-    for (const member of members) {
-      const result = await sendTrialReminder(member);
+      const membersResult = await getMembersNeedingTrialReminder(groupId);
 
-      if (result.success) {
-        sent++;
-      } else if (result.error?.code === 'NOTIFICATION_ALREADY_SENT' ||
-                 result.error?.code === 'USER_BLOCKED_BOT' ||
-                 result.error?.code === 'NO_TELEGRAM_ID') {
-        skipped++;
-      } else {
+      if (!membersResult.success) {
+        logger.error('[membership:trial-reminders] Failed to get members for group', {
+          groupId,
+          groupName,
+          error: membersResult.error,
+        });
         failed++;
+        continue;
+      }
+
+      const members = membersResult.data.members;
+
+      if (members.length === 0) {
+        logger.debug('[membership:trial-reminders] No members need reminders for group', { groupId, groupName });
+        continue;
+      }
+
+      logger.info('[membership:trial-reminders] Processing members for group', {
+        groupId,
+        groupName,
+        count: members.length,
+      });
+
+      for (const member of members) {
+        const result = await sendTrialReminder(member, botCtx.groupConfig, botCtx.bot);
+
+        if (result.success) {
+          sent++;
+        } else if (result.error?.code === 'NOTIFICATION_ALREADY_SENT' ||
+                   result.error?.code === 'USER_BLOCKED_BOT' ||
+                   result.error?.code === 'NO_TELEGRAM_ID') {
+          skipped++;
+        } else {
+          failed++;
+        }
       }
     }
 
@@ -301,6 +318,7 @@ async function _runTrialRemindersInternal() {
       sent,
       skipped,
       failed,
+      groupsProcessed: allBots.size,
       durationMs: duration,
     });
 

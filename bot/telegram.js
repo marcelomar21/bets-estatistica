@@ -132,6 +132,9 @@ async function initBots(supabaseClient) {
         posting_schedule,
         max_active_bets,
         copy_tone_config,
+        checkout_url,
+        operator_username,
+        subscription_price,
         status
       )
     `)
@@ -156,6 +159,9 @@ async function initBots(supabaseClient) {
         postingSchedule: row.groups.posting_schedule,
         maxActiveBets: row.groups.max_active_bets,
         copyToneConfig: row.groups.copy_tone_config || {},
+        checkoutUrl: row.groups.checkout_url || null,
+        operatorUsername: row.groups.operator_username || null,
+        subscriptionPrice: row.groups.subscription_price || null,
       };
 
       const ctx = {

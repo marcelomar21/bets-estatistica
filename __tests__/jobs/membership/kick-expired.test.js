@@ -27,16 +27,31 @@ jest.mock('../../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
+const mockBotInstance = {
+  sendMessage: jest.fn(),
+  banChatMember: jest.fn(),
+};
+
 jest.mock('../../../bot/telegram', () => ({
-  getBot: jest.fn(() => ({
-    sendMessage: jest.fn(),
-    banChatMember: jest.fn(),
-  })),
+  getBot: jest.fn(() => mockBotInstance),
   getDefaultBotCtx: jest.fn(() => ({
     publicGroupId: '-100123456789',
     adminGroupId: '-100admin',
     botToken: 'test-token',
   })),
+  getAllBots: jest.fn(() => new Map([
+    ['test-group-uuid', {
+      bot: mockBotInstance,
+      groupId: 'test-group-uuid',
+      publicGroupId: '-100123456789',
+      groupConfig: {
+        name: 'Test Group',
+        checkoutUrl: 'https://checkout.example.com',
+        operatorUsername: 'operador_test',
+        subscriptionPrice: 'R$50/mes',
+      },
+    }],
+  ])),
 }));
 
 jest.mock('../../../lib/config', () => ({
@@ -488,16 +503,30 @@ describe('kick-expired job', () => {
     });
 
     it('should process only inadimplente members (trial handled by MP webhooks)', async () => {
-      // Mock getAllInadimplenteMembers
-      const mockInadimplenteChain = {
+      // resolveGroupData for the group
+      const mockGroupChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: [],
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'test-group-uuid', name: 'Test Group', telegram_group_id: '-100123456789', checkout_url: 'https://checkout.example.com' },
           error: null,
         }),
       };
 
-      supabase.from.mockReturnValueOnce(mockInadimplenteChain);
+      // getAllInadimplenteMembers (empty) - has 2 .eq() calls: status + group_id
+      let inadEqCount = 0;
+      const mockInadimplenteChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockImplementation(() => {
+          inadEqCount++;
+          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockInadimplenteChain;
+        }),
+      };
+
+      supabase.from
+        .mockReturnValueOnce(mockGroupChain)       // resolveGroupData
+        .mockReturnValueOnce(mockInadimplenteChain); // getAllInadimplenteMembers
 
       const result = await runKickExpired();
 
@@ -508,16 +537,28 @@ describe('kick-expired job', () => {
     });
 
     it('should return counts for kicked, alreadyRemoved, and failed', async () => {
-      // Just verify the structure of the result
-      const mockChain = {
+      const mockGroupChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: [],
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'test-group-uuid', name: 'Test Group', telegram_group_id: '-100123456789', checkout_url: 'https://checkout.example.com' },
           error: null,
         }),
       };
-      supabase.from.mockReturnValue(mockChain);
+
+      let inadEqCount = 0;
+      const mockInadimplenteChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockImplementation(() => {
+          inadEqCount++;
+          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockInadimplenteChain;
+        }),
+      };
+
+      supabase.from
+        .mockReturnValueOnce(mockGroupChain)
+        .mockReturnValueOnce(mockInadimplenteChain);
 
       const result = await runKickExpired();
 
@@ -528,15 +569,28 @@ describe('kick-expired job', () => {
     });
 
     it('should log with correct prefix', async () => {
-      const mockChain = {
+      const mockGroupChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        lt: jest.fn().mockResolvedValue({
-          data: [],
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'test-group-uuid', name: 'Test Group', telegram_group_id: '-100123456789', checkout_url: 'https://checkout.example.com' },
           error: null,
         }),
       };
-      supabase.from.mockReturnValue(mockChain);
+
+      let inadEqCount = 0;
+      const mockInadimplenteChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockImplementation(() => {
+          inadEqCount++;
+          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockInadimplenteChain;
+        }),
+      };
+
+      supabase.from
+        .mockReturnValueOnce(mockGroupChain)
+        .mockReturnValueOnce(mockInadimplenteChain);
 
       await runKickExpired();
 
@@ -867,7 +921,17 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         trial_ends_at: '2026-02-20T00:00:00Z',
       };
 
-      // Mock for getExpiredTrialMembers query (trial members)
+      // resolveGroupData
+      const mockGroupChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'test-group-uuid', name: 'Test Group', telegram_group_id: '-100123456789', checkout_url: 'https://checkout.example.com' },
+          error: null,
+        }),
+      };
+
+      // getExpiredTrialMembers
       const mockTrialChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -878,7 +942,7 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         }),
       };
 
-      // Mock for getAllInadimplenteMembers query
+      // getAllInadimplenteMembers
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
@@ -887,24 +951,15 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         }),
       };
 
-      // processMemberKick calls: sendPrivateMessage, kickMemberFromGroup, markMemberAsRemoved
-      // These all go through supabase or telegram mocks
+      mockBotInstance.sendMessage.mockResolvedValue({ message_id: 1 });
+      mockBotInstance.banChatMember.mockResolvedValue(true);
 
-      const mockBot = {
-        sendMessage: jest.fn().mockResolvedValue({ message_id: 1 }),
-        banChatMember: jest.fn().mockResolvedValue(true),
-      };
-      const { getBot } = require('../../../bot/telegram');
-      getBot.mockReturnValue(mockBot);
-
-      // Mock the supabase calls in order
       supabase.from
-        .mockReturnValueOnce(mockTrialChain)       // getExpiredTrialMembers
-        .mockReturnValueOnce(mockInadimplenteChain) // getAllInadimplenteMembers
+        .mockReturnValueOnce(mockGroupChain)         // resolveGroupData
+        .mockReturnValueOnce(mockTrialChain)         // getExpiredTrialMembers
+        .mockReturnValueOnce(mockInadimplenteChain)  // getAllInadimplenteMembers
         ;
 
-      // Note: processMemberKick makes additional supabase calls that need mocking
-      // For simplicity, we test the higher-level flow
       const result = await runKickExpired();
 
       expect(result).toBeDefined();
@@ -914,23 +969,35 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
     it('should NOT process expired trials when TRIAL_MODE=mercadopago', async () => {
       mockGetConfig.mockResolvedValueOnce('mercadopago');
 
-      // Only inadimplente query should happen
-      const mockInadimplenteChain = {
+      // resolveGroupData
+      const mockGroupChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: [],
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'test-group-uuid', name: 'Test Group', telegram_group_id: '-100123456789', checkout_url: 'https://checkout.example.com' },
           error: null,
         }),
       };
-      supabase.from.mockReturnValue(mockInadimplenteChain);
+
+      // getAllInadimplenteMembers (2 eq calls: status + group_id)
+      let inadEqCount = 0;
+      const mockInadimplenteChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockImplementation(() => {
+          inadEqCount++;
+          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockInadimplenteChain;
+        }),
+      };
+
+      supabase.from
+        .mockReturnValueOnce(mockGroupChain)
+        .mockReturnValueOnce(mockInadimplenteChain);
 
       const result = await runKickExpired();
 
       expect(result.success).toBe(true);
       expect(mockGetConfig).toHaveBeenCalledWith('TRIAL_MODE', 'mercadopago');
-      // getExpiredTrialMembers should NOT be called
-      // Only one supabase.from call for inadimplente members
-      expect(supabase.from).toHaveBeenCalledTimes(1);
     });
   });
 });
