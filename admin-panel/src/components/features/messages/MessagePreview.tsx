@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 
 interface MessagePreviewProps {
   messageText: string;
@@ -147,12 +147,14 @@ interface MediaPreviewModalProps {
 }
 
 export function MediaPreviewModal({ mediaUrl, mediaType, onClose }: MediaPreviewModalProps) {
-  if (mediaType === 'pdf') {
-    // For PDF, open in new tab and close modal
-    window.open(mediaUrl, '_blank');
-    onClose();
-    return null;
-  }
+  useEffect(() => {
+    if (mediaType === 'pdf') {
+      window.open(mediaUrl, '_blank');
+      onClose();
+    }
+  }, [mediaUrl, mediaType, onClose]);
+
+  if (mediaType === 'pdf') return null;
 
   return (
     <div
