@@ -1,6 +1,6 @@
 # Story 4.2: Distribuir e Redistribuir Apostas (Individual)
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -199,7 +199,20 @@ The bets page already fetches groups list for the filter. Pass this same list to
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Created API route POST /api/bets/[id]/distribute with Zod validation, group check, update, audit_log
+- Task 2: Created DistributeModal with group selector, redistribute detection, current group info banner
+- Task 3: Added Distribuir/Redistribuir button to BetTable actions, integrated modal in bets page.tsx
+- Task 4: 7 API tests (distribute, redistribute+audit, invalid group, invalid UUID, invalid betId, 403, 404) + 6 component tests (modal render, titles, onDistribute callback, button visibility)
+- Task 5: All 552 admin-panel tests pass, build OK
+- Bug fix: Zod v4 uses .issues not .errors — fixed ZodError catch block
 
 ### File List
+- admin-panel/src/app/api/bets/[id]/distribute/route.ts (NEW — distribute API)
+- admin-panel/src/components/features/bets/DistributeModal.tsx (NEW — distribute modal)
+- admin-panel/src/components/features/bets/BetTable.tsx (MODIFIED — onDistribute prop + button)
+- admin-panel/src/app/(auth)/bets/page.tsx (MODIFIED — handleDistribute + DistributeModal render)
+- admin-panel/src/app/api/__tests__/bets.test.ts (MODIFIED — 7 new distribute API tests)
+- admin-panel/src/components/features/bets/__tests__/BetComponents.test.tsx (MODIFIED — 6 new tests)
