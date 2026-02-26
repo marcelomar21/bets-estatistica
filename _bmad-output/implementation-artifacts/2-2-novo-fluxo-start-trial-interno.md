@@ -1,6 +1,6 @@
 # Story 2.2: Novo Fluxo /start com Trial Interno
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -32,44 +32,44 @@ So that eu possa experimentar o conteúdo antes de decidir pagar.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implementar branching por TRIAL_MODE no handleStartCommand (AC: #1, #2)
-  - [ ] 1.1 No `handleStartCommand()`, ler `TRIAL_MODE` via `getConfig('TRIAL_MODE', 'mercadopago')`
-  - [ ] 1.2 Se `'mercadopago'`: seguir fluxo atual (sem mudanças)
-  - [ ] 1.3 Se `'internal'`: chamar novo handler `handleInternalTrialStart()`
+- [x] Task 1: Implementar branching por TRIAL_MODE no handleStartCommand (AC: #1, #2)
+  - [x] 1.1 No `handleStartCommand()`, ler `TRIAL_MODE` via `getConfig('TRIAL_MODE', 'mercadopago')`
+  - [x] 1.2 Se `'mercadopago'`: seguir fluxo atual (sem mudanças)
+  - [x] 1.3 Se `'internal'`: chamar novo handler `handleInternalTrialStart()`
 
-- [ ] Task 2: Criar handler para Trial Interno (novo usuário) (AC: #1, #4)
-  - [ ] 2.1 Implementar `handleInternalTrialStart(bot, msg, botCtx)` em startCommand.js
-  - [ ] 2.2 Buscar membro por `telegram_id` no banco (via `getMemberByTelegramId`)
-  - [ ] 2.3 Se membro não existe: criar via `createTrialMember()` com `getTrialDays()`
-  - [ ] 2.4 Se membro existe e já está ativo/trial: delegar para `handleExistingMember()`
-  - [ ] 2.5 Se membro existe e está removido: verificar rejoin eligibility, reativar como trial
-  - [ ] 2.6 Gerar invite link via `generateAndSendInvite()` (reusa lógica existente)
+- [x] Task 2: Criar handler para Trial Interno (novo usuário) (AC: #1, #4)
+  - [x] 2.1 Implementar `handleInternalTrialStart(bot, msg, botCtx)` em startCommand.js
+  - [x] 2.2 Buscar membro por `telegram_id` no banco (via `getMemberByTelegramId`)
+  - [x] 2.3 Se membro não existe: criar via `createTrialMember()` com `getTrialDays()`
+  - [x] 2.4 Se membro existe e já está ativo/trial: delegar para `handleExistingMember()`
+  - [x] 2.5 Se membro existe e está removido: verificar rejoin eligibility, reativar como trial
+  - [x] 2.6 Gerar invite link via `generateAndSendInvite()` (reusa lógica existente)
 
-- [ ] Task 3: Adaptar handleNewMember para trial interno (AC: #1)
-  - [ ] 3.1 Quando `TRIAL_MODE = 'internal'`, NÃO pedir email — pular direto para criação de trial
-  - [ ] 3.2 Criar membro com `telegram_id`, `telegram_username`, sem email (email será null)
-  - [ ] 3.3 Usar `group_id` do bot config para associar ao grupo correto
+- [x] Task 3: Adaptar handleNewMember para trial interno (AC: #1)
+  - [x] 3.1 Quando `TRIAL_MODE = 'internal'`, NÃO pedir email — pular direto para criação de trial
+  - [x] 3.2 Criar membro com `telegram_id`, `telegram_username`, sem email (email será null)
+  - [x] 3.3 Usar `group_id` do bot config para associar ao grupo correto
 
-- [ ] Task 4: Adaptar mensagem de boas-vindas para trial (AC: #1)
-  - [ ] 4.1 Na `generateAndSendInvite()`, personalizar mensagem quando `TRIAL_MODE = 'internal'`
-  - [ ] 4.2 Incluir: duração do trial, data de expiração, link de checkout MP
-  - [ ] 4.3 Manter formato com botão inline "ENTRAR NO GRUPO"
+- [x] Task 4: Adaptar mensagem de boas-vindas para trial (AC: #1)
+  - [x] 4.1 Na `generateAndSendInvite()`, personalizar mensagem quando `TRIAL_MODE = 'internal'`
+  - [x] 4.2 Incluir: duração do trial, data de expiração, link de checkout MP
+  - [x] 4.3 Manter formato com botão inline "ENTRAR NO GRUPO"
 
-- [ ] Task 5: Garantir idempotência para `/start` repetido (AC: #3)
-  - [ ] 5.1 Verificar: se membro já existe com status trial/ativo e está no grupo, apenas responder com status
-  - [ ] 5.2 Se membro existe mas NÃO está no grupo (saiu), regenerar invite
-  - [ ] 5.3 Nunca duplicar membro ou reiniciar trial_started_at
+- [x] Task 5: Garantir idempotência para `/start` repetido (AC: #3)
+  - [x] 5.1 Verificar: se membro já existe com status trial/ativo e está no grupo, apenas responder com status
+  - [x] 5.2 Se membro existe mas NÃO está no grupo (saiu), regenerar invite
+  - [x] 5.3 Nunca duplicar membro ou reiniciar trial_started_at
 
-- [ ] Task 6: Escrever testes unitários (AC: #1, #2, #3, #4)
-  - [ ] 6.1 Testar: TRIAL_MODE=internal, novo usuário → cria trial + envia invite
-  - [ ] 6.2 Testar: TRIAL_MODE=mercadopago → fluxo antigo inalterado
-  - [ ] 6.3 Testar: TRIAL_MODE=internal, membro já existe → não duplica
-  - [ ] 6.4 Testar: TRIAL_MODE=internal, membro removido → reativa como trial
+- [x] Task 6: Escrever testes unitários (AC: #1, #2, #3, #4)
+  - [x] 6.1 Testar: TRIAL_MODE=internal, novo usuário → cria trial + envia invite
+  - [x] 6.2 Testar: TRIAL_MODE=mercadopago → fluxo antigo inalterado
+  - [x] 6.3 Testar: TRIAL_MODE=internal, membro já existe → não duplica
+  - [x] 6.4 Testar: TRIAL_MODE=internal, membro removido → reativa como trial
 
-- [ ] Task 7: Validação completa
-  - [ ] 7.1 `npm test` no admin-panel — todos os testes passam
-  - [ ] 7.2 `npm run build` no admin-panel — TypeScript strict OK
-  - [ ] 7.3 Testes do bot passam (jest bot/)
+- [x] Task 7: Validação completa
+  - [x] 7.1 `npm test` no admin-panel — todos os testes passam (578 pass)
+  - [x] 7.2 `npm run build` no admin-panel — TypeScript strict OK
+  - [x] 7.3 Testes do bot passam (72 pass)
   - [ ] 7.4 Testar fluxo completo: setar TRIAL_MODE='internal' no DB, enviar /start, verificar que membro é criado e recebe invite
 
 ## Dev Notes
@@ -184,7 +184,15 @@ Para continuar após o trial, assine aqui:
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Tasks 1-3: Added TRIAL_MODE branching via getConfig in handleStartCommand. When 'internal', routes to new handleInternalTrialStart() which creates trial member directly via createTrialMember() — no email required. When 'mercadopago', original flow unchanged.
+- Task 4: Customized generateAndSendInvite welcome message for internal trial — shows trial expiration date, adds ASSINAR button with checkout URL alongside ENTRAR NO GRUPO button.
+- Task 5: Idempotency handled by existing handleExistingMember flow — existing trial/ativo members see status, removed members go through reactivation. createTrialMember has built-in MEMBER_ALREADY_EXISTS check.
+- Task 6: 9 Jest tests covering all ACs — new user internal trial, MP flow unchanged, existing member no duplication, removed member reactivation, creation failure, configurable trial days, non-private chat ignored.
+- Task 7: 72 bot tests pass, 578 admin-panel tests pass, TypeScript build clean.
 
 ### File List
+- `bot/handlers/startCommand.js` — MODIFIED (added getConfig import, createTrialMember import, TRIAL_MODE branching, handleInternalTrialStart function, customized welcome message)
+- `bot/handlers/__tests__/startCommand.test.js` — CREATED (9 tests for Story 2-2)

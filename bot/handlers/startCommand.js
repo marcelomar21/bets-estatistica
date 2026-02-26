@@ -17,6 +17,7 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { getBot, getDefaultBotCtx } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
+const { getConfig } = require('../lib/configHelper');
 const {
   getMemberByTelegramId,
   getMemberByEmail,
@@ -24,7 +25,8 @@ const {
   reactivateMember,
   getTrialDaysRemaining,
   linkTelegramId,
-  getTrialDays
+  getTrialDays,
+  createTrialMember
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
 
@@ -159,7 +161,15 @@ async function handleStartCommand(msg, botCtx = null) {
     return { success: false, action: 'error', error: existingResult.error };
   }
 
-  // New member - create trial and send welcome with invite
+  // Story 2-2: Branch by TRIAL_MODE (Pattern P3)
+  const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+
+  if (trialMode === 'internal') {
+    // Internal trial: skip email, create trial directly
+    return await handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx);
+  }
+
+  // Mercadopago flow: ask for email to verify payment
   return await handleNewMember(bot, chatId, telegramId, username, firstName);
 }
 
@@ -330,6 +340,55 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member, b
 
   // Cannot rejoin - need to pay
   return await sendPaymentRequired(bot, chatId, firstName, member);
+}
+
+/**
+ * Handle internal trial start - create trial member directly without email (Story 2-2)
+ * When TRIAL_MODE='internal', new users get immediate trial access.
+ */
+async function handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx = null) {
+  const effectiveBotCtx = botCtx || getDefaultBotCtx();
+  const groupId = effectiveBotCtx?.publicGroupId;
+
+  // Get trial duration
+  const trialDaysResult = await getTrialDays();
+  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+
+  // Create trial member (no email required)
+  const createResult = await createTrialMember({
+    telegramId,
+    telegramUsername: username,
+    email: null,
+    groupId
+  }, trialDays);
+
+  if (!createResult.success) {
+    logger.error('[membership:start-command] Failed to create internal trial member', {
+      telegramId,
+      error: createResult.error
+    });
+    await bot.sendMessage(chatId, '❌ Erro ao criar seu trial. Tente novamente.');
+    return { success: false, action: 'trial_creation_failed', error: createResult.error };
+  }
+
+  const member = createResult.data;
+
+  logger.info('[membership:start-command] Internal trial member created', {
+    memberId: member.id,
+    telegramId,
+    trialDays
+  });
+
+  // Register event
+  await registerMemberEvent(member.id, 'trial_started', {
+    telegram_id: telegramId,
+    telegram_username: username,
+    source: 'internal_trial',
+    trial_days: trialDays
+  });
+
+  // Generate invite link and send welcome
+  return await generateAndSendInvite(bot, chatId, firstName, member, botCtx);
 }
 
 /**
@@ -581,8 +640,44 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   const isTrialMember = member.status === 'trial';
   const daysText = isTrialMember ? `${trialDays} dias grátis` : 'acesso ativo';
 
-  // Build welcome message
-  const welcomeMessage = `
+  // Story 2-2: Check TRIAL_MODE for customized welcome message
+  const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
+  const checkoutUrl = config.membership?.checkoutUrl;
+
+  let welcomeMessage;
+  let inlineKeyboard;
+
+  if (trialMode === 'internal' && isTrialMember) {
+    // Internal trial: show expiration date and checkout link
+    const trialEndsAt = member.trial_ends_at
+      ? new Date(member.trial_ends_at).toLocaleDateString('pt-BR')
+      : '—';
+
+    welcomeMessage = `
+🎉 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}!
+
+Seu trial de *${trialDays} dias* começa agora!
+📅 *Válido até:* ${trialEndsAt}
+
+📊 *O que você recebe:*
+• 3 sugestões de apostas diárias
+• Análise estatística completa
+• Taxa de acerto histórica: *${successRateText}%*
+
+💰 Para continuar após o trial, assine por apenas *R$50/mês*.
+
+👇 *Clique no botão abaixo para entrar no grupo:*
+    `.trim();
+
+    inlineKeyboard = [
+      [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
+    ];
+    if (checkoutUrl) {
+      inlineKeyboard.push([{ text: '💳 ASSINAR AGORA', url: checkoutUrl }]);
+    }
+  } else {
+    // Mercadopago flow: original welcome message
+    welcomeMessage = `
 Bem-vindo ao *GuruBet*, ${firstName || 'apostador'}! 🎯
 
 Você tem *${daysText}* para experimentar nossas apostas.
@@ -595,15 +690,18 @@ Você tem *${daysText}* para experimentar nossas apostas.
 💰 Após o trial, continue por apenas *R$50/mês*.
 
 👇 *Clique no botão abaixo para entrar no grupo:*
-  `.trim();
+    `.trim();
 
-  // Send with inline button
+    inlineKeyboard = [
+      [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
+    ];
+  }
+
+  // Send with inline button(s)
   await bot.sendMessage(chatId, welcomeMessage, {
     parse_mode: 'Markdown',
     reply_markup: {
-      inline_keyboard: [[
-        { text: '🚀 ENTRAR NO GRUPO', url: inviteLink }
-      ]]
+      inline_keyboard: inlineKeyboard
     }
   });
 
