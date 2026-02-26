@@ -1,6 +1,6 @@
 # Story 5.2: Interface de Agendamento e Listagem de Mensagens
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -118,7 +118,13 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Added Mensagens link to Sidebar navigation array
+- Task 2: Created /messages page with form, list, status badges, cancel, toast
+- Task 3-4: 572 admin-panel tests pass, build OK, /messages route present
 
 ### File List
+- admin-panel/src/components/layout/Sidebar.tsx (MODIFIED — added Mensagens nav item)
+- admin-panel/src/app/(auth)/messages/page.tsx (NEW — messages page with form + list)
