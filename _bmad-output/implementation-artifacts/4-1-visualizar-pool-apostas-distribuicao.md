@@ -1,6 +1,6 @@
 # Story 4.1: Visualizar Pool de Apostas e Distribuição por Grupo
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -160,7 +160,21 @@ Sempre retornar `{ success: true/false, data/error }`.
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: Distribution badge now shows group name or "Pool" instead of generic "Distribuida"/"Nao distribuida"
+- Task 2: Added "__pool__" option to group filter in BetFilters (Nao distribuidas/Pool)
+- Task 3: Added pool/distributed counters to API, BetStatsBar (7 columns), and BetCounters type
+- Task 4: Added 3 API tests (pool/distributed counters, __pool__ filter, UUID group filter) + updated component tests
+- Task 5: All 536 admin-panel tests pass, build OK, 868 bot tests pass
 
 ### File List
+- admin-panel/src/app/api/bets/route.ts (MODIFIED — __pool__ filter + pool/distributed counters)
+- admin-panel/src/components/features/bets/BetTable.tsx (MODIFIED — badge shows group name, merged Grupo+Distribuicao columns)
+- admin-panel/src/components/features/bets/BetFilters.tsx (MODIFIED — added Pool option to group filter)
+- admin-panel/src/components/features/bets/BetStatsBar.tsx (MODIFIED — added Pool+Distribuidas counters)
+- admin-panel/src/types/database.ts (MODIFIED — added pool/distributed to BetCounters)
+- admin-panel/src/app/(auth)/bets/page.tsx (MODIFIED — updated DEFAULT_COUNTERS)
+- admin-panel/src/app/api/__tests__/bets.test.ts (MODIFIED — 3 new tests for Story 4-1)
+- admin-panel/src/components/features/bets/__tests__/BetComponents.test.tsx (MODIFIED — updated for new badge behavior)

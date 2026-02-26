@@ -268,6 +268,8 @@ export interface BetCounters {
   pending_odds: number;
   sem_odds: number;
   sem_link: number;
+  pool: number;
+  distributed: number;
 }
 
 export interface BetListResponse {

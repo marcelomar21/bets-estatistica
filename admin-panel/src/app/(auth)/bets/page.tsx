@@ -30,6 +30,8 @@ const DEFAULT_COUNTERS: BetCounters = {
   pending_odds: 0,
   sem_odds: 0,
   sem_link: 0,
+  pool: 0,
+  distributed: 0,
 };
 
 const DEFAULT_PAGINATION: BetPagination = {

@@ -74,7 +74,7 @@ export const GET = createApiHandler(
         { status: 400 },
       );
     }
-    if (!groupFilter && groupIdParam && !UUID_PATTERN.test(groupIdParam)) {
+    if (!groupFilter && groupIdParam && groupIdParam !== '__pool__' && !UUID_PATTERN.test(groupIdParam)) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'group_id invalido' } },
         { status: 400 },
@@ -113,6 +113,8 @@ export const GET = createApiHandler(
     // Multi-tenant filter
     if (groupFilter) {
       query = query.eq('group_id', groupFilter);
+    } else if (groupIdParam === '__pool__') {
+      query = query.is('group_id', null);
     } else if (groupIdParam) {
       query = query.eq('group_id', groupIdParam);
     }
@@ -165,7 +167,7 @@ export const GET = createApiHandler(
     }
 
     // Counter queries — inline with tenant filter (same pattern as members/route.ts)
-    const tenantCol = groupFilter || groupIdParam;
+    const tenantCol = groupFilter || (groupIdParam !== '__pool__' ? groupIdParam : null);
 
     let readyQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'ready');
     let postedQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'posted');
@@ -173,6 +175,8 @@ export const GET = createApiHandler(
     let pendingOddsQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'pending_odds');
     let semOddsQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('odds', null);
     let semLinkQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('deep_link', null);
+    const poolQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('group_id', null).eq('elegibilidade', 'elegivel');
+    const distributedQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).not('group_id', 'is', null).eq('elegibilidade', 'elegivel');
 
     if (tenantCol) {
       readyQuery = readyQuery.eq('group_id', tenantCol);
@@ -184,7 +188,7 @@ export const GET = createApiHandler(
     }
 
     // Run all queries in parallel (including pair stats)
-    const [mainResult, readyResult, postedResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult, pairStats] =
+    const [mainResult, readyResult, postedResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult, poolResult, distributedResult, pairStats] =
       await Promise.all([
         query.range(from, from + perPage - 1),
         readyQuery,
@@ -193,6 +197,8 @@ export const GET = createApiHandler(
         pendingOddsQuery,
         semOddsQuery,
         semLinkQuery,
+        poolQuery,
+        distributedQuery,
         fetchPairStats(supabase),
       ]);
 
@@ -203,7 +209,9 @@ export const GET = createApiHandler(
       pendingLinkResult.error ||
       pendingOddsResult.error ||
       semOddsResult.error ||
-      semLinkResult.error
+      semLinkResult.error ||
+      poolResult.error ||
+      distributedResult.error
     ) {
       return dbErrorResponse();
     }
@@ -236,6 +244,8 @@ export const GET = createApiHandler(
           pending_odds: pendingOddsResult.count ?? 0,
           sem_odds: semOddsResult.count ?? 0,
           sem_link: semLinkResult.count ?? 0,
+          pool: poolResult.count ?? 0,
+          distributed: distributedResult.count ?? 0,
         },
       },
     });

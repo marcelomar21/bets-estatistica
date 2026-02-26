@@ -40,6 +40,8 @@ const sampleCounters: BetCounters = {
   pending_odds: 10,
   sem_odds: 15,
   sem_link: 10,
+  pool: 25,
+  distributed: 75,
 };
 
 const samplePagination: BetPagination = {
@@ -98,6 +100,8 @@ describe('BetStatsBar', () => {
   it('renders all counter labels', () => {
     render(<BetStatsBar counters={sampleCounters} />);
     expect(screen.getByText('Total')).toBeInTheDocument();
+    expect(screen.getByText('Pool')).toBeInTheDocument();
+    expect(screen.getByText('Distribuidas')).toBeInTheDocument();
     expect(screen.getByText('Prontas')).toBeInTheDocument();
     expect(screen.getByText('Postadas')).toBeInTheDocument();
     expect(screen.getByText('Sem Link')).toBeInTheDocument();
@@ -192,8 +196,8 @@ describe('BetTable', () => {
     // Pick column shows formatted pick display (market - pick when different)
     expect(screen.getByText('Over 2.5 Gols - Over')).toBeInTheDocument();
     expect(screen.getByText('1.85')).toBeInTheDocument();
+    // Story 4-1: Distribution badge now shows group name instead of generic "Distribuida"
     expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Distribuida')).toBeInTheDocument();
   });
 
   it('renders empty state when no bets', () => {

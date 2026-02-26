@@ -726,3 +726,134 @@ describe('POST /api/bets/bulk/odds', () => {
     expect(response.status).toBe(403);
   });
 });
+
+// ============================================================
+// Story 4-1: Pool and distribution visibility
+// ============================================================
+describe('Story 4-1: Pool and distribution visibility', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('returns pool and distributed counters', async () => {
+    const qb = createListQueryBuilder({
+      mainData: [sampleBet],
+      mainCount: 1,
+      counterCounts: { ready: 1, posted: 0, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 5, distributed: 10 },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.counters).toHaveProperty('pool');
+    expect(body.data.counters).toHaveProperty('distributed');
+    expect(typeof body.data.counters.pool).toBe('number');
+    expect(typeof body.data.counters.distributed).toBe('number');
+  });
+
+  it('accepts __pool__ as valid group_id filter', async () => {
+    const isCalls: Array<[string, unknown]> = [];
+    let fromCallIndex = 0;
+
+    const mockFrom = vi.fn(() => {
+      fromCallIndex++;
+      const isMainQuery = fromCallIndex === 1;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.not = vi.fn(() => chain);
+      chain.is = vi.fn((column: string, value: unknown) => {
+        isCalls.push([column, value]);
+        return chain;
+      });
+      chain.in = vi.fn(() => chain);
+      chain.gte = vi.fn(() => chain);
+      chain.lte = vi.fn(() => chain);
+      chain.or = vi.fn(() => chain);
+      chain.ilike = vi.fn(() => chain);
+      chain.order = vi.fn(() => chain);
+      chain.range = vi.fn(() => ({
+        data: isMainQuery ? [] : null,
+        error: null,
+        count: 0,
+      }));
+
+      if (!isMainQuery) {
+        chain.data = null;
+        chain.error = null;
+        chain.count = 0;
+      }
+
+      return chain;
+    });
+
+    const context = createMockContext('super_admin', { from: mockFrom });
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets?group_id=__pool__');
+
+    const response = await GET(req);
+
+    expect(response.status).toBe(200);
+    // Should have called .is('group_id', null) for main query
+    expect(isCalls).toContainEqual(['group_id', null]);
+  });
+
+  it('filters by specific group_id UUID', async () => {
+    const eqCalls: Array<[string, unknown]> = [];
+    let fromCallIndex = 0;
+
+    const mockFrom = vi.fn(() => {
+      fromCallIndex++;
+      const isMainQuery = fromCallIndex === 1;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn((column: string, value: unknown) => {
+        eqCalls.push([column, value]);
+        return chain;
+      });
+      chain.not = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.in = vi.fn(() => chain);
+      chain.gte = vi.fn(() => chain);
+      chain.lte = vi.fn(() => chain);
+      chain.or = vi.fn(() => chain);
+      chain.ilike = vi.fn(() => chain);
+      chain.order = vi.fn(() => chain);
+      chain.range = vi.fn(() => ({
+        data: isMainQuery ? [] : null,
+        error: null,
+        count: 0,
+      }));
+
+      if (!isMainQuery) {
+        chain.data = null;
+        chain.error = null;
+        chain.count = 0;
+      }
+
+      return chain;
+    });
+
+    const context = createMockContext('super_admin', { from: mockFrom });
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets?group_id=550e8400-e29b-41d4-a716-446655440000');
+
+    const response = await GET(req);
+
+    expect(response.status).toBe(200);
+    expect(eqCalls).toContainEqual(['group_id', '550e8400-e29b-41d4-a716-446655440000']);
+  });
+});
