@@ -61,11 +61,11 @@ development_status:
   # ========================================
   # Epic 2: Entrada Sem Fricção — Trial Interno
   # ========================================
-  epic-2: in-progress
+  epic-2: done
   2-1-feature-flag-trial-mode-getconfig: done
   2-2-novo-fluxo-start-trial-interno: done
   2-3-lembretes-expiracao-trial: done
-  2-4-kick-automatico-recuperacao: review
+  2-4-kick-automatico-recuperacao: done
   epic-2-retrospective: optional
 
   # ========================================

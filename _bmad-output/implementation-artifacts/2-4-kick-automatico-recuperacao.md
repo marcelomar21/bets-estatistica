@@ -1,6 +1,6 @@
 # Story 2.4: Kick Automático e Recuperação Pós-Trial
 
-Status: review
+Status: done
 
 ## Story
 
