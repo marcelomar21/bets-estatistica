@@ -26,7 +26,7 @@ const VALID_TRANSITIONS = {
   ativo: ['inadimplente', 'removido', 'cancelado'],
   inadimplente: ['ativo', 'removido'],
   removido: [],    // Estado final - sem transições permitidas
-  cancelado: [],   // Estado final - sem transições permitidas
+  cancelado: ['ativo'],   // Reativação pelo operador
 };
 
 /**

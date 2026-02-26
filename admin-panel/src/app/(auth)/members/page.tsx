@@ -166,6 +166,24 @@ export default function MembersPage() {
     }));
   }
 
+  async function handleReactivate(member: MemberListItem) {
+    if (!confirm(`Reativar membro ${member.telegram_username || member.telegram_id}?`)) return;
+    setError(null);
+    try {
+      const response = await fetch(`/api/members/${member.id}/reactivate`, {
+        method: 'POST',
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        setError(payload?.error?.message ?? 'Erro ao reativar membro');
+        return;
+      }
+      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
+    } catch {
+      setError('Erro de conexao ao reativar membro');
+    }
+  }
+
   async function handleCancelConfirm(reason: string) {
     if (!cancelTarget) return;
     setCancelLoading(true);
@@ -292,7 +310,13 @@ export default function MembersPage() {
           <p className="text-sm text-gray-500">Carregando membros...</p>
         </div>
       ) : (
-        <MemberList members={members} role={role} onCancelClick={setCancelTarget} />
+        <MemberList
+          members={members}
+          role={role}
+          onCancelClick={setCancelTarget}
+          onReactivateClick={handleReactivate}
+          showCancellationDetails={statusFilter === 'cancelado'}
+        />
       )}
 
       {cancelTarget && (

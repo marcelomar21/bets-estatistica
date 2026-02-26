@@ -80,6 +80,9 @@ export type MemberListItem = Pick<
   'id' | 'telegram_id' | 'telegram_username' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
 > & {
   groups?: { name: string } | null;
+  cancellation_reason?: string | null;
+  cancelled_by_email?: string | null;
+  kicked_at?: string | null;
 };
 
 export interface DashboardSummary {

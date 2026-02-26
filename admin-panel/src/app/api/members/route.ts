@@ -45,9 +45,10 @@ export const GET = createApiHandler(
     const nowIso = new Date().toISOString();
     const sevenDaysIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const select = role === 'super_admin'
-      ? 'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id, groups(name)'
-      : 'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id';
+    const baseCols = 'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id';
+    const cancelCols = statusFilter === 'cancelado' ? ', cancellation_reason, cancelled_by, kicked_at' : '';
+    const groupCols = role === 'super_admin' ? ', groups(name)' : '';
+    const select = baseCols + cancelCols + groupCols;
 
     let query = supabase
       .from('members')
@@ -117,10 +118,33 @@ export const GET = createApiHandler(
     const total = mainResult.count ?? 0;
     const totalPages = total > 0 ? Math.ceil(total / perPage) : 0;
 
+    // Resolve cancelled_by UUIDs to emails when filtering by cancelado
+    let items: unknown[] = mainResult.data ?? [];
+    if (statusFilter === 'cancelado' && items.length > 0) {
+      const rawItems = items as Array<Record<string, unknown>>;
+      const cancelledByIds = [...new Set(
+        rawItems
+          .map((m) => m.cancelled_by as string | null)
+          .filter((id): id is string => !!id),
+      )];
+      if (cancelledByIds.length > 0) {
+        const { data: admins } = await supabase
+          .from('admin_users')
+          .select('id, email')
+          .in('id', cancelledByIds);
+        const emailMap = new Map((admins ?? []).map((a: { id: string; email: string }) => [a.id, a.email]));
+        items = rawItems.map((m) => ({
+          ...m,
+          cancelled_by_email: emailMap.get(m.cancelled_by as string) ?? null,
+          cancelled_by: undefined,
+        }));
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        items: mainResult.data ?? [],
+        items,
         pagination: {
           page,
           per_page: perPage,
