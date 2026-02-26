@@ -134,6 +134,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }:
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           >
             <option value="">Todos os Grupos</option>
+            <option value="__pool__">Nao distribuidas (Pool)</option>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>{g.name}</option>
             ))}

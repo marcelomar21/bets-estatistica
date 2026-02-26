@@ -15,6 +15,7 @@ interface BetTableProps {
   onPageChange: (page: number) => void;
   onEditOdds: (bet: SuggestedBetListItem) => void;
   onEditLink?: (bet: SuggestedBetListItem) => void;
+  onDistribute?: (bet: SuggestedBetListItem) => void;
   onSort: (field: string) => void;
   sortBy: string;
   sortDir: string;
@@ -54,6 +55,7 @@ export function BetTable({
   onPageChange,
   onEditOdds,
   onEditLink,
+  onDistribute,
   onSort,
   sortBy,
   sortDir,
@@ -63,10 +65,13 @@ export function BetTable({
   const [showHitRateTooltip, setShowHitRateTooltip] = useState(false);
 
   function getDistributionStatus(bet: SuggestedBetListItem): { label: string; className: string } {
+    if (bet.group_id && bet.groups?.name) {
+      return { label: bet.groups.name, className: 'bg-emerald-100 text-emerald-800' };
+    }
     if (bet.group_id) {
       return { label: 'Distribuida', className: 'bg-emerald-100 text-emerald-800' };
     }
-    return { label: 'Nao distribuida', className: 'bg-gray-100 text-gray-700' };
+    return { label: 'Pool', className: 'bg-gray-100 text-gray-700' };
   }
 
   function toggleAll() {
@@ -162,9 +167,8 @@ export function BetTable({
               </th>
               <SortHeader field="odds">Odds</SortHeader>
               <SortHeader field="deep_link">Link</SortHeader>
-              <SortHeader field="group_id">Grupo</SortHeader>
               <SortHeader field="bet_status">Status</SortHeader>
-              <SortHeader field="distributed_at">Distribuicao</SortHeader>
+              <SortHeader field="group_id">Distribuicao</SortHeader>
               <SortHeader field="created_at">Criada</SortHeader>
               {isSuperAdmin && (
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Acoes</th>
@@ -244,9 +248,6 @@ export function BetTable({
                       <span className="text-gray-400">&mdash;</span>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-sm text-gray-600">
-                    {bet.groups?.name ?? <span className="text-gray-400">Nao distribuida</span>}
-                  </td>
                   <td className="px-3 py-3">
                     <BetStatusBadge status={bet.bet_status as BetStatus} />
                   </td>
@@ -273,6 +274,14 @@ export function BetTable({
                             className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                           >
                             Editar Link
+                          </button>
+                        )}
+                        {onDistribute && (
+                          <button
+                            onClick={() => onDistribute(bet)}
+                            className="rounded px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50"
+                          >
+                            {bet.group_id ? 'Redistribuir' : 'Distribuir'}
                           </button>
                         )}
                       </div>
