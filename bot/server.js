@@ -302,6 +302,7 @@ async function setupScheduler() {
     const { runTrackResults } = require('./jobs/trackResults');
     const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
     const { runKickExpired } = require('./jobs/membership/kick-expired');
+    const { runTrialReminders } = require('./jobs/membership/trial-reminders');
     const { runReconciliation } = require('./jobs/membership/reconciliation');
     const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
     const { runDistributeBets } = require('./jobs/distributeBets');
@@ -362,6 +363,17 @@ async function setupScheduler() {
         logger.info('[scheduler] kick-expired complete');
       } catch (err) {
         logger.error('[scheduler] kick-expired failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
+    // Trial reminders - 09:00 São Paulo (Story 16.5)
+    cron.schedule('0 9 * * *', async () => {
+      logger.info('[scheduler] Running trial-reminders job');
+      try {
+        await runTrialReminders();
+        logger.info('[scheduler] trial-reminders complete');
+      } catch (err) {
+        logger.error('[scheduler] trial-reminders failed', { error: err.message });
       }
     }, { timezone: TZ });
 
