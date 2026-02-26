@@ -1,6 +1,6 @@
 # Story 2.1: Feature Flag TRIAL_MODE e Helper getConfig
 
-Status: review
+Status: done
 
 ## Story
 
