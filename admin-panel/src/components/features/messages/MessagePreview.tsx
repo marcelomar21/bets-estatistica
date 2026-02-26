@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface MessagePreviewProps {
   messageText: string;
@@ -13,16 +13,30 @@ interface MessagePreviewProps {
   submitting: boolean;
 }
 
-/** Simple Telegram Markdown rendering (bold, italic, code) */
+/** Simple Telegram Markdown rendering (bold, italic, code). HTML is escaped first. */
 function renderTelegramMarkdown(text: string): string {
-  return text
+  // 1. Escape ALL HTML entities first (prevents XSS)
+  let safe = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+
+  // 2. Apply Telegram markdown on escaped text
+  safe = safe
     .replace(/\*([^*]+)\*/g, '<strong>$1</strong>')
     .replace(/_([^_]+)_/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code class="bg-gray-200 px-1 rounded text-sm">$1</code>')
     .replace(/\n/g, '<br/>');
+
+  return safe;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function MessagePreview({
@@ -35,28 +49,30 @@ export function MessagePreview({
   onConfirm,
   submitting,
 }: MessagePreviewProps) {
-  const formattedDate = new Date(scheduledAt).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const parsedDate = useMemo(() => new Date(scheduledAt), [scheduledAt]);
+  const isValidDate = !isNaN(parsedDate.getTime());
 
-  const imagePreviewUrl = useCallback(() => {
+  const formattedDate = isValidDate
+    ? parsedDate.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—';
+
+  // Create object URL for image preview with proper cleanup
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
     if (mediaFile && mediaType === 'image') {
-      return URL.createObjectURL(mediaFile);
+      const url = URL.createObjectURL(mediaFile);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
     }
-    return null;
+    setPreviewUrl(null);
   }, [mediaFile, mediaType]);
-
-  const previewUrl = imagePreviewUrl();
-
-  function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -88,11 +104,6 @@ export function MessagePreview({
                 src={previewUrl}
                 alt={mediaFile.name}
                 className="max-h-72 w-full object-contain bg-gray-50"
-                onLoad={() => {
-                  // Revoke after rendering to avoid memory leak
-                  // Note: small delay to ensure rendering is done
-                  setTimeout(() => URL.revokeObjectURL(previewUrl), 1000);
-                }}
               />
             </div>
           )}
@@ -147,10 +158,15 @@ interface MediaPreviewModalProps {
 }
 
 export function MediaPreviewModal({ mediaUrl, mediaType, onClose }: MediaPreviewModalProps) {
+  const openedRef = useRef(false);
+
   useEffect(() => {
-    if (mediaType === 'pdf') {
+    if (mediaType === 'pdf' && !openedRef.current) {
+      openedRef.current = true;
       window.open(mediaUrl, '_blank');
-      onClose();
+      // Delay onClose slightly to avoid React state update during render cycle
+      const timer = setTimeout(onClose, 50);
+      return () => clearTimeout(timer);
     }
   }, [mediaUrl, mediaType, onClose]);
 
