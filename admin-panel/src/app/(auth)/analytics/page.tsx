@@ -246,8 +246,11 @@ function AnalyticsPage() {
     fetch('/api/me')
       .then((r) => r.json())
       .then((json) => {
-        if (json.role) setRole(json.role);
-        if (json.role === 'super_admin') {
+        const userRole = json.data?.role;
+        if (userRole === 'super_admin' || userRole === 'group_admin') {
+          setRole(userRole);
+        }
+        if (userRole === 'super_admin') {
           fetch('/api/groups')
             .then((r2) => r2.json())
             .then((g) => {
