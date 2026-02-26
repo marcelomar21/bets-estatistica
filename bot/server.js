@@ -60,50 +60,6 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy' });
 });
 
-// Temporary debug endpoint — REMOVE after debugging trial flow
-app.get('/debug/trial-test', async (req, res) => {
-  try {
-    const { getDefaultBotCtx, getAllBots } = require('./telegram');
-    const { createTrialMember, getMemberByTelegramId } = require('./services/memberService');
-
-    const defaultCtx = getDefaultBotCtx();
-    const allBots = getAllBots();
-    const botEntries = [];
-    for (const [gId, ctx] of allBots) {
-      botEntries.push({ groupId: gId, publicGroupId: ctx.publicGroupId, groupName: ctx.groupConfig?.name });
-    }
-
-    // Simulate the exact flow for telegram_id 77777777
-    const testTelegramId = 77777777;
-    const groupId = defaultCtx?.groupId;
-
-    const existCheck = await getMemberByTelegramId(testTelegramId, groupId);
-
-    let createResult = null;
-    if (!existCheck.success && existCheck.error?.code === 'MEMBER_NOT_FOUND') {
-      createResult = await createTrialMember({
-        telegramId: testTelegramId,
-        telegramUsername: 'debug_test',
-        email: null,
-        groupId: groupId
-      }, 3);
-    }
-
-    res.json({
-      defaultCtx: defaultCtx ? {
-        groupId: defaultCtx.groupId,
-        publicGroupId: defaultCtx.publicGroupId,
-        groupName: defaultCtx.groupConfig?.name,
-        hasBotToken: !!defaultCtx.botToken
-      } : null,
-      botEntries,
-      existCheck,
-      createResult
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message, stack: err.stack });
-  }
-});
 
 /**
  * Reset webhook endpoint (useful when local polling breaks it)
@@ -133,8 +89,13 @@ app.post(`/webhook/${config.telegram.botToken}`, (req, res) => {
   // Respond immediately to prevent Telegram webhook retries (60s timeout)
   res.sendStatus(200);
 
-  // Process update asynchronously
-  processWebhookUpdate(req.body).catch(err => {
+  // Resolve the correct botCtx for the legacy bot using GROUP_ID from env
+  const legacyBotCtx = config.membership.groupId
+    ? getBotForGroup(config.membership.groupId)
+    : null;
+
+  // Process update asynchronously with the correct botCtx
+  processWebhookUpdate(req.body, legacyBotCtx).catch(err => {
     logger.error('Webhook processing error', { error: err.message });
   });
 });
