@@ -1,6 +1,6 @@
 # Story 10.2: Página de Analytics no Admin Panel
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -40,22 +40,26 @@ So that eu possa analisar performance das apostas e tomar decisões baseadas em 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar página `/analytics`
-  - [ ] 1.1 Criar `admin-panel/src/app/(auth)/analytics/page.tsx`
-  - [ ] 1.2 Fetch dados de `/api/analytics/accuracy`
-  - [ ] 1.3 Cards de resumo (Total, 7d, 30d) com indicador de tendência
-  - [ ] 1.4 Tabela "Acerto por Mercado" ordenável
-  - [ ] 1.5 Tabela "Acerto por Campeonato" ordenável
-  - [ ] 1.6 Tabela "Acerto por Grupo" (apenas super_admin)
-  - [ ] 1.7 Cores condicionais: verde >= 70%, amarelo >= 50%, vermelho < 50%
-  - [ ] 1.8 Estados de loading, erro e vazio
+- [x] Task 1: Criar página `/analytics`
+  - [x] 1.1 Criar `admin-panel/src/app/(auth)/analytics/page.tsx`
+  - [x] 1.2 Fetch dados de `/api/analytics/accuracy`
+  - [x] 1.3 Cards de resumo (Total, 7d, 30d) com indicador de tendência
+  - [x] 1.4 Tabela "Acerto por Mercado" ordenável
+  - [x] 1.5 Tabela "Acerto por Campeonato" ordenável
+  - [x] 1.6 Tabela "Acerto por Grupo" (apenas super_admin)
+  - [x] 1.7 Cores condicionais: verde >= 70%, amarelo >= 50%, vermelho < 50%
+  - [x] 1.8 Estados de loading, erro e vazio
 
-- [ ] Task 2: Adicionar ao menu lateral
-  - [ ] 2.1 Adicionar item "Analytics" no Sidebar.tsx
+- [x] Task 2: Adicionar ao menu lateral
+  - [x] 2.1 Adicionar item "Analytics" no Sidebar.tsx
 
-- [ ] Task 3: Validação
-  - [ ] 3.1 `cd admin-panel && npm test` — todos passando
-  - [ ] 3.2 `cd admin-panel && npm run build` — build OK
+- [x] Task 3: Validação
+  - [x] 3.1 `cd admin-panel && npm test` — 663 passed (58 files)
+  - [x] 3.2 `cd admin-panel && npm run build` — build OK
+
+- [x] Task 4: Code Review (adversarial)
+  - [x] 4.1 Fixed role default to null to prevent race condition (MEDIUM)
+  - [x] 4.2 Changed table keys from array index to stable identifiers (MEDIUM)
 
 ## Dev Notes
 
@@ -86,7 +90,13 @@ function rateColor(rate: number): string {
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Created /analytics page with summary cards and 3 sortable breakdown tables
+- Added Analytics nav item in Sidebar
+- Code review: fixed role race condition, stable table keys
 
 ### File List
+- admin-panel/src/app/(auth)/analytics/page.tsx (NEW)
+- admin-panel/src/components/layout/Sidebar.tsx (MODIFIED)

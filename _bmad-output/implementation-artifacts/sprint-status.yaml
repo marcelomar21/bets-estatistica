@@ -136,10 +136,10 @@ development_status:
   # ========================================
   # Epic 10: Analytics de Taxa de Acerto
   # ========================================
-  epic-10: in-progress
+  epic-10: done
   10-1-api-analytics-acerto-filtros: done
   10-2-pagina-analytics-admin-panel: done
-  10-3-filtros-periodo-exportacao: in-progress
+  10-3-filtros-periodo-exportacao: done
   epic-10-retrospective: optional
 
   # ========================================
