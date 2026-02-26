@@ -65,7 +65,7 @@ development_status:
   2-1-feature-flag-trial-mode-getconfig: done
   2-2-novo-fluxo-start-trial-interno: done
   2-3-lembretes-expiracao-trial: done
-  2-4-kick-automatico-recuperacao: ready-for-dev
+  2-4-kick-automatico-recuperacao: review
   epic-2-retrospective: optional
 
   # ========================================
