@@ -19,7 +19,7 @@ const HISTORY_SELECT = `
   id, bet_market, bet_pick, odds, odds_at_post, bet_status,
   telegram_posted_at, telegram_message_id, group_id,
   historico_postagens, created_at,
-  league_matches!inner(home_team_name, away_team_name, kickoff_time),
+  league_matches!inner(home_team_name, away_team_name, kickoff_time, league_seasons(league_name, country)),
   groups(name)
 `;
 

@@ -21,6 +21,10 @@ function makeBet(overrides: Partial<HistoryBet> = {}): HistoryBet {
       home_team_name: 'Flamengo',
       away_team_name: 'Palmeiras',
       kickoff_time: new Date(Date.now() + 3600000).toISOString(),
+      league_seasons: {
+        league_name: 'Serie A Brasil',
+        country: 'Brazil',
+      },
     },
     groups: { name: 'Grupo Principal' },
     ...overrides,
@@ -169,6 +173,48 @@ describe('PostingHistoryTable', () => {
     await user.click(screen.getByText(/Postado em/));
 
     expect(onSort).toHaveBeenCalledWith('telegram_posted_at');
+  });
+
+  it('renders championship column with league_name (Story 7-1)', () => {
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    // Header
+    expect(screen.getByText('Campeonato')).toBeInTheDocument();
+    // Data
+    expect(screen.getByText('Serie A Brasil')).toBeInTheDocument();
+  });
+
+  it('renders dash when league_seasons is missing (Story 7-1)', () => {
+    const bet = makeBet({
+      league_matches: {
+        home_team_name: 'Flamengo',
+        away_team_name: 'Palmeiras',
+        kickoff_time: new Date(Date.now() + 3600000).toISOString(),
+        league_seasons: null,
+      },
+    });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    // Should render dash for missing league
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders multiple bets correctly', () => {

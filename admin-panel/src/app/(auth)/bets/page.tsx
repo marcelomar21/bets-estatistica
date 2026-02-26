@@ -22,6 +22,7 @@ const DEFAULT_FILTERS: BetFilterValues = {
   future_only: 'true',
   date_from: '',
   date_to: '',
+  championship: '',
 };
 
 const DEFAULT_COUNTERS: BetCounters = {
@@ -72,6 +73,9 @@ export default function BetsPage() {
   const [distributeBet, setDistributeBet] = useState<SuggestedBetListItem | null>(null);
   const [showBulkDistribute, setShowBulkDistribute] = useState(false);
 
+  // Championships extracted from loaded bets for filter dropdown
+  const [knownChampionships, setKnownChampionships] = useState<string[]>([]);
+
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -88,8 +92,8 @@ export default function BetsPage() {
     params.set('page', String(page));
     params.set('per_page', '50');
 
-    // hit_rate is computed client-side, use default server sort
-    const isClientSort = sortBy === 'hit_rate';
+    // hit_rate and league_name are sorted client-side (not supported by Supabase server-side)
+    const isClientSort = sortBy === 'hit_rate' || sortBy === 'league_name';
     params.set('sort_by', isClientSort ? 'kickoff_time' : sortBy);
     params.set('sort_dir', isClientSort ? 'desc' : sortDir);
 
@@ -102,6 +106,7 @@ export default function BetsPage() {
     if (filters.future_only) params.set('future_only', filters.future_only);
     if (filters.date_from) params.set('date_from', filters.date_from);
     if (filters.date_to) params.set('date_to', filters.date_to);
+    if (filters.championship) params.set('championship', filters.championship);
 
     try {
       const res = await fetch(`/api/bets?${params}`);
@@ -114,9 +119,15 @@ export default function BetsPage() {
 
       let items = json.data.items;
 
-      // Client-side sort for hit_rate (computed field, not in DB)
+      // Client-side sort for fields not sortable via Supabase
       if (isClientSort) {
         items = [...items].sort((a: SuggestedBetListItem, b: SuggestedBetListItem) => {
+          if (sortBy === 'league_name') {
+            const nameA = a.league_matches?.league_seasons?.league_name ?? '';
+            const nameB = b.league_matches?.league_seasons?.league_name ?? '';
+            const cmp = nameA.localeCompare(nameB, 'pt-BR');
+            return sortDir === 'asc' ? cmp : -cmp;
+          }
           const rateA = a.hit_rate?.rate ?? -1;
           const rateB = b.hit_rate?.rate ?? -1;
           return sortDir === 'asc' ? rateA - rateB : rateB - rateA;
@@ -126,6 +137,21 @@ export default function BetsPage() {
       setBets(items);
       setPagination(json.data.pagination);
       setCounters(json.data.counters);
+
+      // Extract unique championship names for filter dropdown (accumulate across loads)
+      const newLeagues = new Set<string>();
+      for (const item of items) {
+        const name = item.league_matches?.league_seasons?.league_name;
+        if (name) newLeagues.add(name);
+      }
+      if (newLeagues.size > 0) {
+        setKnownChampionships(prev => {
+          const merged = new Set([...prev, ...newLeagues]);
+          const sorted = Array.from(merged).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          if (sorted.length === prev.length && sorted.every((v, i) => v === prev[i])) return prev;
+          return sorted;
+        });
+      }
     } catch {
       setError('Erro de conexao ao carregar apostas');
     } finally {
@@ -364,6 +390,7 @@ export default function BetsPage() {
         onFilterChange={handleFilterChange}
         groups={groups}
         showGroupFilter={role === 'super_admin'}
+        championships={knownChampionships}
       />
 
       {/* Bulk action bar */}

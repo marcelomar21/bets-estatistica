@@ -56,6 +56,8 @@ export const GET = createApiHandler(
     const sortBy = url.searchParams.get('sort_by')?.trim().toLowerCase() || 'kickoff_time';
     const sortDir = url.searchParams.get('sort_dir')?.trim().toLowerCase() || 'desc';
 
+    const championship = url.searchParams.get('championship')?.trim() || null;
+
     // Date filters (Story 5.6)
     const futureOnly = url.searchParams.get('future_only')?.trim().toLowerCase() ?? 'true';
     const dateFrom = url.searchParams.get('date_from')?.trim() || null;
@@ -140,6 +142,9 @@ export const GET = createApiHandler(
       query = query.or(
         `league_matches.home_team_name.ilike.%${search}%,league_matches.away_team_name.ilike.%${search}%,bet_market.ilike.%${search}%`,
       );
+    }
+    if (championship) {
+      query = query.eq('league_matches.league_seasons.league_name', championship);
     }
 
     // Date filters (Story 5.6)
