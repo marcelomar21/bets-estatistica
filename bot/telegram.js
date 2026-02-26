@@ -320,6 +320,48 @@ async function sendToPublic(text, botCtxOrOptions, options) {
 }
 
 /**
+ * Send media (photo or document) to public group with optional caption
+ * @param {'image'|'pdf'} mediaType - Type of media to send
+ * @param {string} mediaUrl - URL of the media file (signed URL)
+ * @param {string|null} caption - Optional caption text (Markdown)
+ * @param {BotContext} botCtx - Bot context for the target group
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function sendMediaToPublic(mediaType, mediaUrl, caption, botCtx) {
+  const targetBot = botCtx.bot;
+  const targetChatId = botCtx.publicGroupId;
+
+  const sendOptions = {
+    parse_mode: 'Markdown',
+  };
+
+  if (caption) {
+    sendOptions.caption = caption;
+  }
+
+  try {
+    let message;
+    if (mediaType === 'image') {
+      message = await targetBot.sendPhoto(targetChatId, mediaUrl, sendOptions);
+    } else {
+      message = await targetBot.sendDocument(targetChatId, mediaUrl, sendOptions);
+    }
+
+    logger.info('Media sent to public group', {
+      messageId: message.message_id,
+      mediaType,
+    });
+    return { success: true, data: { messageId: message.message_id } };
+  } catch (err) {
+    logger.error('Failed to send media to public group', {
+      error: err.message,
+      mediaType,
+    });
+    return { success: false, error: { code: 'TELEGRAM_ERROR', message: err.message } };
+  }
+}
+
+/**
  * Send alert to admin group (formatted for errors/warnings)
  * @param {string} type - Alert type (ERROR, WARN, INFO)
  * @param {string} technicalMessage - Technical details
@@ -396,6 +438,7 @@ module.exports = {
   // Messaging functions (support both legacy and botCtx)
   sendToAdmin,
   sendToPublic,
+  sendMediaToPublic,
   alertAdmin,
   testConnection,
   setWebhook,

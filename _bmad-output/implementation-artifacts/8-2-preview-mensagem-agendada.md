@@ -1,6 +1,6 @@
 # Story 8.2: Preview de Mensagem Agendada
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 

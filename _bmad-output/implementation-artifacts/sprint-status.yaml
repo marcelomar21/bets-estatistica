@@ -120,7 +120,7 @@ development_status:
   # ========================================
   epic-8: in-progress
   8-1-upload-arquivo-schema-midia: done
-  8-2-preview-mensagem-agendada: ready-for-dev
+  8-2-preview-mensagem-agendada: done
   8-3-envio-midia-bot-telegram: backlog
   epic-8-retrospective: optional
 
