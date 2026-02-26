@@ -1,6 +1,6 @@
 # Story 3.2: Exibição e Aceite do Termo no Fluxo /start
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -189,7 +189,16 @@ Ao clicar em "Li e aceito", você confirma que leu e concorda com os termos.
 ## Dev Agent Record
 
 ### Agent Model Used
+Claude Opus 4.6
 
 ### Completion Notes List
+- Task 1: TERMS_VERSION and TERMS_URL config keys via getConfig with defaults
+- Task 2: Modified /start flow to check terms acceptance before trial start
+- Task 3: Added callback handler for terms_accept in private chat (server.js + startCommand.js)
+- Task 4: Added 6 unit tests covering all ACs (274 new lines in test file)
+- Task 5: All validation passed — 932 bot tests, 578 admin-panel tests, build OK
 
 ### File List
+- bot/handlers/startCommand.js (MODIFIED — terms check + showTermsForAcceptance + handleTermsAcceptCallback)
+- bot/server.js (MODIFIED — private chat callback routing for terms_accept)
+- bot/handlers/__tests__/startCommand.test.js (MODIFIED — 6 new test cases)
