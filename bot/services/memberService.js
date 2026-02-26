@@ -6,6 +6,7 @@ const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { validateMemberId, validateTelegramId } = require('../../lib/validators');
+const { getConfig } = require('../lib/configHelper');
 
 /**
  * Valid status values for members
@@ -1518,27 +1519,10 @@ async function appendToNotes(memberId, operador, acao) {
  */
 async function getTrialDays() {
   try {
-    const { data, error } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'TRIAL_DAYS')
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      logger.error('[memberService] getTrialDays: database error', { error: error.message });
-      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
-    }
-
-    if (data) {
-      const days = parseInt(data.value, 10);
-      logger.debug('[memberService] getTrialDays: from system_config', { days });
-      return { success: true, data: { days, source: 'system_config' } };
-    }
-
-    // Fallback to environment variable
-    const envDays = parseInt(process.env.TRIAL_DAYS || '7', 10);
-    logger.debug('[memberService] getTrialDays: from env fallback', { days: envDays });
-    return { success: true, data: { days: envDays, source: 'env' } };
+    const value = await getConfig('TRIAL_DAYS', process.env.TRIAL_DAYS || '7');
+    const days = parseInt(value, 10);
+    logger.debug('[memberService] getTrialDays', { days });
+    return { success: true, data: { days, source: 'system_config' } };
   } catch (err) {
     logger.error('[memberService] getTrialDays: unexpected error', { error: err.message });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };

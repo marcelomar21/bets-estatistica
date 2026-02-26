@@ -16,6 +16,7 @@ require('dotenv').config();
 const logger = require('../../lib/logger');
 const { testConnection } = require('../../lib/supabase');
 const { healthCheckAlert } = require('../services/alertService');
+const { reloadConfig } = require('../lib/configHelper');
 
 // Thresholds
 const THRESHOLDS = {
@@ -89,6 +90,9 @@ async function runHealthCheck() {
   healthCheckRunning = true;
 
   try {
+    // Reload config cache so feature flag changes take effect without restart
+    reloadConfig();
+
     const dbResult = await checkDatabaseConnection();
 
     // Only alert if DB is down (with debounce)

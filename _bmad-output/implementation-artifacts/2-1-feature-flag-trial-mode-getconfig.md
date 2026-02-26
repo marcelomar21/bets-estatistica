@@ -1,6 +1,6 @@
 # Story 2.1: Feature Flag TRIAL_MODE e Helper getConfig
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -34,39 +34,39 @@ So that eu possa ativar o trial interno com segurança e fazer rollback instant�
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Criar migration para inserir TRIAL_MODE no system_config (AC: #1)
-  - [ ] 1.1 Criar `sql/migrations/029_trial_mode_flag.sql`
-  - [ ] 1.2 INSERT `TRIAL_MODE` = `mercadopago` com ON CONFLICT DO NOTHING (idempotente)
-  - [ ] 1.3 Aplicar migration via Supabase Management API
+- [x] Task 1: Criar migration para inserir TRIAL_MODE no system_config (AC: #1)
+  - [x] 1.1 Criar `sql/migrations/034_trial_mode_flag.sql`
+  - [x] 1.2 INSERT `TRIAL_MODE` = `mercadopago` com ON CONFLICT DO NOTHING (idempotente)
+  - [x] 1.3 Aplicar migration via Supabase Management API
 
-- [ ] Task 2: Criar helper genérico `getConfig()` no bot (AC: #2, #3)
-  - [ ] 2.1 Criar `bot/lib/configHelper.js` com função `getConfig(key, defaultValue)`
-  - [ ] 2.2 Implementar cache em memória (Map) com TTL configurável
-  - [ ] 2.3 Retornar valor do cache se presente e não expirado
-  - [ ] 2.4 Retornar `defaultValue` se key não encontrada no DB
-  - [ ] 2.5 Logging via `lib/logger.js` para cache hits/misses (debug level)
+- [x] Task 2: Criar helper genérico `getConfig()` no bot (AC: #2, #3)
+  - [x] 2.1 Criar `bot/lib/configHelper.js` com função `getConfig(key, defaultValue)`
+  - [x] 2.2 Implementar cache em memória (Map) com TTL configurável
+  - [x] 2.3 Retornar valor do cache se presente e não expirado
+  - [x] 2.4 Retornar `defaultValue` se key não encontrada no DB
+  - [x] 2.5 Logging via `lib/logger.js` para cache hits/misses (debug level)
 
-- [ ] Task 3: Implementar recarga do cache (AC: #4)
-  - [ ] 3.1 Exportar função `reloadConfig()` que invalida todo o cache
-  - [ ] 3.2 Chamar `reloadConfig()` no startup do bot (bot/index.js ou similar)
-  - [ ] 3.3 Chamar `reloadConfig()` no health check job (se existir)
+- [x] Task 3: Implementar recarga do cache (AC: #4)
+  - [x] 3.1 Exportar função `reloadConfig()` que invalida todo o cache
+  - [x] 3.2 Chamar `reloadConfig()` no startup do bot (bot/index.js ou similar)
+  - [x] 3.3 Chamar `reloadConfig()` no health check job (se existir)
 
-- [ ] Task 4: Refatorar `getTrialDays()` para usar `getConfig()` (AC: #5)
-  - [ ] 4.1 Atualizar `bot/services/memberService.js:getTrialDays()` para usar `getConfig('TRIAL_DAYS', '7')`
-  - [ ] 4.2 Manter a interface pública idêntica (retorno `{ success, data: { days, source } }`)
-  - [ ] 4.3 Verificar que todos os callers de `getTrialDays()` continuam funcionando
+- [x] Task 4: Refatorar `getTrialDays()` para usar `getConfig()` (AC: #5)
+  - [x] 4.1 Atualizar `bot/services/memberService.js:getTrialDays()` para usar `getConfig('TRIAL_DAYS', '7')`
+  - [x] 4.2 Manter a interface pública idêntica (retorno `{ success, data: { days, source } }`)
+  - [x] 4.3 Verificar que todos os callers de `getTrialDays()` continuam funcionando
 
-- [ ] Task 5: Escrever testes unitários (AC: #2, #3, #4, #5)
-  - [ ] 5.1 Testar `getConfig()`: retorno de valor existente, cache hit, default para key inexistente
-  - [ ] 5.2 Testar `reloadConfig()`: cache é invalidado, próxima chamada busca do DB
-  - [ ] 5.3 Testar `getTrialDays()` refatorado: funciona igual ao anterior
-  - [ ] 5.4 Testar cache TTL: valor expirado é rebuscado do DB
+- [x] Task 5: Escrever testes unitários (AC: #2, #3, #4, #5)
+  - [x] 5.1 Testar `getConfig()`: retorno de valor existente, cache hit, default para key inexistente
+  - [x] 5.2 Testar `reloadConfig()`: cache é invalidado, próxima chamada busca do DB
+  - [x] 5.3 Testar `getTrialDays()` refatorado: funciona igual ao anterior
+  - [x] 5.4 Testar cache TTL: valor expirado é rebuscado do DB
 
-- [ ] Task 6: Validação completa
-  - [ ] 6.1 `npm test` no admin-panel — todos os testes passam (nenhum regrediu)
-  - [ ] 6.2 `npm run build` no admin-panel — TypeScript strict build OK
-  - [ ] 6.3 Testes do bot (se existirem) passam
-  - [ ] 6.4 Verificar que `TRIAL_MODE` está no system_config via query
+- [x] Task 6: Validação completa
+  - [x] 6.1 `npm test` no admin-panel — todos os testes passam (nenhum regrediu)
+  - [x] 6.2 `npm run build` no admin-panel — TypeScript strict build OK
+  - [x] 6.3 Testes do bot (se existirem) passam
+  - [x] 6.4 Verificar que `TRIAL_MODE` está no system_config via query
 
 ## Dev Notes
 
@@ -120,7 +120,7 @@ Com `TRIAL_MODE = 'mercadopago'` como default, nenhum fluxo existente é alterad
 
 | Arquivo | Ação |
 |---------|------|
-| `sql/migrations/029_trial_mode_flag.sql` | CRIAR |
+| `sql/migrations/034_trial_mode_flag.sql` | CRIAR |
 | `bot/lib/configHelper.js` | CRIAR |
 | `bot/services/memberService.js` | MODIFICAR (getTrialDays refactor) |
 | `bot/lib/configHelper.test.js` | CRIAR |
