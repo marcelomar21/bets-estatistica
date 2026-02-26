@@ -363,7 +363,8 @@ async function handleRemovedMember(bot, chatId, telegramId, firstName, member, b
  */
 async function handleInternalTrialStart(bot, chatId, telegramId, username, firstName, botCtx = null) {
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
-  const groupId = effectiveBotCtx?.publicGroupId;
+  // Use group UUID (not Telegram chat ID) for members table
+  const groupId = effectiveBotCtx?.groupId;
 
   // Get trial duration
   const trialDaysResult = await getTrialDays();
