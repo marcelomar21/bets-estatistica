@@ -1,6 +1,6 @@
 # Story 9.2: Cancelamento Self-Service pelo Membro via Bot
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -86,7 +86,17 @@ Usar `memberService.getMemberByTelegramId(telegramId, groupId)` para buscar memb
 ## Dev Agent Record
 
 ### Agent Model Used
+claude-opus-4-6
 
 ### Completion Notes List
+- Created cancelCommand.js with /cancelar handler and inline keyboard confirmation
+- Registered command in server.js (webhook) and index.js (polling)
+- Callback routing for cancel_membership_confirm/abort in private chats
+- Optimistic locking with row verification on status update
+- Farewell DM with checkout URL, kick from group (best-effort)
+- Audit via registerMemberEvent
 
 ### File List
+- `bot/handlers/cancelCommand.js` — NEW
+- `bot/server.js` — command + callback routing
+- `bot/index.js` — command + callback routing (polling mode)
