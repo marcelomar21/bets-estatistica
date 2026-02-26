@@ -73,7 +73,7 @@ development_status:
   # ========================================
   epic-3: in-progress
   3-1-tabela-terms-acceptance-imutabilidade: done
-  3-2-exibicao-aceite-termo-fluxo-start: backlog
+  3-2-exibicao-aceite-termo-fluxo-start: ready-for-dev
   epic-3-retrospective: optional
 
   # ========================================
