@@ -60,6 +60,32 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy' });
 });
 
+/**
+ * DEBUG: Manually trigger a job for testing (temporary endpoint)
+ * Usage: GET /debug/run-job/trial-reminders or /debug/run-job/kick-expired
+ */
+app.get('/debug/run-job/:jobName', async (req, res) => {
+  const { jobName } = req.params;
+  const allowed = ['trial-reminders', 'kick-expired'];
+  if (!allowed.includes(jobName)) {
+    return res.status(400).json({ error: `Job not allowed. Use: ${allowed.join(', ')}` });
+  }
+  try {
+    let result;
+    if (jobName === 'trial-reminders') {
+      const { runTrialReminders } = require('./jobs/membership/trial-reminders');
+      result = await runTrialReminders();
+    } else if (jobName === 'kick-expired') {
+      const { runKickExpired } = require('./jobs/membership/kick-expired');
+      result = await runKickExpired();
+    }
+    logger.info(`[debug] Manual job trigger: ${jobName}`, { result });
+    res.json({ success: true, jobName, result });
+  } catch (err) {
+    logger.error(`[debug] Manual job trigger failed: ${jobName}`, { error: err.message });
+    res.status(500).json({ success: false, jobName, error: err.message });
+  }
+});
 
 /**
  * Reset webhook endpoint (useful when local polling breaks it)
