@@ -63,7 +63,7 @@ development_status:
   # ========================================
   epic-2: in-progress
   2-1-feature-flag-trial-mode-getconfig: done
-  2-2-novo-fluxo-start-trial-interno: backlog
+  2-2-novo-fluxo-start-trial-interno: ready-for-dev
   2-3-lembretes-expiracao-trial: backlog
   2-4-kick-automatico-recuperacao: backlog
   epic-2-retrospective: optional
