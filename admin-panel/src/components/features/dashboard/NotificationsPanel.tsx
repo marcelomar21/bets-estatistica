@@ -90,6 +90,7 @@ export default function NotificationsPanel({
                     onClick={() => onMarkAsRead(notification.id)}
                     className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-700 font-medium mt-0.5"
                     title="Marcar como lida"
+                    aria-label={`Marcar como lida: ${notification.title}`}
                   >
                     Marcar lida
                   </button>

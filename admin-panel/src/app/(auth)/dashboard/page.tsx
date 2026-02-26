@@ -36,11 +36,6 @@ function DashboardSkeleton() {
           </div>
         ))}
       </div>
-      {/* Alerts skeleton */}
-      <div className="bg-white rounded-lg shadow p-6 animate-pulse">
-        <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
-        <div className="h-4 bg-gray-200 rounded w-full" />
-      </div>
       {/* Notifications skeleton */}
       <div className="bg-white rounded-lg shadow p-6 animate-pulse">
         <div className="h-5 bg-gray-200 rounded w-32 mb-4" />
@@ -114,46 +109,35 @@ export default function DashboardPage() {
   }, []);
 
   const handleMarkAsRead = useCallback(async (id: string) => {
-    // Check if already read
-    const target = notifications.find(n => n.id === id);
-    if (!target || target.read) return;
-
-    // Save previous state for rollback
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
-    // Optimistic update
+    // Optimistic update via functional updaters (avoids stale closure on rapid clicks)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
     try {
-      await fetch(`/api/notifications/${id}`, {
+      const res = await fetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ read: true }),
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
       // Rollback on failure
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+      setUnreadCount(prev => prev + 1);
     }
-  }, [notifications, unreadCount]);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
-    // Save previous state for rollback
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
     // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
     try {
-      await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      const res = await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      // Rollback on failure
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      // Rollback: re-fetch to get accurate state
+      fetchNotifications();
     }
-  }, [notifications, unreadCount]);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     let cancelled = false;

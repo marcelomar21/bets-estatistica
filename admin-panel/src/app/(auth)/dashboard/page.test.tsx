@@ -24,9 +24,6 @@ const mockDashboardData = {
     { id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z', active_members: 15 },
     { id: 'g2', name: 'Grupo Beta', status: 'paused', created_at: '2026-01-02T00:00:00Z', active_members: 10 },
   ],
-  alerts: [
-    { type: 'bot_offline', message: 'Bot offline', timestamp: '2026-02-08T10:00:00Z', group_name: 'Alpha' },
-  ],
 };
 
 const mockNotificationsData = {
