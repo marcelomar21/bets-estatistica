@@ -128,7 +128,7 @@ async function isUserInGroup(bot, groupId, telegramId) {
  * @returns {Promise<{success: boolean, action?: string, error?: object}>}
  */
 async function handleStartCommand(msg, botCtx = null) {
-  const bot = getBot();
+  const bot = botCtx?.bot || getBot();
   const telegramId = msg.from.id;
   const username = msg.from.username;
   const firstName = msg.from.first_name;
@@ -529,7 +529,7 @@ _(Se você ainda não é assinante, digite qualquer email para começar seu tria
  * @returns {Promise<{success: boolean, action?: string, error?: object}>}
  */
 async function handleEmailInput(msg, botCtx = null) {
-  const bot = getBot();
+  const bot = botCtx?.bot || getBot();
   const telegramId = msg.from.id;
   const username = msg.from.username;
   const firstName = msg.from.first_name;
@@ -990,7 +990,7 @@ async function recordNotification(memberId, type, messageId) {
  * Handle /status command in private chat
  */
 async function handleStatusCommand(msg, botCtx = null) {
-  const bot = getBot();
+  const bot = botCtx?.bot || getBot();
   const telegramId = msg.from.id;
   const chatId = msg.chat.id;
   const firstName = msg.from.first_name;
