@@ -146,12 +146,12 @@ async function processWebhookUpdate(update, botCtx = null) {
     // Story 16.9: Handle /start command in private chats (Gate Entry)
     if (msg.chat.type === 'private' && msg.text) {
       if (msg.text.startsWith('/start')) {
-        await handleStartCommand(msg);
+        await handleStartCommand(msg, botCtx);
       } else if (msg.text === '/status') {
-        await handleStatusCommand(msg);
+        await handleStatusCommand(msg, botCtx);
       } else if (shouldHandleAsEmailInput(msg)) {
         // Handle email verification flow (MP payment before /start)
-        await handleEmailInput(msg);
+        await handleEmailInput(msg, botCtx);
       }
     }
 
