@@ -172,7 +172,7 @@ describe('POST /api/messages', () => {
     expect(response.status).toBe(400);
   });
 
-  it('rejects empty message_text', async () => {
+  it('rejects empty message_text without media', async () => {
     const context = createMockContext('super_admin');
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -186,6 +186,91 @@ describe('POST /api/messages', () => {
     const response = await POST(req);
 
     expect(response.status).toBe(400);
+  });
+
+  it('creates message with media fields', async () => {
+    const createdMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'pending',
+      scheduled_at: futureDate,
+      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      message_text: 'See attached',
+      media_storage_path: 'group-uuid-1/abc.pdf',
+      media_type: 'pdf',
+      created_at: new Date().toISOString(),
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.insert = vi.fn(() => chain);
+      chain.select = vi.fn(() => chain);
+      chain.single = vi.fn(() => ({ data: createdMessage, error: null }));
+      return chain;
+    });
+
+    const context = createMockContext('super_admin', { from: mockFrom });
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/messages/route');
+    const req = createMockRequest('POST', 'http://localhost/api/messages', {
+      message_text: 'See attached',
+      scheduled_at: futureDate,
+      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      media_storage_path: 'group-uuid-1/abc.pdf',
+      media_type: 'pdf',
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.success).toBe(true);
+    expect(body.data.media_storage_path).toBe('group-uuid-1/abc.pdf');
+    expect(body.data.media_type).toBe('pdf');
+  });
+
+  it('creates media-only message (no text)', async () => {
+    const createdMessage = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      status: 'pending',
+      scheduled_at: futureDate,
+      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      message_text: null,
+      media_storage_path: 'group-uuid-1/img.png',
+      media_type: 'image',
+      created_at: new Date().toISOString(),
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.insert = vi.fn(() => chain);
+      chain.select = vi.fn(() => chain);
+      chain.single = vi.fn(() => ({ data: createdMessage, error: null }));
+      return chain;
+    });
+
+    const context = createMockContext('super_admin', { from: mockFrom });
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/messages/route');
+    const req = createMockRequest('POST', 'http://localhost/api/messages', {
+      scheduled_at: futureDate,
+      group_id: '550e8400-e29b-41d4-a716-446655440001',
+      media_storage_path: 'group-uuid-1/img.png',
+      media_type: 'image',
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.success).toBe(true);
+    expect(body.data.message_text).toBeNull();
+    expect(body.data.media_type).toBe('image');
   });
 
   it('group_admin cannot schedule for other group', async () => {

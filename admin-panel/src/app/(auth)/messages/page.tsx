@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { ScheduledMessageListItem, MessageStatus } from '@/types/database';
+import type { ScheduledMessageListItem, MessageStatus, MediaType } from '@/types/database';
+import { FileUpload } from '@/components/features/messages/FileUpload';
 
 const STATUS_STYLES: Record<MessageStatus, { label: string; className: string }> = {
   pending: { label: 'Pendente', className: 'bg-yellow-100 text-yellow-800' },
@@ -25,6 +26,10 @@ export default function MessagesPage() {
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Media state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState('');
 
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -85,9 +90,13 @@ export default function MessagesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError('');
+    setUploadError('');
 
-    if (!messageText.trim()) {
-      setFormError('Texto da mensagem e obrigatorio');
+    const hasText = messageText.trim().length > 0;
+    const hasFile = selectedFile !== null;
+
+    if (!hasText && !hasFile) {
+      setFormError('Mensagem deve conter texto ou arquivo');
       return;
     }
 
@@ -110,13 +119,39 @@ export default function MessagesPage() {
 
     setSubmitting(true);
     try {
+      let mediaStoragePath: string | undefined;
+      let mediaType: MediaType | undefined;
+
+      // Upload file first if selected
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('group_id', groupId);
+
+        const uploadRes = await fetch('/api/messages/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson.success) {
+          setUploadError(uploadJson.error?.message ?? 'Erro ao fazer upload');
+          return;
+        }
+
+        mediaStoragePath = uploadJson.data.media_storage_path;
+        mediaType = uploadJson.data.media_type;
+      }
+
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message_text: messageText,
+          message_text: messageText || undefined,
           scheduled_at: scheduledAt.toISOString(),
           group_id: groupId,
+          media_storage_path: mediaStoragePath,
+          media_type: mediaType,
         }),
       });
 
@@ -131,6 +166,7 @@ export default function MessagesPage() {
       setScheduledDate('');
       setScheduledTime('');
       setSelectedGroupId('');
+      setSelectedFile(null);
       setShowForm(false);
       fetchMessages();
     } catch {
@@ -186,7 +222,7 @@ export default function MessagesPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="message-text" className="block text-sm font-medium text-gray-700">
-                Texto da mensagem
+                Texto da mensagem {selectedFile ? '(opcional)' : ''}
               </label>
               <textarea
                 id="message-text"
@@ -252,6 +288,12 @@ export default function MessagesPage() {
               </p>
             ) : null}
 
+            <FileUpload
+              onFileSelected={setSelectedFile}
+              disabled={submitting}
+              error={uploadError}
+            />
+
             {formError && (
               <p className="text-sm text-red-600">{formError}</p>
             )}
@@ -295,6 +337,7 @@ export default function MessagesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mensagem</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Midia</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Agendada para</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Status</th>
@@ -306,8 +349,13 @@ export default function MessagesPage() {
                 const statusStyle = STATUS_STYLES[msg.status as MessageStatus] ?? STATUS_STYLES.pending;
                 return (
                   <tr key={msg.id} className="hover:bg-gray-50">
-                    <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-900" title={msg.message_text}>
-                      {msg.message_text.length > 80 ? msg.message_text.slice(0, 80) + '...' : msg.message_text}
+                    <td className="max-w-xs truncate px-4 py-3 text-sm text-gray-900" title={msg.message_text ?? ''}>
+                      {msg.message_text
+                        ? msg.message_text.length > 80 ? msg.message_text.slice(0, 80) + '...' : msg.message_text
+                        : <span className="text-gray-400 italic">Apenas midia</span>}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
+                      {msg.media_type === 'pdf' ? 'PDF' : msg.media_type === 'image' ? 'Imagem' : '-'}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
                       {msg.groups?.name ?? '-'}

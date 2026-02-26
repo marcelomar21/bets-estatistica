@@ -5,14 +5,21 @@ import { z } from 'zod';
 // Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const VALID_MEDIA_TYPES = ['pdf', 'image'] as const;
+
 const createMessageSchema = z.object({
-  message_text: z.string().min(1, 'Texto da mensagem e obrigatorio'),
+  message_text: z.string().optional().default(''),
   scheduled_at: z.string().datetime({ message: 'Data deve estar no formato ISO 8601' }).refine(
     (val) => new Date(val) > new Date(),
     'Data de agendamento deve ser no futuro',
   ),
   group_id: z.string().regex(UUID_RE, 'group_id deve ser um UUID valido'),
-});
+  media_storage_path: z.string().optional(),
+  media_type: z.enum(VALID_MEDIA_TYPES).optional(),
+}).refine(
+  (data) => (data.message_text && data.message_text.trim() !== '') || data.media_storage_path,
+  { message: 'Mensagem deve conter texto ou midia', path: ['message_text'] },
+);
 
 export const GET = createApiHandler(
   async (_req, context) => {
@@ -67,11 +74,13 @@ export const POST = createApiHandler(
       .insert({
         group_id: body.group_id,
         created_by: user.id,
-        message_text: body.message_text,
+        message_text: body.message_text || null,
         scheduled_at: body.scheduled_at,
         status: 'pending',
+        media_storage_path: body.media_storage_path ?? null,
+        media_type: body.media_type ?? null,
       })
-      .select('id, status, scheduled_at, group_id, message_text, created_at')
+      .select('id, status, scheduled_at, group_id, message_text, media_type, media_storage_path, created_at')
       .single();
 
     if (error) {
