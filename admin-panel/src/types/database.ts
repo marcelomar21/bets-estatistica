@@ -332,6 +332,26 @@ export interface BetLinkUpdateResponse {
   };
 }
 
+// Story 6.1: Game analysis with PDF storage
+export interface GameAnalysis {
+  id: number;
+  match_id: number;
+  analysis_md: string;
+  analysis_json: Record<string, unknown>;
+  pdf_storage_path: string | null;
+  pdf_uploaded_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GameAnalysisListItem extends GameAnalysis {
+  league_matches: {
+    home_team: string;
+    away_team: string;
+    match_date: string;
+  } | null;
+}
+
 export interface BulkLinksUpdateResponse {
   success: true;
   data: {

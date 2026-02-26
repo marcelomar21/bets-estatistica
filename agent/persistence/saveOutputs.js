@@ -2,6 +2,10 @@ const { getPool } = require('../db');
 const { loadAnalysisPayload } = require('./reportUtils');
 const { extractSections } = require('./analysisParser');
 const { markAnalysisStatus } = require('../../scripts/lib/matchScreening');
+const { generatePdfFromHtml } = require('./reportService');
+const { renderHtmlReport } = require('./htmlRenderer');
+const { uploadPdfToStorage } = require('./storageUpload');
+const logger = require('../../lib/logger');
 
 const normalizeOdds = (value) => {
   if (value === null || value === undefined || value === '') return null;
@@ -139,6 +143,34 @@ const saveOutputs = async (matchId) => {
   }
 
   await persistInDatabase(matchId, payload, bets, analysisText);
+
+  // Story 6.1: Generate PDF and upload to Supabase Storage
+  let pdfUploaded = false;
+  try {
+    const html = renderHtmlReport(payload);
+    const pdfBuffer = await generatePdfFromHtml(html);
+
+    const uploadResult = await uploadPdfToStorage(matchId, pdfBuffer);
+    if (uploadResult.success) {
+      const client = await getPool().connect();
+      try {
+        await client.query(
+          'UPDATE game_analysis SET pdf_storage_path = $1, pdf_uploaded_at = NOW() WHERE match_id = $2',
+          [uploadResult.storagePath, matchId],
+        );
+        pdfUploaded = true;
+      } finally {
+        client.release();
+      }
+    }
+  } catch (err) {
+    // PDF upload failure must NOT block the pipeline (NFR-R4)
+    logger.warn('[saveOutputs] PDF upload failed (non-blocking)', {
+      matchId,
+      error: err.message,
+    });
+  }
+
   const generatedAt = payload.generated_at ? new Date(payload.generated_at) : new Date();
   await markAnalysisStatus(getPool(), matchId, 'relatorio_concluido', {
     analysisGeneratedAt: generatedAt,
@@ -148,6 +180,7 @@ const saveOutputs = async (matchId) => {
   return {
     betsPersisted: bets.length,
     usedFallback,
+    pdfUploaded,
   };
 };
 
