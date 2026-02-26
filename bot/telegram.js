@@ -328,6 +328,16 @@ async function sendToPublic(text, botCtxOrOptions, options) {
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function sendMediaToPublic(mediaType, mediaUrl, caption, botCtx) {
+  if (!botCtx || !botCtx.bot || !botCtx.publicGroupId) {
+    logger.error('sendMediaToPublic called without valid botCtx');
+    return { success: false, error: { code: 'INVALID_BOT_CTX', message: 'Missing bot context' } };
+  }
+
+  if (mediaType !== 'image' && mediaType !== 'pdf') {
+    logger.error('sendMediaToPublic called with invalid mediaType', { mediaType });
+    return { success: false, error: { code: 'INVALID_MEDIA_TYPE', message: `Unsupported media type: ${mediaType}` } };
+  }
+
   const targetBot = botCtx.bot;
   const targetChatId = botCtx.publicGroupId;
 
