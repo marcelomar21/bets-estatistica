@@ -138,8 +138,8 @@ development_status:
   # ========================================
   epic-10: in-progress
   10-1-api-analytics-acerto-filtros: done
-  10-2-pagina-analytics-admin-panel: in-progress
-  10-3-filtros-periodo-exportacao: backlog
+  10-2-pagina-analytics-admin-panel: done
+  10-3-filtros-periodo-exportacao: in-progress
   epic-10-retrospective: optional
 
   # ========================================

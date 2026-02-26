@@ -1,6 +1,37 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import type { MarketCategory } from '@/lib/bet-categories';
+
+const MARKET_OPTIONS: MarketCategory[] = ['Gols', 'Escanteios', 'Cartões', 'BTTS', 'Outros'];
+
+type PeriodPreset = '7d' | '30d' | 'month' | 'custom' | '';
+
+function presetToDates(preset: PeriodPreset): { from: string; to: string } {
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const to = fmt(today);
+
+  switch (preset) {
+    case '7d': {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 7);
+      return { from: fmt(d), to };
+    }
+    case '30d': {
+      const d = new Date(today);
+      d.setDate(d.getDate() - 30);
+      return { from: fmt(d), to };
+    }
+    case 'month': {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: fmt(from), to };
+    }
+    default:
+      return { from: '', to: '' };
+  }
+}
 
 interface PeriodData {
   rate: number;
@@ -40,6 +71,11 @@ interface AnalyticsData {
     last30d: PeriodData;
     allTime: PeriodData;
   };
+}
+
+interface GroupOption {
+  id: string;
+  name: string;
 }
 
 function rateColor(rate: number): string {
@@ -92,17 +128,83 @@ function useSortable<T extends BreakdownRow>(data: T[]) {
   return { sorted, toggleSort, sortIcon };
 }
 
+function generateCsv(data: AnalyticsData): string {
+  const lines: string[] = [];
+
+  lines.push('Secao,Item,Taxa (%),Acertos,Erros,Total');
+
+  lines.push(`Resumo,Total,${data.total.rate},${data.total.wins},${data.total.losses},${data.total.total}`);
+  lines.push(`Resumo,Ultimos 7d,${data.periods.last7d.rate},${data.periods.last7d.wins},,${data.periods.last7d.total}`);
+  lines.push(`Resumo,Ultimos 30d,${data.periods.last30d.rate},${data.periods.last30d.wins},,${data.periods.last30d.total}`);
+
+  for (const m of data.byMarket) {
+    lines.push(`Mercado,${m.market},${m.rate},${m.wins},${m.losses},${m.total}`);
+  }
+
+  for (const c of data.byChampionship) {
+    lines.push(`Campeonato,"${c.league_name} (${c.country})",${c.rate},${c.wins},${c.losses},${c.total}`);
+  }
+
+  for (const g of data.byGroup) {
+    lines.push(`Grupo,${g.group_name},${g.rate},${g.wins},${g.losses},${g.total}`);
+  }
+
+  return lines.join('\n');
+}
+
+function downloadCsv(csv: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `analytics-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AnalyticsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [role, setRole] = useState<'super_admin' | 'group_admin' | null>(null);
+  const [groups, setGroups] = useState<GroupOption[]>([]);
+
+  // Filters — initialized from URL search params
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(
+    (searchParams.get('period') as PeriodPreset) || '',
+  );
+  const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') || '');
+  const [dateTo, setDateTo] = useState(searchParams.get('date_to') || '');
+  const [groupId, setGroupId] = useState(searchParams.get('group_id') || '');
+  const [market, setMarket] = useState(searchParams.get('market') || '');
+
+  // Sync URL with filter state
+  const updateUrl = useCallback(
+    (params: Record<string, string>) => {
+      const sp = new URLSearchParams();
+      for (const [k, v] of Object.entries(params)) {
+        if (v) sp.set(k, v);
+      }
+      const qs = sp.toString();
+      router.replace(`/analytics${qs ? `?${qs}` : ''}`, { scroll: false });
+    },
+    [router],
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/analytics/accuracy');
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
+      if (groupId) params.set('group_id', groupId);
+      if (market) params.set('market', market);
+
+      const res = await fetch(`/api/analytics/accuracy?${params}`);
       const json = await res.json();
       if (!json.success) {
         setError(json.error?.message ?? 'Erro ao carregar analytics');
@@ -114,20 +216,69 @@ export default function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo, groupId, market]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
+  // Fetch role and groups on mount
   useEffect(() => {
     fetch('/api/me')
       .then((r) => r.json())
       .then((json) => {
         if (json.role) setRole(json.role);
+        if (json.role === 'super_admin') {
+          fetch('/api/groups')
+            .then((r2) => r2.json())
+            .then((g) => {
+              if (g.success && g.data) setGroups(g.data);
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, []);
+
+  // When period preset changes, update date fields
+  function handlePeriodChange(preset: PeriodPreset) {
+    setPeriodPreset(preset);
+    if (preset !== 'custom') {
+      const { from, to } = presetToDates(preset);
+      setDateFrom(from);
+      setDateTo(to);
+      updateUrl({ period: preset, date_from: from, date_to: to, group_id: groupId, market });
+    } else {
+      updateUrl({ period: 'custom', date_from: dateFrom, date_to: dateTo, group_id: groupId, market });
+    }
+  }
+
+  function handleCustomDateChange(from: string, to: string) {
+    setDateFrom(from);
+    setDateTo(to);
+    updateUrl({ period: 'custom', date_from: from, date_to: to, group_id: groupId, market });
+  }
+
+  function handleGroupChange(gid: string) {
+    setGroupId(gid);
+    updateUrl({ period: periodPreset, date_from: dateFrom, date_to: dateTo, group_id: gid, market });
+  }
+
+  function handleMarketChange(m: string) {
+    setMarket(m);
+    updateUrl({ period: periodPreset, date_from: dateFrom, date_to: dateTo, group_id: groupId, market: m });
+  }
+
+  function clearFilters() {
+    setPeriodPreset('');
+    setDateFrom('');
+    setDateTo('');
+    setGroupId('');
+    setMarket('');
+    updateUrl({});
+  }
+
+  const hasFilters = periodPreset || dateFrom || dateTo || groupId || market;
 
   const marketSort = useSortable(data?.byMarket ?? []);
   const champSort = useSortable(data?.byChampionship ?? []);
@@ -135,7 +286,112 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+        {data && (
+          <button
+            onClick={() => downloadCsv(generateCsv(data))}
+            className="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+          >
+            Exportar CSV
+          </button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-gray-200 bg-white p-4">
+        <div>
+          <label htmlFor="period" className="block text-xs font-medium text-gray-500 uppercase">
+            Periodo
+          </label>
+          <select
+            id="period"
+            value={periodPreset}
+            onChange={(e) => handlePeriodChange(e.target.value as PeriodPreset)}
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+          >
+            <option value="">Todos</option>
+            <option value="7d">Ultimos 7 dias</option>
+            <option value="30d">Ultimos 30 dias</option>
+            <option value="month">Este mes</option>
+            <option value="custom">Personalizado</option>
+          </select>
+        </div>
+
+        {periodPreset === 'custom' && (
+          <>
+            <div>
+              <label htmlFor="date_from" className="block text-xs font-medium text-gray-500 uppercase">
+                De
+              </label>
+              <input
+                id="date_from"
+                type="date"
+                value={dateFrom}
+                onChange={(e) => handleCustomDateChange(e.target.value, dateTo)}
+                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="date_to" className="block text-xs font-medium text-gray-500 uppercase">
+                Ate
+              </label>
+              <input
+                id="date_to"
+                type="date"
+                value={dateTo}
+                onChange={(e) => handleCustomDateChange(dateFrom, e.target.value)}
+                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <label htmlFor="market-filter" className="block text-xs font-medium text-gray-500 uppercase">
+            Mercado
+          </label>
+          <select
+            id="market-filter"
+            value={market}
+            onChange={(e) => handleMarketChange(e.target.value)}
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+          >
+            <option value="">Todos</option>
+            {MARKET_OPTIONS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+
+        {role === 'super_admin' && groups.length > 0 && (
+          <div>
+            <label htmlFor="group-filter" className="block text-xs font-medium text-gray-500 uppercase">
+              Grupo
+            </label>
+            <select
+              id="group-filter"
+              value={groupId}
+              onChange={(e) => handleGroupChange(e.target.value)}
+              className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">Todos</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {hasFilters && (
+          <button
+            onClick={clearFilters}
+            className="text-sm text-gray-500 hover:text-gray-700"
+          >
+            Limpar filtros
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div>
