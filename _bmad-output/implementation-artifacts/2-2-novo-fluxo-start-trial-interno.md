@@ -1,6 +1,6 @@
 # Story 2.2: Novo Fluxo /start com Trial Interno
 
-Status: review
+Status: done
 
 ## Story
 
