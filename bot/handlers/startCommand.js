@@ -169,9 +169,10 @@ async function handleStartCommand(msg, botCtx = null) {
     // Story 3-2: Check terms acceptance before creating trial
     const termsVersion = await getConfig('TERMS_VERSION', '1.0');
     const effectiveBotCtx = botCtx || getDefaultBotCtx();
-    const groupId = effectiveBotCtx?.publicGroupId;
+    // Use group UUID (not Telegram chat ID) for terms_acceptance table
+    const termsGroupId = effectiveBotCtx?.groupId;
 
-    const acceptedResult = await hasAcceptedVersion(telegramId, groupId, termsVersion);
+    const acceptedResult = await hasAcceptedVersion(telegramId, termsGroupId, termsVersion);
 
     if (acceptedResult.success && acceptedResult.data.accepted) {
       // Already accepted current version — proceed to trial
@@ -437,14 +438,15 @@ async function handleTermsAcceptCallback(bot, callbackQuery, botCtx = null) {
   const firstName = callbackQuery.from.first_name;
 
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
-  const groupId = effectiveBotCtx?.publicGroupId;
+  // Use group UUID (not Telegram chat ID) for terms_acceptance table
+  const termsGroupId = effectiveBotCtx?.groupId;
 
   // Read terms config
   const termsVersion = await getConfig('TERMS_VERSION', '1.0');
   const termsUrl = await getConfig('TERMS_URL', 'https://docs.google.com/document/d/terms');
 
   // Register acceptance
-  const acceptResult = await acceptTerms(telegramId, groupId, termsVersion, termsUrl);
+  const acceptResult = await acceptTerms(telegramId, termsGroupId, termsVersion, termsUrl);
 
   if (!acceptResult.success) {
     logger.error('[membership:start-command] Failed to register terms acceptance', {
