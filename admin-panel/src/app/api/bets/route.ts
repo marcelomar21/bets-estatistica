@@ -10,7 +10,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
-const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at', 'league_name']);
+const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
@@ -167,8 +167,6 @@ export const GET = createApiHandler(
     const ascending = sortDir === 'asc';
     if (sortBy === 'kickoff_time') {
       query = query.order('league_matches(kickoff_time)', { ascending });
-    } else if (sortBy === 'league_name') {
-      query = query.order('league_matches.league_seasons(league_name)', { ascending });
     } else {
       query = query.order(sortBy, { ascending });
     }

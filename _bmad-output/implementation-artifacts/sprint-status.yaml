@@ -111,8 +111,8 @@ development_status:
   # ========================================
   # Epic 7: Coluna Campeonato na Aba de Apostas
   # ========================================
-  epic-7: in-progress
-  7-1-coluna-campeonato-filtro-liga: review
+  epic-7: done
+  7-1-coluna-campeonato-filtro-liga: done
   epic-7-retrospective: optional
 
   # ========================================
