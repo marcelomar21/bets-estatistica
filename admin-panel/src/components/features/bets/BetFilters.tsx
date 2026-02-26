@@ -12,6 +12,7 @@ export interface BetFilterValues {
   future_only: string;
   date_from: string;
   date_to: string;
+  championship: string;
 }
 
 interface BetFiltersProps {
@@ -19,6 +20,7 @@ interface BetFiltersProps {
   onFilterChange: (filters: BetFilterValues) => void;
   groups?: Array<{ id: string; name: string }>;
   showGroupFilter?: boolean;
+  championships?: string[];
 }
 
 const BET_STATUS_OPTIONS = [
@@ -47,7 +49,7 @@ function toISODate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }: BetFiltersProps) {
+export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, championships }: BetFiltersProps) {
   const [searchInput, setSearchInput] = useState(filters.search);
 
   function handleChange(key: keyof BetFilterValues, value: string) {
@@ -137,6 +139,19 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter }:
             <option value="__pool__">Nao distribuidas (Pool)</option>
             {groups.map((g) => (
               <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
+
+        {championships && championships.length > 0 && (
+          <select
+            value={filters.championship}
+            onChange={(e) => handleChange('championship', e.target.value)}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          >
+            <option value="">Todos os Campeonatos</option>
+            {championships.map((c) => (
+              <option key={c} value={c}>{c}</option>
             ))}
           </select>
         )}

@@ -1,4 +1,4 @@
-# generated: 2026-02-25
+# generated: 2026-02-26
 # project: bets-estatistica
 # project_key: bets-estatistica
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-25
+generated: 2026-02-26
 project: bets-estatistica
 project_key: bets-estatistica
 tracking_system: file-system
@@ -102,3 +102,50 @@ development_status:
   6-2-api-analises-signed-urls: done
   6-3-pagina-analises-admin-panel: done
   epic-6-retrospective: optional
+
+  # ========================================
+  # PRD v3 — Release: 5 features novas (Epics 7-11)
+  # Sprint Change Proposal aprovado em 2026-02-26
+  # ========================================
+
+  # ========================================
+  # Epic 7: Coluna Campeonato na Aba de Apostas
+  # ========================================
+  epic-7: in-progress
+  7-1-coluna-campeonato-filtro-liga: review
+  epic-7-retrospective: optional
+
+  # ========================================
+  # Epic 8: Mensagens com Mídia e Preview
+  # ========================================
+  epic-8: backlog
+  8-1-upload-arquivo-schema-midia: backlog
+  8-2-preview-mensagem-agendada: backlog
+  8-3-envio-midia-bot-telegram: backlog
+  epic-8-retrospective: optional
+
+  # ========================================
+  # Epic 9: Fluxo de Cancelamento de Membros
+  # ========================================
+  epic-9: backlog
+  9-1-cancelamento-operador-painel: backlog
+  9-2-cancelamento-self-service-bot: backlog
+  9-3-historico-cancelamentos-reativacao: backlog
+  epic-9-retrospective: optional
+
+  # ========================================
+  # Epic 10: Analytics de Taxa de Acerto
+  # ========================================
+  epic-10: backlog
+  10-1-api-analytics-acerto-filtros: backlog
+  10-2-pagina-analytics-admin-panel: backlog
+  10-3-filtros-periodo-exportacao: backlog
+  epic-10-retrospective: optional
+
+  # ========================================
+  # Epic 11: Revisão do Dashboard
+  # ========================================
+  epic-11: backlog
+  11-1-alertas-dismissiveis-limpeza: backlog
+  11-2-metricas-acerto-dashboard: backlog
+  epic-11-retrospective: optional

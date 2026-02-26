@@ -16,6 +16,10 @@ export interface HistoryBet {
     home_team_name: string;
     away_team_name: string;
     kickoff_time: string;
+    league_seasons?: {
+      league_name: string;
+      country: string;
+    } | null;
   };
   groups: { name: string } | null;
 }
@@ -103,6 +107,9 @@ export function PostingHistoryTable({
               <SortIcon field="kickoff_time" currentSort={sortBy} currentDir={sortDir} />
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Campeonato
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Mercado
             </th>
             <th
@@ -143,6 +150,9 @@ export function PostingHistoryTable({
                   <div className="text-xs text-gray-500">
                     {formatDateTime(match.kickoff_time)}
                   </div>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                  {match.league_seasons?.league_name ?? '—'}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                   {bet.bet_market} — {bet.bet_pick}

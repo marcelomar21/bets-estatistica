@@ -137,6 +137,7 @@ export function BetTable({
               <SortHeader field="id">ID</SortHeader>
               <SortHeader field="kickoff_time">Jogo</SortHeader>
               <SortHeader field="kickoff_time">Data Jogo</SortHeader>
+              <SortHeader field="league_name">Campeonato</SortHeader>
               <SortHeader field="bet_market">Mercado</SortHeader>
               <SortHeader field="bet_pick">Pick</SortHeader>
               <th
@@ -204,6 +205,9 @@ export function BetTable({
                   </td>
                   <td className="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">
                     {match ? formatKickoffDate(match.kickoff_time) : '-'}
+                  </td>
+                  <td className="px-3 py-3 text-sm text-gray-600 max-w-[180px] truncate" title={match?.league_seasons?.league_name ?? ''}>
+                    {match?.league_seasons?.league_name ?? '—'}
                   </td>
                   <td className="px-3 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${categoryStyle}`}>

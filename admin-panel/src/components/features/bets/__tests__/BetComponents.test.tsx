@@ -30,6 +30,10 @@ const sampleBet: SuggestedBetListItem = {
     away_team_name: 'Palmeiras',
     kickoff_time: '2026-02-10T20:00:00Z',
     status: 'scheduled',
+    league_seasons: {
+      league_name: 'Serie A Brasil',
+      country: 'Brazil',
+    },
   },
   groups: { name: 'Grupo Alpha' },
 };
@@ -131,6 +135,7 @@ describe('BetFilters', () => {
     future_only: 'true',
     date_from: '',
     date_to: '',
+    championship: '',
   };
 
   it('renders search input and button', () => {
@@ -172,6 +177,31 @@ describe('BetFilters', () => {
     expect(screen.getByText('Grupo A')).toBeInTheDocument();
     expect(screen.getByText('Grupo B')).toBeInTheDocument();
   });
+
+  it('renders championship dropdown when championships provided (Story 7-1)', () => {
+    const championships = ['Premier League', 'Serie A Brasil'];
+    render(<BetFilters filters={defaultFilters} onFilterChange={vi.fn()} championships={championships} />);
+    expect(screen.getByText('Todos os Campeonatos')).toBeInTheDocument();
+    expect(screen.getByText('Premier League')).toBeInTheDocument();
+    expect(screen.getByText('Serie A Brasil')).toBeInTheDocument();
+  });
+
+  it('calls onFilterChange with championship when selected (Story 7-1)', async () => {
+    const user = userEvent.setup();
+    const onFilterChange = vi.fn();
+    const championships = ['Premier League', 'Serie A Brasil'];
+    render(<BetFilters filters={defaultFilters} onFilterChange={onFilterChange} championships={championships} />);
+
+    const selects = screen.getAllByRole('combobox');
+    // Find the championship select (contains "Todos os Campeonatos")
+    const champSelect = selects.find(s => s.querySelector('option[value=""]')?.textContent === 'Todos os Campeonatos');
+    expect(champSelect).toBeDefined();
+    await user.selectOptions(champSelect!, 'Premier League');
+
+    expect(onFilterChange).toHaveBeenCalledWith(
+      expect.objectContaining({ championship: 'Premier League' }),
+    );
+  });
 });
 
 // ============================================================
@@ -200,6 +230,25 @@ describe('BetTable', () => {
     expect(screen.getByText('1.85')).toBeInTheDocument();
     // Story 4-1: Distribution badge now shows group name instead of generic "Distribuida"
     expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
+  });
+
+  it('renders championship column with league_name (Story 7-1)', () => {
+    render(<BetTable {...defaultProps} role="super_admin" />);
+    // Header
+    expect(screen.getByText('Campeonato')).toBeInTheDocument();
+    // Data cell
+    expect(screen.getByText('Serie A Brasil')).toBeInTheDocument();
+  });
+
+  it('renders dash when league_seasons is null (Story 7-1)', () => {
+    const betNoLeague: SuggestedBetListItem = {
+      ...sampleBet,
+      league_matches: { ...sampleBet.league_matches!, league_seasons: null },
+    };
+    render(<BetTable {...defaultProps} bets={[betNoLeague]} role="super_admin" />);
+    // Should show em dash for missing championship
+    const cells = screen.getAllByText('—');
+    expect(cells.length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders empty state when no bets', () => {

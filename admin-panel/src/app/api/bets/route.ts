@@ -10,7 +10,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
-const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at']);
+const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at', 'league_name']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
@@ -55,6 +55,8 @@ export const GET = createApiHandler(
     const search = url.searchParams.get('search')?.trim() || null;
     const sortBy = url.searchParams.get('sort_by')?.trim().toLowerCase() || 'kickoff_time';
     const sortDir = url.searchParams.get('sort_dir')?.trim().toLowerCase() || 'desc';
+
+    const championship = url.searchParams.get('championship')?.trim() || null;
 
     // Date filters (Story 5.6)
     const futureOnly = url.searchParams.get('future_only')?.trim().toLowerCase() ?? 'true';
@@ -141,6 +143,9 @@ export const GET = createApiHandler(
         `league_matches.home_team_name.ilike.%${search}%,league_matches.away_team_name.ilike.%${search}%,bet_market.ilike.%${search}%`,
       );
     }
+    if (championship) {
+      query = query.eq('league_matches.league_seasons.league_name', championship);
+    }
 
     // Date filters (Story 5.6)
     // Use BRT offset (-03:00) so "today" matches the Brazilian calendar day
@@ -162,6 +167,8 @@ export const GET = createApiHandler(
     const ascending = sortDir === 'asc';
     if (sortBy === 'kickoff_time') {
       query = query.order('league_matches(kickoff_time)', { ascending });
+    } else if (sortBy === 'league_name') {
+      query = query.order('league_matches.league_seasons(league_name)', { ascending });
     } else {
       query = query.order(sortBy, { ascending });
     }
