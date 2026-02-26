@@ -61,34 +61,55 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
   deploy:
-    name: Deploy to Render
+    name: Deploy Bots to Render
     runs-on: ubuntu-latest
     needs: [lint, test]
     # Deploy apenas em push para main/master (não em PRs)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
 
     steps:
-      - name: Check deploy hook configured
+      - name: Check Render API key configured
         run: |
-          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK secret not configured"
+          if [ -z "${{ secrets.RENDER_API_KEY }}" ]; then
+            echo "::error::RENDER_API_KEY secret not configured"
             echo "Configure the secret in GitHub: Settings → Secrets → Actions → New secret"
             exit 1
           fi
 
-      - name: Trigger Render Deploy
+      - name: Deploy bets-bot-unified
         run: |
-          echo "::notice::Triggering Render deploy..."
-          response=$(curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}" \
-            --fail \
-            --silent \
-            --show-error \
-            --write-out "%{http_code}" \
-            --output /dev/null)
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "::notice::Deploy triggered successfully! (HTTP $response)"
+          echo "::notice::Deploying bets-bot-unified..."
+          response=$(curl -s -X POST "https://api.render.com/v1/services/srv-d6fliv6a2pns7382ckd0/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}' \
+            --write-out "\n%{http_code}" \
+            --output /tmp/deploy-unified.json)
+          http_code=$(echo "$response" | tail -1)
+          if [ "$http_code" = "201" ]; then
+            deploy_id=$(python3 -c "import json; print(json.load(open('/tmp/deploy-unified.json')).get('id','?'))")
+            echo "::notice::bets-bot-unified deploy triggered! (ID: $deploy_id)"
           else
-            echo "::warning::Deploy request returned HTTP $response"
+            echo "::warning::bets-bot-unified deploy returned HTTP $http_code"
+            cat /tmp/deploy-unified.json
+          fi
+
+      - name: Deploy bets-webhook
+        run: |
+          echo "::notice::Deploying bets-webhook..."
+          response=$(curl -s -X POST "https://api.render.com/v1/services/srv-d5m5cmje5dus73e8ds10/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}' \
+            --write-out "\n%{http_code}" \
+            --output /tmp/deploy-webhook.json)
+          http_code=$(echo "$response" | tail -1)
+          if [ "$http_code" = "201" ]; then
+            deploy_id=$(python3 -c "import json; print(json.load(open('/tmp/deploy-webhook.json')).get('id','?'))")
+            echo "::notice::bets-webhook deploy triggered! (ID: $deploy_id)"
+          else
+            echo "::warning::bets-webhook deploy returned HTTP $http_code"
+            cat /tmp/deploy-webhook.json
           fi
 
   deploy-admin-panel:
