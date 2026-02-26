@@ -1,6 +1,6 @@
 # Story 9.3: Historico de Cancelamentos e Reativacao
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -73,7 +73,24 @@ await fetch(`https://api.telegram.org/bot${botToken}/unbanChatMember`, {
 ## Dev Agent Record
 
 ### Agent Model Used
+claude-opus-4-6
 
 ### Completion Notes List
+- POST /api/members/[id]/reactivate with optimistic locking and status validation
+- Telegram unbanChatMember (best-effort) on reactivation
+- Reativar button for cancelled members in MemberList
+- Cancellation details columns (Motivo, Cancelado Por, Data Cancelamento) when filtering by cancelado
+- Resolve cancelled_by UUID to admin email via secondary query (strips raw UUID from response)
+- State machine: cancelado → ativo transition added
+- 8 unit tests for reactivate endpoint (success, validation, 404, 409 conflict, group filter, Telegram call)
+- Audit log for reactivation events
+- Code review: fixed DB error message leak, cancelled_by UUID leak, double-click prevention
 
 ### File List
+- `admin-panel/src/app/api/members/[id]/reactivate/route.ts` — NEW
+- `admin-panel/src/app/api/__tests__/member-reactivate.test.ts` — NEW
+- `admin-panel/src/app/api/members/route.ts` — MODIFIED (cancel cols, email resolution)
+- `admin-panel/src/types/database.ts` — MODIFIED (MemberListItem extended)
+- `admin-panel/src/components/features/members/MemberList.tsx` — MODIFIED (Reativar button, cancellation columns)
+- `admin-panel/src/app/(auth)/members/page.tsx` — MODIFIED (handleReactivate, reactivateLoading)
+- `bot/services/memberService.js` — MODIFIED (cancelado → ativo transition)

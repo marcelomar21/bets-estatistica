@@ -127,10 +127,10 @@ development_status:
   # ========================================
   # Epic 9: Fluxo de Cancelamento de Membros
   # ========================================
-  epic-9: in-progress
+  epic-9: done
   9-1-cancelamento-operador-painel: done
   9-2-cancelamento-self-service-bot: done
-  9-3-historico-cancelamentos-reativacao: ready-for-dev
+  9-3-historico-cancelamentos-reativacao: done
   epic-9-retrospective: optional
 
   # ========================================
