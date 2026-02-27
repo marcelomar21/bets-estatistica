@@ -1315,6 +1315,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         reasoning,
         elegibilidade,
         promovida_manual,
+        post_at,
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -1350,6 +1351,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       betStatus: 'posted',
       deepLink: bet.deep_link,
       promovidaManual: bet.promovida_manual,
+      postAt: bet.post_at || null,
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
@@ -1373,6 +1375,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           reasoning,
           elegibilidade,
           promovida_manual,
+          post_at,
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -1413,6 +1416,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           betStatus: bet.bet_status,
           deepLink: bet.deep_link,
           promovidaManual: bet.promovida_manual,
+          postAt: bet.post_at || null,
           homeTeamName: bet.league_matches.home_team_name,
           awayTeamName: bet.league_matches.away_team_name,
           kickoffTime: bet.league_matches.kickoff_time,

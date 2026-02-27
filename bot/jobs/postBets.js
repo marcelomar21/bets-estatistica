@@ -437,12 +437,12 @@ function validateBetForPosting(bet) {
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
 async function runPostBets(skipConfirmation = false, options = {}) {
-  const { botCtx = null } = options;
+  const { botCtx = null, currentPostTime = null } = options;
   const period = getPeriod();
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
   const toneConfig = botCtx?.groupConfig?.copyToneConfig || null;
-  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
+  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis
@@ -458,7 +458,24 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     throw new Error(`Failed to get fila status: ${filaResult.error?.message || 'Unknown'}`);
   }
 
-  const { ativas, novas } = filaResult.data;
+  let { ativas, novas } = filaResult.data;
+
+  // Filter by post_at when running from scheduled cron (currentPostTime is set)
+  // Manual post-now (currentPostTime is null) posts everything regardless of post_at
+  if (currentPostTime) {
+    const beforeAtivas = ativas.length;
+    const beforeNovas = novas.length;
+    ativas = ativas.filter((b) => b.postAt === currentPostTime);
+    novas = novas.filter((b) => b.postAt === currentPostTime);
+    logger.info('[postBets] Filtered by post_at', {
+      currentPostTime,
+      groupId,
+      ativasBefore: beforeAtivas,
+      ativasAfter: ativas.length,
+      novasBefore: beforeNovas,
+      novasAfter: novas.length,
+    });
+  }
 
   // Story 5.4 AC4/AC5: Log pending ready bets count for this group
   const readyCount = novas.filter((b) => validateBetForPosting(b).valid).length;

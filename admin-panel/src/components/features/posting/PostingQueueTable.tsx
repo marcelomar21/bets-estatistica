@@ -13,6 +13,7 @@ interface QueueBet {
   deep_link: string | null;
   promovida_manual?: boolean;
   elegibilidade?: string;
+  post_at?: string | null;
   hit_rate?: { rate: number; wins: number; total: number } | null;
   match: {
     home_team_name: string;
@@ -27,12 +28,13 @@ interface PostingQueueTableProps {
   onEditOdds?: (bet: QueueBet) => void;
   onEditLink?: (bet: QueueBet) => void;
   onPromote?: (betId: number) => Promise<void>;
+  onScheduleBet?: (betId: number, postAt: string | null) => void;
   emptyMessage?: string;
 }
 
 export type { QueueBet };
 
-type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate' | 'odds' | 'link' | 'status';
+type SortField = 'id' | 'match' | 'kickoff_time' | 'market' | 'pick' | 'hit_rate' | 'odds' | 'link' | 'post_at' | 'status';
 type SortDir = 'asc' | 'desc';
 
 function getStatusBadge(bet: QueueBet) {
@@ -111,6 +113,9 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
       result = linkA - linkB;
       break;
     }
+    case 'post_at':
+      result = (a.post_at ?? '').localeCompare(b.post_at ?? '');
+      break;
     case 'status':
       result = a.bet_status.localeCompare(b.bet_status);
       break;
@@ -119,7 +124,7 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
   return dir === 'asc' ? result : -result;
 }
 
-export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, emptyMessage }: PostingQueueTableProps) {
+export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [promotingId, setPromotingId] = useState<number | null>(null);
@@ -189,6 +194,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
             <SortHeader field="odds">Odds</SortHeader>
             <SortHeader field="link" className="text-center">Link</SortHeader>
             <SortHeader field="kickoff_time">Data Jogo</SortHeader>
+            {onScheduleBet && <SortHeader field="post_at">Agendamento</SortHeader>}
             <SortHeader field="status">Status</SortHeader>
             <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-gray-500">
               Acoes
@@ -270,6 +276,16 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
                   {formatKickoffDate(bet.match.kickoff_time)}
                 </td>
+                {onScheduleBet && (
+                  <td className="px-4 py-3">
+                    <input
+                      type="time"
+                      value={bet.post_at ?? ''}
+                      onChange={(e) => onScheduleBet(bet.id, e.target.value || null)}
+                      className="rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${status.className}`}>
                     {status.label}

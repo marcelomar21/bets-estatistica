@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PostingScheduleSection } from '@/components/features/posting/PostingScheduleSection';
 import { PostingQueueTable } from '@/components/features/posting/PostingQueueTable';
 import type { QueueBet } from '@/components/features/posting/PostingQueueTable';
 
@@ -70,6 +69,10 @@ export default function PostagemPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Bulk schedule
+  const [bulkScheduleTime, setBulkScheduleTime] = useState<string>('');
+  const [bulkScheduling, setBulkScheduling] = useState(false);
 
   // Edit modals
   const [editingOddsBet, setEditingOddsBet] = useState<QueueBet | null>(null);
@@ -212,6 +215,66 @@ export default function PostagemPage() {
     setEditingLinkBet(bet);
     setLinkInput(bet.deep_link ?? '');
     setModalError('');
+  }
+
+  async function handleScheduleBet(betId: number, postAt: string | null) {
+    try {
+      const res = await fetch(`/api/bets/${betId}/schedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_at: postAt }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        showToast(json.error?.message ?? 'Erro ao agendar horario', 'error');
+        return;
+      }
+      // Optimistic update: patch local data instead of full refetch
+      if (queueData) {
+        setQueueData({
+          ...queueData,
+          bets: queueData.bets.map(b => b.id === betId ? { ...b, post_at: postAt } : b),
+        });
+      }
+    } catch {
+      showToast('Erro de conexao', 'error');
+    }
+  }
+
+  async function handleBulkSchedule() {
+    if (!bulkScheduleTime || !queueData) return;
+    const betIds = postableBets.map(b => b.id);
+    if (betIds.length === 0) return;
+
+    setBulkScheduling(true);
+    try {
+      const res = await fetch('/api/bets/schedule-bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bet_ids: betIds,
+          post_at: bulkScheduleTime,
+          group_id: selectedGroupId,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        showToast(json.error?.message ?? 'Erro ao aplicar horario em massa', 'error');
+        return;
+      }
+      // Optimistic update
+      setQueueData({
+        ...queueData,
+        bets: queueData.bets.map(b =>
+          betIds.includes(b.id) ? { ...b, post_at: bulkScheduleTime } : b
+        ),
+      });
+      showToast(`Horario ${bulkScheduleTime} aplicado a ${betIds.length} aposta(s)`, 'success');
+    } catch {
+      showToast('Erro de conexao', 'error');
+    } finally {
+      setBulkScheduling(false);
+    }
   }
 
   async function handleSaveOdds() {
@@ -548,40 +611,21 @@ export default function PostagemPage() {
         )}
       </div>
 
-      {/* Configuration Section */}
-      {(selectedGroupId || role === 'group_admin') && groupsLoaded && !isPreviewActive && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <PostingScheduleSection
-            groupId={selectedGroupId}
-            initialSchedule={scheduleForGroup}
-            onSaved={fetchQueue}
-            standalone={true}
-          />
-        </div>
-      )}
-
       {/* Queue Summary */}
       {queueData && !isPreviewActive && (
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-gray-900">Resumo da Fila</h3>
-            <div className="flex items-center gap-3">
-              <div className="text-sm text-gray-600">
-                Proximo horario:{' '}
-                <span className="font-semibold text-gray-900">{queueData.nextPostTime.time}</span>
-                <span className="ml-1 text-gray-500">(em {queueData.nextPostTime.diff})</span>
-              </div>
-              <button
-                onClick={fetchQueue}
-                disabled={loading}
-                className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
-                title="Atualizar"
-              >
-                <svg className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-            </div>
+            <button
+              onClick={fetchQueue}
+              disabled={loading}
+              className="text-gray-400 hover:text-gray-600 disabled:opacity-50"
+              title="Atualizar"
+            >
+              <svg className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -874,18 +918,37 @@ export default function PostagemPage() {
                 ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} elegivel{postableBets.length !== 1 ? 'is' : ''})
               </span>
             </h2>
-            <button
-              onClick={handlePreparePreview}
-              disabled={postableBets.length === 0}
-              title={postableBets.length === 0 ? 'Nenhuma aposta pronta' : `Preparar postagem de ${postableBets.length} aposta(s)`}
-              className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Preparar Postagem
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Bulk schedule toolbar */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={bulkScheduleTime}
+                  onChange={(e) => setBulkScheduleTime(e.target.value)}
+                  className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                  onClick={handleBulkSchedule}
+                  disabled={!bulkScheduleTime || postableBets.length === 0 || bulkScheduling}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {bulkScheduling ? '...' : 'Aplicar a todas'}
+                </button>
+              </div>
+              <button
+                onClick={handlePreparePreview}
+                disabled={postableBets.length === 0}
+                title={postableBets.length === 0 ? 'Nenhuma aposta pronta' : `Preparar postagem de ${postableBets.length} aposta(s)`}
+                className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Preparar Postagem
+              </button>
+            </div>
           </div>
           <PostingQueueTable
             bets={postableBets}
             onRemove={handleRemoveBet}
+            onScheduleBet={handleScheduleBet}
             emptyMessage="Nenhuma aposta elegivel para postagem."
           />
         </div>
