@@ -243,8 +243,7 @@ const ensureAnalysisConsistency = async (structured) => {
     const llm = new ChatOpenAI({
       apiKey: ensureApiKey(),
       model: config.llm.lightModel,
-      temperature: 0,
-      maxTokens: 200,
+      maxTokens: 2000,
       timeout: 30000,
     });
     const structuredLlm = llm.withStructuredOutput(consistencyResultSchema);
