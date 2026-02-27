@@ -133,10 +133,73 @@ function evaluateDeterministic(bet, matchData) {
   const pick = (bet.betPick || '').toLowerCase();
   const combined = `${market} ${pick}`.toLowerCase();
 
-  // Over/Under X.5 goals
-  const overUnderMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:\.\d+)?)\s*(?:gols?|goals?)?/);
-  if (overUnderMatch) {
-    const threshold = parseFloat(overUnderMatch[1]);
+  // Corners over/under
+  const cornersOverMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:[.,]\d+)?)\s*(?:escanteios?|corners?)/);
+  if (cornersOverMatch) {
+    const threshold = parseFloat(cornersOverMatch[1].replace(',', '.'));
+    const { totalCorners } = matchData;
+    if (totalCorners === null || totalCorners === undefined) return null;
+    const won = totalCorners > threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de escanteios: ${totalCorners} ${won ? '>' : '<='} ${threshold} (deterministic)`,
+    };
+  }
+
+  const cornersUnderMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:[.,]\d+)?)\s*(?:escanteios?|corners?)/);
+  if (cornersUnderMatch) {
+    const threshold = parseFloat(cornersUnderMatch[1].replace(',', '.'));
+    const { totalCorners } = matchData;
+    if (totalCorners === null || totalCorners === undefined) return null;
+    const won = totalCorners < threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de escanteios: ${totalCorners} ${won ? '<' : '>='} ${threshold} (deterministic)`,
+    };
+  }
+
+  // Also match "X+ escanteios" or "X ou mais escanteios" patterns
+  const cornersPlus = combined.match(/(\d+)\+?\s*(?:ou\s*mais\s*)?escanteios?/);
+  if (cornersPlus && !cornersOverMatch && !cornersUnderMatch) {
+    const threshold = parseFloat(cornersPlus[1]);
+    const { totalCorners } = matchData;
+    if (totalCorners === null || totalCorners === undefined) return null;
+    const won = totalCorners >= threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de escanteios: ${totalCorners} ${won ? '>=' : '<'} ${threshold} (deterministic)`,
+    };
+  }
+
+  // Cards over/under
+  const cardsOverMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:[.,]\d+)?)\s*(?:cart[oõ](?:es|ns)?|cards?)/);
+  if (cardsOverMatch) {
+    const threshold = parseFloat(cardsOverMatch[1].replace(',', '.'));
+    const { totalCards } = matchData;
+    if (totalCards === null || totalCards === undefined) return null;
+    const won = totalCards > threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de cartões: ${totalCards} ${won ? '>' : '<='} ${threshold} (deterministic)`,
+    };
+  }
+
+  const cardsUnderMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:[.,]\d+)?)\s*(?:cart[oõ](?:es|ns)?|cards?)/);
+  if (cardsUnderMatch) {
+    const threshold = parseFloat(cardsUnderMatch[1].replace(',', '.'));
+    const { totalCards } = matchData;
+    if (totalCards === null || totalCards === undefined) return null;
+    const won = totalCards < threshold;
+    return {
+      result: won ? 'success' : 'failure',
+      reason: `Total de cartões: ${totalCards} ${won ? '<' : '>='} ${threshold} (deterministic)`,
+    };
+  }
+
+  // Over/Under X goals (must NOT match corners/cards — check those first above)
+  const overUnderMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:[.,]\d+)?)\s*(?:gols?|goals?)?/);
+  if (overUnderMatch && !/escanteio|corner|cart[oõ]/i.test(combined)) {
+    const threshold = parseFloat(overUnderMatch[1].replace(',', '.'));
     const won = totalGoals > threshold;
     return {
       result: won ? 'success' : 'failure',
@@ -144,9 +207,9 @@ function evaluateDeterministic(bet, matchData) {
     };
   }
 
-  const underMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:\.\d+)?)\s*(?:gols?|goals?)?/);
-  if (underMatch) {
-    const threshold = parseFloat(underMatch[1]);
+  const underMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:[.,]\d+)?)\s*(?:gols?|goals?)?/);
+  if (underMatch && !/escanteio|corner|cart[oõ]/i.test(combined)) {
+    const threshold = parseFloat(underMatch[1].replace(',', '.'));
     const won = totalGoals < threshold;
     return {
       result: won ? 'success' : 'failure',
