@@ -19,10 +19,11 @@ const CACHE_MAX_SIZE = 200;
  */
 const { config } = require('../../lib/config');
 
-function getOpenAI() {
+function getOpenAI(maxTokens = 1500) {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: config.llm.lightModel,
+    maxTokens,
   });
 }
 
