@@ -2,10 +2,9 @@
 
 require('dotenv').config();
 
-const fs = require('fs-extra');
-
-const { resolveReportPaths, listIntermediatePayloads } = require('./reportUtils');
-const { generateReportForMatch } = require('./reportService');
+const { generatePdfFromHtml } = require('./reportService');
+const { renderHtmlReport } = require('./htmlRenderer');
+const { uploadPdfToStorage } = require('./storageUpload');
 const { markAnalysisStatus } = require('../../scripts/lib/matchScreening');
 const { getPool, closePool } = require('../db');
 
@@ -33,15 +32,29 @@ const setQueueStatus = async (matchId, generatedAt) => {
   }
 };
 
+const fetchMissingReports = async (matchFilter) => {
+  const pool = getPool();
+  const baseQuery = `
+    SELECT match_id, analysis_json AS payload
+    FROM game_analysis
+    WHERE pdf_storage_path IS NULL
+    ${matchFilter ? 'AND match_id = $1' : ''}
+    ORDER BY match_id
+  `;
+  const params = matchFilter ? [matchFilter] : [];
+  const { rows } = await pool.query(baseQuery, params);
+  return rows;
+};
+
 async function main() {
   const matchFilter = parseMatchFilter();
-  const entries = await listIntermediatePayloads(matchFilter);
+  const entries = await fetchMissingReports(matchFilter);
 
   if (!entries.length) {
     console.log(
       matchFilter
-        ? `[report] Nenhum JSON intermediário encontrado para match_id ${matchFilter}.`
-        : '[report] Nenhum JSON intermediário encontrado em data/analises_intermediarias/.',
+        ? `[report] Nenhuma análise sem PDF encontrada para match_id ${matchFilter}.`
+        : '[report] Nenhuma análise sem PDF encontrada no banco.',
     );
     return;
   }
@@ -50,20 +63,29 @@ async function main() {
   let skipped = 0;
   const failures = [];
 
-  const orderedEntries = entries.sort((a, b) => a.matchId - b.matchId);
-  for (const { matchId, payload } of orderedEntries) {
+  for (const { match_id: matchId, payload } of entries) {
     try {
-      const { pdfPath } = resolveReportPaths(payload);
-      const alreadyExists = await fs.pathExists(pdfPath);
-      if (alreadyExists) {
-        console.log(`[report][skip] PDF já existe para match ${matchId}: ${pdfPath}`);
-        await setQueueStatus(matchId, payload?.generated_at ? new Date(payload.generated_at) : null);
+      if (!payload || !payload.output) {
+        console.warn(`[report][skip] match ${matchId}: analysis_json inválido. Pulando.`);
         skipped += 1;
         continue;
       }
 
-      const { htmlPath, pdfPath: generatedPath } = await generateReportForMatch({ payload });
-      console.log(`[report][ok] match ${matchId} -> HTML ${htmlPath} | PDF ${generatedPath}`);
+      const html = renderHtmlReport(payload);
+      const pdfBuffer = await generatePdfFromHtml(html);
+
+      const uploadResult = await uploadPdfToStorage(matchId, pdfBuffer);
+      if (!uploadResult.success) {
+        throw new Error(`Upload falhou: ${uploadResult.error}`);
+      }
+
+      const pool = getPool();
+      await pool.query(
+        'UPDATE game_analysis SET pdf_storage_path = $1, pdf_uploaded_at = NOW() WHERE match_id = $2',
+        [uploadResult.storagePath, matchId],
+      );
+
+      console.log(`[report][ok] match ${matchId} -> PDF uploaded: ${uploadResult.storagePath}`);
       await setQueueStatus(matchId, payload?.generated_at ? new Date(payload.generated_at) : null);
       generated += 1;
     } catch (err) {
@@ -91,5 +113,3 @@ if (require.main === module) {
       await closePool();
     });
 }
-
-

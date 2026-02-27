@@ -1,26 +1,18 @@
 #!/usr/bin/env node
 /**
  * Busca lista de ligas e temporadas da API FootyStats
- * Salva em data/json/league-list.json
+ * Persiste no BD — sem cache JSON local
  */
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios');
 const https = require('https');
 
-const OUTPUT_DIR = path.join(__dirname, '..', 'data', 'json');
-const OUTPUT_PATH = path.join(OUTPUT_DIR, 'league-list.json');
 const BASE_URL = 'https://api.football-data-api.com/league-list';
 const API_KEY = process.env.FOOTYSTATS_API_KEY || process.env.api_key || process.env.API_KEY;
 
 if (!API_KEY) {
   console.error('FOOTYSTATS_API_KEY não encontrado no .env');
   process.exit(1);
-}
-
-if (!fs.existsSync(OUTPUT_DIR)) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -61,9 +53,9 @@ function isExcluded(name) {
 
 async function fetchLeagues() {
   console.log('Buscando lista de ligas da API FootyStats...');
-  
+
   const response = await axios.get(BASE_URL, {
-    params: { 
+    params: {
       key: API_KEY,
       chosen_leagues_only: false,
     },
@@ -112,43 +104,24 @@ async function main() {
   try {
     const response = await fetchLeagues();
     const leagues = Array.isArray(response.data) ? response.data : [];
-    
+
     console.log(`Total de ligas na API: ${leagues.length}`);
-    
-    // Salvar resposta completa
-    const payload = {
-      fetched_at: new Date().toISOString(),
-      total: leagues.length,
-      data: leagues,
-    };
-    
-    fs.writeFileSync(OUTPUT_PATH, JSON.stringify(payload, null, 2));
-    console.log(`Lista completa salva em ${OUTPUT_PATH}`);
-    
+
     // Filtrar e mostrar temporadas ativas
     const activeLeagues = filterActiveSeasons(leagues);
-    
-    console.log('\n📋 Temporadas ativas encontradas:');
-    console.log('─'.repeat(60));
-    
+
+    console.log('\nTemporadas ativas encontradas:');
+    console.log('-'.repeat(60));
+
     for (const league of activeLeagues) {
       for (const season of league.seasons) {
-        console.log(`  ${league.name} (${season.year}) → season_id: ${season.id}`);
+        console.log(`  ${league.name} (${season.year}) -> season_id: ${season.id}`);
       }
     }
-    
-    console.log('─'.repeat(60));
+
+    console.log('-'.repeat(60));
     console.log(`\nTotal: ${activeLeagues.reduce((acc, l) => acc + l.seasons.length, 0)} temporadas ativas`);
-    
-    // Salvar resumo das temporadas ativas
-    const activePath = path.join(OUTPUT_DIR, 'active-seasons.json');
-    fs.writeFileSync(activePath, JSON.stringify({
-      fetched_at: new Date().toISOString(),
-      leagues: activeLeagues,
-      season_ids: activeLeagues.flatMap(l => l.seasons.map(s => s.id)),
-    }, null, 2));
-    console.log(`\nTemporadas ativas salvas em ${activePath}`);
-    
+
   } catch (err) {
     console.error('Falha ao buscar ligas:', err.response?.data || err.message);
     process.exit(1);

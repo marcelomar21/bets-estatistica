@@ -2,9 +2,6 @@
 
 require('dotenv').config();
 
-const path = require('path');
-const fs = require('fs-extra');
-
 const { config } = require('../../lib/config');
 const { runQuery, closePool, getPool } = require('../db');
 const {
@@ -12,7 +9,6 @@ const {
   markAnalysisStatus,
   MATCH_COMPLETION_GRACE_HOURS,
 } = require('../../scripts/lib/matchScreening');
-const { buildIntermediateFileName } = require('../shared/naming');
 const { saveOutputs } = require('../persistence/saveOutputs');
 const pLimit = require('p-limit').default;
 
@@ -26,7 +22,6 @@ const {
   parseJsonField,
 } = require('./agentCore');
 
-const INTERMEDIATE_DIR = path.join(__dirname, '../../data/analises_intermediarias');
 const CONCURRENCY_LIMIT = Math.max(1, Math.min(10, Number(process.env.AGENT_CONCURRENCY) || 5));
 const MATCH_TIMEOUT_MS = Number(process.env.AGENT_MATCH_TIMEOUT_MS) || 10 * 60 * 1000; // 10 min default
 
@@ -198,8 +193,6 @@ const fetchLastX = async (teamId) => {
 };
 
 const processMatch = async (matchId) => {
-  await fs.ensureDir(INTERMEDIATE_DIR);
-
   const matchRow = await fetchMatchRow(matchId);
   if (!matchRow) {
     throw new Error(`match_id ${matchId} não encontrado em league_matches.`);
@@ -251,29 +244,10 @@ const processMatch = async (matchId) => {
     },
   };
 
-  const outputFile = path.join(
-    INTERMEDIATE_DIR,
-    buildIntermediateFileName({
-      generatedAt,
-      homeName: matchRow.home_team_name,
-      awayName: matchRow.away_team_name,
-    }),
-  );
-  await fs.writeJson(outputFile, payload, { spaces: 2 });
-  infoLog(`[match:${matchId}] JSON salvo: ${outputFile}`);
+  const persistResult = await saveOutputs(matchId, payload);
+  infoLog(`[match:${matchId}] Persistido no banco: ${persistResult.betsPersisted} bet(s)${persistResult.usedFallback ? ' [fallback]' : ''}`);
 
-  // Persistir imediatamente no banco (não esperar step 5)
-  let persisted = false;
-  try {
-    const persistResult = await saveOutputs(matchId);
-    infoLog(`[match:${matchId}] Persistido no banco: ${persistResult.betsPersisted} bet(s)${persistResult.usedFallback ? ' [fallback]' : ''}`);
-    persisted = true;
-  } catch (persistErr) {
-    infoLog(`[match:${matchId}] AVISO: falha ao persistir no banco: ${persistErr.message} (JSON salvo como backup)`);
-    // Não falha o processo - JSON foi salvo como backup
-  }
-
-  return { generatedAt, outputFile, persisted };
+  return { generatedAt };
 };
 
 async function main() {
@@ -295,20 +269,13 @@ async function main() {
       limit(async () => {
         infoLog(`[match:${matchId}] Iniciando análise (${index + 1}/${matchIds.length})`);
         try {
-          const { generatedAt, persisted } = await withTimeout(
+          await withTimeout(
             processMatch(matchId),
             MATCH_TIMEOUT_MS,
             matchId
           );
-          // Nota: saveOutputs() já atualiza status para 'relatorio_concluido'
-          // Só atualiza para 'analise_completa' se persistência falhou (backup em JSON)
-          if (!persisted) {
-            await setQueueStatus(matchId, 'analise_completa', {
-              analysisGeneratedAt: generatedAt,
-              clearErrorReason: true,
-            });
-          }
-          return { matchId, success: true, persisted };
+          // saveOutputs() já atualiza status para 'relatorio_concluido'
+          return { matchId, success: true };
         } catch (err) {
           console.error(`[agent][analysis] Falha match ${matchId}: ${err.message}`);
           await setQueueStatus(matchId, 'pending', { errorReason: err.message });
@@ -320,11 +287,8 @@ async function main() {
 
   const succeeded = results.filter(r => r.status === 'fulfilled' && r.value.success);
   const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success));
-  const persistedCount = succeeded.filter(r => r.value.persisted).length;
-  const notPersistedCount = succeeded.length - persistedCount;
 
   infoLog(`Resumo: ${succeeded.length} sucesso(s), ${failed.length} falha(s) de ${matchIds.length} total.`);
-  infoLog(`Persistência: ${persistedCount} no banco, ${notPersistedCount} apenas JSON (requer step 5).`);
 
   if (failed.length > 0) {
     const failedIds = failed.map(r => {
@@ -332,10 +296,6 @@ async function main() {
       return r.value.matchId;
     });
     infoLog(`Matches com falha: ${failedIds.join(', ')}`);
-  }
-
-  if (notPersistedCount > 0) {
-    infoLog(`AVISO: ${notPersistedCount} análise(s) salvas apenas em JSON. Execute 'node agent/persistence/main.js' para persistir.`);
   }
 
   // Só falha o script se NENHUM match foi processado com sucesso
