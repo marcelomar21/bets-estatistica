@@ -2,14 +2,21 @@
  * Preview Service — generates message previews using the SAME pipeline as real posting
  *
  * Reuses:
- *  - formatBetMessage()      → bot/jobs/postBets.js
+ *  - generateBetCopy()       → bot/services/copyService.js (LLM copy with tone)
+ *  - formatBetMessage()      → bot/jobs/postBets.js (template assembly)
  *  - getRandomTemplate()     → bot/jobs/postBets.js
  *
  * The preview is for testing TONE, not for validating posting readiness.
  * It fetches any recent bets from the group (including past ones) as sample data.
+ *
+ * KEY DIFFERENCE from formatBetMessage: the preview ALWAYS calls the LLM when
+ * toneConfig is present, even if the bet has no reasoning. formatBetMessage has
+ * a gate `if (bet.reasoning || toneConfig?.examplePost)` that skips the LLM
+ * otherwise — but for preview we need to show how the tone sounds regardless.
  */
 const logger = require('../../lib/logger');
 const { supabase } = require('../../lib/supabase');
+const { generateBetCopy, clearBetCache } = require('./copyService');
 const { formatBetMessage, getRandomTemplate } = require('../jobs/postBets');
 
 /**
@@ -76,7 +83,7 @@ async function fetchSampleBets(groupId) {
 }
 
 /**
- * Map raw DB bet to the shape formatBetMessage expects
+ * Map raw DB bet to the shape formatBetMessage/generateBetCopy expects
  */
 function mapBet(raw) {
   return {
@@ -94,9 +101,64 @@ function mapBet(raw) {
 }
 
 /**
+ * Generate a preview message for a single bet.
+ *
+ * When toneConfig has any content, ALWAYS calls the LLM (generateBetCopy)
+ * to produce the copy — even if the bet has no reasoning.
+ * This ensures the preview reflects the configured tone.
+ *
+ * When toneConfig is empty/null, falls back to formatBetMessage (static template).
+ */
+async function formatPreviewMessage(bet, toneConfig) {
+  const template = getRandomTemplate();
+  const hasToneConfig = toneConfig && (
+    toneConfig.examplePost ||
+    toneConfig.rawDescription ||
+    toneConfig.persona ||
+    toneConfig.tone ||
+    (toneConfig.customRules && toneConfig.customRules.length > 0)
+  );
+
+  // No tone config → use the standard static template
+  if (!hasToneConfig) {
+    return formatBetMessage(bet, template, toneConfig);
+  }
+
+  // Clear cache for this bet so the preview always reflects the latest tone config
+  clearBetCache(bet.id);
+
+  // If toneConfig has examplePost → full-message mode via LLM (generateBetCopy handles this)
+  // If toneConfig has other fields but no examplePost → we still want LLM to apply the tone
+  // In both cases, call generateBetCopy directly to bypass formatBetMessage's gate
+
+  if (toneConfig.examplePost) {
+    // Full-message mode: LLM generates the entire post
+    const copyResult = await generateBetCopy(bet, toneConfig);
+    if (copyResult.success && copyResult.data?.fullMessage) {
+      return copyResult.data.copy;
+    }
+    // Fallback to formatBetMessage if LLM failed
+    return formatBetMessage(bet, template, toneConfig);
+  }
+
+  // No examplePost but has tone fields: use formatBetMessage's template structure
+  // but force the LLM call by injecting a synthetic reasoning if needed
+  if (!bet.reasoning) {
+    // Give the LLM something to work with — a brief match description
+    const enrichedBet = {
+      ...bet,
+      reasoning: `Jogo entre ${bet.homeTeamName} e ${bet.awayTeamName}. Mercado: ${bet.betMarket}. Odd: ${bet.odds?.toFixed?.(2) || 'N/A'}.`,
+    };
+    return formatBetMessage(enrichedBet, template, toneConfig);
+  }
+
+  // Has reasoning + tone fields → formatBetMessage will call generateBetCopy naturally
+  return formatBetMessage(bet, template, toneConfig);
+}
+
+/**
  * Generate preview messages for a group.
- * Uses the exact same formatBetMessage() pipeline as real posting,
- * but without posting-readiness filters (kickoff, odds, deep_link).
+ * Uses the real posting pipeline but without posting-readiness filters.
  *
  * @param {string} groupId - Group UUID
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
@@ -114,12 +176,11 @@ async function generatePreview(groupId) {
 
   const bets = rawBets.map(mapBet);
 
-  // 3. Generate preview for each bet using the real formatBetMessage
+  // 3. Generate preview for each bet
   const previews = [];
   for (const bet of bets) {
     try {
-      const template = getRandomTemplate();
-      const preview = await formatBetMessage(bet, template, toneConfig);
+      const preview = await formatPreviewMessage(bet, toneConfig);
       previews.push({
         betId: bet.id,
         preview,
