@@ -26,6 +26,8 @@ const DEFAULT_SCHEDULE = { enabled: true, times: ['10:00', '15:00', '22:00'] };
 let activePostingJobs = [];
 let currentSchedule = null;
 let isManualPostInProgress = false;
+let perMinuteJob = null;
+let isPerMinutePostInProgress = false;
 
 /**
  * Load posting schedule from database for this bot's group
@@ -91,6 +93,73 @@ function calcDistributionTime(hours, minutes) {
 }
 
 /**
+ * Get the current time in BRT as "HH:MM"
+ * @returns {string}
+ */
+function getCurrentBrtTime() {
+  const now = new Date();
+  const brTime = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+  const h = String(brTime.getHours()).padStart(2, '0');
+  const m = String(brTime.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+/**
+ * Per-minute scheduler: checks if any bets have post_at matching the current minute.
+ * This enables free-form scheduling (any HH:MM, not just group-configured times).
+ */
+async function checkScheduledBets() {
+  if (isPerMinutePostInProgress) return;
+  if (!currentSchedule?.enabled) return;
+
+  const currentTime = getCurrentBrtTime();
+  const groupId = config.membership.groupId;
+
+  // Skip if the current time matches a configured posting time
+  // (those are already handled by the dedicated cron jobs)
+  if (currentSchedule?.times?.includes(currentTime)) {
+    return;
+  }
+
+  try {
+    // Check if any non-posted bets have post_at for this minute
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select('id')
+      .eq('group_id', groupId)
+      .eq('post_at', currentTime)
+      .in('elegibilidade', ['elegivel'])
+      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
+      .limit(1);
+
+    if (error || !data || data.length === 0) return;
+
+    logger.info('[scheduler] Per-minute check found bets to post', {
+      currentTime,
+      groupId,
+      count: data.length,
+    });
+
+    isPerMinutePostInProgress = true;
+    try {
+      await withExecutionLogging('post-bets', () =>
+        runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: currentTime })
+      );
+      logger.info('[scheduler] Per-minute post complete', { currentTime });
+    } catch (err) {
+      logger.error('[scheduler] Per-minute post failed', {
+        currentTime,
+        error: err.message,
+      });
+    } finally {
+      isPerMinutePostInProgress = false;
+    }
+  } catch (err) {
+    logger.error('[scheduler] Per-minute check exception', { error: err.message });
+  }
+}
+
+/**
  * Setup dynamic scheduler with cron jobs based on schedule config
  * Stops all previous posting/distribution jobs before creating new ones
  *
@@ -100,6 +169,10 @@ function setupDynamicScheduler(schedule) {
   // 1. Stop old jobs
   activePostingJobs.forEach(job => job.stop());
   activePostingJobs = [];
+  if (perMinuteJob) {
+    perMinuteJob.stop();
+    perMinuteJob = null;
+  }
 
   // 2. Create new jobs for each configured time
   for (const time of schedule.times) {
@@ -142,7 +215,7 @@ function setupDynamicScheduler(schedule) {
         groupId: config.membership.groupId,
       });
       try {
-        await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: currentSchedule?.times }));
+        await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: time }));
         logger.info('[scheduler] post-bets (dynamic) complete', { postTime: time });
       } catch (err) {
         logger.error('[scheduler] post-bets (dynamic) failed', {
@@ -154,6 +227,9 @@ function setupDynamicScheduler(schedule) {
     activePostingJobs.push(postJob);
   }
 
+  // 3. Per-minute cron for free-form post_at times (not in configured schedule)
+  perMinuteJob = cron.schedule('* * * * *', checkScheduledBets, { timezone: TZ });
+
   // Update cached schedule
   currentSchedule = schedule;
 
@@ -162,6 +238,7 @@ function setupDynamicScheduler(schedule) {
     enabled: schedule.enabled,
     times: schedule.times,
     totalJobs: activePostingJobs.length,
+    perMinuteEnabled: true,
   });
 }
 
@@ -320,7 +397,7 @@ function createScheduler(groupId, botCtx = null) {
         }
         logger.info('[scheduler:factory] Running post-bets', { postTime: time, groupId });
         try {
-          await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: instanceSchedule?.times, botCtx: botCtx || { groupId } }));
+          await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: instanceSchedule?.times, currentPostTime: time, botCtx: botCtx || { groupId } }));
         } catch (err) {
           logger.error('[scheduler:factory] post-bets failed', { postTime: time, groupId, error: err.message });
         }

@@ -58,6 +58,7 @@ export const GET = createApiHandler(
           deep_link,
           promovida_manual,
           elegibilidade,
+          post_at,
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -108,6 +109,7 @@ export const GET = createApiHandler(
           deep_link: b.deep_link,
           promovida_manual: b.promovida_manual ?? false,
           elegibilidade: b.elegibilidade ?? 'elegivel',
+          post_at: b.post_at ?? null,
           hit_rate: enrichWithHitRate(b, pairStats),
           match: {
             home_team_name: b.league_matches.home_team_name,

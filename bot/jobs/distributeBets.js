@@ -238,19 +238,25 @@ function distributeRoundRobin(bets, groups, groupCounts = {}) {
  * Assign a single bet to a group (idempotent via group_id IS NULL check)
  * @param {string} betId - Bet UUID
  * @param {string} groupId - Group UUID
+ * @param {string|null} postAt - Optional posting time (HH:MM)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function assignBetToGroup(betId, groupId) {
+async function assignBetToGroup(betId, groupId, postAt = null) {
   try {
+    const updatePayload = {
+      group_id: groupId,
+      distributed_at: new Date().toISOString(),
+    };
+    if (postAt) {
+      updatePayload.post_at = postAt;
+    }
+
     const { data, error } = await supabase
       .from('suggested_bets')
-      .update({
-        group_id: groupId,
-        distributed_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', betId)
       .is('group_id', null)
-      .select('id, group_id, distributed_at');
+      .select('id, group_id, distributed_at, post_at');
 
     if (error) {
       logger.error('[bets:distribute] Erro ao atribuir aposta', { betId, groupId, error: error.message });
@@ -268,6 +274,107 @@ async function assignBetToGroup(betId, groupId) {
     logger.error('[bets:distribute] Erro inesperado ao atribuir aposta', { betId, groupId, error: err.message });
     return { success: false, error: { code: 'DISTRIBUTION_ERROR', message: err.message } };
   }
+}
+
+/**
+ * Load posting schedule times for a group
+ * @param {string} groupId - Group UUID
+ * @returns {Promise<string[]>} Array of "HH:MM" strings
+ */
+async function loadGroupPostingTimes(groupId) {
+  try {
+    const { data, error } = await supabase
+      .from('groups')
+      .select('posting_schedule')
+      .eq('id', groupId)
+      .single();
+
+    if (error || !data?.posting_schedule?.times) {
+      return [];
+    }
+    return data.posting_schedule.times;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get future posting times for today, or all times if all have passed
+ * @param {string[]} times - Array of "HH:MM" strings
+ * @returns {string[]} Filtered times (future today, or all if none remain)
+ */
+function getFuturePostingTimes(times) {
+  if (!times || times.length === 0) return [];
+
+  const now = new Date();
+  const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const currentMin = brTime.getHours() * 60 + brTime.getMinutes();
+
+  const futureTimes = times.filter(t => {
+    const [h, m] = t.split(':').map(Number);
+    return (h * 60 + m) > currentMin;
+  });
+
+  // If all times have passed today, use all times (for tomorrow)
+  return futureTimes.length > 0 ? futureTimes : times;
+}
+
+/**
+ * Count bets already scheduled per time slot for a group
+ * @param {string} groupId - Group UUID
+ * @param {string[]} times - Available posting times
+ * @returns {Promise<object>} { "10:00": 3, "15:00": 1, ... }
+ */
+async function getScheduledCountsPerTime(groupId, times) {
+  const counts = {};
+  for (const t of times) {
+    counts[t] = 0;
+  }
+
+  try {
+    const { data } = await supabase
+      .from('suggested_bets')
+      .select('post_at')
+      .eq('group_id', groupId)
+      .not('post_at', 'is', null)
+      .neq('bet_status', 'posted');
+
+    for (const bet of (data || [])) {
+      if (counts[bet.post_at] !== undefined) {
+        counts[bet.post_at]++;
+      }
+    }
+  } catch {
+    // On error, return zero counts — distribution will still work
+  }
+
+  return counts;
+}
+
+/**
+ * Pick the best posting time for a bet using round-robin among available times
+ * Prioritizes times with fewer already-scheduled bets
+ * @param {string[]} availableTimes - Future posting times
+ * @param {object} timeCounts - { "HH:MM": count } running tally
+ * @returns {string|null} The chosen time, or null if no times available
+ */
+function pickPostTime(availableTimes, timeCounts) {
+  if (!availableTimes || availableTimes.length === 0) return null;
+
+  let minTime = availableTimes[0];
+  let minCount = timeCounts[minTime] ?? 0;
+
+  for (const t of availableTimes) {
+    const count = timeCounts[t] ?? 0;
+    if (count < minCount) {
+      minTime = t;
+      minCount = count;
+    }
+  }
+
+  // Increment running count
+  timeCounts[minTime] = (timeCounts[minTime] ?? 0) + 1;
+  return minTime;
 }
 
 /**
@@ -331,13 +438,28 @@ async function runDistributeBets() {
   logger.info('[bets:distribute] Contagem de apostas por grupo', { groupCounts });
   const assignments = distributeRoundRobin(bets, groups, groupCounts);
 
+  // 3.5. Pre-load posting times per group for auto-scheduling
+  const groupTimesCache = {};
+  const groupTimeCountsCache = {};
+  for (const group of groups) {
+    const times = await loadGroupPostingTimes(group.id);
+    const availableTimes = getFuturePostingTimes(times);
+    groupTimesCache[group.id] = availableTimes;
+    groupTimeCountsCache[group.id] = await getScheduledCountsPerTime(group.id, availableTimes);
+  }
+
   // 4. Execute assignments
   let successCount = 0;
   let failCount = 0;
   const perGroup = {};
 
   for (const { betId, groupId } of assignments) {
-    const result = await assignBetToGroup(betId, groupId);
+    // Auto-assign post_at via round-robin among available times
+    const availableTimes = groupTimesCache[groupId] || [];
+    const timeCounts = groupTimeCountsCache[groupId] || {};
+    const postAt = pickPostTime(availableTimes, timeCounts);
+
+    const result = await assignBetToGroup(betId, groupId, postAt);
     if (result.success && !result.data.alreadyDistributed) {
       successCount++;
       perGroup[groupId] = (perGroup[groupId] || 0) + 1;
