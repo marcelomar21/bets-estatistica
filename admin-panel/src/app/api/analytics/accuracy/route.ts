@@ -44,6 +44,7 @@ export const GET = createApiHandler(
     const championshipParam = url.searchParams.get('championship')?.trim() || null;
     const dateFrom = url.searchParams.get('date_from')?.trim() || null;
     const dateTo = url.searchParams.get('date_to')?.trim() || null;
+    const postingFilter = url.searchParams.get('posting_filter')?.trim() || 'all';
 
     // Build query: fetch all bets with resolved results (regardless of posting status)
     let query = supabase
@@ -103,21 +104,26 @@ export const GET = createApiHandler(
       ? filteredBets.filter((b) => b.league_matches?.league_seasons?.league_name === championshipParam)
       : filteredBets;
 
+    // Apply posting filter to breakdown data
+    const breakdownBets = postingFilter === 'posted'
+      ? finalBets.filter((b) => b.bet_status === 'posted')
+      : postingFilter === 'not_posted'
+        ? finalBets.filter((b) => b.bet_status !== 'posted')
+        : finalBets;
+
     // === Aggregations ===
     const now = Date.now();
     const ms7d = 7 * 24 * 60 * 60 * 1000;
     const ms30d = 30 * 24 * 60 * 60 * 1000;
 
+    // Summary cards always use ALL data (unfiltered by posting status)
     const total: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const postedOnly: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const notPosted: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const last7d: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const last30d: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
 
-    const groupBuckets = new Map<string, AccuracyBucket & { group_name: string }>();
-    const marketBuckets = new Map<string, AccuracyBucket & { market: string }>();
-    const champBuckets = new Map<string, AccuracyBucket & { league_name: string; country: string }>();
-
+    // Summary cards: always computed from ALL bets (finalBets)
     for (const bet of finalBets) {
       const isWin = bet.bet_result === 'success';
       const isPosted = bet.bet_status === 'posted';
@@ -125,13 +131,11 @@ export const GET = createApiHandler(
       if (isWin) total.wins++;
       else total.losses++;
 
-      // Posted / not-posted buckets
       const statusBucket = isPosted ? postedOnly : notPosted;
       statusBucket.total++;
       if (isWin) statusBucket.wins++;
       else statusBucket.losses++;
 
-      // Period buckets
       if (bet.result_updated_at) {
         const updatedAt = new Date(bet.result_updated_at).getTime();
         const age = now - updatedAt;
@@ -146,6 +150,15 @@ export const GET = createApiHandler(
           else last30d.losses++;
         }
       }
+    }
+
+    // Breakdown tables: computed from breakdownBets (filtered by posting_filter)
+    const groupBuckets = new Map<string, AccuracyBucket & { group_name: string }>();
+    const marketBuckets = new Map<string, AccuracyBucket & { market: string }>();
+    const champBuckets = new Map<string, AccuracyBucket & { league_name: string; country: string }>();
+
+    for (const bet of breakdownBets) {
+      const isWin = bet.bet_result === 'success';
 
       // Group buckets
       if (bet.group_id) {

@@ -203,6 +203,7 @@ function AnalyticsPage() {
   const [dateTo, setDateTo] = useState(searchParams.get('date_to') || '');
   const [groupId, setGroupId] = useState(searchParams.get('group_id') || '');
   const [market, setMarket] = useState(searchParams.get('market') || '');
+  const [postingFilter, setPostingFilter] = useState(searchParams.get('posting_filter') || '');
 
   // Sync URL with filter state
   const updateUrl = useCallback(
@@ -226,6 +227,7 @@ function AnalyticsPage() {
       if (dateTo) params.set('date_to', dateTo);
       if (groupId) params.set('group_id', groupId);
       if (market) params.set('market', market);
+      if (postingFilter) params.set('posting_filter', postingFilter);
 
       const res = await fetch(`/api/analytics/accuracy?${params}`);
       const json = await res.json();
@@ -239,7 +241,7 @@ function AnalyticsPage() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo, groupId, market]);
+  }, [dateFrom, dateTo, groupId, market, postingFilter]);
 
   useEffect(() => {
     fetchData();
@@ -267,32 +269,42 @@ function AnalyticsPage() {
   }, []);
 
   // When period preset changes, update date fields
+  const allFilterParams = () => ({
+    period: periodPreset, date_from: dateFrom, date_to: dateTo,
+    group_id: groupId, market, posting_filter: postingFilter,
+  });
+
   function handlePeriodChange(preset: PeriodPreset) {
     setPeriodPreset(preset);
     if (preset !== 'custom') {
       const { from, to } = presetToDates(preset);
       setDateFrom(from);
       setDateTo(to);
-      updateUrl({ period: preset, date_from: from, date_to: to, group_id: groupId, market });
+      updateUrl({ ...allFilterParams(), period: preset, date_from: from, date_to: to });
     } else {
-      updateUrl({ period: 'custom', date_from: dateFrom, date_to: dateTo, group_id: groupId, market });
+      updateUrl({ ...allFilterParams(), period: 'custom' });
     }
   }
 
   function handleCustomDateChange(from: string, to: string) {
     setDateFrom(from);
     setDateTo(to);
-    updateUrl({ period: 'custom', date_from: from, date_to: to, group_id: groupId, market });
+    updateUrl({ ...allFilterParams(), period: 'custom', date_from: from, date_to: to });
   }
 
   function handleGroupChange(gid: string) {
     setGroupId(gid);
-    updateUrl({ period: periodPreset, date_from: dateFrom, date_to: dateTo, group_id: gid, market });
+    updateUrl({ ...allFilterParams(), group_id: gid });
   }
 
   function handleMarketChange(m: string) {
     setMarket(m);
-    updateUrl({ period: periodPreset, date_from: dateFrom, date_to: dateTo, group_id: groupId, market: m });
+    updateUrl({ ...allFilterParams(), market: m });
+  }
+
+  function handlePostingFilterChange(pf: string) {
+    setPostingFilter(pf);
+    updateUrl({ ...allFilterParams(), posting_filter: pf });
   }
 
   function clearFilters() {
@@ -301,10 +313,11 @@ function AnalyticsPage() {
     setDateTo('');
     setGroupId('');
     setMarket('');
+    setPostingFilter('');
     updateUrl({});
   }
 
-  const hasFilters = periodPreset || dateFrom || dateTo || groupId || market;
+  const hasFilters = periodPreset || dateFrom || dateTo || groupId || market || postingFilter;
 
   const marketSort = useSortable(data?.byMarket ?? []);
   const champSort = useSortable(data?.byChampionship ?? []);
@@ -387,6 +400,22 @@ function AnalyticsPage() {
             {MARKET_OPTIONS.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="posting-filter" className="block text-xs font-medium text-gray-500 uppercase">
+            Tipo
+          </label>
+          <select
+            id="posting-filter"
+            value={postingFilter}
+            onChange={(e) => handlePostingFilterChange(e.target.value)}
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+          >
+            <option value="">Todas</option>
+            <option value="posted">Postadas</option>
+            <option value="not_posted">Nao Postadas</option>
           </select>
         </div>
 

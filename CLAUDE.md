@@ -77,15 +77,14 @@ Ao testar fluxos via Playwright, ser **extremamente criterioso**:
 
 ### Servicos no Render
 
+Projeto **GuruBet** (`prj-d5hos5n5r7bs73bjc190`) no workspace "My Workspace":
+
 | Service ID | Nome | Funcao |
 |---|---|---|
-| `srv-d6678u1r0fns73ciknn0` | bot-osmar-palpites | Bot do grupo Osmar Palpites |
-| `srv-d5hp23a4d50c7397o1q0` | bets-bot | Bot do grupo Guru da Bet |
-| `srv-d5hotp24d50c7397lcf0` | bets-bot | Webhook de pagamento |
-| `srv-d5v4u8npm1nc73cao690` | clawdin-api | API do Clawdin |
-| `srv-d5m5cmje5dus73e8ds10` | bets-webhook | Webhook de apostas |
+| `srv-d6fliv6a2pns7382ckd0` | bets-bot-unified | Bot principal (BOT_MODE=group) |
+| `srv-d5m5cmje5dus73e8ds10` | bets-webhook | Webhook de pagamento (Mercado Pago) |
 
-**IMPORTANTE:** NAO suspender os servicos `bets-bot` — eles servem grupos diferentes.
+Ambos estao no environment **Production** (`evm-d5hos5n5r7bs73bjc19g`).
 
 ### Passo 1: Obter RENDER_API_KEY (esta no Vercel)
 
@@ -97,7 +96,7 @@ cd admin-panel && npx vercel env pull .env.render --environment production --yes
 
 ```bash
 source admin-panel/.env.render && \
-curl -s "https://api.render.com/v1/services/srv-d6678u1r0fns73ciknn0/env-vars" \
+curl -s "https://api.render.com/v1/services/srv-d6fliv6a2pns7382ckd0/env-vars" \
   -H "Authorization: Bearer $RENDER_API_KEY" | \
   python3 -c "import sys,json; [print(v['envVar']['value']) for v in json.load(sys.stdin) if v['envVar']['key']=='TELEGRAM_BOT_TOKEN']"
 ```
@@ -132,5 +131,5 @@ O SUPABASE_SERVICE_KEY esta em `admin-panel/.env.local` (variavel `SUPABASE_SERV
 
 | Grupo | Chat ID |
 |---|---|
-| Osmar Palpites (admin) | `-1003363567204` |
-| Osmar Palpites (publico) | `-1003659711655` |
+| Guru da Bet (admin) | `-1003363567204` |
+| Guru da Bet (publico) | `-1003647535811` |
