@@ -133,11 +133,23 @@ async function formatPreviewMessage(bet, toneConfig) {
 
   if (toneConfig.examplePost) {
     // Full-message mode: LLM generates the entire post
-    const copyResult = await generateBetCopy(bet, toneConfig);
-    if (copyResult.success && copyResult.data?.fullMessage) {
-      return copyResult.data.copy;
+    try {
+      const copyResult = await generateBetCopy(bet, toneConfig);
+      logger.info('[previewService] generateBetCopy result', {
+        betId: bet.id,
+        success: copyResult.success,
+        fullMessage: copyResult.data?.fullMessage,
+        copyLength: copyResult.data?.copy?.length,
+        error: copyResult.error?.message,
+      });
+      if (copyResult.success && copyResult.data?.fullMessage) {
+        return copyResult.data.copy;
+      }
+    } catch (err) {
+      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message, stack: err.stack?.slice(0, 300) });
     }
     // Fallback to formatBetMessage if LLM failed
+    logger.warn('[previewService] Falling back to static template', { betId: bet.id });
     return formatBetMessage(bet, template, toneConfig);
   }
 
