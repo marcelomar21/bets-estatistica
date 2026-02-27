@@ -63,6 +63,8 @@ interface ChampionshipRow extends BreakdownRow {
 
 interface AnalyticsData {
   total: { rate: number; wins: number; losses: number; total: number };
+  postedOnly: { rate: number; wins: number; losses: number; total: number };
+  notPosted: { rate: number; wins: number; losses: number; total: number };
   byGroup: GroupRow[];
   byMarket: MarketRow[];
   byChampionship: ChampionshipRow[];
@@ -140,7 +142,9 @@ function generateCsv(data: AnalyticsData): string {
 
   lines.push('Secao,Item,Taxa (%),Acertos,Erros,Total');
 
-  lines.push(`Resumo,Total,${data.total.rate},${data.total.wins},${data.total.losses},${data.total.total}`);
+  lines.push(`Resumo,Taxa Geral,${data.total.rate},${data.total.wins},${data.total.losses},${data.total.total}`);
+  lines.push(`Resumo,Taxa das Postadas,${data.postedOnly.rate},${data.postedOnly.wins},${data.postedOnly.losses},${data.postedOnly.total}`);
+  lines.push(`Resumo,Taxa Nao Postadas,${data.notPosted.rate},${data.notPosted.wins},${data.notPosted.losses},${data.notPosted.total}`);
   lines.push(`Resumo,Ultimos 7d,${data.periods.last7d.rate},${data.periods.last7d.wins},,${data.periods.last7d.total}`);
   lines.push(`Resumo,Ultimos 30d,${data.periods.last30d.rate},${data.periods.last30d.wins},,${data.periods.last30d.total}`);
 
@@ -430,14 +434,34 @@ function AnalyticsPage() {
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className={`rounded-lg border p-6 ${rateBg(data.total.rate)}`}>
-              <p className="text-sm font-medium text-gray-500">Taxa de Acerto Total</p>
-              <p className={`mt-1 text-3xl font-bold ${rateColor(data.total.rate)}`}>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="rounded-lg border p-6 bg-blue-50 border-blue-200">
+              <p className="text-sm font-medium text-gray-500">Taxa Geral</p>
+              <p className="mt-1 text-3xl font-bold text-blue-700">
                 {data.total.rate}%
               </p>
               <p className="mt-1 text-sm text-gray-500">
                 {data.total.wins} acertos / {data.total.total} apostas
+              </p>
+            </div>
+
+            <div className={`rounded-lg border p-6 ${rateBg(data.postedOnly.rate)}`}>
+              <p className="text-sm font-medium text-gray-500">Taxa das Postadas</p>
+              <p className={`mt-1 text-3xl font-bold ${rateColor(data.postedOnly.rate)}`}>
+                {data.postedOnly.rate}%
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {data.postedOnly.wins} acertos / {data.postedOnly.total} apostas
+              </p>
+            </div>
+
+            <div className="rounded-lg border p-6 bg-gray-50 border-gray-300">
+              <p className="text-sm font-medium text-gray-500">Taxa Nao Postadas</p>
+              <p className="mt-1 text-3xl font-bold text-gray-600">
+                {data.notPosted.rate}%
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {data.notPosted.wins} acertos / {data.notPosted.total} apostas
               </p>
             </div>
 

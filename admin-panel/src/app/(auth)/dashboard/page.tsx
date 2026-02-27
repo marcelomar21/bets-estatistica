@@ -253,7 +253,7 @@ export default function DashboardPage() {
       <div className="space-y-8">
         {/* Performance / Accuracy */}
         {accuracy && accuracy.total.total > 0 ? (
-          <PerformanceCards periods={accuracy.periods} byGroup={accuracy.byGroup} />
+          <PerformanceCards periods={accuracy.periods} overallRate={accuracy.total} byGroup={accuracy.byGroup} />
         ) : accuracy && accuracy.total.total === 0 ? (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>

@@ -27,12 +27,12 @@ const now = new Date();
 const daysAgo = (n: number) => new Date(now.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
 
 const sampleBets = [
-  { bet_market: 'Gols Over 2.5', bet_result: 'success', result_updated_at: daysAgo(2), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
-  { bet_market: 'Gols Under 1.5', bet_result: 'failure', result_updated_at: daysAgo(3), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
-  { bet_market: 'Escanteios Over 8.5', bet_result: 'success', result_updated_at: daysAgo(5), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Premier League', country: 'England' } }, groups: { name: 'GuruBet' } },
-  { bet_market: 'Gols Over 1.5', bet_result: 'success', result_updated_at: daysAgo(10), group_id: 'g2', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'Osmar' } },
-  { bet_market: 'BTTS Sim', bet_result: 'success', result_updated_at: daysAgo(20), group_id: 'g2', league_matches: { league_seasons: { league_name: 'La Liga', country: 'Espanha' } }, groups: { name: 'Osmar' } },
-  { bet_market: 'Gols Over 3.5', bet_result: 'failure', result_updated_at: daysAgo(40), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
+  { bet_market: 'Gols Over 2.5', bet_result: 'success', bet_status: 'posted', result_updated_at: daysAgo(2), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
+  { bet_market: 'Gols Under 1.5', bet_result: 'failure', bet_status: 'posted', result_updated_at: daysAgo(3), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
+  { bet_market: 'Escanteios Over 8.5', bet_result: 'success', bet_status: 'posted', result_updated_at: daysAgo(5), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Premier League', country: 'England' } }, groups: { name: 'GuruBet' } },
+  { bet_market: 'Gols Over 1.5', bet_result: 'success', bet_status: 'ready', result_updated_at: daysAgo(10), group_id: 'g2', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'Osmar' } },
+  { bet_market: 'BTTS Sim', bet_result: 'success', bet_status: 'ready', result_updated_at: daysAgo(20), group_id: 'g2', league_matches: { league_seasons: { league_name: 'La Liga', country: 'Espanha' } }, groups: { name: 'Osmar' } },
+  { bet_market: 'Gols Over 3.5', bet_result: 'failure', bet_status: 'posted', result_updated_at: daysAgo(40), group_id: 'g1', league_matches: { league_seasons: { league_name: 'Serie A', country: 'Brasil' } }, groups: { name: 'GuruBet' } },
 ];
 
 function createSupabaseMock(bets: typeof sampleBets = sampleBets) {
@@ -81,6 +81,18 @@ describe('GET /api/analytics/accuracy', () => {
     expect(body.data.total.losses).toBe(2);
     expect(body.data.total.total).toBe(6);
     expect(body.data.total.rate).toBeCloseTo(66.7, 0);
+
+    // postedOnly: 4 bets with bet_status='posted' (2 wins, 2 losses)
+    expect(body.data.postedOnly.total).toBe(4);
+    expect(body.data.postedOnly.wins).toBe(2);
+    expect(body.data.postedOnly.losses).toBe(2);
+    expect(body.data.postedOnly.rate).toBe(50);
+
+    // notPosted: 2 bets with bet_status='ready' (2 wins, 0 losses)
+    expect(body.data.notPosted.total).toBe(2);
+    expect(body.data.notPosted.wins).toBe(2);
+    expect(body.data.notPosted.losses).toBe(0);
+    expect(body.data.notPosted.rate).toBe(100);
 
     // Periods
     expect(body.data.periods.allTime.total).toBe(6);
@@ -145,13 +157,17 @@ describe('GET /api/analytics/accuracy', () => {
     expect(res.status).toBe(200);
     expect(body.data.total.total).toBe(0);
     expect(body.data.total.rate).toBe(0);
+    expect(body.data.postedOnly.total).toBe(0);
+    expect(body.data.postedOnly.rate).toBe(0);
+    expect(body.data.notPosted.total).toBe(0);
+    expect(body.data.notPosted.rate).toBe(0);
     expect(body.data.byGroup).toEqual([]);
     expect(body.data.byMarket).toEqual([]);
     expect(body.data.byChampionship).toEqual([]);
   });
 
-  it('filters items below minimum threshold', async () => {
-    // Only 1 bet for Escanteios — should NOT appear in byMarket
+  it('includes items that meet minimum threshold (MIN_BETS_DISPLAY = 1)', async () => {
+    // Escanteios has 1 bet which meets MIN_BETS_DISPLAY of 1
     const mock = createSupabaseMock(sampleBets);
     const ctx = createMockContext('super_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
@@ -162,7 +178,8 @@ describe('GET /api/analytics/accuracy', () => {
     const body = await res.json();
 
     const escanteios = body.data.byMarket.find((m: { market: string }) => m.market === 'Escanteios');
-    expect(escanteios).toBeUndefined(); // Below MIN_BETS_DISPLAY of 3
+    expect(escanteios).toBeDefined();
+    expect(escanteios.total).toBe(1);
   });
 
   it('returns 400 for invalid group_id UUID', async () => {
@@ -182,9 +199,9 @@ describe('GET /api/analytics/accuracy', () => {
 
   it('includes bets without league data in total and market aggregations', async () => {
     const betsWithNullLeague = [
-      { bet_market: 'Gols Over 2.5', bet_result: 'success', result_updated_at: daysAgo(2), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
-      { bet_market: 'Gols Over 1.5', bet_result: 'success', result_updated_at: daysAgo(3), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
-      { bet_market: 'Gols Under 1.5', bet_result: 'failure', result_updated_at: daysAgo(4), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+      { bet_market: 'Gols Over 2.5', bet_result: 'success', bet_status: 'posted', result_updated_at: daysAgo(2), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+      { bet_market: 'Gols Over 1.5', bet_result: 'success', bet_status: 'posted', result_updated_at: daysAgo(3), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
+      { bet_market: 'Gols Under 1.5', bet_result: 'failure', bet_status: 'posted', result_updated_at: daysAgo(4), group_id: 'g1', league_matches: null, groups: { name: 'GuruBet' } },
     ];
     const mock = createSupabaseMock(betsWithNullLeague as typeof sampleBets);
     const ctx = createMockContext('super_admin', mock);

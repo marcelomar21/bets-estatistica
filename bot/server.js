@@ -68,7 +68,7 @@ app.get('/health', (req, res) => {
  */
 app.get('/debug/run-job/:jobName', async (req, res) => {
   const { jobName } = req.params;
-  const allowed = ['trial-reminders', 'kick-expired', 'track-results'];
+  const allowed = ['trial-reminders', 'kick-expired', 'track-results', 'audit-results'];
   if (!allowed.includes(jobName)) {
     return res.status(400).json({ error: `Job not allowed. Use: ${allowed.join(', ')}` });
   }
@@ -83,6 +83,9 @@ app.get('/debug/run-job/:jobName', async (req, res) => {
     } else if (jobName === 'track-results') {
       const { runTrackResults } = require('./jobs/trackResults');
       result = await runTrackResults();
+    } else if (jobName === 'audit-results') {
+      const { runAuditResults } = require('./jobs/auditResults');
+      result = await runAuditResults();
     }
     logger.info(`[debug] Manual job trigger: ${jobName}`, { result });
     res.json({ success: true, jobName, result });
@@ -377,6 +380,7 @@ async function setupScheduler() {
   if (runCentral) {
     const { runEnrichment } = require('./jobs/enrichOdds');
     const { runTrackResults } = require('./jobs/trackResults');
+    const { runAuditResults } = require('./jobs/auditResults');
     const { runProcessWebhooks } = require('./jobs/membership/process-webhooks');
     const { runKickExpired } = require('./jobs/membership/kick-expired');
     const { runTrialReminders } = require('./jobs/membership/trial-reminders');
@@ -476,6 +480,17 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
+    // Audit results - 03:30 São Paulo (daily double-check)
+    cron.schedule('30 3 * * *', async () => {
+      logger.info('[scheduler] Running audit-results job');
+      try {
+        await withExecutionLogging('audit-results', runAuditResults);
+        logger.info('[scheduler] audit-results complete');
+      } catch (err) {
+        logger.error('[scheduler] audit-results failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
     // Cleanup stuck job executions - every hour at minute 0
     cron.schedule('0 * * * *', async () => {
       logger.debug('[scheduler] Running cleanup-stuck-jobs');
@@ -504,6 +519,7 @@ async function setupScheduler() {
     console.log('   00:01 - Kick expired members (membership)');
     console.log('   00:30 - Check affiliate expiration (membership)');
     console.log('   03:00 - Cakto reconciliation (membership)');
+    console.log('   03:30 - Audit results (daily double-check)');
     console.log('   08:00 - Enrich odds');
     console.log('   13-23 - Track results (hourly)');
     console.log('   */15  - Distribute bets (round-robin)');

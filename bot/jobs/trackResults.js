@@ -34,7 +34,7 @@ const MAX_CHECK_DURATION_MS = 8 * 60 * 60 * 1000;
 const COMPLETED_STATUSES = ['complete', 'finished', 'ft', 'aet', 'pen'];
 
 /**
- * Get posted bets that need result tracking
+ * Get bets that need result tracking (all statuses, not just posted)
  * F2 FIX: Filtra por bet_result='pending' para nao re-avaliar bets ja processados
  */
 async function getBetsToTrack() {
@@ -58,7 +58,7 @@ async function getBetsToTrack() {
         status
       )
     `)
-    .eq('bet_status', 'posted')
+    .in('bet_status', ['posted', 'ready', 'generated', 'pending_link', 'pending_odds'])
     .eq('bet_result', 'pending')  // F2: Somente bets pendentes
     .lte('league_matches.kickoff_time', checkAfter.toISOString())  // 2h+ desde kickoff
     .gte('league_matches.kickoff_time', checkBefore.toISOString()); // Menos de 8h
@@ -230,7 +230,7 @@ async function getRecoveryBets() {
         status
       )
     `)
-    .eq('bet_status', 'posted')
+    .in('bet_status', ['posted', 'ready', 'generated', 'pending_link', 'pending_odds'])
     .eq('bet_result', 'pending')
     .lt('league_matches.kickoff_time', recoveryThreshold.toISOString());
 

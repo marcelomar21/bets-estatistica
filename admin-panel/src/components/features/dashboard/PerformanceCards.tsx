@@ -36,10 +36,11 @@ export function rateBg(rate: number, total: number): string {
 
 interface PerformanceCardsProps {
   periods: AccuracyPeriods;
+  overallRate?: { rate: number; wins: number; losses: number; total: number };
   byGroup?: GroupAccuracy[];
 }
 
-export default function PerformanceCards({ periods, byGroup }: PerformanceCardsProps) {
+export default function PerformanceCards({ periods, overallRate, byGroup }: PerformanceCardsProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -48,6 +49,13 @@ export default function PerformanceCards({ periods, byGroup }: PerformanceCardsP
           Ver detalhes →
         </Link>
       </div>
+      {overallRate && overallRate.total > 0 && (
+        <div className="mb-4 rounded-lg border bg-blue-50 border-blue-200 p-4">
+          <p className="text-sm font-medium text-gray-700">Taxa Geral (todas as apostas)</p>
+          <p className="text-2xl font-bold mt-1 text-blue-700">{overallRate.rate}%</p>
+          <p className="text-xs text-gray-500 mt-1">{overallRate.wins}/{overallRate.total} acertos</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Taxa Total', period: periods.allTime },

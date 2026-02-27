@@ -51,7 +51,7 @@ jest.mock('@langchain/core/prompts', () => ({
   },
 }));
 
-const { extractMatchData, evaluateBetsWithLLM } = require('../../bot/services/resultEvaluator');
+const { extractMatchData, evaluateBetsWithLLM, evaluateDeterministic } = require('../../bot/services/resultEvaluator');
 
 describe('resultEvaluator', () => {
   beforeEach(() => {
@@ -250,6 +250,100 @@ describe('resultEvaluator', () => {
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('LLM_ERROR');
       expect(mockInvoke).toHaveBeenCalledTimes(3); // MAX_RETRIES = 3
+    });
+  });
+
+  describe('evaluateDeterministic', () => {
+    describe('Brazilian decimal comma parsing', () => {
+      test('"menos de 2,5 gols" with totalGoals=2 → success (2 < 2.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 1, awayGoalCount: 1, totalGoalCount: 2 });
+        const bet = { id: 1, betMarket: 'menos de 2,5 gols', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Time A', 'Time B');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('2');
+      });
+
+      test('"mais de 2,5 gols" with totalGoals=3 → success (3 > 2.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 2, awayGoalCount: 1, totalGoalCount: 3 });
+        const bet = { id: 2, betMarket: 'mais de 2,5 gols', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Time A', 'Time B');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('3');
+      });
+
+      test('"acima de 0,5 gol" with totalGoals=1 → success (1 > 0.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 1, awayGoalCount: 0, totalGoalCount: 1 });
+        const bet = { id: 3, betMarket: 'acima de 0,5 gol', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Time A', 'Time B');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('1');
+      });
+
+      test('"menos de 3,5 gols" with totalGoals=1 → success (1 < 3.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 0, awayGoalCount: 1, totalGoalCount: 1 });
+        const bet = { id: 4, betMarket: 'menos de 3,5 gols', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Time A', 'Time B');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('1');
+      });
+    });
+
+    describe('Team-specific goal markets', () => {
+      test('"menos de 2,5 gols do Corinthians" with Corinthians away=1 → success (1 < 2.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 1, awayGoalCount: 1, totalGoalCount: 2 });
+        const bet = { id: 5, betMarket: 'menos de 2,5 gols do Corinthians', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Cruzeiro', 'Corinthians');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('Corinthians');
+      });
+
+      test('"mais de 1,5 gols do Flamengo" with Flamengo home=2 → success (2 > 1.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 2, awayGoalCount: 0, totalGoalCount: 2 });
+        const bet = { id: 6, betMarket: 'mais de 1,5 gols do Flamengo', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Flamengo', 'Vasco');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('Flamengo');
+      });
+
+      test('"menos de 0,5 gols do Vasco" with Vasco away=0 → success (0 < 0.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 3, awayGoalCount: 0, totalGoalCount: 3 });
+        const bet = { id: 7, betMarket: 'menos de 0,5 gols do Vasco', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Flamengo', 'Vasco');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('success');
+        expect(result.reason).toContain('Vasco');
+      });
+
+      test('"mais de 1,5 gols do Palmeiras" with Palmeiras home=1 → failure (1 <= 1.5)', () => {
+        const matchData = extractMatchData({ homeGoalCount: 1, awayGoalCount: 2, totalGoalCount: 3 });
+        const bet = { id: 8, betMarket: 'mais de 1,5 gols do Palmeiras', betPick: '' };
+
+        const result = evaluateDeterministic(bet, matchData, 'Palmeiras', 'Santos');
+
+        expect(result).not.toBeNull();
+        expect(result.result).toBe('failure');
+        expect(result.reason).toContain('Palmeiras');
+      });
     });
   });
 });
