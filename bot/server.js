@@ -62,57 +62,90 @@ app.get('/health', (req, res) => {
 });
 
 /**
- * DEBUG: Diagnose recovery sweep query (temporary)
+ * DEBUG: Verbose recovery test - processes ONE match through the full pipeline
  */
-app.get('/debug/recovery-diag', async (req, res) => {
-  const MAX_CHECK_DURATION_MS = 8 * 60 * 60 * 1000;
-  const now = new Date();
-  const recoveryThreshold = new Date(now.getTime() - MAX_CHECK_DURATION_MS);
+app.get('/debug/recovery-verbose', async (req, res) => {
+  const { evaluateBetsWithLLM } = require('./services/resultEvaluator');
+  const { config: appConfig } = require('../lib/config');
+  const steps = [];
 
-  const { data, error } = await supabase
-    .from('suggested_bets')
-    .select(`
-      id,
-      match_id,
-      bet_market,
-      bet_pick,
-      odds_at_post,
-      league_matches!inner (
-        home_team_name,
-        away_team_name,
-        kickoff_time,
-        status
-      )
-    `)
-    .eq('bet_status', 'posted')
-    .eq('bet_result', 'pending')
-    .lt('league_matches.kickoff_time', recoveryThreshold.toISOString());
+  try {
+    // Step 1: Check OpenAI key
+    steps.push({ step: 'openai_key', hasKey: !!appConfig.apis.openaiApiKey, keyPrefix: appConfig.apis.openaiApiKey ? appConfig.apis.openaiApiKey.substring(0, 8) : null });
 
-  // Also test getMatchRawData for the first match
-  let matchDiag = null;
-  if (data && data.length > 0) {
-    const firstMatchId = data[0].match_id;
+    // Step 2: Get recovery bets
+    const MAX_CHECK_DURATION_MS = 8 * 60 * 60 * 1000;
+    const recoveryThreshold = new Date(Date.now() - MAX_CHECK_DURATION_MS);
+    const { data: betsData, error: betsErr } = await supabase
+      .from('suggested_bets')
+      .select(`id, match_id, bet_market, bet_pick, odds_at_post, league_matches!inner (home_team_name, away_team_name, kickoff_time, status)`)
+      .eq('bet_status', 'posted')
+      .eq('bet_result', 'pending')
+      .lt('league_matches.kickoff_time', recoveryThreshold.toISOString())
+      .limit(5);
+
+    steps.push({ step: 'recovery_query', error: betsErr?.message || null, count: betsData?.length || 0 });
+
+    if (!betsData || betsData.length === 0) {
+      return res.json({ steps, result: 'no_bets_found' });
+    }
+
+    // Step 3: Pick first match and get raw data
+    const firstBet = betsData[0];
+    const matchId = firstBet.match_id;
     const { data: matchData, error: matchErr } = await supabase
       .from('league_matches')
       .select('match_id, home_team_name, away_team_name, raw_match, status')
-      .eq('match_id', firstMatchId)
+      .eq('match_id', matchId)
       .single();
-    matchDiag = {
-      matchId: firstMatchId,
-      error: matchErr ? matchErr.message : null,
+
+    const COMPLETED_STATUSES = ['complete', 'finished', 'ft', 'aet', 'pen'];
+    const isComplete = COMPLETED_STATUSES.includes(matchData?.status?.toLowerCase());
+
+    steps.push({
+      step: 'match_data',
+      matchId,
+      error: matchErr?.message || null,
       hasData: !!matchData,
       status: matchData?.status,
+      isComplete,
       hasRawMatch: !!matchData?.raw_match,
-    };
-  }
+      rawMatchKeys: matchData?.raw_match ? Object.keys(matchData.raw_match).slice(0, 15) : null,
+      homeScore: matchData?.raw_match?.homeGoalCount ?? matchData?.raw_match?.home_score ?? 'MISSING',
+      awayScore: matchData?.raw_match?.awayGoalCount ?? matchData?.raw_match?.away_score ?? 'MISSING',
+    });
 
-  res.json({
-    recoveryThreshold: recoveryThreshold.toISOString(),
-    error: error ? { message: error.message, code: error.code, details: error.details, hint: error.hint } : null,
-    count: data ? data.length : 0,
-    sample: data ? data.slice(0, 3) : null,
-    matchDiag,
-  });
+    if (!matchData || !isComplete || !matchData.raw_match) {
+      return res.json({ steps, result: 'match_not_ready' });
+    }
+
+    // Step 4: Get all bets for this match
+    const matchBets = betsData.filter(b => b.match_id === matchId);
+    const betsForEval = matchBets.map(b => ({
+      id: b.id,
+      betMarket: b.bet_market,
+      betPick: b.bet_pick,
+    }));
+    steps.push({ step: 'bets_for_eval', matchId, count: betsForEval.length, bets: betsForEval });
+
+    // Step 5: Call evaluateBetsWithLLM (dry run - do NOT update DB)
+    const evalResult = await evaluateBetsWithLLM(
+      {
+        matchId,
+        homeTeamName: matchData.home_team_name,
+        awayTeamName: matchData.away_team_name,
+        rawMatch: matchData.raw_match,
+      },
+      betsForEval
+    );
+
+    steps.push({ step: 'eval_result', success: evalResult.success, error: evalResult.error || null, data: evalResult.data || null });
+
+    res.json({ steps, result: evalResult.success ? 'eval_ok' : 'eval_failed' });
+  } catch (err) {
+    steps.push({ step: 'exception', error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
+    res.json({ steps, result: 'exception' });
+  }
 });
 
 /**
