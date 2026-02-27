@@ -128,6 +128,39 @@ app.post('/api/preview', async (req, res) => {
 });
 
 /**
+ * DEBUG: Test LLM call directly — remove after fixing preview
+ */
+app.get('/api/debug-llm', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const expectedKey = process.env.PREVIEW_API_KEY;
+  if (!expectedKey || authHeader !== `Bearer ${expectedKey}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const { ChatOpenAI } = require('@langchain/openai');
+    const { config } = require('../lib/config');
+    const llm = new ChatOpenAI({
+      openAIApiKey: process.env.OPENAI_API_KEY,
+      modelName: config.llm.lightModel,
+      maxTokens: 100,
+    });
+    const response = await llm.invoke('Diga apenas: LLM funcionando!');
+    return res.json({
+      success: true,
+      model: config.llm.lightModel,
+      response: response.content,
+    });
+  } catch (err) {
+    return res.json({
+      success: false,
+      error: err.message,
+      stack: err.stack?.slice(0, 500),
+    });
+  }
+});
+
+/**
  * Reset webhook endpoint (useful when local polling breaks it)
  */
 app.get('/reset-webhook', async (req, res) => {

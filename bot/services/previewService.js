@@ -121,6 +121,7 @@ async function formatPreviewMessage(bet, toneConfig) {
 
   // No tone config → use the standard static template
   if (!hasToneConfig) {
+    logger.info('[previewService] No tone config, using static template', { betId: bet.id });
     return formatBetMessage(bet, template, toneConfig);
   }
 
@@ -130,16 +131,27 @@ async function formatPreviewMessage(bet, toneConfig) {
   if (toneConfig.examplePost) {
     // Full-message mode: LLM generates the entire post
     try {
+      logger.info('[previewService] Calling generateBetCopy (full-message mode)', { betId: bet.id });
       const copyResult = await generateBetCopy(bet, toneConfig);
+      logger.info('[previewService] generateBetCopy result', {
+        betId: bet.id,
+        success: copyResult.success,
+        fullMessage: copyResult.data?.fullMessage,
+        copyLength: copyResult.data?.copy?.length,
+        fromCache: copyResult.data?.fromCache,
+        error: copyResult.error,
+      });
       if (copyResult.success && copyResult.data?.fullMessage) {
         return copyResult.data.copy;
       }
-      logger.warn('[previewService] generateBetCopy failed, falling back', { betId: bet.id, error: copyResult.error });
+      logger.warn('[previewService] generateBetCopy did not return fullMessage, falling back', { betId: bet.id, error: copyResult.error });
     } catch (err) {
-      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message });
+      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message, stack: err.stack?.slice(0, 300) });
     }
     // Fallback to formatBetMessage if LLM failed
-    return formatBetMessage(bet, template, toneConfig);
+    const fallback = await formatBetMessage(bet, template, toneConfig);
+    logger.info('[previewService] formatBetMessage fallback', { betId: bet.id, previewLength: fallback?.length });
+    return fallback;
   }
 
   // No examplePost but has tone fields: use formatBetMessage's template structure
