@@ -175,41 +175,29 @@ async function generatePreview(groupId) {
 
   const bets = rawBets.map(mapBet);
 
-  // 3. Generate preview for each bet
-  const previews = [];
-  for (const bet of bets) {
+  // 3. Generate previews in parallel (LLM calls are independent)
+  const previews = await Promise.all(bets.map(async (bet) => {
+    const betInfo = {
+      homeTeam: bet.homeTeamName,
+      awayTeam: bet.awayTeamName,
+      market: bet.betMarket,
+      pick: bet.betPick,
+      odds: bet.odds,
+      kickoffTime: bet.kickoffTime,
+      deepLink: bet.deepLink,
+    };
     try {
       const preview = await formatPreviewMessage(bet, toneConfig);
-      previews.push({
-        betId: bet.id,
-        preview,
-        betInfo: {
-          homeTeam: bet.homeTeamName,
-          awayTeam: bet.awayTeamName,
-          market: bet.betMarket,
-          pick: bet.betPick,
-          odds: bet.odds,
-          kickoffTime: bet.kickoffTime,
-          deepLink: bet.deepLink,
-        },
-      });
+      return { betId: bet.id, preview, betInfo };
     } catch (err) {
       logger.error('[previewService] Failed to format bet', { betId: bet.id, groupId, error: err.message });
-      previews.push({
+      return {
         betId: bet.id,
         preview: `🎯 ${bet.homeTeamName} x ${bet.awayTeamName}\n📊 ${bet.betMarket}\n💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}\n🔗 ${bet.deepLink || ''}`,
-        betInfo: {
-          homeTeam: bet.homeTeamName,
-          awayTeam: bet.awayTeamName,
-          market: bet.betMarket,
-          pick: bet.betPick,
-          odds: bet.odds,
-          kickoffTime: bet.kickoffTime,
-          deepLink: bet.deepLink,
-        },
-      });
+        betInfo,
+      };
     }
-  }
+  }));
 
   // 4. Load group name
   const { data: group } = await supabase

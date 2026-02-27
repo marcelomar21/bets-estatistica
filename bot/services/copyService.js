@@ -92,7 +92,7 @@ async function generateBetCopy(bet, toneConfig = null) {
   try {
     // Full-message mode when examplePost is provided
     if (toneConfig?.examplePost) {
-      const llmFull = getOpenAI(4000);
+      const llmFull = getOpenAI(1500);
 
       let fullSystemMessage = 'Voce e um copywriter de apostas esportivas. Gere mensagens de postagem completas para Telegram.';
 
