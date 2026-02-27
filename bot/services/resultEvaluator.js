@@ -117,13 +117,37 @@ function extractMatchData(rawMatch) {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * Detect team-specific goal markets and return the relevant score
+ * @param {string} combined - lowercased combined market+pick text
+ * @param {object} matchData - extracted match data
+ * @param {string|null} homeTeamName - home team name
+ * @param {string|null} awayTeamName - away team name
+ * @returns {{ goals: number, teamLabel: string } | null} - null = use totalGoals
+ */
+function getTeamGoals(combined, matchData, homeTeamName, awayTeamName) {
+  const homeLower = homeTeamName?.toLowerCase();
+  const awayLower = awayTeamName?.toLowerCase();
+
+  if (homeLower && combined.includes(homeLower)) {
+    return { goals: matchData.homeScore, teamLabel: homeTeamName };
+  }
+  if (awayLower && combined.includes(awayLower)) {
+    return { goals: matchData.awayScore, teamLabel: awayTeamName };
+  }
+
+  return null; // No team-specific mention → use totalGoals
+}
+
+/**
  * Deterministic evaluation for simple markets
  * Returns result directly without LLM for markets that can be computed from scores
  * @param {object} bet - { id, betMarket, betPick }
  * @param {object} matchData - extracted match data from extractMatchData()
+ * @param {string|null} homeTeamName - home team name (for team-specific markets)
+ * @param {string|null} awayTeamName - away team name (for team-specific markets)
  * @returns {{ result: string, reason: string } | null} - null if market needs LLM
  */
-function evaluateDeterministic(bet, matchData) {
+function evaluateDeterministic(bet, matchData, homeTeamName, awayTeamName) {
   const { homeScore, awayScore, totalGoals, btts } = matchData;
 
   if (homeScore === null || awayScore === null) return null;
@@ -199,20 +223,26 @@ function evaluateDeterministic(bet, matchData) {
   const overUnderMatch = combined.match(/(?:over|mais de|acima de)\s*(\d+(?:[.,]\d+)?)\s*(?:gols?|goals?)?/);
   if (overUnderMatch && !/escanteio|corner|cart[oõ]/i.test(combined)) {
     const threshold = parseFloat(overUnderMatch[1].replace(',', '.'));
-    const won = totalGoals > threshold;
+    const teamInfo = getTeamGoals(combined, matchData, homeTeamName, awayTeamName);
+    const goals = teamInfo ? teamInfo.goals : totalGoals;
+    const label = teamInfo ? `Gols ${teamInfo.teamLabel}` : 'Total de gols';
+    const won = goals > threshold;
     return {
       result: won ? 'success' : 'failure',
-      reason: `Total de gols: ${totalGoals} ${won ? '>' : '<='} ${threshold} (deterministic)`,
+      reason: `${label}: ${goals} ${won ? '>' : '<='} ${threshold} (deterministic)`,
     };
   }
 
   const underMatch = combined.match(/(?:under|menos de|abaixo de)\s*(\d+(?:[.,]\d+)?)\s*(?:gols?|goals?)?/);
   if (underMatch && !/escanteio|corner|cart[oõ]/i.test(combined)) {
     const threshold = parseFloat(underMatch[1].replace(',', '.'));
-    const won = totalGoals < threshold;
+    const teamInfo = getTeamGoals(combined, matchData, homeTeamName, awayTeamName);
+    const goals = teamInfo ? teamInfo.goals : totalGoals;
+    const label = teamInfo ? `Gols ${teamInfo.teamLabel}` : 'Total de gols';
+    const won = goals < threshold;
     return {
       result: won ? 'success' : 'failure',
-      reason: `Total de gols: ${totalGoals} ${won ? '<' : '>='} ${threshold} (deterministic)`,
+      reason: `${label}: ${goals} ${won ? '<' : '>='} ${threshold} (deterministic)`,
     };
   }
 
@@ -481,7 +511,7 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
   const betsNeedingLLM = [];
 
   for (const bet of bets) {
-    const deterResult = evaluateDeterministic(bet, matchData);
+    const deterResult = evaluateDeterministic(bet, matchData, matchInfo.homeTeamName, matchInfo.awayTeamName);
     if (deterResult) {
       deterministicResults.push({
         id: bet.id,
@@ -608,4 +638,5 @@ module.exports = {
   extractMatchData,
   evaluateDeterministic,
   evaluateWithConsensus,
+  getTeamGoals,
 };

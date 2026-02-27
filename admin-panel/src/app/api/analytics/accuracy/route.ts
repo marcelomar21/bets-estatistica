@@ -8,6 +8,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 interface RawBet {
   bet_market: string;
   bet_result: string;
+  bet_status: string;
   result_updated_at: string | null;
   group_id: string | null;
   league_matches: {
@@ -44,18 +45,18 @@ export const GET = createApiHandler(
     const dateFrom = url.searchParams.get('date_from')?.trim() || null;
     const dateTo = url.searchParams.get('date_to')?.trim() || null;
 
-    // Build query: fetch all posted bets with resolved results
+    // Build query: fetch all bets with resolved results (regardless of posting status)
     let query = supabase
       .from('suggested_bets')
       .select(`
         bet_market,
         bet_result,
+        bet_status,
         result_updated_at,
         group_id,
         league_matches(league_seasons(league_name, country)),
         groups(name)
       `)
-      .eq('bet_status', 'posted')
       .in('bet_result', ['success', 'failure']);
 
     // Validate group_id param if provided
@@ -108,6 +109,8 @@ export const GET = createApiHandler(
     const ms30d = 30 * 24 * 60 * 60 * 1000;
 
     const total: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
+    const postedOnly: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
+    const notPosted: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const last7d: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
     const last30d: AccuracyBucket = { wins: 0, losses: 0, total: 0 };
 
@@ -117,9 +120,16 @@ export const GET = createApiHandler(
 
     for (const bet of finalBets) {
       const isWin = bet.bet_result === 'success';
+      const isPosted = bet.bet_status === 'posted';
       total.total++;
       if (isWin) total.wins++;
       else total.losses++;
+
+      // Posted / not-posted buckets
+      const statusBucket = isPosted ? postedOnly : notPosted;
+      statusBucket.total++;
+      if (isWin) statusBucket.wins++;
+      else statusBucket.losses++;
 
       // Period buckets
       if (bet.result_updated_at) {
@@ -226,6 +236,18 @@ export const GET = createApiHandler(
           wins: total.wins,
           losses: total.losses,
           total: total.total,
+        },
+        postedOnly: {
+          rate: calcRate(postedOnly),
+          wins: postedOnly.wins,
+          losses: postedOnly.losses,
+          total: postedOnly.total,
+        },
+        notPosted: {
+          rate: calcRate(notPosted),
+          wins: notPosted.wins,
+          losses: notPosted.losses,
+          total: notPosted.total,
         },
         byGroup,
         byMarket,

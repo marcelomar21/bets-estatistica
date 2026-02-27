@@ -56,6 +56,8 @@ const mockNotificationsData = {
 
 const mockAccuracyData = {
   total: { rate: 59.4, wins: 38, losses: 26, total: 64 },
+  postedOnly: { rate: 62.5, wins: 30, losses: 18, total: 48 },
+  notPosted: { rate: 50.0, wins: 8, losses: 8, total: 16 },
   periods: {
     last7d: { rate: 55.6, wins: 5, total: 9 },
     last30d: { rate: 60.0, wins: 18, total: 30 },
@@ -403,10 +405,15 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Performance')).toBeInTheDocument();
     });
 
+    // Overall rate card
+    expect(screen.getByText('Taxa Geral (todas as apostas)')).toBeInTheDocument();
+
     // Period cards
     expect(screen.getByText('Taxa Total')).toBeInTheDocument();
-    expect(screen.getByText(/59\.4%/)).toBeInTheDocument();
-    expect(screen.getByText('38/64 acertos')).toBeInTheDocument();
+    // 59.4% appears in both the overall rate card and Taxa Total period card
+    expect(screen.getAllByText(/59\.4%/).length).toBeGreaterThanOrEqual(2);
+    // "38/64 acertos" also appears in both the overall rate card and period card
+    expect(screen.getAllByText('38/64 acertos').length).toBeGreaterThanOrEqual(1);
 
     expect(screen.getByText(/ltimos 7 dias/)).toBeInTheDocument();
     expect(screen.getByText(/55\.6%/)).toBeInTheDocument();
@@ -430,6 +437,8 @@ describe('DashboardPage', () => {
         success: true,
         data: {
           total: { rate: 0, wins: 0, losses: 0, total: 0 },
+          postedOnly: { rate: 0, wins: 0, losses: 0, total: 0 },
+          notPosted: { rate: 0, wins: 0, losses: 0, total: 0 },
           periods: {
             last7d: { rate: 0, wins: 0, total: 0 },
             last30d: { rate: 0, wins: 0, total: 0 },
