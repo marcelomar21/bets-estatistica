@@ -143,7 +143,7 @@ app.get('/api/debug-llm', async (req, res) => {
     const llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: config.llm.lightModel,
-      maxTokens: 100,
+      maxTokens: 4000,
     });
     const response = await llm.invoke('Diga apenas: LLM funcionando!');
     return res.json({
