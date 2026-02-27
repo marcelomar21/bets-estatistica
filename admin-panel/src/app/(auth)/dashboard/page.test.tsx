@@ -54,19 +54,40 @@ const mockNotificationsData = {
   unread_count: 1,
 };
 
+const mockAccuracyData = {
+  total: { rate: 59.4, wins: 38, losses: 26, total: 64 },
+  periods: {
+    last7d: { rate: 55.6, wins: 5, total: 9 },
+    last30d: { rate: 60.0, wins: 18, total: 30 },
+    allTime: { rate: 59.4, wins: 38, total: 64 },
+  },
+  byGroup: [
+    { group_id: 'g1', group_name: 'Grupo Alpha', rate: 65.0, wins: 13, total: 20 },
+    { group_id: 'g2', group_name: 'Grupo Beta', rate: 50.0, wins: 10, total: 20 },
+  ],
+  byMarket: [],
+  byChampionship: [],
+};
+
 const mockMeResponse = {
   ok: true,
   json: () => Promise.resolve({ success: true, data: { userId: 'u1', email: 'admin@test.com', role: 'super_admin', groupId: null } }),
 };
 
+const defaultOkResponse = {
+  ok: true,
+  json: () => Promise.resolve({ success: true, data: {} }),
+};
+
 /**
  * Helper that creates a URL-aware fetch mock.
- * Routes /api/me, /api/dashboard/stats, and /api/notifications to their respective responses.
+ * Routes /api/me, /api/dashboard/stats, /api/notifications, /api/analytics/accuracy, and /api/job-executions.
  */
 function mockFetchByUrl(
   statsResponse?: { ok: boolean; json: () => Promise<unknown> },
   notificationsResponse?: { ok: boolean; json: () => Promise<unknown> },
   meResponse?: { ok: boolean; json: () => Promise<unknown> },
+  accuracyResponse?: { ok: boolean; json: () => Promise<unknown> },
 ) {
   const defaultStatsResponse = {
     ok: true,
@@ -76,14 +97,24 @@ function mockFetchByUrl(
     ok: true,
     json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
   };
+  const defaultAccuracyResponse = {
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: mockAccuracyData }),
+  };
 
   return vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.includes('/api/me')) {
       return Promise.resolve((meResponse ?? mockMeResponse) as Response);
     }
+    if (url.includes('/api/analytics/accuracy')) {
+      return Promise.resolve((accuracyResponse ?? defaultAccuracyResponse) as Response);
+    }
     if (url.includes('/api/notifications')) {
       return Promise.resolve((notificationsResponse ?? defaultNotificationsResponse) as Response);
+    }
+    if (url.includes('/api/job-executions')) {
+      return Promise.resolve(defaultOkResponse as Response);
     }
     return Promise.resolve((statsResponse ?? defaultStatsResponse) as Response);
   });
@@ -119,9 +150,9 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Membros Ativos')).toBeInTheDocument();
     expect(screen.getByText('Bots em Uso')).toBeInTheDocument();
     expect(screen.getByText('Bots Online')).toBeInTheDocument();
-    // Verify group cards
-    expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Grupo Beta')).toBeInTheDocument();
+    // Verify group cards (name also appears in accuracy mini-cards)
+    expect(screen.getAllByText('Grupo Alpha').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Grupo Beta').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders GroupAdminDashboard for group_admin and skips super_admin fetches', async () => {
@@ -182,6 +213,12 @@ describe('DashboardPage', () => {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ success: true, data: { jobs: [], health: { total_jobs: 0, failed_count: 0, status: 'healthy', last_error: null } } }),
+        } as Response);
+      }
+      if (url.includes('/api/analytics/accuracy')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockAccuracyData }),
         } as Response);
       }
       statsCallCount++;
@@ -355,5 +392,74 @@ describe('DashboardPage', () => {
       '/api/notifications/mark-all-read',
       expect.objectContaining({ method: 'PATCH' })
     );
+  });
+
+  it('renders performance cards with accuracy data', async () => {
+    mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Performance')).toBeInTheDocument();
+    });
+
+    // Period cards
+    expect(screen.getByText('Taxa Total')).toBeInTheDocument();
+    expect(screen.getByText(/59\.4%/)).toBeInTheDocument();
+    expect(screen.getByText('38/64 acertos')).toBeInTheDocument();
+
+    expect(screen.getByText(/ltimos 7 dias/)).toBeInTheDocument();
+    expect(screen.getByText(/55\.6%/)).toBeInTheDocument();
+
+    expect(screen.getByText(/ltimos 30 dias/)).toBeInTheDocument();
+    expect(screen.getByText(/60(\.0)?%/)).toBeInTheDocument();
+
+    // Group mini-cards
+    expect(screen.getByText('65%')).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+  });
+
+  it('shows empty state when accuracy has zero bets', async () => {
+    const emptyAccuracy = {
+      ok: true,
+      json: () => Promise.resolve({
+        success: true,
+        data: {
+          total: { rate: 0, wins: 0, losses: 0, total: 0 },
+          periods: {
+            last7d: { rate: 0, wins: 0, total: 0 },
+            last30d: { rate: 0, wins: 0, total: 0 },
+            allTime: { rate: 0, wins: 0, total: 0 },
+          },
+          byGroup: [],
+          byMarket: [],
+          byChampionship: [],
+        },
+      }),
+    };
+
+    mockFetchByUrl(undefined, undefined, undefined, emptyAccuracy);
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sem dados suficientes')).toBeInTheDocument();
+    });
+  });
+
+  it('fetches accuracy data alongside other dashboard endpoints', async () => {
+    const fetchSpy = mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    const calledUrls = fetchSpy.mock.calls.map((call) => {
+      const input = call[0];
+      return typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    });
+    expect(calledUrls.some((url: string) => url.includes('/api/analytics/accuracy'))).toBe(true);
   });
 });

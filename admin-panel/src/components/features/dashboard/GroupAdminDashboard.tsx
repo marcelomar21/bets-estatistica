@@ -7,6 +7,24 @@ import type { Group } from '@/types/database';
 import StatCard from '@/components/features/dashboard/StatCard';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
 
+interface AccuracyPeriod {
+  rate: number;
+  wins: number;
+  total: number;
+}
+
+function rateColor(rate: number): string {
+  if (rate >= 70) return 'text-green-600';
+  if (rate >= 50) return 'text-yellow-600';
+  return 'text-red-600';
+}
+
+function rateBg(rate: number): string {
+  if (rate >= 70) return 'bg-green-50 border-green-200';
+  if (rate >= 50) return 'bg-yellow-50 border-yellow-200';
+  return 'bg-red-50 border-red-200';
+}
+
 function GroupAdminSkeleton() {
   return (
     <div className="space-y-8">
@@ -40,6 +58,7 @@ export default function GroupAdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [accuracyPeriods, setAccuracyPeriods] = useState<{ allTime: AccuracyPeriod; last7d: AccuracyPeriod; last30d: AccuracyPeriod } | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -74,6 +93,19 @@ export default function GroupAdminDashboard() {
       setUnreadCount(json.data.unread_count);
     } catch {
       /* notifications are non-critical */
+    }
+  }, []);
+
+  const fetchAccuracy = useCallback(async () => {
+    try {
+      const res = await fetch('/api/analytics/accuracy');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success) {
+        setAccuracyPeriods(json.data.periods);
+      }
+    } catch {
+      /* accuracy is non-critical */
     }
   }, []);
 
@@ -115,7 +147,8 @@ export default function GroupAdminDashboard() {
   useEffect(() => {
     fetchDashboard();
     fetchNotifications();
-  }, [fetchDashboard, fetchNotifications]);
+    fetchAccuracy();
+  }, [fetchDashboard, fetchNotifications, fetchAccuracy]);
 
   if (loading) {
     return (
@@ -133,7 +166,7 @@ export default function GroupAdminDashboard() {
         <div className="bg-white rounded-lg shadow p-6 text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={() => { fetchDashboard(); fetchNotifications(); }}
+            onClick={() => { fetchDashboard(); fetchNotifications(); fetchAccuracy(); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tentar Novamente
@@ -168,6 +201,35 @@ export default function GroupAdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* Performance / Accuracy */}
+        {accuracyPeriods && accuracyPeriods.allTime.total > 0 ? (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Performance</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { label: 'Taxa Total', period: accuracyPeriods.allTime },
+                { label: 'Últimos 7 dias', period: accuracyPeriods.last7d },
+                { label: 'Últimos 30 dias', period: accuracyPeriods.last30d },
+              ].map(({ label, period }) => (
+                <div key={label} className={`rounded-lg border p-4 ${rateBg(period.rate)}`}>
+                  <p className="text-sm font-medium text-gray-700">{label}</p>
+                  <p className={`text-2xl font-bold mt-1 ${rateColor(period.rate)}`}>
+                    {period.total > 0 ? `${period.rate}%` : '—'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {period.wins}/{period.total} acertos
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : accuracyPeriods && accuracyPeriods.allTime.total === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
+            <p className="text-sm text-gray-500">Sem dados suficientes</p>
+          </div>
+        ) : null}
 
         {/* Member stat cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

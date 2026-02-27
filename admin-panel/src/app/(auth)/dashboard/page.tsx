@@ -15,6 +15,28 @@ interface JobHealthData {
   last_error: { job_name: string; error_message: string | null; started_at: string } | null;
 }
 
+interface AccuracyData {
+  total: { rate: number; wins: number; losses: number; total: number };
+  periods: {
+    last7d: { rate: number; wins: number; total: number };
+    last30d: { rate: number; wins: number; total: number };
+    allTime: { rate: number; wins: number; total: number };
+  };
+  byGroup: Array<{ group_id: string; group_name: string; rate: number; wins: number; total: number }>;
+}
+
+function rateColor(rate: number): string {
+  if (rate >= 70) return 'text-green-600';
+  if (rate >= 50) return 'text-yellow-600';
+  return 'text-red-600';
+}
+
+function rateBg(rate: number): string {
+  if (rate >= 70) return 'bg-green-50 border-green-200';
+  if (rate >= 50) return 'bg-yellow-50 border-yellow-200';
+  return 'bg-red-50 border-red-200';
+}
+
 function DashboardSkeleton() {
   return (
     <div className="space-y-8">
@@ -58,6 +80,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [jobHealth, setJobHealth] = useState<JobHealthData | null>(null);
+  const [accuracy, setAccuracy] = useState<AccuracyData | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -105,6 +128,19 @@ export default function DashboardPage() {
       }
     } catch {
       /* job health is non-critical */
+    }
+  }, []);
+
+  const fetchAccuracy = useCallback(async () => {
+    try {
+      const res = await fetch('/api/analytics/accuracy');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success) {
+        setAccuracy(json.data);
+      }
+    } catch {
+      /* accuracy is non-critical */
     }
   }, []);
 
@@ -173,13 +209,14 @@ export default function DashboardPage() {
       fetchDashboard();
       fetchNotifications();
       fetchJobHealth();
+      fetchAccuracy();
     }
 
     initialize();
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, fetchNotifications, fetchJobHealth]);
+  }, [fetchDashboard, fetchNotifications, fetchJobHealth, fetchAccuracy]);
 
   // Render GroupAdminDashboard for group_admin role
   if (role === 'group_admin') {
@@ -211,7 +248,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg shadow p-6 text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); }}
+            onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); fetchAccuracy(); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tentar Novamente
@@ -228,6 +265,47 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
 
       <div className="space-y-8">
+        {/* Performance / Accuracy */}
+        {accuracy && accuracy.total.total > 0 ? (
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Performance</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {[
+                { label: 'Taxa Total', period: accuracy.periods.allTime },
+                { label: 'Últimos 7 dias', period: accuracy.periods.last7d },
+                { label: 'Últimos 30 dias', period: accuracy.periods.last30d },
+              ].map(({ label, period }) => (
+                <div key={label} className={`rounded-lg border p-4 ${rateBg(period.rate)}`}>
+                  <p className="text-sm font-medium text-gray-700">{label}</p>
+                  <p className={`text-2xl font-bold mt-1 ${rateColor(period.rate)}`}>
+                    {period.total > 0 ? `${period.rate}%` : '—'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {period.wins}/{period.total} acertos
+                  </p>
+                </div>
+              ))}
+            </div>
+            {/* Mini-cards per group (super_admin only) */}
+            {accuracy.byGroup.length > 0 && (
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {accuracy.byGroup.map((g) => (
+                  <div key={g.group_id} className={`rounded-lg border p-3 ${rateBg(g.rate)}`}>
+                    <p className="text-xs font-medium text-gray-700 truncate">{g.group_name}</p>
+                    <p className={`text-lg font-bold ${rateColor(g.rate)}`}>{g.rate}%</p>
+                    <p className="text-xs text-gray-500">{g.wins}/{g.total}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : accuracy && accuracy.total.total === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
+            <p className="text-sm text-gray-500">Sem dados suficientes</p>
+          </div>
+        ) : null}
+
         {/* Summary stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Grupos Ativos" value={data.summary.groups.active} subtitle={`${data.summary.groups.total} total`} icon="👥" />
