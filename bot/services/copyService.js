@@ -19,11 +19,10 @@ const CACHE_MAX_SIZE = 200;
  */
 const { config } = require('../../lib/config');
 
-function getOpenAI(maxTokens = 2000) {
+function getOpenAI() {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: config.llm.lightModel,
-    maxTokens,
   });
 }
 
@@ -92,7 +91,7 @@ async function generateBetCopy(bet, toneConfig = null) {
   try {
     // Full-message mode when examplePost is provided
     if (toneConfig?.examplePost) {
-      const llmFull = getOpenAI(1500);
+      const llmFull = getOpenAI();
 
       let fullSystemMessage = 'Voce e um copywriter de apostas esportivas. Gere mensagens de postagem completas para Telegram.';
 
