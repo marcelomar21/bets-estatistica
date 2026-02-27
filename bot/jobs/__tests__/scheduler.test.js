@@ -140,8 +140,8 @@ describe('Dynamic Scheduler (Story 5.5)', () => {
 
       setupDynamicScheduler({ enabled: true, times: ['10:00', '15:00'] });
 
-      // 2 posting jobs + 2 distribution jobs = 4 cron.schedule calls
-      expect(cron.schedule).toHaveBeenCalledTimes(4);
+      // 2 posting jobs + 2 distribution jobs + 1 per-minute scheduler = 5 cron.schedule calls
+      expect(cron.schedule).toHaveBeenCalledTimes(5);
     });
 
     it('should create cron expression for posting at correct time', () => {
