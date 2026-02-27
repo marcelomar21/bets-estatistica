@@ -96,6 +96,38 @@ app.get('/debug/run-job/:jobName', async (req, res) => {
 });
 
 /**
+ * Preview API — generates message previews using the real posting pipeline.
+ * Called by the admin-panel as a proxy. Auth via shared secret.
+ */
+app.post('/api/preview', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const expectedKey = process.env.PREVIEW_API_KEY;
+
+  if (!expectedKey || authHeader !== `Bearer ${expectedKey}`) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const { group_id } = req.body || {};
+  if (!group_id) {
+    return res.status(400).json({ success: false, error: 'group_id is required' });
+  }
+
+  try {
+    const { generatePreview } = require('./services/previewService');
+    const result = await generatePreview(group_id);
+
+    if (!result.success) {
+      return res.status(422).json(result);
+    }
+
+    return res.json(result);
+  } catch (err) {
+    logger.error('[api/preview] Unexpected error', { groupId: group_id, error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * Reset webhook endpoint (useful when local polling breaks it)
  */
 app.get('/reset-webhook', async (req, res) => {
