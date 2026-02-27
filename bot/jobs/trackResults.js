@@ -261,11 +261,6 @@ async function runTrackResults() {
   const bets = await getBetsToTrack();
   logger.info('Bets to track', { count: bets.length });
 
-  if (bets.length === 0) {
-    logger.info('No bets need tracking');
-    return { tracked: 0, success: 0, failure: 0, unknown: 0, errors: 0 };
-  }
-
   // Agrupar bets por matchId para processar em batch
   const betsByMatch = new Map();
   for (const bet of bets) {
