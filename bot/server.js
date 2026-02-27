@@ -88,11 +88,30 @@ app.get('/debug/recovery-diag', async (req, res) => {
     .eq('bet_result', 'pending')
     .lt('league_matches.kickoff_time', recoveryThreshold.toISOString());
 
+  // Also test getMatchRawData for the first match
+  let matchDiag = null;
+  if (data && data.length > 0) {
+    const firstMatchId = data[0].match_id;
+    const { data: matchData, error: matchErr } = await supabase
+      .from('league_matches')
+      .select('match_id, home_team_name, away_team_name, raw_match, status')
+      .eq('match_id', firstMatchId)
+      .single();
+    matchDiag = {
+      matchId: firstMatchId,
+      error: matchErr ? matchErr.message : null,
+      hasData: !!matchData,
+      status: matchData?.status,
+      hasRawMatch: !!matchData?.raw_match,
+    };
+  }
+
   res.json({
     recoveryThreshold: recoveryThreshold.toISOString(),
     error: error ? { message: error.message, code: error.code, details: error.details, hint: error.hint } : null,
     count: data ? data.length : 0,
     sample: data ? data.slice(0, 3) : null,
+    matchDiag,
   });
 });
 
