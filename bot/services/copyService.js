@@ -19,12 +19,12 @@ const CACHE_MAX_SIZE = 200;
  */
 const { config } = require('../../lib/config');
 
-function getOpenAI() {
+function getOpenAI(maxTokens = 200) {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: config.llm.lightModel,
-    temperature: 0.2, // Baixa para extração precisa de dados
-    maxTokens: 200,
+    temperature: 0.2,
+    maxTokens,
   });
 }
 
@@ -86,10 +86,75 @@ async function generateBetCopy(bet, toneConfig = null) {
   const cached = getFromCache(cacheKey);
   if (cached) {
     logger.debug('Copy from cache', { betId: bet.id });
-    return { success: true, data: { copy: cached, fromCache: true } };
+    const isFullMessage = !!(toneConfig?.examplePost);
+    return { success: true, data: { copy: cached, fullMessage: isFullMessage, fromCache: true } };
   }
 
   try {
+    // Full-message mode when examplePost is provided
+    if (toneConfig?.examplePost) {
+      const llmFull = getOpenAI(800);
+
+      let fullSystemMessage = 'Voce e um copywriter de apostas esportivas. Gere mensagens de postagem completas para Telegram.';
+
+      const parts = [];
+      if (toneConfig.persona) parts.push(`Persona: ${toneConfig.persona}`);
+      if (toneConfig.tone) parts.push(`Tom: ${toneConfig.tone}`);
+      if (toneConfig.forbiddenWords?.length > 0) {
+        parts.push(`Palavras PROIBIDAS (NUNCA use): ${toneConfig.forbiddenWords.join(', ')}`);
+      }
+      if (toneConfig.ctaText) parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      if (toneConfig.customRules?.length > 0) {
+        parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
+      }
+      if (toneConfig.rawDescription) parts.push(`Descricao geral do tom: ${toneConfig.rawDescription}`);
+      if (parts.length > 0) {
+        fullSystemMessage += '\n\nCONFIGURACAO DE TOM DE VOZ:\n' + parts.join('\n');
+      }
+
+      const fullHumanMessage = `Gere uma postagem COMPLETA para Telegram seguindo EXATAMENTE o estilo e formato do exemplo abaixo.
+
+EXEMPLO DE REFERENCIA:
+${toneConfig.examplePost}
+
+DADOS DA APOSTA:
+- Jogo: ${bet.homeTeamName} x ${bet.awayTeamName}
+- Mercado: ${bet.betMarket}
+- Pick: ${bet.betPick || 'N/A'}
+- Odd: ${bet.odds?.toFixed?.(2) || 'N/A'}
+- Kickoff: ${bet.kickoffTime || 'N/A'}
+- Link: ${bet.deepLink || 'N/A'}
+${bet.reasoning ? `- Analise: ${bet.reasoning}` : ''}
+
+Regras:
+- Siga o MESMO formato, estilo e tom do exemplo
+- Use os DADOS reais da aposta (nao copie dados do exemplo)
+- Mantenha emojis e formatacao similares ao exemplo
+- A mensagem deve estar PRONTA para enviar no Telegram
+- Use formatacao Markdown do Telegram (*bold*, _italic_)
+- NAO adicione explicacoes, apenas a mensagem final
+- Portugues BR`;
+
+      const chatPrompt = ChatPromptTemplate.fromMessages([
+        ['system', fullSystemMessage],
+        ['human', fullHumanMessage],
+      ]);
+
+      const chain = chatPrompt.pipe(llmFull);
+      const response = await chain.invoke({});
+      const fullCopy = response.content.trim();
+
+      setCache(cacheKey, fullCopy);
+
+      logger.info('Generated full message copy', {
+        betId: bet.id,
+        copyLength: fullCopy.length,
+        match: `${bet.homeTeamName} x ${bet.awayTeamName}`
+      });
+
+      return { success: true, data: { copy: fullCopy, fullMessage: true, fromCache: false } };
+    }
+
     const llm = getOpenAI();
 
     // Build system message with tone config injection
@@ -173,7 +238,7 @@ Responda APENAS com os bullets, sem texto adicional.`;
       match: `${bet.homeTeamName} x ${bet.awayTeamName}`
     });
 
-    return { success: true, data: { copy: finalCopy, fromCache: false } };
+    return { success: true, data: { copy: finalCopy, fullMessage: false, fromCache: false } };
   } catch (error) {
     logger.error('Failed to generate bet copy', {
       betId: bet.id,

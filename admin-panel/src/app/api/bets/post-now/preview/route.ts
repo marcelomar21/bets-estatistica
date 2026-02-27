@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { randomUUID } from 'crypto';
+import { generatePreviewCopy } from '@/lib/copy-generator';
 
 /**
  * POST /api/bets/post-now/preview
@@ -87,20 +88,73 @@ export const POST = createApiHandler(
       }, { status: 422 });
     }
 
-    // Generate preview texts (placeholder — actual LLM generation would happen on the bot side)
+    // Generate preview texts using LLM copy generator
+    const toneConfig = group.copy_tone_config || null;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const previewBets = validBets.map((b: any) => ({
-      betId: b.id,
-      preview: `🎯 ${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}\n📊 ${b.bet_market}: ${b.bet_pick}\n💰 Odd: ${b.odds}\n🔗 ${b.deep_link}`,
-      betInfo: {
-        homeTeam: b.league_matches.home_team_name,
-        awayTeam: b.league_matches.away_team_name,
-        market: b.bet_market,
-        pick: b.bet_pick,
+    const previewBets = await Promise.all(validBets.map(async (b: any) => {
+      const betData = {
+        homeTeamName: b.league_matches.home_team_name,
+        awayTeamName: b.league_matches.away_team_name,
+        betMarket: b.bet_market,
+        betPick: b.bet_pick,
         odds: b.odds,
         kickoffTime: b.league_matches.kickoff_time,
         deepLink: b.deep_link,
-      },
+        reasoning: b.reasoning,
+      };
+
+      let preview: string;
+      try {
+        const copyResult = await generatePreviewCopy(betData, toneConfig);
+        if (copyResult.fullMessage) {
+          preview = copyResult.copy;
+        } else {
+          // Assemble with template
+          const kickoffDate = new Date(b.league_matches.kickoff_time);
+          const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          const parts = [
+            `🎯 *APOSTA DO DIA*`,
+            '',
+            `⚽ *${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}*`,
+            `🗓 ${kickoffStr}`,
+            '',
+            `📊 ${b.bet_market}: ${b.bet_pick}`,
+            `💰 Odd: ${b.odds}`,
+          ];
+          if (copyResult.copy) {
+            parts.push('', copyResult.copy);
+          }
+          if (b.deep_link) {
+            parts.push('', `🔗 [Apostar Agora](${b.deep_link})`);
+          }
+          parts.push('', '🍀 Boa sorte!');
+          preview = parts.join('\n');
+        }
+      } catch {
+        // Fallback to static template
+        preview = `🎯 ${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}\n📊 ${b.bet_market}: ${b.bet_pick}\n💰 Odd: ${b.odds}\n🔗 ${b.deep_link}`;
+      }
+
+      return {
+        betId: b.id,
+        preview,
+        betInfo: {
+          homeTeam: b.league_matches.home_team_name,
+          awayTeam: b.league_matches.away_team_name,
+          market: b.bet_market,
+          pick: b.bet_pick,
+          odds: b.odds,
+          kickoffTime: b.league_matches.kickoff_time,
+          deepLink: b.deep_link,
+        },
+      };
     }));
 
     // Persist preview
