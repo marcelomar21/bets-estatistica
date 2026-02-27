@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { categorizeMarket } from '@/lib/bet-categories';
 
-const MIN_BETS_DISPLAY = 3;
+const MIN_BETS_DISPLAY = 1;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RawBet {
