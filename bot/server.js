@@ -67,7 +67,7 @@ app.get('/health', (req, res) => {
  */
 app.get('/debug/run-job/:jobName', async (req, res) => {
   const { jobName } = req.params;
-  const allowed = ['trial-reminders', 'kick-expired'];
+  const allowed = ['trial-reminders', 'kick-expired', 'track-results'];
   if (!allowed.includes(jobName)) {
     return res.status(400).json({ error: `Job not allowed. Use: ${allowed.join(', ')}` });
   }
@@ -79,6 +79,9 @@ app.get('/debug/run-job/:jobName', async (req, res) => {
     } else if (jobName === 'kick-expired') {
       const { runKickExpired } = require('./jobs/membership/kick-expired');
       result = await runKickExpired();
+    } else if (jobName === 'track-results') {
+      const { runTrackResults } = require('./jobs/trackResults');
+      result = await runTrackResults();
     }
     logger.info(`[debug] Manual job trigger: ${jobName}`, { result });
     res.json({ success: true, jobName, result });
