@@ -674,4 +674,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations };
+module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations, getRandomTemplate };

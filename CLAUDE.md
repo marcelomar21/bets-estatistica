@@ -1,5 +1,16 @@
 # Project: bets-estatistica (GuruBet)
 
+## LLM Models
+
+Configurados em `lib/config.js:84`:
+
+| Modelo | Uso | Valor atual |
+|--------|-----|-------------|
+| `config.llm.heavyModel` | Análise de jogos, avaliação de resultados | `gpt-5.2` |
+| `config.llm.lightModel` | Copy, interpretação de mercado, preview | `gpt-5-mini` |
+
+O bot usa LangChain (`@langchain/openai`) em `bot/services/copyService.js`. **Nunca** hardcodar modelo — sempre usar `config.llm.*`.
+
 ## Supabase
 
 - **Project ref:** `vqrcuttvcgmozabsqqja`
