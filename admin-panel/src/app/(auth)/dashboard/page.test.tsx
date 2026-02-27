@@ -417,6 +417,10 @@ describe('DashboardPage', () => {
     // Group mini-cards
     expect(screen.getByText('65%')).toBeInTheDocument();
     expect(screen.getByText('50%')).toBeInTheDocument();
+
+    // "Ver detalhes" link to analytics page
+    const detailsLink = screen.getByText(/Ver detalhes/);
+    expect(detailsLink.closest('a')).toHaveAttribute('href', '/analytics');
   });
 
   it('shows empty state when accuracy has zero bets', async () => {

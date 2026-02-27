@@ -6,24 +6,8 @@ import { statusConfig } from '@/components/features/groups/group-utils';
 import type { Group } from '@/types/database';
 import StatCard from '@/components/features/dashboard/StatCard';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
-
-interface AccuracyPeriod {
-  rate: number;
-  wins: number;
-  total: number;
-}
-
-function rateColor(rate: number): string {
-  if (rate >= 70) return 'text-green-600';
-  if (rate >= 50) return 'text-yellow-600';
-  return 'text-red-600';
-}
-
-function rateBg(rate: number): string {
-  if (rate >= 70) return 'bg-green-50 border-green-200';
-  if (rate >= 50) return 'bg-yellow-50 border-yellow-200';
-  return 'bg-red-50 border-red-200';
-}
+import PerformanceCards from '@/components/features/dashboard/PerformanceCards';
+import type { AccuracyPeriods } from '@/components/features/dashboard/PerformanceCards';
 
 function GroupAdminSkeleton() {
   return (
@@ -58,7 +42,7 @@ export default function GroupAdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [accuracyPeriods, setAccuracyPeriods] = useState<{ allTime: AccuracyPeriod; last7d: AccuracyPeriod; last30d: AccuracyPeriod } | null>(null);
+  const [accuracyPeriods, setAccuracyPeriods] = useState<AccuracyPeriods | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -110,39 +94,35 @@ export default function GroupAdminDashboard() {
   }, []);
 
   const handleMarkAsRead = useCallback(async (id: string) => {
-    const target = notifications.find(n => n.id === id);
-    if (!target || target.read) return;
-
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
+    // Optimistic update via functional updaters (avoids stale closure on rapid clicks)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
     try {
-      await fetch(`/api/notifications/${id}`, {
+      const res = await fetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ read: true }),
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      // Rollback on failure
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+      setUnreadCount(prev => prev + 1);
     }
-  }, [notifications, unreadCount]);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
+    // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
     try {
-      await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      const res = await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      // Rollback: re-fetch to get accurate state
+      fetchNotifications();
     }
-  }, [notifications, unreadCount]);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     fetchDashboard();
@@ -204,26 +184,7 @@ export default function GroupAdminDashboard() {
 
         {/* Performance / Accuracy */}
         {accuracyPeriods && accuracyPeriods.allTime.total > 0 ? (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Performance</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {[
-                { label: 'Taxa Total', period: accuracyPeriods.allTime },
-                { label: 'Últimos 7 dias', period: accuracyPeriods.last7d },
-                { label: 'Últimos 30 dias', period: accuracyPeriods.last30d },
-              ].map(({ label, period }) => (
-                <div key={label} className={`rounded-lg border p-4 ${rateBg(period.rate)}`}>
-                  <p className="text-sm font-medium text-gray-700">{label}</p>
-                  <p className={`text-2xl font-bold mt-1 ${rateColor(period.rate)}`}>
-                    {period.total > 0 ? `${period.rate}%` : '—'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {period.wins}/{period.total} acertos
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <PerformanceCards periods={accuracyPeriods} />
         ) : accuracyPeriods && accuracyPeriods.allTime.total === 0 ? (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
@@ -239,9 +200,9 @@ export default function GroupAdminDashboard() {
           <StatCard title="Vencendo em 7d" value={data.summary.members.vencendo} icon="⚠️" />
         </div>
 
-        {/* Notifications */}
+        {/* Notifications (unread only) */}
         <NotificationsPanel
-          notifications={notifications}
+          notifications={notifications.filter(n => !n.read)}
           unreadCount={unreadCount}
           onMarkAsRead={handleMarkAsRead}
           onMarkAllRead={handleMarkAllRead}

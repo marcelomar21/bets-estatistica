@@ -6,6 +6,8 @@ import Link from 'next/link';
 import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
+import PerformanceCards from '@/components/features/dashboard/PerformanceCards';
+import type { AccuracyPeriods, GroupAccuracy } from '@/components/features/dashboard/PerformanceCards';
 import GroupAdminDashboard from '@/components/features/dashboard/GroupAdminDashboard';
 
 interface JobHealthData {
@@ -17,24 +19,8 @@ interface JobHealthData {
 
 interface AccuracyData {
   total: { rate: number; wins: number; losses: number; total: number };
-  periods: {
-    last7d: { rate: number; wins: number; total: number };
-    last30d: { rate: number; wins: number; total: number };
-    allTime: { rate: number; wins: number; total: number };
-  };
-  byGroup: Array<{ group_id: string; group_name: string; rate: number; wins: number; total: number }>;
-}
-
-function rateColor(rate: number): string {
-  if (rate >= 70) return 'text-green-600';
-  if (rate >= 50) return 'text-yellow-600';
-  return 'text-red-600';
-}
-
-function rateBg(rate: number): string {
-  if (rate >= 70) return 'bg-green-50 border-green-200';
-  if (rate >= 50) return 'bg-yellow-50 border-yellow-200';
-  return 'bg-red-50 border-red-200';
+  periods: AccuracyPeriods;
+  byGroup: GroupAccuracy[];
 }
 
 function DashboardSkeleton() {
@@ -267,38 +253,7 @@ export default function DashboardPage() {
       <div className="space-y-8">
         {/* Performance / Accuracy */}
         {accuracy && accuracy.total.total > 0 ? (
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Performance</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {[
-                { label: 'Taxa Total', period: accuracy.periods.allTime },
-                { label: 'Últimos 7 dias', period: accuracy.periods.last7d },
-                { label: 'Últimos 30 dias', period: accuracy.periods.last30d },
-              ].map(({ label, period }) => (
-                <div key={label} className={`rounded-lg border p-4 ${rateBg(period.rate)}`}>
-                  <p className="text-sm font-medium text-gray-700">{label}</p>
-                  <p className={`text-2xl font-bold mt-1 ${rateColor(period.rate)}`}>
-                    {period.total > 0 ? `${period.rate}%` : '—'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {period.wins}/{period.total} acertos
-                  </p>
-                </div>
-              ))}
-            </div>
-            {/* Mini-cards per group (super_admin only) */}
-            {accuracy.byGroup.length > 0 && (
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {accuracy.byGroup.map((g) => (
-                  <div key={g.group_id} className={`rounded-lg border p-3 ${rateBg(g.rate)}`}>
-                    <p className="text-xs font-medium text-gray-700 truncate">{g.group_name}</p>
-                    <p className={`text-lg font-bold ${rateColor(g.rate)}`}>{g.rate}%</p>
-                    <p className="text-xs text-gray-500">{g.wins}/{g.total}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <PerformanceCards periods={accuracy.periods} byGroup={accuracy.byGroup} />
         ) : accuracy && accuracy.total.total === 0 ? (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
