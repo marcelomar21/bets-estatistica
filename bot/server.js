@@ -62,6 +62,41 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * DEBUG: Diagnose recovery sweep query (temporary)
+ */
+app.get('/debug/recovery-diag', async (req, res) => {
+  const MAX_CHECK_DURATION_MS = 8 * 60 * 60 * 1000;
+  const now = new Date();
+  const recoveryThreshold = new Date(now.getTime() - MAX_CHECK_DURATION_MS);
+
+  const { data, error } = await supabase
+    .from('suggested_bets')
+    .select(`
+      id,
+      match_id,
+      bet_market,
+      bet_pick,
+      odds_at_post,
+      league_matches!inner (
+        home_team_name,
+        away_team_name,
+        kickoff_time,
+        status
+      )
+    `)
+    .eq('bet_status', 'posted')
+    .eq('bet_result', 'pending')
+    .lt('league_matches.kickoff_time', recoveryThreshold.toISOString());
+
+  res.json({
+    recoveryThreshold: recoveryThreshold.toISOString(),
+    error: error ? { message: error.message, code: error.code, details: error.details, hint: error.hint } : null,
+    count: data ? data.length : 0,
+    sample: data ? data.slice(0, 3) : null,
+  });
+});
+
+/**
  * DEBUG: Manually trigger a job for testing (temporary endpoint)
  * Usage: GET /debug/run-job/trial-reminders or /debug/run-job/kick-expired
  */
