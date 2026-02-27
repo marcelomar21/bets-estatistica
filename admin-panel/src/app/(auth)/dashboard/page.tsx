@@ -19,6 +19,7 @@ interface JobHealthData {
 
 interface AccuracyData {
   total: { rate: number; wins: number; losses: number; total: number };
+  postedOnly: { rate: number; wins: number; losses: number; total: number };
   periods: AccuracyPeriods;
   byGroup: GroupAccuracy[];
 }
@@ -253,7 +254,7 @@ export default function DashboardPage() {
       <div className="space-y-8">
         {/* Performance / Accuracy */}
         {accuracy && accuracy.total.total > 0 ? (
-          <PerformanceCards periods={accuracy.periods} overallRate={accuracy.total} byGroup={accuracy.byGroup} />
+          <PerformanceCards periods={accuracy.periods} overallRate={accuracy.total} postedRate={accuracy.postedOnly} byGroup={accuracy.byGroup} />
         ) : accuracy && accuracy.total.total === 0 ? (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>

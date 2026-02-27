@@ -37,10 +37,11 @@ export function rateBg(rate: number, total: number): string {
 interface PerformanceCardsProps {
   periods: AccuracyPeriods;
   overallRate?: { rate: number; wins: number; losses: number; total: number };
+  postedRate?: { rate: number; wins: number; losses: number; total: number };
   byGroup?: GroupAccuracy[];
 }
 
-export default function PerformanceCards({ periods, overallRate, byGroup }: PerformanceCardsProps) {
+export default function PerformanceCards({ periods, overallRate, postedRate, byGroup }: PerformanceCardsProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -49,13 +50,22 @@ export default function PerformanceCards({ periods, overallRate, byGroup }: Perf
           Ver detalhes →
         </Link>
       </div>
-      {overallRate && overallRate.total > 0 && (
-        <div className="mb-4 rounded-lg border bg-blue-50 border-blue-200 p-4">
-          <p className="text-sm font-medium text-gray-700">Taxa Geral (todas as apostas)</p>
-          <p className="text-2xl font-bold mt-1 text-blue-700">{overallRate.rate}%</p>
-          <p className="text-xs text-gray-500 mt-1">{overallRate.wins}/{overallRate.total} acertos</p>
-        </div>
-      )}
+      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {overallRate && overallRate.total > 0 && (
+          <div className="rounded-lg border bg-blue-50 border-blue-200 p-4">
+            <p className="text-sm font-medium text-gray-700">Taxa Geral</p>
+            <p className="text-2xl font-bold mt-1 text-blue-700">{overallRate.rate}%</p>
+            <p className="text-xs text-gray-500 mt-1">{overallRate.wins}/{overallRate.total} acertos</p>
+          </div>
+        )}
+        {postedRate && postedRate.total > 0 && (
+          <div className={`rounded-lg border p-4 ${rateBg(postedRate.rate, postedRate.total)}`}>
+            <p className="text-sm font-medium text-gray-700">Taxa das Postadas</p>
+            <p className={`text-2xl font-bold mt-1 ${rateColor(postedRate.rate, postedRate.total)}`}>{postedRate.rate}%</p>
+            <p className="text-xs text-gray-500 mt-1">{postedRate.wins}/{postedRate.total} acertos</p>
+          </div>
+        )}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Taxa Total', period: periods.allTime },

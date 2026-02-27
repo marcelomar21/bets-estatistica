@@ -405,8 +405,11 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Performance')).toBeInTheDocument();
     });
 
-    // Overall rate card
-    expect(screen.getByText('Taxa Geral (todas as apostas)')).toBeInTheDocument();
+    // Overall rate card + Posted rate card
+    expect(screen.getByText('Taxa Geral')).toBeInTheDocument();
+    expect(screen.getByText('Taxa das Postadas')).toBeInTheDocument();
+    expect(screen.getByText('62.5%')).toBeInTheDocument();
+    expect(screen.getByText('30/48 acertos')).toBeInTheDocument();
 
     // Period cards
     expect(screen.getByText('Taxa Total')).toBeInTheDocument();
