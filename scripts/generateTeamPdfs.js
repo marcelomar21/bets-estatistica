@@ -2,6 +2,7 @@
 
 /**
  * Gera PDFs de análise para os próximos jogos de times específicos.
+ * Upload direto para Supabase Storage — sem escrita local.
  *
  * Uso:
  *   node scripts/generateTeamPdfs.js                  # Todos os 6 times alvo
@@ -9,11 +10,10 @@
  */
 require('dotenv').config();
 
-const fs = require('fs-extra');
 const { getPool, closePool } = require('./lib/db');
 const { renderHtmlReport } = require('../agent/persistence/htmlRenderer');
 const { generatePdfFromHtml } = require('../agent/persistence/reportService');
-const { resolveReportPaths, ensureDirectory, REPORTS_HTML_DIR, REPORTS_PDF_DIR } = require('../agent/persistence/reportUtils');
+const { uploadPdfToStorage } = require('../agent/persistence/storageUpload');
 
 const TARGET_TEAMS = {
   'Flamengo':     '%Flamengo%',
@@ -89,12 +89,18 @@ async function generateForTeam(pool, teamName, pattern) {
   if (!payload.match_id) payload.match_id = row.match_id;
 
   const html = renderHtmlReport(payload);
-  const { htmlPath, pdfPath } = resolveReportPaths(payload);
-
-  await fs.writeFile(htmlPath, html, 'utf8');
-
   const pdfBuffer = await generatePdfFromHtml(html);
-  await fs.writeFile(pdfPath, pdfBuffer);
+
+  const uploadResult = await uploadPdfToStorage(row.match_id, pdfBuffer);
+  if (!uploadResult.success) {
+    throw new Error(`Upload falhou: ${uploadResult.error}`);
+  }
+
+  // Atualizar path no BD
+  await pool.query(
+    'UPDATE game_analysis SET pdf_storage_path = $1, pdf_uploaded_at = NOW() WHERE match_id = $2',
+    [uploadResult.storagePath, row.match_id],
+  );
 
   return {
     team: teamName,
@@ -102,8 +108,7 @@ async function generateForTeam(pool, teamName, pattern) {
     match: `${row.home_team_name} x ${row.away_team_name}`,
     kickoff: row.kickoff_time,
     league: row.league_name,
-    htmlPath,
-    pdfPath,
+    storagePath: uploadResult.storagePath,
   };
 }
 
@@ -118,9 +123,6 @@ async function main() {
   }
 
   console.log(`[generateTeamPdfs] Gerando PDFs para ${teamEntries.length} time(s)...`);
-
-  await ensureDirectory(REPORTS_HTML_DIR);
-  await ensureDirectory(REPORTS_PDF_DIR);
 
   const pool = getPool();
   const results = [];
@@ -147,7 +149,7 @@ async function main() {
       console.log(`\n${r.team}: ${r.match}`);
       console.log(`  Liga: ${r.league}`);
       console.log(`  Kickoff: ${r.kickoff}`);
-      console.log(`  PDF: ${r.pdfPath}`);
+      console.log(`  Storage: ${r.storagePath}`);
     }
     console.log(`\nTotal: ${results.length} PDF(s) gerado(s).`);
   } else {
