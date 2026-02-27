@@ -3,7 +3,6 @@
  * Usa withStructuredOutput para garantir JSON valido (sem regex fragil)
  */
 const { ChatOpenAI } = require('@langchain/openai');
-const { ChatAnthropic } = require('@langchain/anthropic');
 const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const { z } = require('zod');
 const logger = require('../../lib/logger');
@@ -254,7 +253,7 @@ function evaluateDeterministic(bet, matchData) {
 
 /**
  * Run multi-LLM consensus evaluation for complex markets
- * Uses 3 distinct providers: OpenAI, Anthropic, Moonshot
+ * Uses 3 distinct providers: OpenAI, Kimi K2.5, GLM 5 (via OpenCode Zen)
  * @param {object} matchInfo - Match data for the prompt
  * @param {Array} bets - Bets needing LLM evaluation
  * @param {object} matchData - Extracted match data
@@ -300,30 +299,35 @@ async function evaluateWithConsensus(matchInfo, bets, matchData) {
     }
   }
 
-  // Provider B: Anthropic (Claude Sonnet 4.6)
-  if (process.env.ANTHROPIC_API_KEY) {
+  // Provider B: Kimi K2.5 via OpenCode Zen (OpenAI-compatible)
+  if (process.env.OPENCODE_API_KEY) {
     try {
-      const modelB = process.env.EVALUATOR_MODEL_ANTHROPIC || 'claude-sonnet-4-6-20250514';
-      const llmB = new ChatAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY, model: modelB, temperature: 0 });
-      providers.push({ name: 'anthropic', chain: prompt.pipe(llmB.withStructuredOutput(evaluationResponseSchema)) });
+      const modelB = process.env.EVALUATOR_MODEL_KIMI || 'kimi-k2.5-free';
+      const llmB = new ChatOpenAI({
+        apiKey: process.env.OPENCODE_API_KEY,
+        model: modelB,
+        temperature: 0,
+        configuration: { baseURL: 'https://opencode.ai/zen/v1' },
+      });
+      providers.push({ name: 'kimi', chain: prompt.pipe(llmB.withStructuredOutput(evaluationResponseSchema)) });
     } catch (err) {
-      logger.warn('Failed to create Anthropic evaluator chain', { error: err.message });
+      logger.warn('Failed to create Kimi evaluator chain', { error: err.message });
     }
   }
 
-  // Provider C: Moonshot (Kimi 2.5) via OpenAI-compatible API
-  if (process.env.MOONSHOT_API_KEY) {
+  // Provider C: GLM 5 via OpenCode Zen (OpenAI-compatible)
+  if (process.env.OPENCODE_API_KEY) {
     try {
-      const modelC = process.env.EVALUATOR_MODEL_MOONSHOT || 'kimi-2.5';
+      const modelC = process.env.EVALUATOR_MODEL_GLM || 'glm-5-free';
       const llmC = new ChatOpenAI({
-        apiKey: process.env.MOONSHOT_API_KEY,
+        apiKey: process.env.OPENCODE_API_KEY,
         model: modelC,
         temperature: 0,
-        configuration: { baseURL: 'https://api.moonshot.cn/v1' },
+        configuration: { baseURL: 'https://opencode.ai/zen/v1' },
       });
-      providers.push({ name: 'moonshot', chain: prompt.pipe(llmC.withStructuredOutput(evaluationResponseSchema)) });
+      providers.push({ name: 'glm', chain: prompt.pipe(llmC.withStructuredOutput(evaluationResponseSchema)) });
     } catch (err) {
-      logger.warn('Failed to create Moonshot evaluator chain', { error: err.message });
+      logger.warn('Failed to create GLM evaluator chain', { error: err.message });
     }
   }
 
@@ -510,8 +514,7 @@ async function evaluateBetsWithLLM(matchInfo, bets) {
   });
 
   // Use multi-LLM consensus if multiple providers are configured
-  const hasMultipleProviders = config.apis.openaiApiKey &&
-    (process.env.ANTHROPIC_API_KEY || process.env.MOONSHOT_API_KEY);
+  const hasMultipleProviders = config.apis.openaiApiKey && process.env.OPENCODE_API_KEY;
 
   if (hasMultipleProviders) {
     try {
