@@ -5,8 +5,9 @@ import type { DashboardData, Notification } from '@/types/database';
 import Link from 'next/link';
 import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
-import AlertsSection from '@/components/features/dashboard/AlertsSection';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
+import PerformanceCards from '@/components/features/dashboard/PerformanceCards';
+import type { AccuracyPeriods, GroupAccuracy } from '@/components/features/dashboard/PerformanceCards';
 import GroupAdminDashboard from '@/components/features/dashboard/GroupAdminDashboard';
 
 interface JobHealthData {
@@ -14,6 +15,12 @@ interface JobHealthData {
   failed_count: number;
   status: 'healthy' | 'degraded';
   last_error: { job_name: string; error_message: string | null; started_at: string } | null;
+}
+
+interface AccuracyData {
+  total: { rate: number; wins: number; losses: number; total: number };
+  periods: AccuracyPeriods;
+  byGroup: GroupAccuracy[];
 }
 
 function DashboardSkeleton() {
@@ -37,11 +44,6 @@ function DashboardSkeleton() {
           </div>
         ))}
       </div>
-      {/* Alerts skeleton */}
-      <div className="bg-white rounded-lg shadow p-6 animate-pulse">
-        <div className="h-5 bg-gray-200 rounded w-24 mb-4" />
-        <div className="h-4 bg-gray-200 rounded w-full" />
-      </div>
       {/* Notifications skeleton */}
       <div className="bg-white rounded-lg shadow p-6 animate-pulse">
         <div className="h-5 bg-gray-200 rounded w-32 mb-4" />
@@ -64,6 +66,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [jobHealth, setJobHealth] = useState<JobHealthData | null>(null);
+  const [accuracy, setAccuracy] = useState<AccuracyData | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
@@ -114,47 +117,49 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchAccuracy = useCallback(async () => {
+    try {
+      const res = await fetch('/api/analytics/accuracy');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.success) {
+        setAccuracy(json.data);
+      }
+    } catch {
+      /* accuracy is non-critical */
+    }
+  }, []);
+
   const handleMarkAsRead = useCallback(async (id: string) => {
-    // Check if already read
-    const target = notifications.find(n => n.id === id);
-    if (!target || target.read) return;
-
-    // Save previous state for rollback
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
-    // Optimistic update
+    // Optimistic update via functional updaters (avoids stale closure on rapid clicks)
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
     try {
-      await fetch(`/api/notifications/${id}`, {
+      const res = await fetch(`/api/notifications/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ read: true }),
         headers: { 'Content-Type': 'application/json' },
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
       // Rollback on failure
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+      setUnreadCount(prev => prev + 1);
     }
-  }, [notifications, unreadCount]);
+  }, []);
 
   const handleMarkAllRead = useCallback(async () => {
-    // Save previous state for rollback
-    const prevNotifications = notifications;
-    const prevCount = unreadCount;
-
     // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
     try {
-      await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      const res = await fetch('/api/notifications/mark-all-read', { method: 'PATCH' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch {
-      // Rollback on failure
-      setNotifications(prevNotifications);
-      setUnreadCount(prevCount);
+      // Rollback: re-fetch to get accurate state
+      fetchNotifications();
     }
-  }, [notifications, unreadCount]);
+  }, [fetchNotifications]);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,13 +195,14 @@ export default function DashboardPage() {
       fetchDashboard();
       fetchNotifications();
       fetchJobHealth();
+      fetchAccuracy();
     }
 
     initialize();
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, fetchNotifications, fetchJobHealth]);
+  }, [fetchDashboard, fetchNotifications, fetchJobHealth, fetchAccuracy]);
 
   // Render GroupAdminDashboard for group_admin role
   if (role === 'group_admin') {
@@ -228,7 +234,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-lg shadow p-6 text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
-            onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); }}
+            onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); fetchAccuracy(); }}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tentar Novamente
@@ -245,6 +251,16 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
 
       <div className="space-y-8">
+        {/* Performance / Accuracy */}
+        {accuracy && accuracy.total.total > 0 ? (
+          <PerformanceCards periods={accuracy.periods} byGroup={accuracy.byGroup} />
+        ) : accuracy && accuracy.total.total === 0 ? (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
+            <p className="text-sm text-gray-500">Sem dados suficientes</p>
+          </div>
+        ) : null}
+
         {/* Summary stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="Grupos Ativos" value={data.summary.groups.active} subtitle={`${data.summary.groups.total} total`} icon="👥" />
@@ -296,12 +312,9 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Alerts (legacy — kept for Story 2.4 compatibility) */}
-        <AlertsSection alerts={data.alerts} />
-
-        {/* Notifications */}
+        {/* Notifications (unread only) */}
         <NotificationsPanel
-          notifications={notifications}
+          notifications={notifications.filter(n => !n.read)}
           unreadCount={unreadCount}
           onMarkAsRead={handleMarkAsRead}
           onMarkAllRead={handleMarkAllRead}

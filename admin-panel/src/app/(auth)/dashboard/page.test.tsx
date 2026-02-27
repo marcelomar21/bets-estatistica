@@ -24,9 +24,6 @@ const mockDashboardData = {
     { id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z', active_members: 15 },
     { id: 'g2', name: 'Grupo Beta', status: 'paused', created_at: '2026-01-02T00:00:00Z', active_members: 10 },
   ],
-  alerts: [
-    { type: 'bot_offline', message: 'Bot offline', timestamp: '2026-02-08T10:00:00Z', group_name: 'Alpha' },
-  ],
 };
 
 const mockNotificationsData = {
@@ -57,19 +54,40 @@ const mockNotificationsData = {
   unread_count: 1,
 };
 
+const mockAccuracyData = {
+  total: { rate: 59.4, wins: 38, losses: 26, total: 64 },
+  periods: {
+    last7d: { rate: 55.6, wins: 5, total: 9 },
+    last30d: { rate: 60.0, wins: 18, total: 30 },
+    allTime: { rate: 59.4, wins: 38, total: 64 },
+  },
+  byGroup: [
+    { group_id: 'g1', group_name: 'Grupo Alpha', rate: 65.0, wins: 13, total: 20 },
+    { group_id: 'g2', group_name: 'Grupo Beta', rate: 50.0, wins: 10, total: 20 },
+  ],
+  byMarket: [],
+  byChampionship: [],
+};
+
 const mockMeResponse = {
   ok: true,
   json: () => Promise.resolve({ success: true, data: { userId: 'u1', email: 'admin@test.com', role: 'super_admin', groupId: null } }),
 };
 
+const defaultOkResponse = {
+  ok: true,
+  json: () => Promise.resolve({ success: true, data: {} }),
+};
+
 /**
  * Helper that creates a URL-aware fetch mock.
- * Routes /api/me, /api/dashboard/stats, and /api/notifications to their respective responses.
+ * Routes /api/me, /api/dashboard/stats, /api/notifications, /api/analytics/accuracy, and /api/job-executions.
  */
 function mockFetchByUrl(
   statsResponse?: { ok: boolean; json: () => Promise<unknown> },
   notificationsResponse?: { ok: boolean; json: () => Promise<unknown> },
   meResponse?: { ok: boolean; json: () => Promise<unknown> },
+  accuracyResponse?: { ok: boolean; json: () => Promise<unknown> },
 ) {
   const defaultStatsResponse = {
     ok: true,
@@ -79,14 +97,24 @@ function mockFetchByUrl(
     ok: true,
     json: () => Promise.resolve({ success: true, data: mockNotificationsData }),
   };
+  const defaultAccuracyResponse = {
+    ok: true,
+    json: () => Promise.resolve({ success: true, data: mockAccuracyData }),
+  };
 
   return vi.spyOn(global, 'fetch').mockImplementation((input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     if (url.includes('/api/me')) {
       return Promise.resolve((meResponse ?? mockMeResponse) as Response);
     }
+    if (url.includes('/api/analytics/accuracy')) {
+      return Promise.resolve((accuracyResponse ?? defaultAccuracyResponse) as Response);
+    }
     if (url.includes('/api/notifications')) {
       return Promise.resolve((notificationsResponse ?? defaultNotificationsResponse) as Response);
+    }
+    if (url.includes('/api/job-executions')) {
+      return Promise.resolve(defaultOkResponse as Response);
     }
     return Promise.resolve((statsResponse ?? defaultStatsResponse) as Response);
   });
@@ -122,11 +150,9 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Membros Ativos')).toBeInTheDocument();
     expect(screen.getByText('Bots em Uso')).toBeInTheDocument();
     expect(screen.getByText('Bots Online')).toBeInTheDocument();
-    // Verify group cards
-    expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
-    expect(screen.getByText('Grupo Beta')).toBeInTheDocument();
-    // Verify alerts
-    expect(screen.getByText('Bot offline')).toBeInTheDocument();
+    // Verify group cards (name also appears in accuracy mini-cards)
+    expect(screen.getAllByText('Grupo Alpha').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Grupo Beta').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders GroupAdminDashboard for group_admin and skips super_admin fetches', async () => {
@@ -187,6 +213,12 @@ describe('DashboardPage', () => {
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ success: true, data: { jobs: [], health: { total_jobs: 0, failed_count: 0, status: 'healthy', last_error: null } } }),
+        } as Response);
+      }
+      if (url.includes('/api/analytics/accuracy')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: mockAccuracyData }),
         } as Response);
       }
       statsCallCount++;
@@ -292,13 +324,14 @@ describe('DashboardPage', () => {
 
     // Verify the NotificationsPanel heading appears
     expect(screen.getByText(/Notifica/)).toBeInTheDocument();
-    // Verify notification content from mock data
+    // Verify unread notification content from mock data
     expect(screen.getByText('Bot Offline')).toBeInTheDocument();
     expect(screen.getByText('Bot do grupo Alpha esta offline')).toBeInTheDocument();
-    expect(screen.getByText('Onboarding OK')).toBeInTheDocument();
+    // Read notification (n2) should NOT appear — dashboard shows only unread
+    expect(screen.queryByText('Onboarding OK')).not.toBeInTheDocument();
   });
 
-  it('mark as read updates UI optimistically', async () => {
+  it('mark as read removes notification from dashboard (unread only)', async () => {
     mockFetchByUrl();
 
     render(<DashboardPage />);
@@ -307,28 +340,18 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
     });
 
-    // Unread notification (n1) should have a "Marcar lida" button
+    // Unread notification (n1) should be visible with a "Marcar lida" button
+    expect(screen.getByText('Bot Offline')).toBeInTheDocument();
     const markReadButtons = screen.getAllByText('Marcar lida');
     expect(markReadButtons.length).toBeGreaterThan(0);
-
-    // The unread notification (n1 "Bot Offline") should have border-l-4
-    const unreadItem = screen.getByText('Bot Offline').closest('li');
-    expect(unreadItem).toHaveClass('border-l-4');
 
     // Click the "Marcar lida" button for the first unread notification
     await userEvent.click(markReadButtons[0]);
 
-    // After clicking, the notification should become read optimistically:
-    // - border-l-4 should be removed and opacity-60 should be applied
+    // After clicking, notification becomes read and disappears from unread-only list
     await waitFor(() => {
-      const updatedItem = screen.getByText('Bot Offline').closest('li');
-      expect(updatedItem).toHaveClass('opacity-60');
-      expect(updatedItem).not.toHaveClass('border-l-4');
+      expect(screen.queryByText('Bot Offline')).not.toBeInTheDocument();
     });
-
-    // The "Marcar lida" button for that notification should disappear
-    // Both notifications are now read so no "Marcar lida" buttons
-    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
 
     // Verify fetch was called with the correct notification URL and PATCH method
     expect(global.fetch).toHaveBeenCalledWith(
@@ -337,7 +360,7 @@ describe('DashboardPage', () => {
     );
   });
 
-  it('mark all as read updates UI optimistically and calls API', async () => {
+  it('mark all as read clears notifications from dashboard and calls API', async () => {
     mockFetchByUrl();
 
     render(<DashboardPage />);
@@ -350,32 +373,97 @@ describe('DashboardPage', () => {
     const markAllButton = screen.getByText('Marcar todas como lidas');
     expect(markAllButton).toBeInTheDocument();
 
-    // Verify there is at least one unread notification with border-l-4
-    const unreadItem = screen.getByText('Bot Offline').closest('li');
-    expect(unreadItem).toHaveClass('border-l-4');
+    // Unread notification visible
+    expect(screen.getByText('Bot Offline')).toBeInTheDocument();
 
     // Click "Marcar todas como lidas"
     await userEvent.click(markAllButton);
 
-    // After clicking, all notifications should become read optimistically:
-    // - All notifications should have opacity-60 (read state)
-    // - No more border-l-4 (unread indicator)
+    // After clicking, all notifications become read and disappear from unread-only view
     await waitFor(() => {
-      const botOfflineItem = screen.getByText('Bot Offline').closest('li');
-      expect(botOfflineItem).toHaveClass('opacity-60');
-      expect(botOfflineItem).not.toHaveClass('border-l-4');
+      expect(screen.queryByText('Bot Offline')).not.toBeInTheDocument();
     });
 
     // "Marcar todas como lidas" button should disappear when unreadCount = 0
     expect(screen.queryByText('Marcar todas como lidas')).not.toBeInTheDocument();
-
-    // No individual "Marcar lida" buttons should remain
-    expect(screen.queryByText('Marcar lida')).not.toBeInTheDocument();
 
     // Verify fetch was called with the mark-all-read endpoint
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/notifications/mark-all-read',
       expect.objectContaining({ method: 'PATCH' })
     );
+  });
+
+  it('renders performance cards with accuracy data', async () => {
+    mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Performance')).toBeInTheDocument();
+    });
+
+    // Period cards
+    expect(screen.getByText('Taxa Total')).toBeInTheDocument();
+    expect(screen.getByText(/59\.4%/)).toBeInTheDocument();
+    expect(screen.getByText('38/64 acertos')).toBeInTheDocument();
+
+    expect(screen.getByText(/ltimos 7 dias/)).toBeInTheDocument();
+    expect(screen.getByText(/55\.6%/)).toBeInTheDocument();
+
+    expect(screen.getByText(/ltimos 30 dias/)).toBeInTheDocument();
+    expect(screen.getByText(/60(\.0)?%/)).toBeInTheDocument();
+
+    // Group mini-cards
+    expect(screen.getByText('65%')).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
+
+    // "Ver detalhes" link to analytics page
+    const detailsLink = screen.getByText(/Ver detalhes/);
+    expect(detailsLink.closest('a')).toHaveAttribute('href', '/analytics');
+  });
+
+  it('shows empty state when accuracy has zero bets', async () => {
+    const emptyAccuracy = {
+      ok: true,
+      json: () => Promise.resolve({
+        success: true,
+        data: {
+          total: { rate: 0, wins: 0, losses: 0, total: 0 },
+          periods: {
+            last7d: { rate: 0, wins: 0, total: 0 },
+            last30d: { rate: 0, wins: 0, total: 0 },
+            allTime: { rate: 0, wins: 0, total: 0 },
+          },
+          byGroup: [],
+          byMarket: [],
+          byChampionship: [],
+        },
+      }),
+    };
+
+    mockFetchByUrl(undefined, undefined, undefined, emptyAccuracy);
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Sem dados suficientes')).toBeInTheDocument();
+    });
+  });
+
+  it('fetches accuracy data alongside other dashboard endpoints', async () => {
+    const fetchSpy = mockFetchByUrl();
+
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+    });
+
+    const calledUrls = fetchSpy.mock.calls.map((call) => {
+      const input = call[0];
+      return typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+    });
+    expect(calledUrls.some((url: string) => url.includes('/api/analytics/accuracy'))).toBe(true);
   });
 });
