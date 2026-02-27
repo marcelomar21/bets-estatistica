@@ -24,7 +24,6 @@ yarn-error.log*
 coverage/
 dist/
 build/
-data/
 
 # IDE - Claude (track settings/config, ignore local/session data)
 .claude/settings.local.json

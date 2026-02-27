@@ -1,5 +1,3 @@
-const path = require('path');
-const fs = require('fs-extra');
 const { ChatOpenAI } = require('@langchain/openai');
 const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const { ToolMessage, HumanMessage } = require('@langchain/core/messages');
@@ -11,7 +9,6 @@ const { createAnalysisTools } = require('../tools');
 
 const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
 const MAX_STRUCTURED_RETRIES = 2;
-const SQL_DUMPS_DIR = path.join(__dirname, '../../data/sql_debug');
 const TABLE_SCHEMA_HINT = `
 Tabelas e colunas disponíveis para consultas SQL:
 - league_matches(match_id, season_id, home_team_id, away_team_id, home_team_name, away_team_name, home_score, away_score, status, game_week, round_id, date_unix, kickoff_time, venue, raw_match, created_at, updated_at)
@@ -593,13 +590,6 @@ const formatDate = (value) => {
       }).format(date);
 };
 
-const sanitizeDirName = (value) =>
-  String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-z0-9_-]+/g, '-')
-    .slice(0, 40);
-
 const buildContextText = (matchRow, detailStats, homeLastxSummary, awayLastxSummary) => {
   const lines = [];
   lines.push(
@@ -875,35 +865,8 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
         );
         continue;
       }
-      const dumpIndex = toolExecutions.length + 1;
-      const timestampLabel = new Date().toISOString().replace(/[:.]/g, '-');
-      const dumpDir = path.join(
-        SQL_DUMPS_DIR,
-        `${String(matchId)}_${sanitizeDirName(matchRow.home_team_name)}vs${sanitizeDirName(
-          matchRow.away_team_name,
-        )}`,
-        timestampLabel,
-      );
-      const dumpPath = path.join(dumpDir, `step${step + 1}_call${dumpIndex}.json`);
       try {
-        await fs.ensureDir(path.dirname(dumpPath));
-      } catch { /* ignore directory creation errors */ }
-      try {
-        const parsed = JSON.parse(output);
-        await fs.writeJson(
-          dumpPath,
-          {
-            match_id: matchId,
-            step: step + 1,
-            tool_call: dumpIndex,
-            tool_name: call.name,
-            input: args,
-            sql_executed: parsed.executed_sql ?? null,
-            sql_params: parsed.executed_params ?? null,
-            output: parsed,
-          },
-          { spaces: 2 },
-        );
+        JSON.parse(output);
         hasSuccessfulToolCall = true;
       } catch {
         infoLog(`Ferramenta ${call.name} retornou payload não JSON (tamanho=${output?.length ?? 0}).`);

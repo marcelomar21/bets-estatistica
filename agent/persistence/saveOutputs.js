@@ -1,5 +1,5 @@
 const { getPool } = require('../db');
-const { loadAnalysisPayload } = require('./reportUtils');
+const { validateAnalysisPayload } = require('./reportUtils');
 const { extractSections } = require('./analysisParser');
 const { markAnalysisStatus } = require('../../scripts/lib/matchScreening');
 const { generatePdfFromHtml } = require('./reportService');
@@ -113,8 +113,8 @@ const persistInDatabase = async (matchId, payload, bets, analysisText) => {
   }
 };
 
-const saveOutputs = async (matchId) => {
-  const { payload } = await loadAnalysisPayload(matchId);
+const saveOutputs = async (matchId, payload) => {
+  validateAnalysisPayload(payload);
   const analysisText =
     payload.output?.analise_texto?.trim() || '# Análise não disponível\nSem conteúdo textual.';
   let bets = collectBets(payload.output);

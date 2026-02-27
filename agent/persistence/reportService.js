@@ -1,19 +1,6 @@
-const fs = require('fs-extra');
 const htmlPdfNode = require('html-pdf-node');
 
 const { renderHtmlReport } = require('./htmlRenderer');
-const {
-  loadAnalysisPayload,
-  resolveReportPaths,
-  REPORTS_HTML_DIR,
-  REPORTS_PDF_DIR,
-  ensureDirectory,
-} = require('./reportUtils');
-
-const ensureReportDirs = async () => {
-  await ensureDirectory(REPORTS_HTML_DIR);
-  await ensureDirectory(REPORTS_PDF_DIR);
-};
 
 const PDF_OPTIONS = {
   format: 'A4',
@@ -37,27 +24,18 @@ const generatePdfFromHtml = async (html) => {
   return pdfBuffer;
 };
 
-const generateReportForMatch = async ({ matchId, payload } = {}) => {
-  if (!payload && (matchId === undefined || matchId === null)) {
-    throw new Error('É necessário informar matchId ou fornecer o payload da análise.');
+const generateReportForMatch = async ({ payload }) => {
+  if (!payload) {
+    throw new Error('É necessário fornecer o payload da análise.');
   }
 
-  const analysisPayload = payload || (await loadAnalysisPayload(matchId)).payload;
-  const html = renderHtmlReport(analysisPayload);
-  const { htmlPath, pdfPath } = resolveReportPaths(analysisPayload);
-
-  await ensureReportDirs();
-  await fs.writeFile(htmlPath, html, 'utf8');
-
+  const html = renderHtmlReport(payload);
   const pdfBuffer = await generatePdfFromHtml(html);
-  await fs.writeFile(pdfPath, pdfBuffer);
 
-  return { htmlPath, pdfPath };
+  return { html, pdfBuffer };
 };
 
 module.exports = {
   generateReportForMatch,
   generatePdfFromHtml,
 };
-
-
