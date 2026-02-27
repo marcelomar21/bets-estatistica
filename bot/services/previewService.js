@@ -56,7 +56,7 @@ async function fetchSampleBets(groupId) {
     .eq('elegibilidade', 'elegivel')
     .gt('league_matches.kickoff_time', now)
     .order('league_matches(kickoff_time)', { ascending: true })
-    .limit(3);
+    .limit(1);
 
   if (futureBets && futureBets.length > 0) {
     return futureBets;
@@ -72,7 +72,7 @@ async function fetchSampleBets(groupId) {
     .eq('group_id', groupId)
     .eq('elegibilidade', 'elegivel')
     .order('league_matches(kickoff_time)', { ascending: false })
-    .limit(3);
+    .limit(1);
 
   if (error) {
     logger.error('[previewService] Failed to fetch sample bets', { groupId, error: error.message });
