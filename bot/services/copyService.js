@@ -23,7 +23,6 @@ function getOpenAI(maxTokens = 200) {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: config.llm.lightModel,
-    temperature: 0.2,
     maxTokens,
   });
 }

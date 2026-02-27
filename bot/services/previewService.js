@@ -127,36 +127,24 @@ async function formatPreviewMessage(bet, toneConfig) {
   // Clear cache for this bet so the preview always reflects the latest tone config
   clearBetCache(bet.id);
 
-  // If toneConfig has examplePost → full-message mode via LLM (generateBetCopy handles this)
-  // If toneConfig has other fields but no examplePost → we still want LLM to apply the tone
-  // In both cases, call generateBetCopy directly to bypass formatBetMessage's gate
-
   if (toneConfig.examplePost) {
     // Full-message mode: LLM generates the entire post
     try {
       const copyResult = await generateBetCopy(bet, toneConfig);
-      logger.info('[previewService] generateBetCopy result', {
-        betId: bet.id,
-        success: copyResult.success,
-        fullMessage: copyResult.data?.fullMessage,
-        copyLength: copyResult.data?.copy?.length,
-        error: copyResult.error?.message,
-      });
       if (copyResult.success && copyResult.data?.fullMessage) {
         return copyResult.data.copy;
       }
+      logger.warn('[previewService] generateBetCopy failed, falling back', { betId: bet.id, error: copyResult.error });
     } catch (err) {
-      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message, stack: err.stack?.slice(0, 300) });
+      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message });
     }
     // Fallback to formatBetMessage if LLM failed
-    logger.warn('[previewService] Falling back to static template', { betId: bet.id });
     return formatBetMessage(bet, template, toneConfig);
   }
 
   // No examplePost but has tone fields: use formatBetMessage's template structure
   // but force the LLM call by injecting a synthetic reasoning if needed
   if (!bet.reasoning) {
-    // Give the LLM something to work with — a brief match description
     const enrichedBet = {
       ...bet,
       reasoning: `Jogo entre ${bet.homeTeamName} e ${bet.awayTeamName}. Mercado: ${bet.betMarket}. Odd: ${bet.odds?.toFixed?.(2) || 'N/A'}.`,
@@ -164,7 +152,6 @@ async function formatPreviewMessage(bet, toneConfig) {
     return formatBetMessage(enrichedBet, template, toneConfig);
   }
 
-  // Has reasoning + tone fields → formatBetMessage will call generateBetCopy naturally
   return formatBetMessage(bet, template, toneConfig);
 }
 
@@ -190,34 +177,9 @@ async function generatePreview(groupId) {
 
   // 3. Generate preview for each bet
   const previews = [];
-  const debugInfo = [];
   for (const bet of bets) {
     try {
-      // Debug: call generateBetCopy directly to capture exact result
-      let llmDebug = null;
-      if (toneConfig && toneConfig.examplePost) {
-        try {
-          clearBetCache(bet.id);
-          const directResult = await generateBetCopy(bet, toneConfig);
-          llmDebug = {
-            success: directResult.success,
-            fullMessage: directResult.data?.fullMessage,
-            copyLength: directResult.data?.copy?.length,
-            copySnippet: directResult.data?.copy?.slice(0, 200),
-            error: directResult.error,
-            fromCache: directResult.data?.fromCache,
-          };
-        } catch (llmErr) {
-          llmDebug = { threw: true, error: llmErr.message, stack: llmErr.stack?.slice(0, 300) };
-        }
-      }
-
-      const preview = llmDebug?.success && llmDebug?.fullMessage
-        ? (await generateBetCopy(bet, toneConfig)).data.copy  // use the LLM result
-        : await formatPreviewMessage(bet, toneConfig);         // fallback
-
-      debugInfo.push({ betId: bet.id, llmDebug, hasToneConfig: !!toneConfig, hasExamplePost: !!toneConfig?.examplePost, hasReasoning: !!bet.reasoning });
-
+      const preview = await formatPreviewMessage(bet, toneConfig);
       previews.push({
         betId: bet.id,
         preview,
@@ -262,7 +224,6 @@ async function generatePreview(groupId) {
       groupId,
       groupName: group?.name || groupId,
       bets: previews,
-      _debug: debugInfo,
     },
   };
 }
