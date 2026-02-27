@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { PostingHistoryTable } from '@/components/features/posting/PostingHistoryTable';
+import { PostingHistoryFilters } from '@/components/features/posting/PostingHistoryFilters';
+import { ResultEditModal } from '@/components/features/posting/ResultEditModal';
 import type { HistoryBet } from '@/components/features/posting/PostingHistoryTable';
+import type { PostingHistoryFilterState } from '@/components/features/posting/PostingHistoryFilters';
 
 interface GroupOption {
   id: string;
@@ -18,20 +21,28 @@ interface Pagination {
 
 interface Counters {
   total: number;
-  posted: number;
-  pending: number;
-  success_rate: number;
+  success: number;
+  failure: number;
+  hit_rate: number;
 }
 
 const DEFAULT_PAGINATION: Pagination = { page: 1, per_page: 50, total: 0, total_pages: 0 };
-const DEFAULT_COUNTERS: Counters = { total: 0, posted: 0, pending: 0, success_rate: 100 };
+const DEFAULT_COUNTERS: Counters = { total: 0, success: 0, failure: 0, hit_rate: 0 };
+const DEFAULT_FILTERS: PostingHistoryFilterState = {
+  group_id: '',
+  bet_result: '',
+  championship: '',
+  market: '',
+  date_from: '',
+  date_to: '',
+};
 
 export default function PostingHistoryPage() {
   const [role, setRole] = useState<'super_admin' | 'group_admin'>('group_admin');
   const [groups, setGroups] = useState<GroupOption[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [groupsLoaded, setGroupsLoaded] = useState(false);
 
+  const [filters, setFilters] = useState<PostingHistoryFilterState>(DEFAULT_FILTERS);
   const [bets, setBets] = useState<HistoryBet[]>([]);
   const [pagination, setPagination] = useState<Pagination>(DEFAULT_PAGINATION);
   const [counters, setCounters] = useState<Counters>(DEFAULT_COUNTERS);
@@ -39,6 +50,10 @@ export default function PostingHistoryPage() {
   const [sortDir, setSortDir] = useState('desc');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Result edit modal
+  const [editingBet, setEditingBet] = useState<HistoryBet | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Fetch groups to determine role
   useEffect(() => {
@@ -51,7 +66,6 @@ export default function PostingHistoryPage() {
           const groupList = Array.isArray(json.data) ? json.data : json.data.items ?? [];
           setGroups(groupList.map((g: GroupOption) => ({ id: g.id, name: g.name })));
           setRole('super_admin');
-          // Don't pre-select — show all groups by default for super_admin
         } else {
           setGroups([]);
           setRole('group_admin');
@@ -78,7 +92,12 @@ export default function PostingHistoryPage() {
       params.set('per_page', '50');
       params.set('sort_by', sortBy);
       params.set('sort_dir', sortDir);
-      if (selectedGroupId) params.set('group_id', selectedGroupId);
+      if (filters.group_id) params.set('group_id', filters.group_id);
+      if (filters.bet_result) params.set('bet_result', filters.bet_result);
+      if (filters.championship) params.set('championship', filters.championship);
+      if (filters.market) params.set('market', filters.market);
+      if (filters.date_from) params.set('date_from', filters.date_from);
+      if (filters.date_to) params.set('date_to', filters.date_to);
 
       const res = await fetch(`/api/bets/posting-history?${params}`);
       const json = await res.json();
@@ -96,11 +115,18 @@ export default function PostingHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedGroupId, sortBy, sortDir, groupsLoaded]);
+  }, [filters, sortBy, sortDir, groupsLoaded]);
 
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   function handleSort(field: string) {
     if (sortBy === field) {
@@ -109,6 +135,23 @@ export default function PostingHistoryPage() {
       setSortBy(field);
       setSortDir('desc');
     }
+  }
+
+  async function handleSaveResult(betId: number, betResult: string, reason: string) {
+    const res = await fetch(`/api/bets/${betId}/result`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bet_result: betResult, result_reason: reason }),
+    });
+
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error?.message ?? 'Erro ao salvar resultado');
+    }
+
+    setEditingBet(null);
+    setToast({ message: 'Resultado atualizado com sucesso', type: 'success' });
+    fetchHistory(pagination.page);
   }
 
   return (
@@ -120,42 +163,30 @@ export default function PostingHistoryPage() {
       {/* Summary counters */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500">Total</p>
+          <p className="text-sm text-gray-500">Total Postadas</p>
           <p className="text-2xl font-bold text-gray-900">{counters.total}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500">Postadas</p>
-          <p className="text-2xl font-bold text-blue-600">{counters.posted}</p>
+          <p className="text-sm text-gray-500">Acertos</p>
+          <p className="text-2xl font-bold text-green-600">{counters.success}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500">Pendentes</p>
-          <p className="text-2xl font-bold text-yellow-600">{counters.pending}</p>
+          <p className="text-sm text-gray-500">Erros</p>
+          <p className="text-2xl font-bold text-red-600">{counters.failure}</p>
         </div>
         <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-sm text-gray-500">Taxa de Sucesso</p>
-          <p className="text-2xl font-bold text-green-600">{counters.success_rate}%</p>
+          <p className="text-sm text-gray-500">Taxa de Acerto</p>
+          <p className="text-2xl font-bold text-blue-600">{counters.hit_rate}%</p>
         </div>
       </div>
 
-      {/* Group filter (super_admin only) */}
-      {role === 'super_admin' && groups.length > 0 && (
-        <div className="flex items-center gap-3">
-          <label htmlFor="group-filter" className="text-sm font-medium text-gray-700">
-            Grupo:
-          </label>
-          <select
-            id="group-filter"
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-900 bg-white"
-          >
-            <option value="">Todos os grupos</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Filters */}
+      <PostingHistoryFilters
+        filters={filters}
+        onChange={setFilters}
+        groups={groups}
+        showGroupFilter={role === 'super_admin'}
+      />
 
       {/* Error */}
       {error && (
@@ -174,6 +205,7 @@ export default function PostingHistoryPage() {
             sortBy={sortBy}
             sortDir={sortDir}
             onSort={handleSort}
+            onEditResult={setEditingBet}
           />
         )}
       </div>
@@ -200,6 +232,24 @@ export default function PostingHistoryPage() {
               Proximo
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Result edit modal */}
+      {editingBet && (
+        <ResultEditModal
+          bet={editingBet}
+          onClose={() => setEditingBet(null)}
+          onSave={handleSaveResult}
+        />
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-4 right-4 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg ${
+          toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
+        }`}>
+          {toast.message}
         </div>
       )}
     </div>

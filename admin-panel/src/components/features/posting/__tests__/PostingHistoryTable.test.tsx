@@ -17,6 +17,11 @@ function makeBet(overrides: Partial<HistoryBet> = {}): HistoryBet {
     group_id: 'group-1',
     historico_postagens: [],
     created_at: '2026-02-25T10:00:00Z',
+    bet_result: null,
+    result_reason: null,
+    result_source: null,
+    result_confidence: null,
+    result_updated_at: null,
     league_matches: {
       home_team_name: 'Flamengo',
       away_team_name: 'Palmeiras',
@@ -75,7 +80,6 @@ describe('PostingHistoryTable', () => {
     expect(screen.getByText('Over 2.5 — Over')).toBeInTheDocument();
     expect(screen.getByText('1.80')).toBeInTheDocument();
     expect(screen.getByText('Grupo Principal')).toBeInTheDocument();
-    expect(screen.getByText('12345')).toBeInTheDocument();
   });
 
   it('shows "Postada" badge for posted bets', () => {
@@ -101,7 +105,7 @@ describe('PostingHistoryTable', () => {
       league_matches: {
         home_team_name: 'Flamengo',
         away_team_name: 'Palmeiras',
-        kickoff_time: new Date(Date.now() + 86400000).toISOString(), // tomorrow
+        kickoff_time: new Date(Date.now() + 86400000).toISOString(),
       },
     });
 
@@ -114,7 +118,9 @@ describe('PostingHistoryTable', () => {
       />
     );
 
-    expect(screen.getByText('Pendente')).toBeInTheDocument();
+    // "Pendente" appears in both posting status and result badge when bet_result is null
+    const badges = screen.getAllByText('Pendente');
+    expect(badges.length).toBeGreaterThanOrEqual(1);
   });
 
   it('shows "Não postada" badge for ready bets with past kickoff', () => {
@@ -125,7 +131,7 @@ describe('PostingHistoryTable', () => {
       league_matches: {
         home_team_name: 'Flamengo',
         away_team_name: 'Palmeiras',
-        kickoff_time: new Date(Date.now() - 86400000).toISOString(), // yesterday
+        kickoff_time: new Date(Date.now() - 86400000).toISOString(),
       },
     });
 
@@ -187,9 +193,7 @@ describe('PostingHistoryTable', () => {
       />
     );
 
-    // Header
     expect(screen.getByText('Campeonato')).toBeInTheDocument();
-    // Data
     expect(screen.getByText('Serie A Brasil')).toBeInTheDocument();
   });
 
@@ -212,7 +216,6 @@ describe('PostingHistoryTable', () => {
       />
     );
 
-    // Should render dash for missing league
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(1);
   });
@@ -234,5 +237,175 @@ describe('PostingHistoryTable', () => {
 
     expect(screen.getByText('Flamengo vs Palmeiras')).toBeInTheDocument();
     expect(screen.getByText('Corinthians vs Santos')).toBeInTheDocument();
+  });
+
+  // === New tests for result columns ===
+
+  it('renders Resultado column header', () => {
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Resultado')).toBeInTheDocument();
+    expect(screen.getByText('Explicação')).toBeInTheDocument();
+  });
+
+  it('shows Pendente badge when bet_result is null', () => {
+    const bet = makeBet({ bet_result: null });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Pendente')).toBeInTheDocument();
+  });
+
+  it('shows Acerto badge for success result', () => {
+    const bet = makeBet({ bet_result: 'success' });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Acerto')).toBeInTheDocument();
+  });
+
+  it('shows Erro badge for failure result', () => {
+    const bet = makeBet({ bet_result: 'failure' });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Erro')).toBeInTheDocument();
+  });
+
+  it('renders result_reason and result_source', () => {
+    const bet = makeBet({
+      bet_result: 'success',
+      result_reason: 'Score-based: 3-1 final',
+      result_source: 'deterministic',
+    });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Score-based: 3-1 final')).toBeInTheDocument();
+    expect(screen.getByText('Det.')).toBeInTheDocument();
+  });
+
+  it('shows edit button when onEditResult is provided', async () => {
+    const user = userEvent.setup();
+    const onEditResult = vi.fn();
+    const bet = makeBet({ bet_result: 'failure' });
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+        onEditResult={onEditResult}
+      />
+    );
+
+    const editButton = screen.getByTitle('Editar resultado');
+    expect(editButton).toBeInTheDocument();
+
+    await user.click(editButton);
+    expect(onEditResult).toHaveBeenCalledWith(bet);
+  });
+
+  it('does not show edit button when onEditResult is not provided', () => {
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByTitle('Editar resultado')).not.toBeInTheDocument();
+  });
+
+  it('applies green row class for success bets', () => {
+    const bet = makeBet({ bet_result: 'success' });
+
+    const { container } = render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    const row = container.querySelector('tbody tr');
+    expect(row?.className).toContain('bg-green-50');
+  });
+
+  it('applies red row class for failure bets', () => {
+    const bet = makeBet({ bet_result: 'failure' });
+
+    const { container } = render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={vi.fn()}
+      />
+    );
+
+    const row = container.querySelector('tbody tr');
+    expect(row?.className).toContain('bg-red-50');
+  });
+
+  it('calls onSort with bet_result when clicking Resultado header', async () => {
+    const user = userEvent.setup();
+    const onSort = vi.fn();
+    const bet = makeBet();
+
+    render(
+      <PostingHistoryTable
+        bets={[bet]}
+        sortBy="telegram_posted_at"
+        sortDir="desc"
+        onSort={onSort}
+      />
+    );
+
+    await user.click(screen.getByText(/Resultado/));
+    expect(onSort).toHaveBeenCalledWith('bet_result');
   });
 });

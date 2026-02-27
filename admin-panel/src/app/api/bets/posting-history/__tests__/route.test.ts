@@ -131,9 +131,9 @@ describe('GET /api/bets/posting-history', () => {
     const body = await response.json();
 
     expect(body.data.counters).toHaveProperty('total');
-    expect(body.data.counters).toHaveProperty('posted');
-    expect(body.data.counters).toHaveProperty('pending');
-    expect(body.data.counters).toHaveProperty('success_rate');
+    expect(body.data.counters).toHaveProperty('success');
+    expect(body.data.counters).toHaveProperty('failure');
+    expect(body.data.counters).toHaveProperty('hit_rate');
     expect(body.data.pagination).toHaveProperty('page');
     expect(body.data.pagination).toHaveProperty('per_page');
     expect(body.data.pagination).toHaveProperty('total');

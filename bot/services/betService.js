@@ -582,6 +582,17 @@ async function markBetResult(betId, resultOrWon, reason = null) {
     // Só atualizar reason se fornecido (não sobrescrever com null)
     if (reason !== null) {
       updateData.result_reason = reason;
+
+      // Inferir result_source a partir do motivo
+      if (/deterministic|score/i.test(reason)) {
+        updateData.result_source = 'deterministic';
+      } else if (/consensus|multi/i.test(reason)) {
+        updateData.result_source = 'consensus';
+      } else if (/manual/i.test(reason)) {
+        updateData.result_source = 'manual';
+      } else {
+        updateData.result_source = 'llm';
+      }
     }
 
     const { error } = await supabase
