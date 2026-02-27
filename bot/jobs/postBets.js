@@ -156,7 +156,7 @@ function getPeriod() {
  * @param {object} template - Message template
  * @returns {Promise<string>}
  */
-async function formatBetMessage(bet, template) {
+async function formatBetMessage(bet, template, toneConfig = null) {
   const kickoffDate = new Date(bet.kickoffTime);
   const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -177,15 +177,19 @@ async function formatBetMessage(bet, template) {
     `💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}`,
   ];
 
-  // Extrair dados do reasoning em bullets via LLM
-  if (bet.reasoning) {
+  // Extrair dados do reasoning em bullets via LLM (or full message mode with examplePost)
+  if (bet.reasoning || toneConfig?.examplePost) {
     try {
-      const copyResult = await generateBetCopy(bet);
+      const copyResult = await generateBetCopy(bet, toneConfig);
       if (copyResult.success && copyResult.data?.copy) {
+        if (copyResult.data.fullMessage) {
+          // Full message mode: return LLM-generated message as-is
+          return copyResult.data.copy;
+        }
         parts.push('');
         parts.push(copyResult.data.copy);
         logger.debug('Using extracted data bullets', { betId: bet.id, groupId: getLogGroupId() });
-      } else {
+      } else if (bet.reasoning) {
         // Fallback: usar reasoning direto (truncado)
         const truncated = bet.reasoning.length > 200
           ? bet.reasoning.substring(0, 197) + '...'
@@ -195,11 +199,13 @@ async function formatBetMessage(bet, template) {
       }
     } catch (err) {
       logger.warn('Failed to extract data bullets', { betId: bet.id, groupId: getLogGroupId(), error: err.message });
-      const truncated = bet.reasoning.length > 200
-        ? bet.reasoning.substring(0, 197) + '...'
-        : bet.reasoning;
-      parts.push('');
-      parts.push(`_${truncated}_`);
+      if (bet.reasoning) {
+        const truncated = bet.reasoning.length > 200
+          ? bet.reasoning.substring(0, 197) + '...'
+          : bet.reasoning;
+        parts.push('');
+        parts.push(`_${truncated}_`);
+      }
     }
   }
 
@@ -435,6 +441,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const period = getPeriod();
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
+  const toneConfig = botCtx?.groupConfig?.copyToneConfig || null;
   logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant' });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
@@ -505,7 +512,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
 
       // Format and send message
       const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template);
+      const message = await formatBetMessage(bet, template, toneConfig);
 
       const sendResult = await sendToPublic(message, botCtx);
 
@@ -551,7 +558,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
 
       // Format and send message
       const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template);
+      const message = await formatBetMessage(bet, template, toneConfig);
 
       const sendResult = await sendToPublic(message, botCtx);
 

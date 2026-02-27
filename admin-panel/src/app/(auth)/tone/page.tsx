@@ -14,6 +14,7 @@ interface ToneConfig {
   forbiddenWords?: string[];
   ctaText?: string;
   customRules?: string[];
+  examplePost?: string;
 }
 
 interface PreviewBet {
@@ -45,6 +46,7 @@ export default function ToneTopLevelPage() {
   const [forbiddenWordInput, setForbiddenWordInput] = useState('');
   const [ctaText, setCtaText] = useState('');
   const [customRulesText, setCustomRulesText] = useState('');
+  const [examplePost, setExamplePost] = useState('');
 
   // UI state
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -113,10 +115,11 @@ export default function ToneTopLevelPage() {
         setForbiddenWords(config.forbiddenWords || []);
         setCtaText(config.ctaText || '');
         setCustomRulesText((config.customRules || []).join('\n'));
+        setExamplePost(config.examplePost || '');
         setGroupName(json.data.groupName || '');
 
         // Open advanced section if any structured fields have content
-        if (config.persona || config.tone || (config.forbiddenWords && config.forbiddenWords.length > 0) || config.ctaText || (config.customRules && config.customRules.length > 0)) {
+        if (config.persona || config.tone || (config.forbiddenWords && config.forbiddenWords.length > 0) || config.ctaText || (config.customRules && config.customRules.length > 0) || config.examplePost) {
           setAdvancedOpen(true);
         } else {
           setAdvancedOpen(false);
@@ -150,12 +153,11 @@ export default function ToneTopLevelPage() {
     if (tone.trim()) {
       config.tone = tone.trim();
     }
-    if (forbiddenWords.length > 0) {
-      config.forbiddenWords = forbiddenWords;
-    }
+    config.forbiddenWords = forbiddenWords;
     if (ctaText.trim()) {
       config.ctaText = ctaText.trim();
     }
+    config.examplePost = examplePost.trim();
 
     const rules = customRulesText
       .split('\n')
@@ -182,6 +184,10 @@ export default function ToneTopLevelPage() {
       const json = await res.json();
 
       if (json.success) {
+        // Sync state with what was actually saved
+        const saved = json.data.toneConfig || {};
+        setForbiddenWords(saved.forbiddenWords || []);
+        setExamplePost(saved.examplePost || '');
         showToast('Configuracao de tom salva com sucesso!', 'success');
       } else {
         showToast(json.error?.message || 'Erro ao salvar', 'error');
@@ -199,6 +205,18 @@ export default function ToneTopLevelPage() {
 
     setTesting(true);
     setPreviewBets(null);
+
+    // Auto-save before preview to ensure latest config is used
+    try {
+      await fetch(`/api/groups/${selectedGroupId}/tone`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toneConfig: buildToneConfig() }),
+      });
+    } catch {
+      // Continue with preview even if save fails
+    }
+
     try {
       const res = await fetch('/api/bets/post-now/preview', {
         method: 'POST',
@@ -237,6 +255,14 @@ export default function ToneTopLevelPage() {
 
   function removeForbiddenWord(word: string) {
     setForbiddenWords(forbiddenWords.filter(w => w !== word));
+  }
+
+  function renderTelegramPreview(text: string) {
+    const html = text
+      .replace(/\*([^*]+)\*/g, '<strong>$1</strong>')
+      .replace(/_([^_]+)_/g, '<em>$1</em>')
+      .replace(/\n/g, '<br/>');
+    return <div className="text-sm text-gray-800 leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
   return (
@@ -414,6 +440,24 @@ export default function ToneTopLevelPage() {
                   <p className="mt-1 text-xs text-gray-400">Texto de chamada para acao usado nas postagens.</p>
                 </div>
 
+                {/* Exemplo de Postagem */}
+                <div>
+                  <label htmlFor="examplePost" className="block text-sm font-medium text-gray-700 mb-1">
+                    Exemplo de Postagem
+                  </label>
+                  <textarea
+                    id="examplePost"
+                    value={examplePost}
+                    onChange={(e) => setExamplePost(e.target.value)}
+                    placeholder={"🎯 APOSTA DO DIA\n\n⚽ Flamengo x Palmeiras\n🗓 27/02 - 21:30\n\n📊 Ambas Marcam - Sim\n💰 Odd: 1.85\n\n• Fla: 75% dos jogos com gol\n• Palmeiras: marcou em 8 dos últimos 10\n• Confronto direto: 4 de 5 com ambas\n\n🔗 Apostar Agora\n\n🍀 Boa sorte, galera!"}
+                    rows={8}
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Max 2000 caracteres. Cole um exemplo real de como voce quer que as postagens fiquem.
+                  </p>
+                </div>
+
                 {/* Custom Rules */}
                 <div>
                   <label htmlFor="customRules" className="block text-sm font-medium text-gray-700 mb-1">
@@ -482,9 +526,7 @@ export default function ToneTopLevelPage() {
                           Odd: {bet.betInfo.odds}
                         </span>
                       </div>
-                      <pre className="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">
-                        {bet.preview}
-                      </pre>
+                      {renderTelegramPreview(bet.preview)}
                     </div>
                   ))}
                 </div>

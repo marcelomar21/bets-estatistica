@@ -98,9 +98,16 @@ export const PUT = createApiHandler(
       );
     }
 
+    if (toneConfig.examplePost && typeof toneConfig.examplePost === 'string' && toneConfig.examplePost.length > 2000) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Example post must be under 2000 characters' } },
+        { status: 400 },
+      );
+    }
+
     // Sanitize: only keep known fields
     const sanitizedConfig: Record<string, unknown> = {};
-    const allowedFields = ['persona', 'tone', 'forbiddenWords', 'ctaText', 'customRules', 'rawDescription'];
+    const allowedFields = ['persona', 'tone', 'forbiddenWords', 'ctaText', 'customRules', 'rawDescription', 'examplePost'];
     for (const field of allowedFields) {
       if (toneConfig[field] !== undefined) {
         sanitizedConfig[field] = toneConfig[field];

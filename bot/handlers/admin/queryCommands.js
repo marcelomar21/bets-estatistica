@@ -4,6 +4,7 @@
  */
 const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
+const { supabase } = require('../../../lib/supabase');
 const { getBetById, getOverviewStats, getBetsReadyForPosting, getActiveBetsForRepost, getOddsHistory } = require('../../services/betService');
 const { generateBetCopy, clearBetCache } = require('../../services/copyService');
 const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats } = require('../../services/metricsService');
@@ -379,6 +380,19 @@ async function handleSimularCommand(bot, msg, arg) {
       logger.debug('[admin:query] Could not get success rate for preview');
     }
 
+    // Load tone config for copy generation
+    let toneConfig = null;
+    try {
+      const { data: groupData } = await supabase
+        .from('groups')
+        .select('copy_tone_config')
+        .limit(1)
+        .single();
+      toneConfig = groupData?.copy_tone_config || null;
+    } catch {
+      logger.debug('[admin:query] Could not load tone config for preview');
+    }
+
     // Generate preview
     const lines = ['📤 *PREVIEW - PRÓXIMA POSTAGEM*', '', '━━━━━━━━━━━━━━━━━━━━'];
 
@@ -386,7 +400,7 @@ async function handleSimularCommand(bot, msg, arg) {
       // Generate copy
       let copyText = bet.reasoning || 'Aposta de alto valor estatístico';
       try {
-        const copyResult = await generateBetCopy(bet);
+        const copyResult = await generateBetCopy(bet, toneConfig);
         if (copyResult.success && copyResult.data?.copy) {
           copyText = copyResult.data.copy;
         }
