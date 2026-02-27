@@ -149,7 +149,12 @@ app.get('/api/debug-llm', async (req, res) => {
     return res.json({
       success: true,
       model: config.llm.lightModel,
-      response: response.content,
+      content: response.content,
+      contentType: typeof response.content,
+      additionalKwargs: response.additional_kwargs,
+      responseMetadata: response.response_metadata,
+      allKeys: Object.keys(response),
+      lc_kwargs: response.lc_kwargs ? Object.keys(response.lc_kwargs) : null,
     });
   } catch (err) {
     return res.json({
