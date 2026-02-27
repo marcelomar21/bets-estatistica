@@ -1,5 +1,7 @@
 ---
-stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain-skipped', 'step-06-innovation-skipped', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'step-e-02-review', 'step-e-03-edit']
+stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain-skipped', 'step-06-innovation-skipped', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'step-12-complete']
+completedAt: '2026-02-25'
+status: 'complete'
 inputDocuments:
   - _bmad-output/project-context.md
   - docs/index.md
@@ -58,13 +60,11 @@ stakeholderDecisions:
 
 **Escopo MVP (Semana 1):** 3 influencers operando independentemente, cada um com seu próprio bot Telegram, grupo de membros e painel admin. Sistema 100% automatizado - postagem de apostas, trial de 7 dias, kick automático, pagamento via Mercado Pago com acesso instantâneo.
 
-**Escopo v3 (Pós-Estabilização):** Mensagens com mídia (PDF/imagem + preview), coluna de campeonato nas apostas, fluxo de cancelamento (self-service + operador), analytics de taxa de acerto (por grupo/mercado/campeonato/período), revisão do dashboard com métricas de performance.
-
 **Meta de Negócio (3 meses):** 9.000 membros pagantes (3k/grupo), MRR de R$450.000, churn < 10%.
 
 **Arquitetura:** Banco único com `group_id` + RLS + middleware obrigatório. 1 bot = 1 processo no Render. Admin panel em Next.js + Supabase Auth no Vercel.
 
-**Diferencial:** Onboarding de novo influencer em ≤5 cliques. Zero intervenção manual na operação diária. Analytics de acerto em tempo real para tomada de decisão.
+**Diferencial:** Onboarding de novo influencer em ≤5 cliques. Zero intervenção manual na operação diária.
 
 ## Success Criteria
 
@@ -130,20 +130,11 @@ stakeholderDecisions:
 | **Mercado Pago** | Webhook multi-tenant |
 | **Health Check** | Por bot, com alertas |
 
-### v3 — Pós-Estabilização (Epics 7-11)
-
-| # | Funcionalidade | Epic |
-|---|----------------|------|
-| 1 | Mensagens com mídia (PDF/imagem) + preview | Epic 7 |
-| 2 | Coluna campeonato na aba de apostas + filtro | Epic 8 |
-| 3 | Fluxo de cancelamento (membro + operador) | Epic 9 |
-| 4 | Analytics de taxa de acerto (grupo/mercado/campeonato/período) | Epic 10 |
-| 5 | Revisão do dashboard (alertas dismissíveis + métricas de acerto) | Epic 11 |
-
-### Growth Features (Pós v3)
+### Growth Features (Pós-Lançamento)
 
 | Feature | Trigger |
 |---------|---------|
+| **Dashboard de métricas** | Após 1º mês estável |
 | **Tela "Meu Faturamento"** | Quando influencer pedir |
 | **Relatório exportável** | Quando intermediadora pedir |
 | **Audit trail visual** | Quando tiver disputa |
@@ -266,45 +257,6 @@ Problema detectado e resolvido em < 10 minutos. Nenhum membro percebeu. Bianca n
 
 ---
 
-### Journey 6: Pedro - Membro Quer Cancelar
-
-**Cena de Abertura:**
-Pedro está no grupo há 3 meses mas quer cancelar a assinatura.
-
-**A Jornada:**
-1. Pedro envia `/cancelar` no chat privado do bot
-2. Bot responde: "Tem certeza? Você perderá acesso ao grupo VIP. [Confirmar Cancelamento] [Voltar]"
-3. Pedro confirma
-4. Sistema atualiza status para `cancelado`, registra motivo e data
-5. Bot envia mensagem de despedida: "Sentiremos sua falta! Se mudar de ideia: [link checkout]"
-6. Sistema remove Pedro do grupo Telegram
-7. No painel admin, operador vê Pedro com status "Cancelado" e a data
-
-**Resolução:**
-Pedro cancelou sem precisar falar com ninguém. Operador tem visibilidade total. Se Pedro quiser voltar, o link de reativação está na última mensagem.
-
----
-
-### Journey 7: Marcelo - Analisa Performance das Apostas
-
-**Cena de Abertura:**
-Marcelo quer saber qual mercado está performando melhor e se algum campeonato está puxando a taxa de acerto pra baixo.
-
-**A Jornada:**
-1. Marcelo abre o painel admin → clica na aba "Analytics"
-2. Vê cards de resumo: Taxa de acerto total (72%), últimos 7 dias (68%), últimos 30 dias (71%)
-3. Abaixo, tabela com acerto por grupo: Osmar (74%), Guru (70%), Bianca (69%)
-4. Filtra por mercado: Gols (78%), BTTS (65%), Escanteios (60%)
-5. Pensa: "Escanteios tá fraco, vou parar de postar escanteios por enquanto"
-6. Filtra por campeonato: Premier League (80%), Serie A Brasil (62%)
-7. Seleciona período personalizado: último mês
-8. Exporta relatório para compartilhar com sócios
-
-**Resolução:**
-Marcelo tem dados reais para tomar decisões: quais mercados manter, quais campeonatos priorizar, qual grupo precisa de atenção.
-
----
-
 ### Journey Requirements Summary
 
 | Jornada | Capacidades Reveladas |
@@ -314,8 +266,6 @@ Marcelo tem dados reais para tomar decisões: quais mercados manter, quais campe
 | **Membro Não Pagou** | Lembretes automáticos, kick automático, mensagem de recuperação |
 | **Influencer Dashboard** | Painel por grupo, lista de membros, métricas isoladas, RLS |
 | **Bot Caiu** | Health check, alertas, dashboard de status, restart remoto |
-| **Membro Cancela** | Comando /cancelar no bot, confirmação, despedida, remoção automática, visibilidade no painel |
-| **Analisa Performance** | Aba analytics, acerto por grupo/mercado/campeonato, filtro por período, export |
 
 ## Backend + Web App Specific Requirements
 
@@ -588,41 +538,6 @@ function tenantMiddleware(req, res, next) {
 - **FR57:** Sistema pode validar permissões em cada requisição de API
 - **FR58:** Sistema pode impedir que Admin de Grupo altere seu próprio role
 
-### Mensagens com Mídia (v3)
-
-- **FR59:** Super Admin pode anexar arquivo (PDF ou imagem JPG/PNG, máx 10MB) ao agendar mensagem
-- **FR60:** Sistema pode armazenar arquivo no Supabase Storage com path referenciado na tabela `scheduled_messages`
-- **FR61:** Bot pode enviar mensagem com PDF (`sendDocument`) ou imagem (`sendPhoto`) para o grupo Telegram
-- **FR62:** Super Admin pode pré-visualizar mensagem agendada (texto + mídia) antes de confirmar envio
-
-### Gestão de Apostas - Campeonato (v3)
-
-- **FR63:** Admin pode visualizar o campeonato/liga de cada aposta na tabela de apostas (dado vem de `league_matches → league_seasons.league_name`)
-- **FR64:** Admin pode filtrar apostas por campeonato/liga
-
-### Cancelamento de Membros (v3)
-
-- **FR65:** Membro pode solicitar cancelamento da assinatura via comando `/cancelar` no bot
-- **FR66:** Bot pode exibir instruções de cancelamento e solicitar confirmação antes de processar
-- **FR67:** Sistema pode processar cancelamento: atualizar status do membro para `cancelado`, remover do grupo Telegram, registrar data e motivo
-- **FR68:** Operador pode cancelar/expulsar membro pelo painel admin (aba Membros) com motivo obrigatório
-- **FR69:** Sistema pode registrar cancelamento no audit log com: motivo, data, quem executou (membro via bot ou operador via painel)
-- **FR70:** Bot pode enviar mensagem de despedida ao membro cancelado com link de reativação (checkout)
-
-### Analytics de Taxa de Acerto (v3)
-
-- **FR71:** Admin pode visualizar taxa de acerto total (all-time e por período selecionável: 7d, 30d, personalizado)
-- **FR72:** Admin pode visualizar taxa de acerto por grupo
-- **FR73:** Admin pode visualizar taxa de acerto por mercado (Gols, BTTS, Escanteios, Cartões, Outros)
-- **FR74:** Admin pode visualizar taxa de acerto por campeonato/liga
-- **FR75:** Admin pode filtrar métricas de acerto por período personalizado (data início e data fim)
-
-### Painel Admin - Dashboard (v3)
-
-- **FR76:** Super Admin pode dispensar (dismiss) alertas/notificações individuais do dashboard
-- **FR77:** Dashboard pode exibir taxa de acerto total e por grupo como métrica principal em destaque
-- **FR78:** Dashboard pode exibir resumo de performance recente (últimos 7 e 30 dias) com indicador de tendência
-
 ## Non-Functional Requirements
 
 ### Performance
@@ -681,14 +596,12 @@ function tenantMiddleware(req, res, next) {
 | Data | Versão | Mudança |
 |------|--------|---------|
 | 2026-02-04 | 1.0 | PRD inicial criado via BMAD workflow |
-| 2026-02-26 | 3.0 | Adição de 20 FRs (FR59-FR78), 2 User Journeys (J6-J7), escopo v3 com 5 novos epics (mensagens mídia, campeonato, cancelamento, analytics acerto, revisão dashboard). Sprint Change Proposal aprovado. |
 
 ---
 
 **Total de Requisitos:**
-- 78 Functional Requirements (FRs) — 58 originais + 20 v3
+- 58 Functional Requirements (FRs)
 - 22 Non-Functional Requirements (NFRs)
-- 7 User Journeys documentadas — 5 originais + 2 v3
+- 5 User Journeys documentadas
 - 17 features MVP obrigatórias para D1
-- 5 features v3 pós-estabilização (Epics 7-11)
 
