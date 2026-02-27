@@ -190,9 +190,34 @@ async function generatePreview(groupId) {
 
   // 3. Generate preview for each bet
   const previews = [];
+  const debugInfo = [];
   for (const bet of bets) {
     try {
-      const preview = await formatPreviewMessage(bet, toneConfig);
+      // Debug: call generateBetCopy directly to capture exact result
+      let llmDebug = null;
+      if (toneConfig && toneConfig.examplePost) {
+        try {
+          clearBetCache(bet.id);
+          const directResult = await generateBetCopy(bet, toneConfig);
+          llmDebug = {
+            success: directResult.success,
+            fullMessage: directResult.data?.fullMessage,
+            copyLength: directResult.data?.copy?.length,
+            copySnippet: directResult.data?.copy?.slice(0, 200),
+            error: directResult.error,
+            fromCache: directResult.data?.fromCache,
+          };
+        } catch (llmErr) {
+          llmDebug = { threw: true, error: llmErr.message, stack: llmErr.stack?.slice(0, 300) };
+        }
+      }
+
+      const preview = llmDebug?.success && llmDebug?.fullMessage
+        ? (await generateBetCopy(bet, toneConfig)).data.copy  // use the LLM result
+        : await formatPreviewMessage(bet, toneConfig);         // fallback
+
+      debugInfo.push({ betId: bet.id, llmDebug, hasToneConfig: !!toneConfig, hasExamplePost: !!toneConfig?.examplePost, hasReasoning: !!bet.reasoning });
+
       previews.push({
         betId: bet.id,
         preview,
@@ -237,6 +262,7 @@ async function generatePreview(groupId) {
       groupId,
       groupName: group?.name || groupId,
       bets: previews,
+      _debug: debugInfo,
     },
   };
 }
