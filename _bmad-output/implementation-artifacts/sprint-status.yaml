@@ -162,7 +162,7 @@ development_status:
   12-1-adicionar-conectar-numero-whatsapp-qr-code: done
   12-2-reconexao-automatica-sessoes: done
   12-3-pool-global-alocacao-gestao-numeros: done
-  12-4-admin-panel-gerenciamento-pool-numeros: backlog
+  12-4-admin-panel-gerenciamento-pool-numeros: done
   12-5-channel-adapter-abstracao-multi-canal: backlog
   epic-12-retrospective: optional
 
