@@ -105,8 +105,12 @@ async function sendMediaToGroup(groupId, groupJid, imageUrl, caption) {
   return result;
 }
 
+const DM_MAX_RETRIES = 3;
+const DM_BACKOFF_MS = [1000, 3000, 5000];
+
 /**
- * Send a private message (DM) to a WhatsApp user.
+ * Send a private message (DM) to a WhatsApp user with retry and backoff.
+ * Story 15-2: Max 3 retries with backoff. Logs delivery for audit.
  * Uses any connected client (prefers the group's active number if groupId is provided).
  * @param {string} phoneE164 - E.164 phone number of the recipient
  * @param {string} text - Message text (WhatsApp formatting)
@@ -149,17 +153,105 @@ async function sendDM(phoneE164, text, groupId) {
   const jid = phoneToJid(phoneE164);
   const limiter = getRateLimiter(numberId);
 
-  await limiter.waitForSlot();
+  // Story 15-2: Retry with backoff (max 3 attempts)
+  let lastError = null;
+  for (let attempt = 0; attempt < DM_MAX_RETRIES; attempt++) {
+    await limiter.waitForSlot();
 
-  const result = await client.sendMessage(jid, text);
+    const result = await client.sendMessage(jid, text);
 
-  if (result.success) {
-    logger.info('WhatsApp DM sent', { phone: phoneE164, numberId, messageId: result.data.messageId });
-  } else {
-    logger.error('Failed to send WhatsApp DM', { phone: phoneE164, numberId, error: result.error });
+    if (result.success) {
+      logger.info('WhatsApp DM sent', {
+        phone: phoneE164, numberId, messageId: result.data.messageId, attempt: attempt + 1,
+      });
+
+      // Audit log: record successful DM delivery
+      await _logDMDelivery(phoneE164, groupId, numberId, result.data.messageId);
+
+      return result;
+    }
+
+    lastError = result.error;
+    logger.warn('WhatsApp DM attempt failed, retrying', {
+      phone: phoneE164, numberId, attempt: attempt + 1, maxRetries: DM_MAX_RETRIES,
+      error: result.error,
+    });
+
+    // Wait before retry (skip for last attempt)
+    if (attempt < DM_MAX_RETRIES - 1) {
+      const delay = DM_BACKOFF_MS[Math.min(attempt, DM_BACKOFF_MS.length - 1)];
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 
-  return result;
+  // All retries exhausted — flag member for review
+  logger.error('WhatsApp DM failed after all retries', {
+    phone: phoneE164, numberId, groupId, error: lastError,
+  });
+  await _flagMemberForReview(phoneE164, groupId, lastError);
+
+  return { success: false, error: lastError || { code: 'DM_FAILED', message: 'All retry attempts exhausted' } };
+}
+
+/**
+ * Log a successful DM delivery to member_events for audit.
+ */
+async function _logDMDelivery(phoneE164, groupId, numberId, messageId) {
+  try {
+    if (!groupId) return;
+
+    // Find member by phone to get member_id
+    const { data: member } = await supabase
+      .from('members')
+      .select('id')
+      .eq('channel_user_id', phoneE164)
+      .eq('channel', 'whatsapp')
+      .eq('group_id', groupId)
+      .maybeSingle();
+
+    if (member) {
+      await supabase.from('member_events').insert({
+        member_id: member.id,
+        event_type: 'dm_sent',
+        metadata: { channel: 'whatsapp', phone: phoneE164, number_id: numberId, message_id: messageId },
+      });
+    }
+  } catch (err) {
+    // Audit logging is non-critical
+    logger.warn('Failed to log DM delivery', { phone: phoneE164, error: err.message });
+  }
+}
+
+/**
+ * Flag a member for review when DM delivery fails after all retries.
+ */
+async function _flagMemberForReview(phoneE164, groupId, error) {
+  try {
+    if (!groupId) return;
+
+    const { data: member } = await supabase
+      .from('members')
+      .select('id, notes')
+      .eq('channel_user_id', phoneE164)
+      .eq('channel', 'whatsapp')
+      .eq('group_id', groupId)
+      .maybeSingle();
+
+    if (member) {
+      const note = `[DM FAILED] ${new Date().toISOString()} - ${error?.message || 'Unknown error'}`;
+      const existingNotes = member.notes || '';
+      await supabase
+        .from('members')
+        .update({ notes: existingNotes ? `${existingNotes}\n${note}` : note })
+        .eq('id', member.id);
+
+      logger.info('Member flagged for review after DM failure', {
+        memberId: member.id, phone: phoneE164,
+      });
+    }
+  } catch (err) {
+    logger.warn('Failed to flag member for review', { phone: phoneE164, error: err.message });
+  }
 }
 
 module.exports = { sendToGroup, sendMediaToGroup, sendDM };

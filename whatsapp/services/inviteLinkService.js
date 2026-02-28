@@ -113,4 +113,4 @@ async function revokeInviteLink(groupId) {
   return { success: true, data: { inviteLink } };
 }
 
-module.exports = { generateInviteLink, revokeInviteLink };
+module.exports = { generateInviteLink, revokeInviteLink, resolveGroupClient };

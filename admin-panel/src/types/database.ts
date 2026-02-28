@@ -58,10 +58,12 @@ export interface BotHealth {
 
 export interface Member {
   id: number;
-  telegram_id: number;
+  telegram_id: number | null;
   telegram_username: string | null;
   email: string | null;
   status: 'trial' | 'ativo' | 'inadimplente' | 'removido' | 'cancelado';
+  channel: 'telegram' | 'whatsapp';
+  channel_user_id: string | null;
   mp_subscription_id: string | null;
   mp_payer_id: string | null;
   trial_started_at: string | null;
@@ -80,7 +82,7 @@ export interface Member {
 
 export type MemberListItem = Pick<
   Member,
-  'id' | 'telegram_id' | 'telegram_username' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
+  'id' | 'telegram_id' | 'telegram_username' | 'channel' | 'channel_user_id' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
 > & {
   groups?: { name: string } | null;
   cancellation_reason?: string | null;

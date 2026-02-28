@@ -24,6 +24,7 @@ const {
   getPaymentLinkForMember,
   formatTrialReminder,
 } = require('../../services/notificationService');
+const { sendDM: channelSendDM } = require('../../../lib/channelAdapter');
 
 // Configuration
 const CONFIG = {
@@ -132,12 +133,22 @@ function getDaysRemaining(trialEndsAt) {
  */
 async function sendTrialReminder(member, groupConfig = null, botInstance = null) {
   const { id: memberId, telegram_id: telegramId, trial_ends_at: trialEndsAt } = member;
+  const channel = member.channel || 'telegram';
 
-  if (!telegramId) {
+  // Validate member has the right identifier for their channel
+  if (channel === 'telegram' && !telegramId) {
     logger.warn('[membership:trial-reminders] sendTrialReminder: member has no telegram_id', { memberId });
     return {
       success: false,
       error: { code: 'NO_TELEGRAM_ID', message: 'Member does not have a telegram_id' },
+    };
+  }
+
+  if (channel === 'whatsapp' && !member.channel_user_id) {
+    logger.warn('[membership:trial-reminders] sendTrialReminder: member has no channel_user_id', { memberId });
+    return {
+      success: false,
+      error: { code: 'NO_CHANNEL_USER_ID', message: 'WhatsApp member does not have a channel_user_id' },
     };
   }
 
@@ -185,7 +196,17 @@ async function sendTrialReminder(member, groupConfig = null, botInstance = null)
 
   const daysRemaining = getDaysRemaining(trialEndsAt);
   const message = formatTrialReminder(member, daysRemaining, checkoutUrl, successRate, groupConfig);
-  const sendResult = await sendPrivateMessage(telegramId, message, 'Markdown', botInstance);
+
+  // Story 15-3: Branch on channel for sending
+  let sendResult;
+  if (channel === 'whatsapp') {
+    sendResult = await channelSendDM(member.channel_user_id, message, {
+      channel: 'whatsapp',
+      groupId: member.group_id,
+    });
+  } else {
+    sendResult = await sendPrivateMessage(telegramId, message, 'Markdown', botInstance);
+  }
 
   if (!sendResult.success) {
     if (sendResult.error?.code === 'USER_BLOCKED_BOT') {
@@ -201,7 +222,7 @@ async function sendTrialReminder(member, groupConfig = null, botInstance = null)
   const registerResult = await registerNotification(
     memberId,
     CONFIG.NOTIFICATION_TYPE,
-    'telegram',
+    channel,
     sendResult.data.messageId
   );
 
@@ -214,7 +235,7 @@ async function sendTrialReminder(member, groupConfig = null, botInstance = null)
 
   logger.info('[membership:trial-reminders] sendTrialReminder: success', {
     memberId,
-    telegramId,
+    channel,
     daysRemaining,
     messageId: sendResult.data.messageId,
   });
@@ -305,7 +326,8 @@ async function _runTrialRemindersInternal() {
           sent++;
         } else if (result.error?.code === 'NOTIFICATION_ALREADY_SENT' ||
                    result.error?.code === 'USER_BLOCKED_BOT' ||
-                   result.error?.code === 'NO_TELEGRAM_ID') {
+                   result.error?.code === 'NO_TELEGRAM_ID' ||
+                   result.error?.code === 'NO_CHANNEL_USER_ID') {
           skipped++;
         } else {
           failed++;

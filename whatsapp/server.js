@@ -14,6 +14,7 @@ const {
 const { createWhatsAppGroup } = require('./services/groupService');
 const { generateInviteLink, revokeInviteLink } = require('./services/inviteLinkService');
 const { addWhatsAppChannel } = require('./services/addChannelService');
+const { handleGroupParticipantsUpdate } = require('./handlers/memberEvents');
 
 const { clients } = require('./clientRegistry');
 
@@ -68,6 +69,8 @@ async function initClients() {
     numbers.map(async (number) => {
       const t0 = Date.now();
       const client = new BaileyClient(number.id, number.phone_number);
+      // Story 15-1: Register group participants handler for member detection
+      client.setGroupParticipantsHandler(handleGroupParticipantsUpdate);
       clients.set(number.id, client);
       try {
         await client.connect();

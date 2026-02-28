@@ -25,10 +25,10 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, sh
         <thead className="bg-gray-50">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Nome Telegram
+              Canal
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-              Telegram ID
+              Identificador
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
               Status
@@ -74,11 +74,17 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, sh
 
             return (
               <tr key={member.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  {member.telegram_username || '-'}
+                <td className="px-4 py-3 text-sm">
+                  {member.channel === 'whatsapp' ? (
+                    <span className="inline-flex rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">WA</span>
+                  ) : (
+                    <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">TG</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm font-mono text-gray-500">
-                  {member.telegram_id ?? '-'}
+                  {member.channel === 'whatsapp'
+                    ? (member.channel_user_id || '-')
+                    : (member.telegram_username ? `@${member.telegram_username}` : member.telegram_id ?? '-')}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge.className}`}>

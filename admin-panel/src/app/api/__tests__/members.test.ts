@@ -116,7 +116,7 @@ describe('GET /api/members', () => {
     expect(body.success).toBe(true);
     expect(body.data.items).toEqual(rows);
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id, groups(name)',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, groups(name)',
       { count: 'exact' },
     );
     expect(supabase.query.order).toHaveBeenCalledWith('created_at', { ascending: false });
@@ -150,7 +150,7 @@ describe('GET /api/members', () => {
     expect(body.success).toBe(true);
     expect(body.data.items).toEqual(rows);
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id',
       { count: 'exact' },
     );
     expect(supabase.query.eq).toHaveBeenCalledWith('group_id', 'group-uuid-1');
@@ -200,7 +200,7 @@ describe('GET /api/members', () => {
     const { GET } = await import('@/app/api/members/route');
     await GET(createMockRequest('http://localhost/api/members?search=joao'));
 
-    expect(supabase.query.ilike).toHaveBeenCalledWith('telegram_username', '%joao%');
+    expect(supabase.query.or).toHaveBeenCalledWith('telegram_username.ilike.%joao%,channel_user_id.ilike.%joao%');
   });
 
   it('aplica paginação com page e per_page', async () => {
@@ -377,6 +377,36 @@ describe('GET /api/members', () => {
       (call: unknown[]) => call[0] === 'group_id' && call[1] === validGroupId,
     );
     expect(eqCalls.length).toBe(4);
+  });
+
+  it('aplica filtro por canal whatsapp', async () => {
+    const supabase = createMembersSupabaseMock({ data: [], error: null, count: 0 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    await GET(createMockRequest('http://localhost/api/members?channel=whatsapp'));
+
+    // eq should be called with channel for main query + 3 counter queries = 4 total
+    const eqCalls = supabase.query.eq.mock.calls.filter(
+      (call: unknown[]) => call[0] === 'channel' && call[1] === 'whatsapp',
+    );
+    expect(eqCalls.length).toBe(4);
+  });
+
+  it('retorna 400 quando canal e invalido', async () => {
+    const supabase = createMembersSupabaseMock({ data: [], error: null, count: 0 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    const response = await GET(createMockRequest('http://localhost/api/members?channel=email'));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toContain('canal');
   });
 
   it('super_admin com group_id e status filtram em conjunto', async () => {

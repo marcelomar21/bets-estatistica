@@ -38,6 +38,9 @@ const {
 } = require('../../services/memberService');
 const { alertAdmin } = require('../../services/alertService');
 const { registerMemberEvent } = require('../../handlers/memberEvents');
+const { sendDM: channelSendDM } = require('../../../lib/channelAdapter');
+const { phoneToJid } = require('../../../lib/phoneUtils');
+const { resolveGroupClient, revokeInviteLink } = require('../../../whatsapp/services/inviteLinkService');
 
 // Configuration
 const CONFIG = {
@@ -57,7 +60,7 @@ async function resolveGroupData(groupId) {
   try {
     const { data: group, error } = await supabase
       .from('groups')
-      .select('id, name, telegram_group_id, checkout_url, operator_username, subscription_price, status')
+      .select('id, name, telegram_group_id, whatsapp_group_jid, checkout_url, operator_username, subscription_price, status')
       .eq('id', groupId)
       .single();
 
@@ -250,6 +253,111 @@ async function registerKickAuditEvent(memberId, reason, groupData, extraPayload 
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
 async function processMemberKick(member, reason, groupData, botInstance = null, botCtx = null) {
+  const channel = member.channel || 'telegram';
+
+  // Route to channel-specific kick flow
+  if (channel === 'whatsapp') {
+    return _processWhatsAppKick(member, reason, groupData);
+  }
+  return _processTelegramKick(member, reason, groupData, botInstance, botCtx);
+}
+
+/**
+ * WhatsApp-specific kick flow (Story 15-4)
+ * 1. Send farewell DM via channelAdapter
+ * 2. Remove from WhatsApp group via Baileys
+ * 3. Mark as removed in DB
+ * 4. Revoke invite link
+ * 5. Register audit event
+ */
+async function _processWhatsAppKick(member, reason, groupData) {
+  const { id: memberId, channel_user_id: phone } = member;
+  const groupId = member.group_id || groupData?.id;
+
+  if (!phone) {
+    logger.warn('[membership:kick-expired] WhatsApp kick: member without channel_user_id', { memberId });
+    const removeResult = await markMemberAsRemoved(memberId, reason);
+    if (!removeResult.success) return removeResult;
+    await registerKickAuditEvent(memberId, reason, groupData, { skipped: true, skippedReason: 'no_channel_user_id' });
+    return { success: true, data: { skipped: true, reason: 'no_channel_user_id' } };
+  }
+
+  // 1. Send farewell DM (best effort)
+  const checkoutUrl = groupData?.checkout_url || '';
+  const groupName = groupData?.name || 'Guru da Bet';
+  let farewellText = `Ola! Infelizmente seu acesso ao grupo *${groupName}* foi encerrado`;
+  if (reason === 'trial_expired') {
+    farewellText += ' pois o periodo de trial expirou.';
+  } else {
+    farewellText += ' por inadimplencia.';
+  }
+  if (checkoutUrl) {
+    farewellText += `\n\nPara voltar, assine aqui:\n${checkoutUrl}`;
+  }
+
+  const dmResult = await channelSendDM(phone, farewellText, { channel: 'whatsapp', groupId });
+  if (!dmResult.success) {
+    logger.warn('[membership:kick-expired] WhatsApp farewell DM failed (non-blocking)', {
+      memberId, phone, error: dmResult.error,
+    });
+  }
+
+  // 2. Remove from WhatsApp group
+  const resolved = await resolveGroupClient(groupId);
+  if (resolved.error) {
+    logger.error('[membership:kick-expired] WhatsApp kick: cannot resolve client', {
+      memberId, groupId, error: resolved.error,
+    });
+    return { success: false, error: resolved.error };
+  }
+
+  const { client, groupJid } = resolved;
+  const participantJid = phoneToJid(phone);
+  const kickResult = await client.removeGroupParticipant(groupJid, participantJid);
+
+  if (!kickResult.success) {
+    logger.warn('[membership:kick-expired] WhatsApp kick: removeGroupParticipant failed, will retry next run', {
+      memberId, phone, groupJid, error: kickResult.error,
+    });
+    return { success: false, error: kickResult.error };
+  }
+
+  // 3. Mark as removed in DB
+  const removeResult = await markMemberAsRemoved(memberId, reason);
+  if (!removeResult.success) {
+    logger.error('[membership:kick-expired] WhatsApp kick: DB update failed after kick', {
+      memberId, error: removeResult.error,
+    });
+    return { success: false, error: removeResult.error };
+  }
+
+  // 4. Revoke invite link (so kicked member can't rejoin with old link)
+  const revokeResult = await revokeInviteLink(groupId);
+  if (!revokeResult.success) {
+    logger.warn('[membership:kick-expired] WhatsApp kick: invite revocation failed (non-blocking)', {
+      memberId, groupId, error: revokeResult.error,
+    });
+    // Non-blocking — kick already succeeded
+  }
+
+  // 5. Audit log
+  await registerKickAuditEvent(memberId, reason, groupData, {
+    channel: 'whatsapp',
+    phone,
+    inviteRevoked: revokeResult?.success || false,
+  });
+
+  logger.info('[membership:kick-expired] WhatsApp member kicked successfully', {
+    memberId, phone, reason, groupId, inviteRevoked: revokeResult?.success || false,
+  });
+
+  return { success: true, data: { kicked: true, reason, channel: 'whatsapp' } };
+}
+
+/**
+ * Telegram-specific kick flow (existing logic, extracted)
+ */
+async function _processTelegramKick(member, reason, groupData, botInstance, botCtx) {
   const { id: memberId, telegram_id: telegramId, telegram_username: username } = member;
 
   // If no telegram_id, just mark as removed in DB

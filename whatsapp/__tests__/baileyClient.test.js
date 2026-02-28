@@ -565,4 +565,48 @@ describe('BaileyClient', () => {
       expect(typeof child.warn).toBe('function');
     });
   });
+
+  describe('setGroupParticipantsHandler', () => {
+    it('should store the callback', () => {
+      const handler = jest.fn();
+      client.setGroupParticipantsHandler(handler);
+      expect(client._onGroupParticipantsUpdate).toBe(handler);
+    });
+  });
+
+  describe('removeGroupParticipant', () => {
+    it('should return NOT_CONNECTED when socket is null', async () => {
+      client.socket = null;
+      const result = await client.removeGroupParticipant('group@g.us', 'user@s.whatsapp.net');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should return INVALID_INPUT when missing params', async () => {
+      client.socket = mockSocket;
+      const result = await client.removeGroupParticipant(null, 'user@s.whatsapp.net');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_INPUT');
+    });
+
+    it('should remove participant successfully', async () => {
+      const mockGroupParticipantsUpdate = jest.fn().mockResolvedValue(undefined);
+      client.socket = { ...mockSocket, groupParticipantsUpdate: mockGroupParticipantsUpdate };
+
+      const result = await client.removeGroupParticipant('group@g.us', 'user@s.whatsapp.net');
+      expect(result.success).toBe(true);
+      expect(mockGroupParticipantsUpdate).toHaveBeenCalledWith(
+        'group@g.us', ['user@s.whatsapp.net'], 'remove'
+      );
+    });
+
+    it('should handle removal failure', async () => {
+      const mockGroupParticipantsUpdate = jest.fn().mockRejectedValue(new Error('Not admin'));
+      client.socket = { ...mockSocket, groupParticipantsUpdate: mockGroupParticipantsUpdate };
+
+      const result = await client.removeGroupParticipant('group@g.us', 'user@s.whatsapp.net');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('REMOVE_FAILED');
+    });
+  });
 });

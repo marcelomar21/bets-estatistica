@@ -63,6 +63,25 @@ function getDefaultBotCtxLazy() {
   return _getDefaultBotCtx();
 }
 
+// Lazy load channelAdapter for WhatsApp DMs (Story 15-5)
+let _channelSendDM = null;
+function getChannelSendDM() {
+  if (!_channelSendDM) {
+    const { sendDM } = require('../../lib/channelAdapter');
+    _channelSendDM = sendDM;
+  }
+  return _channelSendDM;
+}
+
+// Lazy load inviteLinkService for WhatsApp invite links (Story 15-5)
+let _inviteLinkService = null;
+function getInviteLinkService() {
+  if (!_inviteLinkService) {
+    _inviteLinkService = require('../../whatsapp/services/inviteLinkService');
+  }
+  return _inviteLinkService;
+}
+
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 // ============================================
@@ -858,7 +877,47 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
     }
 
     // Story 4.4: Check group membership and handle re-add (AC3)
-    if (member.telegram_id) {
+    if (member.channel === 'whatsapp') {
+      if (!member.channel_user_id) {
+        logger.warn('[webhook:payment] WhatsApp member has no channel_user_id, cannot send invite', {
+          memberId: member.id,
+        });
+      } else {
+      // Story 15-5: WhatsApp reactivation — generate invite link and send via DM
+      try {
+        const inviteLinkSvc = getInviteLinkService();
+        const linkResult = await inviteLinkSvc.generateInviteLink(groupId || member.group_id);
+
+        if (linkResult.success) {
+          const groupName = group?.name || 'Guru da Bet';
+          const reactivationMsg = `Bem-vindo de volta ao *${groupName}*! ✅\n\nSeu pagamento foi confirmado e seu acesso foi restaurado.\n\n👉 Entre no grupo: ${linkResult.data.inviteLink}\n\n_Link valido por tempo limitado._`;
+
+          const channelSendDM = getChannelSendDM();
+          const dmResult = await channelSendDM(member.channel_user_id, reactivationMsg, {
+            channel: 'whatsapp',
+            groupId: groupId || member.group_id,
+          });
+
+          if (dmResult.success) {
+            logger.info('[webhook:payment] WhatsApp reactivation DM sent', { memberId: member.id, phone: member.channel_user_id });
+          } else {
+            logger.warn('[webhook:payment] WhatsApp reactivation DM failed', {
+              memberId: member.id, error: dmResult.error,
+            });
+          }
+        } else {
+          logger.warn('[webhook:payment] WhatsApp invite link generation failed', {
+            memberId: member.id, error: linkResult.error,
+          });
+        }
+      } catch (waErr) {
+        logger.warn('[webhook:payment] WhatsApp reactivation process failed (non-blocking)', {
+          memberId: member.id, error: waErr.message,
+        });
+      }
+      } // end if channel_user_id
+    } else if (member.telegram_id) {
+      // Telegram reactivation flow
       // Resolve Telegram group ID from DB group, fallback to default bot context
       const groupTelegramId = group?.telegram_group_id || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
 
