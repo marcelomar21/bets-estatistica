@@ -58,10 +58,12 @@ export interface BotHealth {
 
 export interface Member {
   id: number;
-  telegram_id: number;
+  telegram_id: number | null;
   telegram_username: string | null;
   email: string | null;
   status: 'trial' | 'ativo' | 'inadimplente' | 'removido' | 'cancelado';
+  channel: 'telegram' | 'whatsapp';
+  channel_user_id: string | null;
   mp_subscription_id: string | null;
   mp_payer_id: string | null;
   trial_started_at: string | null;

@@ -48,6 +48,8 @@ const mockGetStats = jest.fn(() => ({
   totalReconnects: 0,
 }));
 
+const mockSetGroupParticipantsHandler = jest.fn();
+
 jest.mock('../client/baileyClient', () => ({
   BaileyClient: jest.fn().mockImplementation((numberId, phone) => ({
     numberId,
@@ -56,7 +58,13 @@ jest.mock('../client/baileyClient', () => ({
     connect: mockConnect,
     disconnect: mockDisconnect,
     getStats: mockGetStats,
+    setGroupParticipantsHandler: mockSetGroupParticipantsHandler,
   })),
+}));
+
+// Mock memberEvents handler
+jest.mock('../handlers/memberEvents', () => ({
+  handleGroupParticipantsUpdate: jest.fn(),
 }));
 
 // Mock numberPoolService

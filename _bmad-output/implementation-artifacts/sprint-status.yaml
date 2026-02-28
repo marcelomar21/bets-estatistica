@@ -186,8 +186,8 @@ development_status:
   # ========================================
   # Epic 15: Ciclo de Vida de Membros no WhatsApp
   # ========================================
-  epic-15: backlog
-  15-1-detectar-novos-membros-registro-multi-canal: backlog
+  epic-15: in-progress
+  15-1-detectar-novos-membros-registro-multi-canal: done
   15-2-enviar-dm-via-whatsapp: backlog
   15-3-trial-automatico-lembretes: backlog
   15-4-kick-inadimplentes-revogacao-invite: backlog

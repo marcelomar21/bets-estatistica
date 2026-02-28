@@ -21,6 +21,7 @@ class BaileyClient {
     this.isClosing = false;
     this.maxReconnectAttempts = config.whatsapp?.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.backoffMs = config.whatsapp?.reconnectBackoffMs ?? DEFAULT_BACKOFF_MS;
+    this._onGroupParticipantsUpdate = null;
   }
 
   /**
@@ -48,6 +49,19 @@ class BaileyClient {
 
     this.socket.ev.on('creds.update', async () => {
       await this.authState.saveCreds();
+    });
+
+    // Story 15-1: Listen for group participant changes (member joins/leaves)
+    this.socket.ev.on('group-participants.update', async (event) => {
+      if (this._onGroupParticipantsUpdate) {
+        try {
+          await this._onGroupParticipantsUpdate(event, this);
+        } catch (err) {
+          logger.error('Error in group-participants.update handler', {
+            numberId: this.numberId, error: err.message,
+          });
+        }
+      }
     });
 
     logger.info('BaileyClient connecting', { numberId: this.numberId, phone: this.phoneNumber });
@@ -365,6 +379,45 @@ class BaileyClient {
     } catch (err) {
       logger.error('Failed to revoke group invite link', { numberId: this.numberId, groupJid, error: err.message });
       return { success: false, error: { code: 'REVOKE_INVITE_FAILED', message: err.message } };
+    }
+  }
+
+  /**
+   * Set callback for group participant update events.
+   * Story 15-1: Used to detect new members joining/leaving WhatsApp groups.
+   * @param {Function} callback - async (event, client) => void
+   */
+  setGroupParticipantsHandler(callback) {
+    this._onGroupParticipantsUpdate = callback;
+  }
+
+  /**
+   * Remove a participant from a WhatsApp group.
+   * Story 15-1: Used for kicking inadimplent members.
+   * @param {string} groupJid - Group JID
+   * @param {string} participantJid - Participant JID to remove
+   * @returns {Promise<{success: boolean, error?: {code: string, message: string}}>}
+   */
+  async removeGroupParticipant(groupJid, participantJid) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    if (!groupJid || !participantJid) {
+      return { success: false, error: { code: 'INVALID_INPUT', message: 'groupJid and participantJid are required' } };
+    }
+
+    try {
+      await Promise.race([
+        this.socket.groupParticipantsUpdate(groupJid, [participantJid], 'remove'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Remove participant timeout')), SEND_TIMEOUT_MS)),
+      ]);
+
+      logger.info('Removed participant from group', { numberId: this.numberId, groupJid, participantJid });
+      return { success: true };
+    } catch (err) {
+      logger.error('Failed to remove participant', { numberId: this.numberId, groupJid, participantJid, error: err.message });
+      return { success: false, error: { code: 'REMOVE_FAILED', message: err.message } };
     }
   }
 

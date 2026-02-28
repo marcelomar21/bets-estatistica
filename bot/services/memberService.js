@@ -2221,6 +2221,123 @@ async function linkTelegramId(memberId, telegramId, telegramUsername = null) {
   }
 }
 
+/**
+ * Get member by channel user ID (WhatsApp phone or Telegram ID as string).
+ * Story 15-1: Multi-channel member lookup.
+ * @param {string} channelUserId - Channel-specific user ID (e.g. phone E.164 for WhatsApp)
+ * @param {string} groupId - Group ID (required for multi-channel)
+ * @param {string} [channel='whatsapp'] - Channel type
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function getMemberByChannelUserId(channelUserId, groupId, channel = 'whatsapp') {
+  if (!channelUserId) {
+    return { success: false, error: { code: 'INVALID_INPUT', message: 'channelUserId is required' } };
+  }
+  if (!groupId) {
+    return { success: false, error: { code: 'INVALID_INPUT', message: 'groupId is required for channel lookup' } };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('members')
+      .select('*')
+      .eq('channel_user_id', channelUserId)
+      .eq('group_id', groupId)
+      .eq('channel', channel)
+      .maybeSingle();
+
+    if (error) {
+      logger.error('[memberService] getMemberByChannelUserId: database error', {
+        channelUserId, groupId, channel, error: error.message,
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    if (!data) {
+      return {
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND', message: `Member with channel_user_id ${channelUserId} not found` },
+      };
+    }
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] getMemberByChannelUserId: unexpected error', {
+      channelUserId, groupId, channel, error: err.message,
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Create a new trial member for WhatsApp channel.
+ * Story 15-1: WhatsApp member registration.
+ * @param {object} params
+ * @param {string} params.channelUserId - Phone number in E.164 format
+ * @param {string} params.groupId - Group UUID
+ * @param {number} [trialDays=7] - Trial period in days
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function createWhatsAppTrialMember({ channelUserId, groupId }, trialDays = 7) {
+  if (!channelUserId || !groupId) {
+    return { success: false, error: { code: 'INVALID_INPUT', message: 'channelUserId and groupId are required' } };
+  }
+
+  try {
+    // Check if member already exists in this group+channel
+    const existingResult = await getMemberByChannelUserId(channelUserId, groupId, 'whatsapp');
+    if (existingResult.success) {
+      logger.warn('[memberService] createWhatsAppTrialMember: member already exists', { channelUserId, groupId });
+      return {
+        success: false,
+        error: { code: 'MEMBER_ALREADY_EXISTS', message: `WhatsApp member ${channelUserId} already exists in group` },
+      };
+    }
+
+    if (existingResult.error.code !== 'MEMBER_NOT_FOUND') {
+      return existingResult;
+    }
+
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000);
+
+    const insertData = {
+      telegram_id: null,
+      telegram_username: null,
+      channel: 'whatsapp',
+      channel_user_id: channelUserId,
+      group_id: groupId,
+      status: 'trial',
+      trial_started_at: now.toISOString(),
+      trial_ends_at: trialEndsAt.toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('members')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[memberService] createWhatsAppTrialMember: database error', {
+        channelUserId, groupId, error: error.message,
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] createWhatsAppTrialMember: success', {
+      memberId: data.id, channelUserId, groupId, trialEndsAt: trialEndsAt.toISOString(),
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] createWhatsAppTrialMember: unexpected error', {
+      channelUserId, groupId, error: err.message,
+    });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   // Constants
   MEMBER_STATUSES,
@@ -2291,4 +2408,8 @@ module.exports = {
   createTrialMemberMP,
   updateSubscriptionData,
   linkTelegramId,
+
+  // Story 15-1: WhatsApp multi-channel member support
+  getMemberByChannelUserId,
+  createWhatsAppTrialMember,
 };
