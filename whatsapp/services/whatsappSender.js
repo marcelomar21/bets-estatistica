@@ -254,4 +254,4 @@ async function _flagMemberForReview(phoneE164, groupId, error) {
   }
 }
 
-module.exports = { sendToGroup, sendMediaToGroup, sendDM };
+module.exports = { sendToGroup, sendMediaToGroup, sendDM, getActiveClientForGroup };

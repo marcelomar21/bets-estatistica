@@ -82,6 +82,26 @@ function getInviteLinkService() {
   return _inviteLinkService;
 }
 
+// Lazy load whatsappSender for kicking from WhatsApp groups (Story 17-2)
+let _getActiveClientForGroup = null;
+function getActiveClientForGroup() {
+  if (!_getActiveClientForGroup) {
+    const sender = require('../../whatsapp/services/whatsappSender');
+    _getActiveClientForGroup = sender.getActiveClientForGroup;
+  }
+  return _getActiveClientForGroup;
+}
+
+// Lazy load phoneToJid for WhatsApp JID conversion (Story 17-2)
+let _phoneToJid = null;
+function getPhoneToJid() {
+  if (!_phoneToJid) {
+    const { phoneToJid } = require('../../lib/phoneUtils');
+    _phoneToJid = phoneToJid;
+  }
+  return _phoneToJid;
+}
+
 const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 // ============================================
@@ -1272,7 +1292,87 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
     }
   }
 
-  // 3. Atualizar status no banco
+  // Story 17-2: Kick WhatsApp member(s) in the same group
+  // Find WhatsApp members by email + group_id (cross-channel link)
+  let whatsappKicked = false;
+  if (group?.whatsapp_group_jid && groupId && member.email) {
+    try {
+      const { data: waMembers, error: waQueryErr } = await supabase
+        .from('members')
+        .select('id, channel_user_id, status')
+        .eq('group_id', groupId)
+        .eq('channel', 'whatsapp')
+        .eq('email', member.email)
+        .neq('status', 'removido');
+
+      if (waQueryErr) {
+        logger.warn('[webhook:cancel] Failed to query WhatsApp members', { error: waQueryErr.message, groupId });
+      } else if (waMembers && waMembers.length > 0) {
+        for (const waMember of waMembers) {
+          // Send farewell DM via WhatsApp (non-blocking)
+          if (waMember.channel_user_id) {
+            try {
+              const channelSendDM = getChannelSendDM();
+              const checkoutUrl = group?.checkout_url || process.env.MP_CHECKOUT_URL || config.membership?.checkoutUrl;
+              const groupName = group?.name || 'Guru da Bet';
+              let farewell = `Sua assinatura do *${groupName}* foi cancelada.\n\n`;
+              if (checkoutUrl) {
+                farewell += `Para voltar, assine novamente:\n${checkoutUrl}\n\n`;
+              }
+              farewell += `Ate breve!`;
+              await channelSendDM(waMember.channel_user_id, farewell, { channel: 'whatsapp', groupId });
+              logger.info('[webhook:cancel] WhatsApp farewell DM sent', { waMemberId: waMember.id });
+            } catch (dmErr) {
+              logger.warn('[webhook:cancel] WhatsApp farewell DM failed', { waMemberId: waMember.id, error: dmErr.message });
+            }
+
+            // Kick from WhatsApp group
+            try {
+              const resolveClient = getActiveClientForGroup();
+              const clientResult = await resolveClient(groupId);
+              if (clientResult.success) {
+                const phoneToJid = getPhoneToJid();
+                const participantJid = phoneToJid(waMember.channel_user_id);
+                const kickResult = await clientResult.data.client.removeGroupParticipant(
+                  group.whatsapp_group_jid,
+                  participantJid
+                );
+                if (kickResult.success) {
+                  logger.info('[webhook:cancel] WhatsApp member kicked', { waMemberId: waMember.id, groupJid: group.whatsapp_group_jid });
+                  whatsappKicked = true;
+                } else {
+                  logger.warn('[webhook:cancel] WhatsApp kick failed', { waMemberId: waMember.id, error: kickResult.error });
+                }
+              } else {
+                logger.warn('[webhook:cancel] No active WhatsApp client for group', { groupId, error: clientResult.error });
+              }
+            } catch (kickErr) {
+              logger.warn('[webhook:cancel] WhatsApp kick error (non-blocking)', { waMemberId: waMember.id, error: kickErr.message });
+            }
+          }
+
+          // Mark WhatsApp member as removed
+          await memberService.markMemberAsRemoved(waMember.id, reason);
+          logger.info('[webhook:cancel] WhatsApp member marked as removed', { waMemberId: waMember.id, reason });
+        }
+
+        // Revoke and regenerate invite link after kick (non-blocking)
+        if (whatsappKicked) {
+          try {
+            const inviteLinkSvc = getInviteLinkService();
+            await inviteLinkSvc.revokeInviteLink(groupId);
+            logger.info('[webhook:cancel] WhatsApp invite link revoked after kick', { groupId });
+          } catch (revokeErr) {
+            logger.warn('[webhook:cancel] Failed to revoke WhatsApp invite (non-blocking)', { groupId, error: revokeErr.message });
+          }
+        }
+      }
+    } catch (waErr) {
+      logger.warn('[webhook:cancel] WhatsApp kick process failed (non-blocking)', { groupId, error: waErr.message });
+    }
+  }
+
+  // 3. Atualizar status no banco (primary/Telegram member)
   const removeResult = await memberService.markMemberAsRemoved(member.id, reason);
   if (!removeResult.success) {
     logger.error('[webhookProcessors] handleSubscriptionCancelled: failed to mark as removed', {
@@ -1287,10 +1387,11 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
     subscriptionId,
     previousStatus: member.status,
     reason,
-    groupId
+    groupId,
+    whatsappKicked,
   });
 
-  return { success: true, data: { memberId: member.id, action: 'removed' } };
+  return { success: true, data: { memberId: member.id, action: 'removed', whatsappKicked } };
 }
 
 // ============================================
