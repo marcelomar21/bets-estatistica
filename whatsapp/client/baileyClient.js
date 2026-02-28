@@ -51,6 +51,7 @@ class BaileyClient {
       printQRInTerminal: false,
       logger: this._createPinoAdapter(),
       browser: Browsers.macOS('GuruBet'),
+      version: [2, 3000, 1034260505],
     });
 
     this.socket.ev.on('connection.update', async (update) => {
