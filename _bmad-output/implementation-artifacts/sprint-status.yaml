@@ -190,7 +190,7 @@ development_status:
   15-1-detectar-novos-membros-registro-multi-canal: done
   15-2-enviar-dm-via-whatsapp: done
   15-3-trial-automatico-lembretes: done
-  15-4-kick-inadimplentes-revogacao-invite: backlog
+  15-4-kick-inadimplentes-revogacao-invite: done
   15-5-reativacao-pos-pagamento-filtro-canal: backlog
   epic-15-retrospective: optional
 
