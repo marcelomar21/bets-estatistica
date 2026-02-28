@@ -199,7 +199,7 @@ development_status:
   # ========================================
   epic-16: in-progress
   16-1-deteccao-ban-failover-automatico: done
-  16-2-health-monitoring-heartbeat: backlog
+  16-2-health-monitoring-heartbeat: done
   16-3-alertas-painel-health-grupo: backlog
   epic-16-retrospective: optional
 

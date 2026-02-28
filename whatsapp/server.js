@@ -15,11 +15,15 @@ const { createWhatsAppGroup } = require('./services/groupService');
 const { generateInviteLink, revokeInviteLink } = require('./services/inviteLinkService');
 const { addWhatsAppChannel } = require('./services/addChannelService');
 const { handleGroupParticipantsUpdate } = require('./handlers/memberEvents');
+const { runHeartbeatCycle, resetFailureCounts } = require('./services/heartbeatService');
 
 const { clients } = require('./clientRegistry');
 
 const PORT = process.env.WHATSAPP_PORT || 3100;
 const SHUTDOWN_TIMEOUT_MS = config.whatsapp?.shutdownTimeoutMs ?? 30000;
+const HEARTBEAT_INTERVAL_MS = config.whatsapp?.heartbeatIntervalMs ?? 60000;
+
+let heartbeatInterval = null;
 
 /**
  * Check if a number has valid auth state (creds exist in whatsapp_sessions).
@@ -106,6 +110,13 @@ async function initClients() {
  */
 async function shutdown() {
   logger.info('WhatsApp server shutting down...');
+
+  // Stop heartbeat
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  resetFailureCounts();
 
   const disconnectPromises = [];
   for (const [numberId, client] of clients) {
@@ -245,6 +256,14 @@ async function start() {
 
   // Initialize WhatsApp clients
   await initClients();
+
+  // Start periodic heartbeat (Story 16-2)
+  heartbeatInterval = setInterval(() => {
+    runHeartbeatCycle().catch((err) => {
+      logger.error('[heartbeat] Cycle failed', { error: err.message });
+    });
+  }, HEARTBEAT_INTERVAL_MS);
+  logger.info(`Heartbeat started (interval: ${HEARTBEAT_INTERVAL_MS}ms)`);
 
   // Start Express
   const server = app.listen(PORT, () => {
