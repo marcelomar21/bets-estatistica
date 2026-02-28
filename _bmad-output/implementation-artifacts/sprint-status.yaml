@@ -178,9 +178,9 @@ development_status:
   # ========================================
   # Epic 14: Postagem Multi-Canal
   # ========================================
-  epic-14: in-progress
+  epic-14: done
   14-1-postagem-simultanea-ambos-canais: done
-  14-2-dashboard-metricas-agnosticos-canal: backlog
+  14-2-dashboard-metricas-agnosticos-canal: done
   epic-14-retrospective: optional
 
   # ========================================

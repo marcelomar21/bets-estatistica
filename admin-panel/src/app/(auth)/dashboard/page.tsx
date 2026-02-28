@@ -68,12 +68,14 @@ export default function DashboardPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [jobHealth, setJobHealth] = useState<JobHealthData | null>(null);
   const [accuracy, setAccuracy] = useState<AccuracyData | null>(null);
+  const [channelFilter, setChannelFilter] = useState<string>('');
 
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/dashboard/stats');
+      const params = channelFilter ? `?channel=${channelFilter}` : '';
+      const res = await fetch(`/api/dashboard/stats${params}`);
       if (!res.ok) {
         const json = await res.json().catch(() => null);
         setError(json?.error?.message ?? `Erro HTTP ${res.status}`);
@@ -90,7 +92,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [channelFilter]);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -193,7 +195,7 @@ export default function DashboardPage() {
       }
 
       setRoleResolved(true);
-      fetchDashboard();
+      // fetchDashboard is handled by the channelFilter useEffect below
       fetchNotifications();
       fetchJobHealth();
       fetchAccuracy();
@@ -203,7 +205,15 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [fetchDashboard, fetchNotifications, fetchJobHealth, fetchAccuracy]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchNotifications, fetchJobHealth, fetchAccuracy]);
+
+  // Re-fetch dashboard when channel filter changes
+  useEffect(() => {
+    if (roleResolved && role === 'super_admin') {
+      fetchDashboard();
+    }
+  }, [channelFilter, fetchDashboard, roleResolved, role]);
 
   // Render GroupAdminDashboard for group_admin role
   if (role === 'group_admin') {
@@ -249,7 +259,18 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <select
+          value={channelFilter}
+          onChange={(e) => setChannelFilter(e.target.value)}
+          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="">Todos os Canais</option>
+          <option value="telegram">Telegram</option>
+          <option value="whatsapp">WhatsApp</option>
+        </select>
+      </div>
 
       <div className="space-y-8">
         {/* Performance / Accuracy */}
