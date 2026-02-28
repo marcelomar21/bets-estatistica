@@ -329,7 +329,7 @@ describe('postBets', () => {
       });
       sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram timeout' } });
 
-      await expect(runPostBets(true)).rejects.toThrow('Telegram send failures');
+      await expect(runPostBets(true)).rejects.toThrow('send failures across all channels');
     });
 
     it('should attach jobResult to error when all bets fail to send (Story 1.1)', async () => {
@@ -394,7 +394,7 @@ describe('postBets', () => {
       });
       sendToPublic.mockResolvedValue({ success: false, error: { message: 'Telegram 429' } });
 
-      await expect(runPostBets(true)).rejects.toThrow('Telegram send failures');
+      await expect(runPostBets(true)).rejects.toThrow('send failures across all channels');
     });
 
     it('should call sendToAdmin with error message when getFilaStatus fails (Code Review finding)', async () => {

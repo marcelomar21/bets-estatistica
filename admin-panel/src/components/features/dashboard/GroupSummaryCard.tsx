@@ -25,9 +25,19 @@ export default function GroupSummaryCard({ group }: GroupSummaryCardProps) {
             {label}
           </span>
         </div>
-        <p className="text-sm text-gray-500">
-          {group.active_members} {group.active_members === 1 ? 'membro ativo' : 'membros ativos'}
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-gray-500">
+            {group.active_members} {group.active_members === 1 ? 'membro ativo' : 'membros ativos'}
+          </p>
+          <div className="flex gap-1">
+            {group.channels?.includes('telegram') && (
+              <span className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700">TG</span>
+            )}
+            {group.channels?.includes('whatsapp') && (
+              <span className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700">WA</span>
+            )}
+          </div>
+        </div>
       </div>
     </Link>
   );

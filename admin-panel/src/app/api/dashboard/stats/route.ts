@@ -152,8 +152,9 @@ async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter
   return NextResponse.json({ success: true, data });
 }
 
-export const GET = createApiHandler(async (_req, context) => {
+export const GET = createApiHandler(async (req, context) => {
   const { supabase, role, groupFilter } = context;
+  const channelFilter = new URL(req.url).searchParams.get('channel') || null;
 
   // group_admin gets a simplified dashboard with member summary
   if (role === 'group_admin' && groupFilter) {
@@ -162,10 +163,16 @@ export const GET = createApiHandler(async (_req, context) => {
 
   // super_admin: full dashboard with all groups, bots, alerts
   // Parallel queries — RLS automatically filters for group_admin
+  // Build groups query with optional channel filter
+  let groupsQuery = supabase
+    .from('groups')
+    .select('id, name, status, channels, created_at');
+  if (channelFilter) {
+    groupsQuery = groupsQuery.contains('channels', [channelFilter]);
+  }
+
   const [groupsResult, botsResult, botHealthResult, membersResult, auditLogResult] = await Promise.all([
-    supabase
-      .from('groups')
-      .select('id, name, status, created_at'),
+    groupsQuery,
     supabase
       .from('bot_pool')
       .select('id, status'),
@@ -197,7 +204,11 @@ export const GET = createApiHandler(async (_req, context) => {
   const botHealth = botHealthResult.data ?? [];
   const members = membersResult.data ?? [];
 
-  // Build summary
+  // Build group cards with active member counts
+  const groupIds = new Set(groups.map((g) => g.id));
+  const activeMembers = members.filter((m) => (m.status === 'trial' || m.status === 'ativo') && (!channelFilter || groupIds.has(m.group_id)));
+
+  // Build summary (member count scoped to filtered groups when channel filter active)
   const summary: DashboardSummary = {
     groups: {
       active: groups.filter((g) => g.status === 'active').length,
@@ -212,12 +223,9 @@ export const GET = createApiHandler(async (_req, context) => {
       offline: botHealth.filter((h) => h.status === 'offline').length,
     },
     members: {
-      total: members.filter((m) => m.status === 'trial' || m.status === 'ativo').length,
+      total: activeMembers.length,
     },
   };
-
-  // Build group cards with active member counts
-  const activeMembers = members.filter((m) => m.status === 'trial' || m.status === 'ativo');
   const memberCountByGroup = new Map<string, number>();
   for (const m of activeMembers) {
     if (m.group_id) {
@@ -231,6 +239,7 @@ export const GET = createApiHandler(async (_req, context) => {
     status: g.status,
     created_at: g.created_at,
     active_members: memberCountByGroup.get(g.id) ?? 0,
+    channels: (g as unknown as { channels: string[] | null }).channels || ['telegram'],
   }));
 
   // Build alerts

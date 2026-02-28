@@ -1,14 +1,15 @@
 ---
-stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain-skipped', 'step-06-innovation-skipped', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'step-e-02-review', 'step-e-03-edit']
+stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain', 'step-06-innovation-skipped', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'step-12-complete']
+completedAt: '2026-02-27'
 inputDocuments:
   - _bmad-output/project-context.md
-  - docs/index.md
   - docs/project-overview.md
   - docs/architecture.md
   - docs/data-models.md
   - docs/development-guide.md
   - docs/metrics.md
   - docs/source-tree-analysis.md
+  - docs/index.md
 workflowType: 'prd'
 projectType: 'brownfield'
 documentCounts:
@@ -17,678 +18,431 @@ documentCounts:
   brainstorming: 0
   projectDocs: 8
 classification:
-  projectType: 'API Backend + Web App + Multi-Bot Automation'
+  projectType: 'Feature Addition — API Backend + Multi-Channel Messaging'
   domain: 'Betting/Gambling + SaaS Multi-tenant'
-  complexity: 'high'
+  complexity: 'medium-high'
   projectContext: 'brownfield'
-architectureDecisions:
-  multiTenant: 'Banco único com group_id + middleware obrigatório + Supabase RLS'
-  botDeployment: '1 processo = 1 bot (serviços separados no Render)'
-  adminPanel: 'Next.js + Supabase Auth + Vercel'
-  betDistribution: 'Round-robin com audit log'
-premortemActions:
-  - 'external_reference no Mercado Pago com group_id'
-  - 'Middleware obrigatório WHERE group_id'
-  - 'Health check por bot com alerta'
-  - 'Link de checkout único por influencer'
-  - 'Onboarding em ≤5 cliques'
-stakeholderDecisions:
-  influencerVeto: false
-  auditTrail: true
-  instantAccess: true
 ---
 
 # Product Requirements Document - bets-estatistica
 
 **Author:** Marcelomendes
-**Date:** 2026-02-04
+**Date:** 2026-02-27
 
 ## Project Classification
 
 | Aspecto | Valor |
 |---------|-------|
-| **Tipo** | API Backend + Web App + Multi-Bot Automation |
+| **Tipo** | Feature Addition — API Backend + Multi-Channel Messaging |
 | **Domínio** | Betting/Gambling + SaaS Multi-tenant |
-| **Complexidade** | Alta |
+| **Complexidade** | Média-Alta |
 | **Contexto** | Brownfield (estendendo sistema existente) |
 
 ## Executive Summary
 
-**Objetivo:** Transformar o sistema atual de apostas (single-group) em uma plataforma SaaS multi-tenant para múltiplos influencers.
+**Objetivo:** Tornar o GuruBet multi-canal, adicionando WhatsApp como canal de entrega paralelo ao Telegram. Clientes escolhem onde receber (Telegram, WhatsApp ou ambos). A lógica de negócio, admin panel e pipeline de apostas permanecem idênticos — apenas o transporte muda.
 
-**Escopo MVP (Semana 1):** 3 influencers operando independentemente, cada um com seu próprio bot Telegram, grupo de membros e painel admin. Sistema 100% automatizado - postagem de apostas, trial de 7 dias, kick automático, pagamento via Mercado Pago com acesso instantâneo.
+**Motivação:** WhatsApp é o mensageiro dominante no Brasil. Pelo menos 10 clientes grandes já pedem WhatsApp, e o canal habilita novos influencers que hoje não operam no Telegram.
 
-**Escopo v3 (Pós-Estabilização):** Mensagens com mídia (PDF/imagem + preview), coluna de campeonato nas apostas, fluxo de cancelamento (self-service + operador), analytics de taxa de acerto (por grupo/mercado/campeonato/período), revisão do dashboard com métricas de performance.
-
-**Meta de Negócio (3 meses):** 9.000 membros pagantes (3k/grupo), MRR de R$450.000, churn < 10%.
-
-**Arquitetura:** Banco único com `group_id` + RLS + middleware obrigatório. 1 bot = 1 processo no Render. Admin panel em Next.js + Supabase Auth no Vercel.
-
-**Diferencial:** Onboarding de novo influencer em ≤5 cliques. Zero intervenção manual na operação diária. Analytics de acerto em tempo real para tomada de decisão.
+**Abordagem técnica:** Baileys (biblioteca Node.js, API não-oficial do WhatsApp Web) com pool de 3+ números por grupo para resiliência contra bans. Serviço isolado no Render, reaproveitando 100% da lógica de negócio existente.
 
 ## Success Criteria
 
-### Sucesso do Influencer
+### User Success
+- Cliente entra no grupo WhatsApp em menos de 2 cliques após confirmação de pagamento (recebe link de convite automaticamente)
+- Postagens de apostas chegam no WhatsApp com a mesma qualidade e timing do Telegram
+- Cliente nunca percebe troca de número admin — serviço é contínuo
+- Experiência de "primeira aposta acertada" mantida (mesma lógica de seleção IA)
 
-| Critério | Meta | Descrição |
-|----------|------|-----------|
-| **Receita mensal** | ≥ R$60.000 (em 3 meses) | 3.000 membros × R$50 × 40% = R$60k/mês |
-| **Zero dor de cabeça** | Painel self-service | Não precisa pedir nada pro Super Admin |
-| **Visibilidade** | Dashboard próprio | Vê membros, faturamento, vencimentos |
-| **Confiança** | Dados isolados | Garantia que concorrente não vê seus dados |
+### Business Success
+- 10+ clientes grandes migram ou adicionam WhatsApp nos primeiros 30 dias
+- Canal WhatsApp habilita novos influencers que hoje não operam no Telegram — expansão de mercado
+- Mesma taxa de conversão trial→pago que o Telegram (fluxo de pagamento idêntico)
+- Zero perda de grupo por ban — pool de números garante continuidade
 
-### Sucesso de Negócio
-
-| Período | Membros/Grupo | Total (3 grupos) | MRR Total | Parte Fundadores (40%) |
-|---------|---------------|------------------|-----------|------------------------|
-| **3 meses** | 3.000 | 9.000 | R$450.000 | R$180.000 |
-| **12 meses** | 10.000 | 30.000 | R$1.500.000 | R$600.000 |
-
-| Métrica | Meta |
-|---------|------|
-| **Churn mensal** | < 10% |
-| **Conversão trial → pago** | > 30% |
-| **Onboarding novo influencer** | < 1 hora (≤5 cliques) |
-
-### Sucesso Técnico
-
-| Aspecto | Critério | Prioridade |
-|---------|----------|------------|
-| **Postagem de apostas** | 100% nos horários programados | P0 |
-| **Pagamento → Acesso** | Instantâneo (< 30 segundos) | P0 |
-| **Gestão de usuários** | Kick automático funciona 100% | P0 |
-| **Isolamento multi-tenant** | Zero vazamento de dados entre grupos | P0 |
-| **Uptime dos bots** | 99.9% nos horários de postagem | P0 |
-| **Health monitoring** | Alerta em < 5 min se bot cair | P1 |
+### Technical Success
+- Failover < 5 minutos — número banido é substituído automaticamente, sem intervenção manual
+- Mínimo 3 números admin por grupo (1 ativo + 2 reservas), rotação automática
+- Grupo WhatsApp sobrevive a qualquer ban individual — a gestão é do grupo, não do número
+- Serviço WhatsApp isolado do Telegram — falha em um não afeta o outro
+- Sessões Baileys persistidas no Supabase — reconexão automática após restart do serviço
 
 ### Measurable Outcomes
-
-**Para declarar a plataforma um sucesso em 3 meses:**
-
-1. ✅ 3 influencers operando independentemente
-2. ✅ 9.000 membros pagantes totais (3k por grupo)
-3. ✅ MRR de R$450.000
-4. ✅ Churn < 10%
-5. ✅ Zero incidentes de vazamento de dados
-6. ✅ 100% das postagens enviadas no horário
-7. ✅ Influencers conseguem operar sem suporte
+- Tempo de entrada no grupo pós-pagamento: < 60 segundos
+- Tempo de failover pós-ban: < 5 minutos
+- Uptime do grupo: 99.9% (graças ao pool de 3+)
+- Postagens entregues: 100% das apostas postadas no Telegram também vão pro WhatsApp
 
 ## Product Scope
 
-### MVP - Semana 1 (Lançamento com 3 Influencers)
+### MVP — Tudo que o Telegram já faz, mas no WhatsApp
 
-| Componente | Escopo |
-|------------|--------|
-| **3 Bots Telegram** | Configurados e rodando |
-| **Multi-tenant DB** | group_id + middleware + RLS |
-| **Painel Admin** | Next.js + Supabase Auth |
-| **→ Super Admin** | Todos grupos, pool bots, onboarding |
-| **→ Admin Grupo** | Só seu grupo, membros, vencimentos |
-| **Gestão Membros** | Lista, status, vencimentos |
-| **Gestão Odds/Links** | Individual e bulk |
-| **Distribuição Apostas** | Round-robin automático |
-| **Mercado Pago** | Webhook multi-tenant |
-| **Health Check** | Por bot, com alertas |
+**Infraestrutura WhatsApp:**
+- Conexão Baileys com pool de 3+ números por grupo
+- Failover automático (ban detectado → próximo número assume → provisionar reserva)
+- Persistência de sessões no Supabase
+- Serviço separado no Render (isolado do Telegram)
 
-### v3 — Pós-Estabilização (Epics 7-11)
+**Gestão de Membros (reaproveitando lógica existente):**
+- Entrada controlada via invite link pós-pagamento
+- Kick automático de inadimplentes
+- Notificações 1:1 (trial reminder, renewal, farewell) — via WhatsApp
+- Mesma state machine de membership (trial → ativo → inadimplente → removido)
 
-| # | Funcionalidade | Epic |
-|---|----------------|------|
-| 1 | Mensagens com mídia (PDF/imagem) + preview | Epic 7 |
-| 2 | Coluna campeonato na aba de apostas + filtro | Epic 8 |
-| 3 | Fluxo de cancelamento (membro + operador) | Epic 9 |
-| 4 | Analytics de taxa de acerto (grupo/mercado/campeonato/período) | Epic 10 |
-| 5 | Revisão do dashboard (alertas dismissíveis + métricas de acerto) | Epic 11 |
+**Postagem (reaproveitando copy existente):**
+- Apostas postadas no WhatsApp com mesma lógica e timing do Telegram
+- Formatação adaptada (Markdown Telegram → formatação WhatsApp)
+- Mesmo schedule configurável por grupo
 
-### Growth Features (Pós v3)
+**Admin Panel (reutilizar 100% do existente):**
+- Onboarding de grupo WhatsApp pelo painel (1-click, como Telegram)
+- Gestão de membros funciona independente do canal
+- Dashboard, métricas, bets — tudo agnóstico de canal
+- Gestão de números WhatsApp (status, health, rotação) integrada no painel existente
+- Cliente escolhe canal preferido no checkout (Telegram / WhatsApp / ambos)
 
-| Feature | Trigger |
-|---------|---------|
-| **Tela "Meu Faturamento"** | Quando influencer pedir |
-| **Relatório exportável** | Quando intermediadora pedir |
-| **Audit trail visual** | Quando tiver disputa |
-| **Multi-bot em 1 processo** | Quando > 10 influencers |
+**Abstração de canal:**
+- Lógica de negócio 100% agnóstica de plataforma
+- Membro tem `preferred_channel` — sistema roteia pro canal certo
+- Mesma API, mesmos services, só o transporte muda
 
-### Vision (Futuro)
-
-- App mobile pra influencer gerenciar
-- Onboarding 100% self-service (influencer cria sozinho)
-- Marketplace de influencers
-- White-label por influencer (bot com nome/marca dele)
+### Fora de Escopo
+- WhatsApp Communities
+- Bot commands / inline keyboards (WhatsApp não suporta em grupos)
+- Funcionalidades novas que não existem no Telegram
 
 ## User Journeys
 
-### Journey 1: Marcelo - Onboarding de Novo Influencer
+### Jornada 1: Lucas (Membro) — Entra no grupo e ganha trial
 
-**Cena de Abertura:**
-Marcelo recebe mensagem: "Fechamos com a Bianca! Ela tem 500k seguidores e quer começar amanhã."
+Lucas é apostador e segue o Osmar no Instagram. Vê um story com o link do grupo WhatsApp VIP.
 
-**A Jornada:**
-1. Abre o painel admin
-2. Clica em "Novo Influencer"
-3. Seleciona um bot do pool (vê: "8 bots disponíveis")
-4. Preenche: Nome, @telegram, email
-5. Sistema cria automaticamente:
-   - Tenant no banco
-   - Link de checkout Mercado Pago
-   - Usuário admin pra Bianca
-6. Marcelo envia pra Bianca: link do bot + login do painel
-7. **Tempo total: < 10 minutos**
+**Entrada no grupo:**
+- **Opção A (grupo aberto com aprovação):** Lucas pede pra entrar no grupo. Sistema aprova automaticamente.
+- **Opção B (link direto):** Lucas clica no invite link e entra direto.
 
-**Resolução:**
-Bianca já consegue logar no painel e ver "0 membros - aguardando primeiro pagamento"
+**Trial automático:**
+1. Bot detecta novo membro no grupo
+2. Lucas recebe mensagem privada automática: _"Bem-vindo ao Guru da Bet! Você tem 3 dias de trial gratuito. Após isso, assine para continuar recebendo: [link checkout]"_
+3. Recebe apostas normalmente durante o trial
+4. Dia 2: lembrete _"Seu trial acaba amanhã. Assine para continuar: [link]"_
+5. Dia 3 sem pagar: kick suave — removido do grupo + mensagem: _"Seu trial acabou. Para voltar, assine aqui: [link checkout]"_
 
----
+**Reativação pós-pagamento:**
+1. Lucas paga via Mercado Pago
+2. Webhook confirma pagamento → status muda pra `ativo`
+3. Lucas recebe novo invite link automaticamente por DM no WhatsApp
+4. Entra no grupo como membro ativo
 
-### Journey 2: Lucas - Membro Entra e Paga (Happy Path)
+**Inadimplência (membro ativo que para de pagar):**
+1. Webhook `subscription_renewal_refused` → status `inadimplente`
+2. Grace period de 2 dias com lembretes
+3. Dia 3: kick suave + mensagem de despedida com link de checkout
+4. Link de convite anterior revogado
 
-**Cena de Abertura:**
-Lucas, 28 anos, vê um story da Bianca: "Grupo VIP de apostas - 70% de acerto! Link na bio." Ele clica.
+_Fluxo idêntico ao Telegram — mesma state machine (trial → ativo → inadimplente → removido), apenas o canal de entrega muda._
 
-**A Jornada:**
-1. Clica no link → abre o bot da Bianca no Telegram
-2. Bot manda: "Bem-vindo! 🎯 Clique abaixo pra entrar no grupo VIP"
-3. Lucas clica → é adicionado ao grupo
-4. Bot manda DM: "Você tem 7 dias grátis! Pra continuar após o trial: [link checkout]"
-5. Lucas curte as dicas por 5 dias
-6. Dia 5: Bot manda lembrete "Seu trial acaba em 2 dias! [link checkout]"
-7. Lucas clica, paga R$50 via PIX no Mercado Pago
-8. **< 30 segundos depois:** Bot manda "✅ Pagamento confirmado! Acesso liberado até DD/MM/AAAA"
-9. Lucas continua no grupo, feliz
+### Jornada 2: Osmar (Influencer) — "Quero WhatsApp"
 
-**Resolução:**
-Lucas virou membro pagante. Bianca ganhou um subscriber. Sistema registrou tudo automaticamente.
+Osmar já opera no Telegram com 200 membros. Quer oferecer WhatsApp.
 
----
+1. Osmar fala com o super admin: "Quero um grupo WhatsApp"
+2. Super admin vai no admin panel → grupo do Osmar → "Adicionar canal WhatsApp"
+3. Sistema aloca 3 números do **pool global** da plataforma
+4. Cria o grupo WhatsApp automaticamente com os 3 como admin
+5. Configura grupo como "só admins enviam" (membros só leem)
+6. Osmar recebe: "Seu grupo WhatsApp está ativo! Link de convite: [link]"
+7. Osmar divulga o link nas redes sociais
+8. Apostas passam a ser postadas automaticamente nos dois canais
 
-### Journey 3: Pedro - Membro Não Paga e É Removido
+_Osmar não sabe e não precisa saber quais números são. Os números são recurso da plataforma._
 
-**Cena de Abertura:**
-Pedro entrou no grupo pelo mesmo link, mas não tem grana pra pagar agora.
+### Jornada 3: Failover Automático — Ban de número
 
-**A Jornada:**
-1. Pedro entra no grupo, recebe boas-vindas, curte as dicas grátis
-2. Dia 5: Bot manda "Seu trial acaba em 2 dias! [link checkout]" → Pedro ignora
-3. Dia 6: Bot manda "Último dia amanhã! Garanta seu acesso [link checkout]" → Pedro ignora
-4. Dia 7: Bot manda "⚠️ Seu acesso expira hoje à meia-noite"
-5. Dia 8, 00:01: Sistema executa kick automático
-6. Pedro tenta acessar o grupo → "Você foi removido"
-7. Bot manda DM: "Seu trial expirou. Quer voltar? [link checkout]"
+3h da manhã. O número principal do grupo do Osmar é banido pelo WhatsApp.
 
-**Resolução:**
-Pedro foi removido sem intervenção manual. Se pagar depois, volta automaticamente.
+1. Baileys detecta desconexão com `DisconnectReason.loggedOut` (status 401)
+2. Sistema marca número como `banned`, desaloca do grupo
+3. Próximo número do **pool global** é alocado automaticamente ao grupo
+4. Grupo continua com 3 admins (2 originais + 1 novo do pool)
+5. Tempo total: < 5 minutos, sem intervenção humana
+6. Alerta no admin Telegram: _"🔴 Número +5511XXXX banido. Substituído por +5511ZZZZ. Pool global: 12/15 disponíveis."_
+7. Quando pool fica baixo (< 5 disponíveis): _"🟡 Pool de números baixo. Considere adicionar mais."_
 
----
+_Ninguém acordou. Ninguém fez nada. O grupo continuou funcionando._
 
-### Journey 4: Bianca - Influencer Confere Seus Números
+### Jornada 4: Postagem Diária Multi-Canal
 
-**Cena de Abertura:**
-Bianca quer saber quanto vai receber esse mês. É sexta-feira, dia de conferir.
+9:55, cinco minutos antes da postagem das 10h.
 
-**A Jornada:**
-1. Bianca abre o painel admin (link que Marcelo mandou)
-2. Faz login com email/senha (Supabase Auth)
-3. Vê dashboard DO SEU GRUPO apenas:
-   - **Membros ativos:** 847
-   - **Em trial:** 23
-   - **Vencendo em 7 dias:** 45
-4. Vê lista de membros com status e data de vencimento
-5. Pensa: "Preciso postar mais pra converter esses 23 em trial"
-6. **(Fase 2):** Vê aba "Meu Faturamento" → R$42.350 no mês (40% dela)
+1. `distributeBets` roda, seleciona apostas elegíveis pro grupo do Osmar
+2. Sistema verifica canais ativos do grupo: Telegram + WhatsApp
+3. **Telegram:** fluxo existente (confirmação admin → post público)
+4. **WhatsApp:** número ativo do pool → `sendMessage()` via Baileys → grupo WhatsApp
+5. Formatação adaptada: `*bold*` funciona igual, links inline, emojis
+6. Mensagem postada em ambos os canais simultaneamente
+7. Job registra sucesso em `job_executions` com metadata de canal
 
-**Resolução:**
-Bianca tem visibilidade total do SEU grupo, sem precisar perguntar pro Marcelo. Não vê nada dos outros influencers.
+## Domain-Specific Requirements
 
----
+### Riscos da API Não-Oficial (Baileys)
 
-### Journey 5: Marcelo - Bot Caiu às 3h da Manhã
+| Risco | Severidade | Mitigação |
+|-------|-----------|-----------|
+| Ban de número pelo WhatsApp | Alta probabilidade | Pool de 3+ números/grupo + failover automático < 5 min |
+| Detecção aumentada pela Meta (2025+) | Média | Rate limiting (10-20 msgs/min), comportamento orgânico |
+| Mudança no protocolo WhatsApp Web | Média | Baileys é ativamente mantido (8.4K stars, releases regulares) |
+| Sem SLA ou garantia de serviço | Aceitar | WhatsApp é canal complementar, não substituto do Telegram |
+| Sessão WebSocket cai após 24h+ | Conhecida | Persistência no Supabase + reconexão automática |
+| Baileys instável em sessões longas | Média | Reconexão automática + heartbeat 60s |
+| Signal keys desatualizam | Alta | Persistir TODA atualização no Supabase imediatamente |
+| Baileys para de ser mantido | Baixa | Abstração de canal permite migrar pra alternativa |
+| Serviço 24/7 custa mais que webhook | Baixa | Render Starter ($7/mês) — custo mínimo |
+| Chips pré-pagos expiram | Média | Heartbeat mantém ativos, monitorar expiração |
 
-**Cena de Abertura:**
-São 3h17 da manhã. O bot da Bianca travou no Render.
+### Restrições Técnicas
+- Rate limit implícito: máximo ~10-20 mensagens/minuto por número antes de trigger anti-spam
+- Sessões Baileys exigem conexão WebSocket persistente (não funciona com spin-down)
+- Auth state (Signal keys) atualiza a cada mensagem — persistir no banco, não em arquivo
+- Serviço precisa rodar 24/7 (diferente do bot Telegram que acorda por webhook)
 
-**A Jornada:**
-1. Health check detecta: "Bot Bianca offline há 2 minutos"
-2. Sistema envia alerta:
-   - Push notification no celular do Marcelo
-   - Mensagem no grupo admin de super admins
-3. Marcelo acorda, vê o alerta
-4. Abre painel admin → vê dashboard de saúde dos bots
-   - ✅ Bot João: online
-   - ✅ Bot Carlos: online
-   - ❌ Bot Bianca: **OFFLINE** há 5 min
-5. Clica em "Reiniciar Bot Bianca"
-6. Sistema faz restart no Render
-7. 30 segundos depois: Bot Bianca volta ✅
-8. Alerta de recuperação: "Bot Bianca online novamente"
+### Postura de Risco
+- WhatsApp é **canal complementar**, nunca substituto do Telegram
+- Se API não-oficial se tornar inviável no futuro, o sistema continua funcionando 100% via Telegram
+- Investimento em abstração de canal permite trocar Baileys por API oficial se/quando Meta liberar grupos maiores
 
-**Resolução:**
-Problema detectado e resolvido em < 10 minutos. Nenhum membro percebeu. Bianca nem ficou sabendo.
+## Technical Architecture
 
----
+### Modelo de Dados
 
-### Journey 6: Pedro - Membro Quer Cancelar
+**Tabelas existentes (alterações):**
 
-**Cena de Abertura:**
-Pedro está no grupo há 3 meses mas quer cancelar a assinatura.
+| Tabela | Alteração | Detalhes |
+|--------|-----------|----------|
+| `groups` | Nova coluna | `whatsapp_group_id TEXT` — ID do grupo no WhatsApp |
+| `members` | Novas colunas | `channel TEXT DEFAULT 'telegram'`, `whatsapp_phone TEXT` |
 
-**A Jornada:**
-1. Pedro envia `/cancelar` no chat privado do bot
-2. Bot responde: "Tem certeza? Você perderá acesso ao grupo VIP. [Confirmar Cancelamento] [Voltar]"
-3. Pedro confirma
-4. Sistema atualiza status para `cancelado`, registra motivo e data
-5. Bot envia mensagem de despedida: "Sentiremos sua falta! Se mudar de ideia: [link checkout]"
-6. Sistema remove Pedro do grupo Telegram
-7. No painel admin, operador vê Pedro com status "Cancelado" e a data
+Membro que usa ambos os canais = 2 linhas na tabela `members` (uma por canal, mesmo `group_id`).
 
-**Resolução:**
-Pedro cancelou sem precisar falar com ninguém. Operador tem visibilidade total. Se Pedro quiser voltar, o link de reativação está na última mensagem.
+**Tabelas novas:**
 
----
+**`whatsapp_numbers`** — Pool global de números
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `id` | UUID PK | Identificador |
+| `phone_number` | TEXT | Número formatado (+5511...) |
+| `status` | TEXT | `available`, `allocated`, `banned`, `connecting` |
+| `group_id` | UUID FK NULL | NULL se available, FK groups se allocated |
+| `role` | TEXT | `active` (1 por grupo) ou `backup` |
+| `session_data` | JSONB | Auth state do Baileys (credentials) |
+| `last_heartbeat` | TIMESTAMP | Último heartbeat de conexão |
+| `banned_at` | TIMESTAMP NULL | Quando foi banido |
+| `allocated_at` | TIMESTAMP NULL | Quando foi alocado ao grupo |
 
-### Journey 7: Marcelo - Analisa Performance das Apostas
+**`whatsapp_sessions`** — Signal keys do Baileys
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `number_id` | UUID FK | Referência ao número |
+| `key_type` | TEXT | Tipo da chave Signal |
+| `key_data` | JSONB | Dados da chave |
+| `updated_at` | TIMESTAMP | Última atualização |
 
-**Cena de Abertura:**
-Marcelo quer saber qual mercado está performando melhor e se algum campeonato está puxando a taxa de acerto pra baixo.
+### Arquitetura de Serviço
 
-**A Jornada:**
-1. Marcelo abre o painel admin → clica na aba "Analytics"
-2. Vê cards de resumo: Taxa de acerto total (72%), últimos 7 dias (68%), últimos 30 dias (71%)
-3. Abaixo, tabela com acerto por grupo: Osmar (74%), Guru (70%), Bianca (69%)
-4. Filtra por mercado: Gols (78%), BTTS (65%), Escanteios (60%)
-5. Pensa: "Escanteios tá fraco, vou parar de postar escanteios por enquanto"
-6. Filtra por campeonato: Premier League (80%), Serie A Brasil (62%)
-7. Seleciona período personalizado: último mês
-8. Exporta relatório para compartilhar com sócios
-
-**Resolução:**
-Marcelo tem dados reais para tomar decisões: quais mercados manter, quais campeonatos priorizar, qual grupo precisa de atenção.
-
----
-
-### Journey Requirements Summary
-
-| Jornada | Capacidades Reveladas |
-|---------|----------------------|
-| **Onboarding Influencer** | Painel admin, pool de bots, criação de tenant, checkout automático |
-| **Membro Happy Path** | Bot Telegram, trial automático, webhook Mercado Pago, acesso instantâneo |
-| **Membro Não Pagou** | Lembretes automáticos, kick automático, mensagem de recuperação |
-| **Influencer Dashboard** | Painel por grupo, lista de membros, métricas isoladas, RLS |
-| **Bot Caiu** | Health check, alertas, dashboard de status, restart remoto |
-| **Membro Cancela** | Comando /cancelar no bot, confirmação, despedida, remoção automática, visibilidade no painel |
-| **Analisa Performance** | Aba analytics, acerto por grupo/mercado/campeonato, filtro por período, export |
-
-## Backend + Web App Specific Requirements
-
-### Arquitetura Técnica
-
-| Componente | Tecnologia | Decisão |
-|------------|------------|---------|
-| **Admin Panel** | Next.js (App Router) | API Routes integradas |
-| **Autenticação** | Supabase Auth | RLS por grupo |
-| **Database** | Supabase PostgreSQL | Multi-tenant com `group_id` |
-| **Bots** | Node.js + node-telegram-bot-api | 1 processo por bot no Render |
-| **Pagamentos** | Mercado Pago | Webhook existente, adaptar pra multi-tenant |
-| **Real-time** | Não | Reload manual (simplicidade) |
-| **Notificações** | Telegram apenas | Alertas no grupo admin |
-
-### Arquitetura de Permissões
-
-| Role | group_id | Acesso |
-|------|----------|--------|
-| `super_admin` | `null` | Todos os grupos |
-| `group_admin` | `uuid` | Apenas seu grupo (RLS automático) |
-
-### API Routes (Next.js)
-
-| Rota | Método | Descrição | Acesso |
-|------|--------|-----------|--------|
-| `/api/groups` | GET | Lista grupos | Super Admin |
-| `/api/groups` | POST | Cria novo grupo (onboarding) | Super Admin |
-| `/api/groups/[id]/members` | GET | Lista membros do grupo | Super + Group Admin |
-| `/api/groups/[id]/bets` | GET | Lista apostas do grupo | Super + Group Admin |
-| `/api/bets/odds` | PUT | Atualiza odds (bulk) | Super Admin |
-| `/api/bets/links` | PUT | Atualiza links (bulk) | Super Admin |
-| `/api/bots` | GET | Lista bots (pool + em uso) | Super Admin |
-| `/api/bots/[id]/restart` | POST | Reinicia bot | Super Admin |
-| `/api/health` | GET | Status de todos os bots | Super Admin |
-
-### Modelo de Dados - Novas Tabelas
-
-**Tabela `groups`:**
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `id` | uuid | PK |
-| `name` | varchar | Nome do influencer/grupo |
-| `bot_token` | varchar | Token do bot Telegram (criptografado) |
-| `telegram_group_id` | bigint | ID do grupo público |
-| `telegram_admin_group_id` | bigint | ID do grupo admin |
-| `checkout_url` | varchar | Link Mercado Pago |
-| `status` | enum | `active`, `paused`, `inactive` |
-| `created_at` | timestamp | Criação |
-
-**Tabela `admin_users`:**
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `id` | uuid | PK (= Supabase Auth user id) |
-| `email` | varchar | Email do admin |
-| `role` | enum | `super_admin`, `group_admin` |
-| `group_id` | uuid | FK → groups (null pra super) |
-
-**Tabela `bot_pool`:**
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `id` | uuid | PK |
-| `bot_token` | varchar | Token do BotFather (criptografado) |
-| `bot_username` | varchar | @username do bot |
-| `status` | enum | `available`, `in_use` |
-| `group_id` | uuid | FK → groups (quando em uso) |
-
-### Alterações em Tabelas Existentes
-
-**Tabela `members`** - adicionar:
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `group_id` | uuid | FK → groups |
-
-**Tabela `suggested_bets`** - adicionar:
-
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `group_id` | uuid | FK → groups (após distribuição) |
-| `distributed_at` | timestamp | Quando foi distribuída |
-
-### Requisitos de Segurança
-
-| Requisito | Prioridade | Implementação |
-|-----------|------------|---------------|
-| **RLS obrigatório** | P0 | Row Level Security em TODAS tabelas com `group_id` |
-| **Middleware de tenant** | P0 | Toda rota API valida `group_id` do JWT |
-| **Validação webhook MP** | P0 | HMAC signature do Mercado Pago |
-| **Role imutável via API** | P0 | Usuário não pode alterar próprio role |
-| **Bot tokens criptografados** | P1 | Encrypt at rest no banco |
-| **Audit log** | P1 | Registrar: quem, quando, o quê |
-| **Rate limiting** | P1 | Prevenir abuse da API |
-
-### Padrão de Código Seguro (Obrigatório)
-
-```javascript
-// Middleware de tenant - TODA rota passa por aqui
-function tenantMiddleware(req, res, next) {
-  const user = req.user; // do JWT
-
-  if (user.role === 'super_admin') {
-    req.groupFilter = null; // vê tudo
-  } else {
-    req.groupFilter = user.group_id; // SÓ seu grupo
-  }
-
-  next();
-}
+```
+Render:
+  bets-bot-unified        → Telegram (todos os grupos)     [EXISTENTE]
+  bets-whatsapp-unified   → WhatsApp (todos os grupos)     [NOVO]
+  bets-webhook            → Pagamentos Mercado Pago        [EXISTENTE]
 ```
 
-## Project Scoping & Phased Development
+- **1 processo Node.js** gerencia todos os grupos WhatsApp
+- **N instâncias Baileys** (1 por número alocado, não por grupo)
+- WebSocket persistente por número — serviço roda **24/7** (sem spin-down)
+- Startup: carrega todos os números alocados do banco, reconecta sessões
 
-### MVP Strategy
+### Fluxo de Alocação de Números
 
-| Aspecto | Decisão |
-|---------|---------|
-| **Abordagem** | Platform MVP - Infraestrutura completa D1 |
-| **Timeline** | Semana 1 (Dia 1 = tudo funcionando) |
-| **Filosofia** | "Se não funciona automatizado, não lança" |
+```
+Pool Global: [N1, N2, N3, N4, N5, ...] (status: available)
 
-### MVP Feature Set - Dia 1 (Obrigatório)
+Onboarding grupo Osmar:
+  1. Aloca N1, N2, N3 → group_id = osmar_uuid
+  2. N1.role = 'active', N2.role = 'backup', N3.role = 'backup'
+  3. Cria grupo WhatsApp com N1, N2, N3 como admin
+  4. Pool restante: [N4, N5, ...]
 
-| # | Funcionalidade | Jornada que Suporta |
-|---|----------------|---------------------|
-| 1 | 3 Bots Telegram configurados | Todas |
-| 2 | Multi-tenant DB com RLS | Isolamento de dados |
-| 3 | Painel Super Admin | Onboarding, Health |
-| 4 | Painel Admin de Grupo | Influencer Dashboard |
-| 5 | Lista de membros | Influencer Dashboard |
-| 6 | Gestão de odds (bulk) | Operação diária |
-| 7 | Gestão de links (bulk) | Operação diária |
-| 8 | Distribuição round-robin | Apostas por grupo |
-| 9 | Webhook Mercado Pago multi-tenant | Membro Happy Path |
-| 10 | Acesso instantâneo pós-pagamento | Membro Happy Path |
-| 11 | Trial 7 dias + lembretes | Membro Happy Path |
-| 12 | Kick automático | Membro Não Pagou |
-| 13 | Health check por bot | Bot Caiu |
-| 14 | Alertas no Telegram | Bot Caiu |
-| 15 | Onboarding de influencer (≤5 cliques) | Onboarding |
-| 16 | Pool de bots | Onboarding |
-| 17 | Middleware de segurança tenant | Segurança |
+Ban de N1:
+  1. N1.status = 'banned', N1.banned_at = now()
+  2. N2 promovido a role = 'active'
+  3. N4 alocado ao grupo como 'backup'
+  4. Pool restante: [N5, ...]
+  5. Número alocado é do grupo para sempre
+```
 
-### Phase 2 - Mês 1 (Pós-Lançamento)
+### Estrutura do Módulo no Repo
 
-| Feature | Trigger |
-|---------|---------|
-| Dashboard de métricas | Após estabilizar |
-| Tela "Meu Faturamento" | Quando influencer pedir |
-| Relatório exportável | Quando intermediadora pedir |
-| Audit log visual | Se tiver disputa |
+```
+whatsapp/
+├── client.js                 # Wrapper Baileys (connect, events, send)
+├── pool.js                   # Pool manager (allocate, deallocate, failover)
+├── sessionStore.js           # Auth state persistido no Supabase
+├── handlers/
+│   ├── groupEvents.js        # Membro entrou/saiu do grupo
+│   └── connectionEvents.js   # Ban detection, reconnection
+├── services/
+│   ├── groupService.js       # Criar grupo, invite link, kick
+│   └── messageService.js     # Formatar e enviar (adaptar copy)
+├── jobs/
+│   ├── postBets.js           # Postar apostas (reusa lógica existente)
+│   ├── kickExpired.js        # Kick inadimplentes (reusa lógica existente)
+│   └── healthCheck.js        # Heartbeat dos números
+└── server.js                 # Entry point do serviço
+```
 
-### Phase 3 - Escala (Quando > 10 influencers)
+## Scoping — Implementação em Camadas
 
-| Feature | Trigger |
-|---------|---------|
-| Multi-bot em 1 processo | Custo de Render alto |
-| Onboarding 100% self-service | Volume alto de influencers |
-| App mobile pra influencer | Demanda |
-| White-label | Premium tier |
+Não há fases de produto (MVP/Growth/Vision) — tudo que existe no Telegram deve existir no WhatsApp desde o dia 0. A organização é por **ordem de implementação**:
 
-### Risk Mitigation Strategy
+### Camada 1: Fundação
+_Sem ela, nada funciona._
+- Conexão Baileys + persistência de sessões no Supabase
+- Pool de números (tabela `whatsapp_numbers`, alocação/desalocação)
+- Conectar número via QR code
+- Criar grupo WhatsApp programaticamente
+- Enviar mensagem no grupo
 
-| Risco | Probabilidade | Mitigação |
-|-------|---------------|-----------|
-| **Timeline apertado** | Alta | Foco total, sem scope creep |
-| **Bug em produção** | Média | Monitoramento ativo D1-D7 |
-| **Bot cai** | Média | Health check + alerta + restart |
-| **Vazamento multi-tenant** | Baixa | RLS + middleware + testes |
-| **Webhook falha** | Baixa | Validação HMAC + logs |
+### Camada 2: Operação Básica
+_Grupo funciona e gera valor._
+- Postagem de apostas no grupo (reutilizando copy, adaptando formato)
+- Detecção de novo membro no grupo
+- Trial automático (3 dias) + mensagem privada de boas-vindas
+- Kick de inadimplentes/trial expirado
+- Configurar grupo como "só admins enviam"
 
-### Recursos Necessários (MVP)
+### Camada 3: Resiliência
+_Sobrevive a bans sem intervenção humana._
+- Failover automático (detectar ban → promover backup → alocar novo do pool)
+- Health check dos números (heartbeat)
+- Alerta no Telegram admin quando número é banido
+- Alerta de pool baixo
 
-| Recurso | Quantidade |
-|---------|------------|
-| Dev Full-stack | 1 |
-| Bots pré-criados | 5+ (pool) |
-| Contas Render | 3 serviços |
-| Supabase | 1 projeto |
-| Vercel | 1 projeto |
-| Mercado Pago | Já configurado |
+### Camada 4: Integração Completa
+_Paridade total com Telegram._
+- Webhook MP → ativar membro no WhatsApp (invite link automático)
+- Notificações 1:1 (trial reminder, renewal, farewell)
+- Admin panel: botão "Adicionar WhatsApp" no grupo
+- Admin panel: visualização do pool de números
+- Admin panel: status dos números por grupo
 
 ## Functional Requirements
 
-### Gestão de Grupos (Multi-tenant)
+### Pool de Números WhatsApp
 
-- **FR1:** Super Admin pode criar um novo grupo/influencer
-- **FR2:** Super Admin pode visualizar lista de todos os grupos
-- **FR3:** Super Admin pode editar configurações de um grupo
-- **FR4:** Super Admin pode pausar ou desativar um grupo
-- **FR5:** Sistema pode isolar dados de cada grupo (um grupo não vê dados de outro)
+- FR1: Super admin pode adicionar novos números ao pool global da plataforma
+- FR2: Super admin pode visualizar o status de todos os números do pool (disponível, alocado, banido, conectando)
+- FR3: Sistema pode alocar automaticamente números do pool global para um grupo específico (3 por grupo: 1 ativo + 2 backup)
+- FR4: Sistema pode desalocar números banidos de um grupo e marcá-los como indisponíveis
+- FR5: Sistema pode alertar super admin quando o pool global está com estoque baixo
 
-### Gestão de Membros
+### Gestão de Grupos WhatsApp
 
-- **FR6:** Sistema pode registrar novo membro quando entra no grupo Telegram com status `trial`
-- **FR7:** Membro entra em trial gerenciado pelo Mercado Pago (período grátis da assinatura). Sistema registra status `trial` internamente.
-- **FR8:** ~~Sistema envia lembrete dia 5~~ → Delegado ao Mercado Pago (e-mails automáticos de assinatura)
-- **FR9:** ~~Sistema envia lembrete dia 6~~ → Delegado ao Mercado Pago
-- **FR10:** ~~Sistema envia lembrete dia 7~~ → Delegado ao Mercado Pago
-- **FR11:** Sistema pode remover (kick) membro cuja assinatura expirou/cancelou no Mercado Pago
-- **FR12:** Sistema pode conceder acesso instantâneo após confirmação de pagamento
-- **FR13:** Admin de Grupo pode visualizar lista de membros do seu grupo
-- **FR14:** Admin de Grupo pode ver status de cada membro (trial, ativo, vencendo)
-- **FR15:** Admin de Grupo pode ver data de vencimento de cada membro
-- **FR16:** Super Admin pode visualizar membros de qualquer grupo
+- FR6: Super admin pode criar um grupo WhatsApp para um influencer via admin panel (1-click)
+- FR7: Sistema pode criar grupo WhatsApp programaticamente com 3 números como admin
+- FR8: Sistema pode configurar grupo como "só admins enviam" (membros apenas leem)
+- FR9: Sistema pode gerar e revogar links de convite do grupo WhatsApp
+- FR10: Influencer pode solicitar adição de canal WhatsApp ao seu grupo existente
 
-### Gestão de Apostas
+### Gestão de Membros WhatsApp
 
-- **FR17:** Sistema pode gerar pool de apostas (existente)
-- **FR18:** Sistema pode distribuir apostas para grupos via round-robin
-- **FR19:** Sistema pode registrar qual aposta foi para qual grupo
-- **FR20:** Super Admin pode visualizar todas as apostas e sua distribuição
-- **FR21:** Super Admin pode atualizar odds de apostas (individual)
-- **FR22:** Super Admin pode atualizar odds de apostas (em lote/bulk)
-- **FR23:** Super Admin pode adicionar links de apostas (individual)
-- **FR24:** Super Admin pode adicionar links de apostas (em lote/bulk)
-- **FR25:** Bot pode postar apostas no grupo Telegram nos horários programados
+- FR11: Sistema pode detectar novos membros entrando no grupo WhatsApp
+- FR12: Sistema pode enviar mensagem privada (DM) a um membro via WhatsApp
+- FR13: Sistema pode iniciar trial automático de 3 dias para novos membros do grupo WhatsApp
+- FR14: Sistema pode enviar lembretes de trial e renovação via DM WhatsApp (dia 2, dia 3)
+- FR15: Sistema pode remover (kick) membros inadimplentes ou com trial expirado do grupo WhatsApp
+- FR16: Sistema pode reativar membro pós-pagamento enviando novo invite link por DM
+- FR17: Membro pode pertencer a um grupo em mais de um canal simultaneamente (Telegram e/ou WhatsApp)
+- FR18: Sistema pode revogar invite link anterior ao remover membro inadimplente
 
-### Gestão de Bots
+### Postagem Multi-Canal
 
-- **FR26:** Super Admin pode visualizar pool de bots disponíveis
-- **FR27:** Super Admin pode visualizar bots em uso e seus grupos
-- **FR28:** Super Admin pode associar bot do pool a um novo grupo
-- **FR29:** Sistema pode monitorar status de cada bot (health check)
-- **FR30:** Sistema pode detectar quando um bot fica offline
-- **FR31:** Sistema pode enviar alerta quando bot fica offline
-- **FR32:** Super Admin pode reiniciar um bot remotamente
-- **FR33:** Super Admin pode ver quantidade de bots disponíveis vs em uso
+- FR19: Sistema pode postar apostas no grupo WhatsApp com mesmo conteúdo do Telegram
+- FR20: Sistema pode adaptar formatação de mensagens do formato Telegram para o formato WhatsApp
+- FR21: Sistema pode postar em ambos os canais (Telegram + WhatsApp) simultaneamente para grupos com dois canais
+- FR22: Sistema pode respeitar o posting_schedule configurado por grupo para postagens WhatsApp
 
-### Painel Admin - Super Admin
+### Resiliência e Failover
 
-- **FR34:** Super Admin pode fazer login no painel
-- **FR35:** Super Admin pode ver dashboard consolidado de todos os grupos
-- **FR36:** Super Admin pode acessar tela de onboarding de novo influencer
-- **FR37:** Super Admin pode completar onboarding em até 5 passos
-- **FR38:** Super Admin pode ver alertas e notificações do sistema
+- FR23: Sistema pode detectar ban de número automaticamente (desconexão 401)
+- FR24: Sistema pode promover automaticamente número backup a ativo quando o ativo é banido
+- FR25: Sistema pode alocar novo número do pool global como backup após promoção de reserva
+- FR26: Sistema pode executar failover completo sem intervenção humana
+- FR27: Sistema pode enviar alerta no grupo Telegram admin quando um número é banido (com detalhes do número substituído e status do pool)
+- FR28: Sistema pode monitorar saúde dos números via heartbeat periódico
+- FR29: Sistema pode alertar quando um número perde conexão sem ser ban (queda de rede, restart)
 
-### Painel Admin - Admin de Grupo
+### Integração de Pagamentos
 
-- **FR39:** Admin de Grupo pode fazer login no painel
-- **FR40:** Admin de Grupo pode ver dashboard apenas do seu grupo
-- **FR41:** Admin de Grupo pode ver contagem de membros (total, trial, ativos)
-- **FR42:** Admin de Grupo pode ver lista de membros com vencimentos
-- **FR43:** Admin de Grupo não pode ver dados de outros grupos
+- FR30: Webhook Mercado Pago pode ativar membro no canal WhatsApp (além do Telegram existente)
+- FR31: Sistema pode enviar link de convite WhatsApp automaticamente após confirmação de pagamento
+- FR32: Sistema pode processar cancelamento/inadimplência com kick no canal WhatsApp
+- FR33: Checkout pode oferecer escolha de canal preferido (Telegram / WhatsApp / ambos)
 
-### Pagamentos (Mercado Pago)
+### Admin Panel
 
-- **FR44:** Sistema pode receber webhook de pagamento/assinatura do Mercado Pago
-- **FR45:** Sistema pode validar assinatura (HMAC) do webhook
-- **FR46:** Sistema pode identificar qual grupo o pagamento pertence
-- **FR47:** Sistema pode processar eventos: pagamento aprovado, assinatura cancelada, trial expirado
-- **FR48:** Sistema pode atualizar status do membro após eventos do MP (trial → active, active → expired)
-- **FR49:** Cada grupo pode ter seu próprio link de checkout (assinatura com trial no MP)
+- FR34: Super admin pode adicionar canal WhatsApp a um grupo existente via painel (botão 1-click)
+- FR35: Super admin pode visualizar status dos números alocados por grupo (ativo, backup, health)
+- FR36: Super admin pode visualizar e gerenciar o pool global de números
+- FR37: Gestão de membros no painel pode filtrar por canal (Telegram/WhatsApp)
+- FR38: Dashboard e métricas funcionam de forma agnóstica de canal
+- FR39: Onboarding de novo grupo pode incluir WhatsApp como opção de canal
 
-### Notificações
+### Conexão e Sessões
 
-- **FR50:** Bot pode enviar mensagem de boas-vindas ao novo membro
-- **FR51:** ~~Bot envia lembretes de pagamento via DM~~ → Delegado ao Mercado Pago (e-mails automáticos de assinatura)
-- **FR52:** Bot pode enviar confirmação de pagamento
-- **FR53:** Bot pode enviar mensagem de remoção com link pra voltar
-- **FR54:** Sistema pode enviar alertas pra Super Admin via Telegram
-
-### Segurança
-
-- **FR55:** Sistema pode autenticar usuários via Supabase Auth
-- **FR56:** Sistema pode aplicar Row Level Security por grupo
-- **FR57:** Sistema pode validar permissões em cada requisição de API
-- **FR58:** Sistema pode impedir que Admin de Grupo altere seu próprio role
-
-### Mensagens com Mídia (v3)
-
-- **FR59:** Super Admin pode anexar arquivo (PDF ou imagem JPG/PNG, máx 10MB) ao agendar mensagem
-- **FR60:** Sistema pode armazenar arquivo no Supabase Storage com path referenciado na tabela `scheduled_messages`
-- **FR61:** Bot pode enviar mensagem com PDF (`sendDocument`) ou imagem (`sendPhoto`) para o grupo Telegram
-- **FR62:** Super Admin pode pré-visualizar mensagem agendada (texto + mídia) antes de confirmar envio
-
-### Gestão de Apostas - Campeonato (v3)
-
-- **FR63:** Admin pode visualizar o campeonato/liga de cada aposta na tabela de apostas (dado vem de `league_matches → league_seasons.league_name`)
-- **FR64:** Admin pode filtrar apostas por campeonato/liga
-
-### Cancelamento de Membros (v3)
-
-- **FR65:** Membro pode solicitar cancelamento da assinatura via comando `/cancelar` no bot
-- **FR66:** Bot pode exibir instruções de cancelamento e solicitar confirmação antes de processar
-- **FR67:** Sistema pode processar cancelamento: atualizar status do membro para `cancelado`, remover do grupo Telegram, registrar data e motivo
-- **FR68:** Operador pode cancelar/expulsar membro pelo painel admin (aba Membros) com motivo obrigatório
-- **FR69:** Sistema pode registrar cancelamento no audit log com: motivo, data, quem executou (membro via bot ou operador via painel)
-- **FR70:** Bot pode enviar mensagem de despedida ao membro cancelado com link de reativação (checkout)
-
-### Analytics de Taxa de Acerto (v3)
-
-- **FR71:** Admin pode visualizar taxa de acerto total (all-time e por período selecionável: 7d, 30d, personalizado)
-- **FR72:** Admin pode visualizar taxa de acerto por grupo
-- **FR73:** Admin pode visualizar taxa de acerto por mercado (Gols, BTTS, Escanteios, Cartões, Outros)
-- **FR74:** Admin pode visualizar taxa de acerto por campeonato/liga
-- **FR75:** Admin pode filtrar métricas de acerto por período personalizado (data início e data fim)
-
-### Painel Admin - Dashboard (v3)
-
-- **FR76:** Super Admin pode dispensar (dismiss) alertas/notificações individuais do dashboard
-- **FR77:** Dashboard pode exibir taxa de acerto total e por grupo como métrica principal em destaque
-- **FR78:** Dashboard pode exibir resumo de performance recente (últimos 7 e 30 dias) com indicador de tendência
+- FR40: Super admin pode conectar número ao WhatsApp via escaneamento de QR code
+- FR41: Sistema pode persistir sessões (auth state / Signal keys) no banco de dados
+- FR42: Sistema pode reconectar automaticamente todas as sessões após restart do serviço
+- FR43: Sistema pode gerenciar múltiplas conexões WebSocket simultâneas (1 por número alocado)
+- FR44: Sistema pode respeitar rate limits implícitos do WhatsApp para evitar detecção anti-spam
 
 ## Non-Functional Requirements
 
 ### Performance
 
-| NFR | Métrica | Prioridade |
-|-----|---------|------------|
-| **NFR-P1** | Postagem de apostas inicia no máximo 30 segundos após horário programado | P0 |
-| **NFR-P2** | Acesso de membro liberado em < 30 segundos após confirmação de pagamento | P0 |
-| **NFR-P3** | Painel admin carrega em < 3 segundos (first contentful paint) | P1 |
-| **NFR-P4** | Lista de membros carrega em < 2 segundos (até 10k registros) | P1 |
-| **NFR-P5** | Bulk update de odds/links processa em < 5 segundos (até 50 itens) | P1 |
-
-### Security
-
-| NFR | Requisito | Prioridade |
-|-----|-----------|------------|
-| **NFR-S1** | Isolamento de dados: 0 vazamentos entre tenants (validado por testes automatizados) | P0 |
-| **NFR-S2** | Tokens de bot criptografados at rest (AES-256 ou equivalente) | P0 |
-| **NFR-S3** | Webhook Mercado Pago validado via HMAC em 100% das requisições | P0 |
-| **NFR-S4** | Sessões admin expiram em 24 horas sem atividade | P1 |
-| **NFR-S5** | Audit log de ações críticas (onboarding, kick, pagamento) retido por 90 dias | P1 |
-| **NFR-S6** | Rate limiting: máximo 100 requisições/minuto por usuário | P1 |
-
-### Scalability
-
-| NFR | Requisito | Horizonte |
-|-----|-----------|-----------|
-| **NFR-SC1** | Suportar 3 grupos com 10k membros cada (30k total) sem degradação | Dia 1 |
-| **NFR-SC2** | Escalar para 10 influencers sem mudança de arquitetura | 3 meses |
-| **NFR-SC3** | Suportar pico de 1000 novos membros/hora (lançamento de influencer) | Dia 1 |
-| **NFR-SC4** | Banco de dados dimensionado para 100k membros totais | 6 meses |
+- NFR1: Failover completo (ban detectado → número substituído → grupo operacional) deve completar em menos de 5 minutos
+- NFR2: Postagem de aposta no grupo WhatsApp deve ocorrer em menos de 30 segundos após trigger do job
+- NFR3: Envio de mensagens deve respeitar rate limit de no máximo 10 mensagens por minuto por número para evitar detecção anti-spam
+- NFR4: Reconexão de sessão Baileys após restart do serviço deve completar em menos de 60 segundos por número
+- NFR5: Heartbeat de saúde dos números deve executar a cada 60 segundos
 
 ### Reliability
 
-| NFR | Requisito | Prioridade |
-|-----|-----------|------------|
-| **NFR-R1** | Uptime de bots ≥ 99.9% durante horários de postagem (7h-23h) | P0 |
-| **NFR-R2** | Health check detecta bot offline em ≤ 2 minutos | P0 |
-| **NFR-R3** | Alerta de bot offline enviado em ≤ 5 minutos da detecção | P0 |
-| **NFR-R4** | Tempo médio de recuperação (MTTR) de bot ≤ 10 minutos | P1 |
-| **NFR-R5** | Webhook Mercado Pago com retry automático (3 tentativas) | P1 |
-| **NFR-R6** | Painel admin disponível 99% do tempo | P2 |
+- NFR6: Serviço WhatsApp deve rodar 24/7 sem spin-down (conexões WebSocket persistentes)
+- NFR7: Uptime do grupo WhatsApp deve ser ≥ 99.9% (máximo ~8.7h de downtime/ano), garantido pelo pool de 3+ números
+- NFR8: Sessões Baileys devem sobreviver a restarts do serviço sem necessidade de re-escanear QR code
+- NFR9: Toda atualização de auth state (Signal keys) deve ser persistida no Supabase antes de confirmar ao Baileys
+- NFR10: Perda de conexão não-ban (rede, restart) deve reconectar automaticamente com backoff exponencial (max 5 tentativas)
+- NFR11: Serviço WhatsApp deve ser isolado do serviço Telegram — falha em um não afeta o outro
+
+### Security
+
+- NFR12: Chaves criptográficas Signal (auth state Baileys) devem ser armazenadas criptografadas no Supabase
+- NFR13: Números de telefone de membros devem ser protegidos por RLS multi-tenant (group admin só vê seus membros)
+- NFR14: Pool global de números deve ser acessível apenas por super admin
+- NFR15: Tokens de sessão e credenciais WhatsApp não devem ser logados em nenhum nível de logging
+- NFR16: Isolamento multi-tenant existente (RLS) deve ser estendido para todas as tabelas novas (whatsapp_numbers, whatsapp_sessions)
+
+### Scalability
+
+- NFR17: Sistema deve suportar pelo menos 50 números conectados simultaneamente em um único processo Node.js
+- NFR18: Arquitetura deve permitir escalar horizontalmente (múltiplas instâncias do serviço, cada uma gerenciando um subset de números)
+- NFR19: Adição de novos grupos WhatsApp não deve degradar performance de grupos existentes
+- NFR20: Pool global deve suportar no mínimo 100 números cadastrados
 
 ### Integration
 
-| NFR | Requisito | Prioridade |
-|-----|-----------|------------|
-| **NFR-I1** | Compatível com Telegram Bot API v6.x+ | P0 |
-| **NFR-I2** | Webhook Mercado Pago v2 suportado | P0 |
-| **NFR-I3** | Funciona com Supabase Auth (JWT padrão) | P0 |
-| **NFR-I4** | Deploy automatizado via Render (1 serviço por bot) | P1 |
-| **NFR-I5** | Graceful degradation: se Mercado Pago timeout, retry + log | P1 |
-
-## Document History
-
-| Data | Versão | Mudança |
-|------|--------|---------|
-| 2026-02-04 | 1.0 | PRD inicial criado via BMAD workflow |
-| 2026-02-26 | 3.0 | Adição de 20 FRs (FR59-FR78), 2 User Journeys (J6-J7), escopo v3 com 5 novos epics (mensagens mídia, campeonato, cancelamento, analytics acerto, revisão dashboard). Sprint Change Proposal aprovado. |
-
----
-
-**Total de Requisitos:**
-- 78 Functional Requirements (FRs) — 58 originais + 20 v3
-- 22 Non-Functional Requirements (NFRs)
-- 7 User Journeys documentadas — 5 originais + 2 v3
-- 17 features MVP obrigatórias para D1
-- 5 features v3 pós-estabilização (Epics 7-11)
-
+- NFR21: Sistema deve funcionar com Baileys v6+ (manter compatibilidade com releases ativos)
+- NFR22: Abstração de canal deve permitir substituir Baileys por outra lib/API sem alterar lógica de negócio
+- NFR23: Integração com Mercado Pago deve funcionar identicamente para membros WhatsApp e Telegram (mesmo webhook, mesma lógica)
+- NFR24: Alertas de ban/failover devem ser entregues via canal Telegram admin existente (não criar novo canal de alertas)
+- NFR25: Formatação de mensagens deve suportar os padrões WhatsApp (*bold*, _italic_, ~strikethrough~, ```monospace```)

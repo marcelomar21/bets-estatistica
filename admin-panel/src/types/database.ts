@@ -100,6 +100,7 @@ export interface DashboardGroupCard {
   status: Group['status'];
   created_at: string;
   active_members: number;
+  channels: string[];
 }
 
 export type NotificationType =

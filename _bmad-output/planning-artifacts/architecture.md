@@ -1,1250 +1,687 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
+lastStep: 8
 status: 'complete'
-completedAt: '2026-01-17'
+completedAt: '2026-02-28'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
-  - _bmad-output/planning-artifacts/prd-addendum-v2.md
-  - _bmad-output/planning-artifacts/prd-addendum-v3.md
-  - _bmad-output/planning-artifacts/prd-addendum-v4.md
   - _bmad-output/project-context.md
-  - docs/index.md
   - docs/project-overview.md
   - docs/architecture.md
   - docs/data-models.md
-  - docs/source-tree-analysis.md
-  - docs/development-guide.md
-  - docs/metrics.md
+  - docs/index.md
 workflowType: 'architecture'
 project_name: 'bets-estatistica'
 user_name: 'Marcelomendes'
-date: '2026-01-17'
+date: '2026-02-27'
 ---
 
-# Architecture Decision Document - bets-estatistica
+# Architecture Decision Document
 
-_Este documento é construído colaborativamente através de descoberta passo-a-passo. Seções são adicionadas conforme trabalhamos em cada decisão arquitetural juntos._
-
----
-
-## Análise Cross-Funcional: Integração Cakto & Gestão de Membros
-
-_Descobertas do War Room com PM, Engenheiro e UX Designer_
-
-### Tensões Identificadas
-
-| Dimensão | Tensão | Trade-off |
-|----------|--------|-----------|
-| **Viabilidade** | Webhook sem retry pode perder pagamentos | Implementar fila vs simplicidade |
-| **Desejabilidade** | Kick automático frustra usuários | Automação vs UX humanizada |
-| **Factibilidade** | 3 fontes de estado (Cakto/Supabase/Telegram) | Single source of truth vs redundância |
-
-### Preocupações Técnicas Críticas
-
-```
-CONCERN-1: Estado distribuído
-├── Cakto tem seu estado (subscription_status)
-├── Supabase terá tabela `members` (trial/ativo/inadimplente)
-├── Telegram tem membership status (member/kicked/left)
-└── RISCO: Dessincronização entre os 3 sistemas
-
-CONCERN-2: Webhook reliability
-├── Cakto envia webhook uma vez
-├── Se falhar, perdemos evento de pagamento
-├── Necessário: retry/dead-letter queue
-└── Idempotency key obrigatória
-
-CONCERN-3: Job scheduling collision
-├── Jobs existentes: posting_job, admin_warnings, odds_tracking
-├── Jobs novos: check_trial_reminders, kick_expired, process_renewals
-└── Definir: prioridade, locks, scheduler compartilhado
-```
-
-### Gaps de UX na Jornada de Saída
-
-| Momento | Gap Identificado |
-|---------|------------------|
-| Kick automático | Sem mensagem de despedida/link para reativar |
-| Lembrete dia 5-7 | Genérico - deveria incluir stats personalizados |
-| Pagamento | Usuário precisa sair do Telegram → site externo |
-| Reativação | PRD diz "não pode voltar" - mas e se pagar? |
-
-### Decisões Arquiteturais Preliminares
-
-| ID | Decisão | Rationale |
-|----|---------|-----------|
-| **ADR-001** | Webhook async com event sourcing | Armazenar evento raw, processar com idempotency key |
-| **ADR-002** | Supabase é fonte de verdade | Cakto informa, Supabase decide, Telegram executa |
-| **ADR-003** | Grace period de 24h após kick | Permitir reativação com pagamento (requer ajuste no PRD) |
-| **ADR-004** | Mensagem de despedida com CTA | Antes de kickar, enviar link de pagamento |
-
----
-
-## Architecture Decision Records (ADRs) - Detalhados
-
-### ADR-001: Processamento de Webhooks Cakto
-
-**Status:** ✅ Aprovado
-**Contexto:** Cakto envia webhooks para eventos de pagamento. Precisamos processar de forma confiável sem perder eventos.
-
-**Decisão:** Event Sourcing com processamento assíncrono
-
-**Implementação:**
-```
-POST /webhooks/cakto
-  → Validar assinatura HMAC
-  → Salvar evento raw em `webhook_events`
-  → Responder 200 IMEDIATAMENTE
-  → Worker processa async com retry
-```
-
-**Schema:**
-```sql
-CREATE TABLE webhook_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  idempotency_key TEXT UNIQUE NOT NULL,  -- event_id do Cakto
-  event_type TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  status TEXT DEFAULT 'pending',  -- pending/processing/completed/failed
-  attempts INT DEFAULT 0,
-  max_attempts INT DEFAULT 5,
-  last_error TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  processed_at TIMESTAMPTZ
-);
-
-CREATE INDEX idx_webhook_events_status ON webhook_events(status) WHERE status = 'pending';
-CREATE INDEX idx_webhook_events_created ON webhook_events(created_at);
-```
-
-**Requisitos de Segurança:**
-```typescript
-// OBRIGATÓRIO: Validar assinatura HMAC do Cakto
-const isValid = crypto.timingSafeEqual(
-  Buffer.from(receivedSignature),
-  Buffer.from(computedSignature)
-);
-
-// OBRIGATÓRIO: Rate limiting por IP (ex: 100 req/min)
-// OBRIGATÓRIO: Rejeitar payload > 1MB
-// RECOMENDADO: Verificar IP de origem se Cakto fornecer whitelist
-```
-
-**Consequências:**
-- ✅ Nunca perde evento de pagamento
-- ✅ Retry automático em caso de falha
-- ✅ Idempotente por design
-- ✅ Auditoria completa de todos os eventos
-- ⚠️ Eventual consistency (segundos de delay)
-- ⚠️ Requer worker/job para processar fila
-
----
-
-### ADR-002: Fonte de Verdade do Estado do Membro
-
-**Status:** ✅ Aprovado
-**Contexto:** Estado do membro existe em 3 sistemas: Cakto (subscription), Supabase (members), Telegram (chat member).
-
-**Decisão:** Supabase como Master + Reconciliação Periódica
-
-**Fluxo de Dados:**
-```
-Cakto (informante) ──webhook──► Supabase (master) ──action──► Telegram (executor)
-                                      │
-                                      ▼
-                               Reconciliação diária
-                                      │
-                                      ▼
-                               Alertas admin se divergir
-```
-
-**Regras de Ownership:**
-| Sistema | Papel | Responsabilidade |
-|---------|-------|------------------|
-| **Cakto** | Informante | Notifica sobre eventos de pagamento |
-| **Supabase** | Master | Decide estado oficial do membro |
-| **Telegram** | Executor | Executa ações (kick/unban) baseado em Supabase |
-
-**Reconciliação:**
-```typescript
-// Job diário às 03:00 BRT
-async function reconcileWithCakto() {
-  const activeMembers = await supabase
-    .from('members')
-    .select('*')
-    .in('status', ['ativo', 'trial']);
-
-  for (const member of activeMembers) {
-    if (!member.cakto_subscription_id) continue;
-
-    const caktoStatus = await cakto.getSubscription(member.cakto_subscription_id);
-
-    if (caktoStatus.status === 'canceled' && member.status === 'ativo') {
-      await notifyAdmin({
-        type: 'DESYNC_DETECTED',
-        member_id: member.id,
-        local_status: member.status,
-        cakto_status: caktoStatus.status,
-        action: 'MANUAL_REVIEW_REQUIRED'
-      });
-    }
-  }
-}
-```
-
-**Consequências:**
-- ✅ Não depende de API externa para decisões em tempo real
-- ✅ Funciona mesmo se Cakto estiver fora
-- ✅ Logs locais para auditoria e debug
-- ⚠️ Pode divergir temporariamente do Cakto
-- ⚠️ Reconciliação pode encontrar inconsistências
-
----
-
-### ADR-003: Arquitetura de Jobs de Membros
-
-**Status:** ✅ Aprovado
-**Contexto:** Novos jobs necessários para gestão de membros: lembretes, kicks, renovações.
-
-**Decisão:** Novo módulo `membership/` integrado ao scheduler existente com locks distribuídos
-
-**Estrutura:**
-```
-src/jobs/
-├── posting/              # Existente
-├── admin-warnings/       # Existente
-├── odds-tracking/        # Existente
-└── membership/           # NOVO
-    ├── index.ts
-    ├── trial-reminders.ts      # 09:00 BRT
-    ├── kick-expired.ts         # 00:01 BRT
-    ├── renewal-reminders.ts    # 10:00 BRT
-    ├── process-webhooks.ts     # A cada 30s
-    └── reconciliation.ts       # 03:00 BRT
-```
-
-**Schedule:**
-| Job | Horário | Lock TTL | Descrição |
-|-----|---------|----------|-----------|
-| `trial-reminders` | 09:00 BRT | 5min | Lembrar trials dias 5, 6, 7 |
-| `kick-expired` | 00:01 BRT | 10min | Kickar trials expirados |
-| `renewal-reminders` | 10:00 BRT | 5min | Lembrar PIX/Boleto 5 dias antes |
-| `process-webhooks` | */30s | 1min | Processar fila de webhooks |
-| `reconciliation` | 03:00 BRT | 15min | Reconciliar com Cakto |
-
-**Lock Distribuído:**
-```typescript
-async function withLock<T>(
-  lockName: string,
-  ttlSeconds: number,
-  fn: () => Promise<T>
-): Promise<T | null> {
-  const lockKey = `lock:${lockName}`;
-
-  // Tentar adquirir lock (usando Supabase como store)
-  const { data: acquired } = await supabase
-    .rpc('try_acquire_lock', {
-      lock_key: lockKey,
-      ttl_seconds: ttlSeconds
-    });
-
-  if (!acquired) {
-    console.log(`Lock ${lockName} já está em uso`);
-    return null;
-  }
-
-  try {
-    return await fn();
-  } finally {
-    await supabase.rpc('release_lock', { lock_key: lockKey });
-  }
-}
-```
-
-**Consequências:**
-- ✅ Integrado ao sistema de jobs existente
-- ✅ Sem race conditions com locks
-- ✅ Cada job isolado e testável
-- ⚠️ Precisa implementar lock no Supabase (RPC function)
-- ⚠️ Monitoramento de jobs necessário
-
----
-
-### ADR-004: Validação e Segurança de Webhooks
-
-**Status:** ✅ Aprovado
-**Contexto:** Webhooks de pagamento são vetores de ataque comuns.
-
-**Decisão:** Defesa em profundidade com múltiplas camadas
-
-**Camadas de Segurança:**
-```typescript
-// 1. Rate Limiting (antes de qualquer processamento)
-const rateLimiter = rateLimit({
-  windowMs: 60 * 1000,  // 1 minuto
-  max: 100,             // 100 requests por IP
-  message: 'Too many requests'
-});
-
-// 2. Validação de Tamanho
-if (req.headers['content-length'] > 1_000_000) {
-  return res.status(413).send('Payload too large');
-}
-
-// 3. Validação de Assinatura HMAC
-function validateCaktoSignature(payload: string, signature: string): boolean {
-  const secret = process.env.CAKTO_WEBHOOK_SECRET;
-  const computed = crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('hex');
-
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(computed)
-  );
-}
-
-// 4. Validação de Schema
-const webhookSchema = z.object({
-  event_id: z.string().uuid(),
-  event_type: z.enum([
-    'purchase_approved',
-    'subscription_created',
-    'subscription_renewed',
-    'subscription_renewal_refused',
-    'subscription_canceled'
-  ]),
-  data: z.object({
-    subscriber: z.object({
-      email: z.string().email(),
-      // ...
-    })
-  })
-});
-
-// 5. Não confiar cegamente - verificar críticos com Cakto API
-async function verifyPaymentWithCakto(subscriptionId: string) {
-  // Para eventos de alto valor, confirmar diretamente com Cakto
-  const subscription = await caktoApi.getSubscription(subscriptionId);
-  return subscription.status === 'active';
-}
-```
-
-**Consequências:**
-- ✅ Proteção contra ataques de replay
-- ✅ Proteção contra payload malicioso
-- ✅ Auditoria de todas as tentativas
-- ⚠️ Requer secret do Cakto configurado
-- ⚠️ Rate limit pode bloquear burst legítimo
-
----
+_This document builds collaboratively through step-by-step discovery. Sections are appended as we work through each architectural decision together._
 
 ## Project Context Analysis
 
 ### Requirements Overview
 
 **Functional Requirements:**
-- **PRD Principal:** ~45 FRs (core posting, admin, scraping)
-- **Addendum v2:** FR-A1-17 (admin), FR-M1-4 (métricas), FR-P1-4 (posting enhancements)
-- **Addendum v3:** FR-F1-7 (filtrar), FR-S1-6 (simular), FR-O1-5 (overview)
-- **Addendum v4:** FR-W1-7 (warns), FR-S1-6 (scraping odds), FR-O1-5 (ordenação)
-- **PRD Membros:** FR-MB1-27 (gestão de membros e pagamentos Cakto)
-- **Total:** ~145 FRs organizados em 7 domínios funcionais
+44 FRs em 8 áreas de capacidade — Pool de Números (FR1-5), Gestão de Grupos (FR6-10), Gestão de Membros (FR11-18), Postagem Multi-Canal (FR19-22), Resiliência/Failover (FR23-29), Integração de Pagamentos (FR30-33), Admin Panel (FR34-39), Conexão/Sessões (FR40-44).
+
+Arquiteturalmente, os FRs revelam 3 domínios distintos:
+1. **Infraestrutura WhatsApp** (FR1-10, FR23-29, FR40-44) — Pool de números, conexão Baileys, failover automático. Componente novo, sem equivalente no Telegram.
+2. **Lógica de negócio reutilizada** (FR11-22, FR30-33) — Membros, postagem, pagamentos. Mesma lógica existente, adaptada para novo transporte.
+3. **Admin Panel estendido** (FR34-39) — Extensões ao painel existente para gestão de números e canal WhatsApp.
 
 **Non-Functional Requirements:**
-| NFR | Requisito | Impacto Arquitetural |
-|-----|-----------|---------------------|
-| NFR21 | Webhook response < 200ms | Event sourcing obrigatório |
-| NFR22 | 99.9% uptime integração Cakto | Retry + dead letter queue |
-| NFR23 | Dados financeiros criptografados | At-rest encryption no Supabase |
-| NFR24 | Auditoria 12 meses | Log retention policy |
+25 NFRs em 5 categorias que direcionam decisões arquiteturais críticas:
+- **Performance:** Failover < 5min (NFR1), postagem < 30s (NFR2), rate limiting 10 msgs/min (NFR3)
+- **Reliability:** Serviço 24/7 (NFR6), uptime 99.9% (NFR7), sessões sobrevivem restart (NFR8), persistência síncrona de auth state (NFR9)
+- **Security:** Chaves criptografadas (NFR12), RLS estendido (NFR16), credenciais nunca logadas (NFR15)
+- **Scalability:** 50+ números simultâneos (NFR17), escala horizontal possível (NFR18)
+- **Integration:** Abstração de canal substituível (NFR22), Mercado Pago idêntico para ambos canais (NFR23)
 
 **Scale & Complexity:**
-- Primary domain: Full-stack Telegram Bot + Supabase + External APIs
-- Complexity level: Medium-High
-- Estimated architectural components: 12
+- Primary domain: Backend messaging infrastructure + admin panel integration
+- Complexity level: Média-Alta
+- Estimated architectural components: ~8 (client, pool, session store, handlers, services, jobs, server, admin API extensions)
 
 ### Technical Constraints & Dependencies
 
-| Constraint | Source | Impact |
-|------------|--------|--------|
-| Node.js 20+ | project-context.md | Runtime definido |
-| Supabase PostgreSQL | Existente | Schema migrations required |
-| Telegram Bot API | Core feature | Rate limits, formato mensagem |
-| Cakto Webhooks | PRD Membros | Nova integração crítica |
-| BRT Timezone | project-context.md | Todos jobs em horário brasileiro |
-| TypeScript strict | project-context.md | Type safety obrigatória |
+- **Baileys é CommonJS** — mesma stack do bot/ (Node.js 20+, ES2022)
+- **Rate limit implícito** — ~10-20 msgs/min por número antes de anti-spam
+- **Signal keys atualizam a cada mensagem** — persistência síncrona obrigatória no Supabase
+- **WebSocket persistente** — serviço não pode fazer spin-down (Render Starter $7/mês mínimo)
+- **WhatsApp DM** — número precisa ter interagido previamente para enviar DM (limitação da plataforma)
+- **Serviço existente inalterado** — bets-bot-unified (Telegram) não deve ser modificado; WhatsApp é serviço paralelo
+- **Supabase como single source of truth** — mesmas tabelas, mesma RLS, mesmo projeto Supabase
+- **Padrões existentes obrigatórios** — `{ success, data/error }` response pattern, `lib/supabase.js`, `lib/logger.js`, `createApiHandler()`
 
-### Cross-Cutting Concerns Identificados
+### Cross-Cutting Concerns Identified
 
-**1. State Machines (2 distintas)**
-```
-Bet State Machine:
-  pending → confirmed → won/lost/push
-
-Member State Machine:
-  trial → ativo → inadimplente → removido
-```
-
-**2. Job Scheduling**
-- Jobs existentes: posting_job, admin_warnings, odds_tracking
-- Jobs novos: trial_reminders, kick_expired, renewal_reminders, process_webhooks, reconciliation
-- Concern: Priorização, locks distribuídos, monitoramento
-
-**3. Webhook Processing**
-- Idempotência obrigatória (idempotency_key)
-- Event sourcing com tabela webhook_events
-- Retry com exponential backoff
-
-**4. Multi-System State Synchronization**
-- Fluxo: Cakto → Supabase → Telegram
-- Reconciliação diária para detectar dessincronização
-- Alertas admin em caso de divergência
-
----
+1. **Multi-tenancy** — Estender RLS para `whatsapp_numbers` e `whatsapp_sessions`. Todas queries filtradas por `group_id`. Super admin vê tudo, group admin vê só seu grupo.
+2. **Channel abstraction** — Services existentes (memberService, betService, copyService) precisam de adapter layer para rotear mensagens pro canal correto sem alterar lógica de negócio.
+3. **Observabilidade** — Health check, heartbeat, alertas de ban devem integrar com tabelas existentes (`job_executions`, `notifications`, `bot_health`).
+4. **Segurança** — Chaves Signal criptografadas com AES-256-GCM (mesmo padrão de `mtproto_sessions`). Credenciais nunca expostas em logs.
+5. **Resiliência** — Failover automático (ban → promover backup → alocar do pool) é a feature mais crítica. Deve ser testável e confiável sem intervenção humana.
 
 ## Starter Template Evaluation
 
 ### Primary Technology Domain
 
-**Full-stack Telegram Bot + Supabase + External APIs** - Projeto brownfield com stack estabelecida sendo estendida para suportar integração de pagamentos Cakto.
+**Backend messaging infrastructure** — o novo módulo `whatsapp/` é um serviço Node.js/Express que segue os mesmos padrões do `bot/` existente, usando Baileys ao invés de node-telegram-bot-api.
 
-### Base Técnica Existente
+### Starter Options Considered
 
-**Stack Atual:**
-| Technology | Version | Status |
-|------------|---------|--------|
-| Node.js | 20+ | Runtime obrigatório |
-| JavaScript | ES2022 | CommonJS modules |
-| Supabase | latest | Database + Auth |
-| node-telegram-bot-api | latest | Bot framework |
-| LangChain | 1.1.x | AI framework |
-| Zod | 4.x | Schema validation |
-| axios | 1.x | HTTP client |
-| node-cron | latest | Job scheduling |
+| Opção | Descrição | Avaliação |
+|-------|-----------|-----------|
+| **Novo projeto from scratch** | `npm init` + instalar tudo | ❌ Duplica infraestrutura já resolvida (supabase client, logger, config, service patterns) |
+| **Template externo Baileys** | Boilerplates do GitHub (baileys-bot-template, etc.) | ❌ Padrões incompatíveis com o codebase. Arquiteturas simplistas (single-number, file-based auth) |
+| **Estender o monorepo existente** | Novo diretório `whatsapp/` seguindo padrões do `bot/` | ✅ Selecionado. Reutiliza `lib/`, services, padrões de response, RLS, config |
 
-**Padrões Estabelecidos:**
-- Service Response Pattern: `{ success, data/error }`
-- Error Handling: Retry com backoff + alertAdmin
-- Logging: `lib/logger.js` (níveis info/warn/error)
-- Supabase Access: Via singleton `lib/supabase.js`
+### Selected: Estender Monorepo Existente
 
-### Extensões para Cakto/Membros
+**Rationale:**
+- Reutiliza 100% da infraestrutura compartilhada (`lib/supabase.js`, `lib/logger.js`, `lib/config.js`)
+- Mesmos padrões de service response (`{ success, data/error }`)
+- Mesma multi-tenancy via RLS
+- Mesma stack de testes (Jest)
+- Nenhuma duplicação de código de negócio
+- Única dependência nova: `@whiskeysockets/baileys`
 
-**Novas Dependências:**
-| Dependência | Versão | Propósito |
-|-------------|--------|-----------|
-| `express` | ^4.18 | HTTP server para webhooks |
-| `express-rate-limit` | ^7.x | Rate limiting |
-| `helmet` | ^7.x | Security headers |
+**Initialization:** Nenhum comando de scaffold necessário. O módulo será criado manualmente seguindo a estrutura do `bot/`.
 
-**Comando de Instalação:**
-```bash
-npm install express express-rate-limit helmet
+### Architectural Decisions Provided pelo Codebase Existente
+
+**Language & Runtime:**
+- Node.js 20+, ES2022, CommonJS (`require`/`module.exports`)
+- Sem TypeScript no backend (apenas admin-panel)
+
+**Build Tooling:**
+- Sem bundler no backend (execução direta via Node)
+- `package.json` scripts para dev/start
+- Render deploy via `npm start`
+
+**Testing Framework:**
+- Jest para testes unitários do backend
+- Mocks de Supabase e APIs externas já padronizados
+
+**Code Organization:**
+```
+whatsapp/
+├── server.js          # Entry point (Express + lifecycle)
+├── client/            # BaileyClient wrapper, connection, auth state
+├── pool/              # NumberPool manager, failover logic
+├── handlers/          # Message handlers (member events, commands)
+├── services/          # WhatsApp-specific services
+├── jobs/              # Scheduled jobs (health, heartbeat)
+└── store/             # Supabase session/auth persistence
 ```
 
-### Estrutura de Arquivos para Membros
+**Development Experience:**
+- `npm run dev:whatsapp` — modo desenvolvimento local
+- Mesmo `.env` pattern com variáveis adicionais para WhatsApp
+- Logger compartilhado com contexto de canal
 
-```
-bot/
-├── server.js              # Telegram webhook (existente)
-├── webhook-server.js      # NOVO: Express server para Cakto
-├── handlers/
-│   └── caktoWebhook.js    # NOVO: Handler de webhooks
-├── jobs/
-│   └── membership/        # NOVO: Jobs de membros
-│       ├── index.js
-│       ├── trial-reminders.js
-│       ├── kick-expired.js
-│       ├── renewal-reminders.js
-│       ├── process-webhooks.js
-│       └── reconciliation.js
-└── services/
-    ├── memberService.js   # NOVO: CRUD de membros
-    └── caktoService.js    # NOVO: Integração Cakto API
-```
+### Nova Dependência: @whiskeysockets/baileys
 
-### Decisões de Infraestrutura
-
-| Decisão | Escolha | Rationale |
-|---------|---------|-----------|
-| **HTTP Framework** | Express 4.x | Ecossistema maduro, familiaridade |
-| **Server Separado** | Sim | Separação de responsabilidades |
-| **Port** | 3001 (Cakto) vs 3000 (Telegram) | Isolamento de tráfego |
-| **Module System** | CommonJS | Consistência com projeto existente |
-
-### Webhook Server Template
-
-```javascript
-// bot/webhook-server.js
-const express = require('express');
-const rateLimit = require('express-rate-limit');
-const helmet = require('helmet');
-const logger = require('../lib/logger');
-
-const app = express();
-
-// Security
-app.use(helmet());
-app.use(express.json({ limit: '1mb' }));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: { error: 'Too many requests' }
-});
-app.use('/webhooks', limiter);
-
-// Cakto webhook endpoint
-app.post('/webhooks/cakto', validateSignature, async (req, res) => {
-  const { event_id, event_type, data } = req.body;
-
-  // Store immediately, process async (ADR-001)
-  await supabase.from('webhook_events').insert({
-    idempotency_key: event_id,
-    event_type,
-    payload: data,
-    status: 'pending'
-  });
-
-  res.status(200).json({ received: true });
-});
-
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-const PORT = process.env.CAKTO_WEBHOOK_PORT || 3001;
-app.listen(PORT, () => {
-  logger.info('Cakto webhook server started', { port: PORT });
-});
-```
-
----
+- **Versão atual:** v7.0.0-rc.9 (release candidate)
+- **Recomendação:** Usar v6.x (última estável) para produção, com path de upgrade para v7 quando estabilizar
+- **Instalação:** `npm install @whiskeysockets/baileys`
+- **Compatibilidade:** CommonJS + ESM, Node.js 18+
 
 ## Core Architectural Decisions
 
 ### Decision Priority Analysis
 
 **Critical Decisions (Block Implementation):**
-- ADR-001: Webhook async com event sourcing
-- ADR-002: Supabase como fonte de verdade
-- Schema normalizado para tabelas de membros
+1. Auth state persistence strategy (Signal keys no Supabase)
+2. Channel abstraction no banco de dados
+3. Criptografia de keys
+4. Channel adapter pattern (services → canal)
+5. Failover state machine
 
 **Important Decisions (Shape Architecture):**
-- ADR-003: Módulo membership/ com locks distribuídos
-- ADR-004: Validação HMAC + rate limiting
-- Service wrapper para Cakto API
+6. Health monitoring approach
 
 **Deferred Decisions (Post-MVP):**
-- Migração para PM2 (se necessário escalar)
-- Cache layer para consultas frequentes
+- Escala horizontal (múltiplos processos WhatsApp) — NFR18 diz "possível", não obrigatório no MVP
+- Rate limiting adaptativo — MVP usa 10 msgs/min fixo por número
+- Webhook para WhatsApp — Baileys é WebSocket-based; webhook externo é post-MVP
 
 ### Data Architecture
 
-| Decisão | Escolha | Rationale |
-|---------|---------|-----------|
-| Schema Design | Normalizado | Consistência com tabelas existentes (`suggested_bets`, etc.) |
-| Migration Strategy | SQL versionado em `/sql/migrations/` | Reprodutível, sem dependências extras |
-| Validation | Zod schemas | Já em uso no projeto |
+**Auth State Persistence — Modelo Híbrido (creds + keys separados)**
 
-**Novas Tabelas:**
-```sql
--- /sql/migrations/002_membership_tables.sql
-CREATE TABLE members (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  telegram_id BIGINT UNIQUE NOT NULL,
-  telegram_username TEXT,
-  email TEXT,
-  status TEXT NOT NULL DEFAULT 'trial',  -- trial/ativo/inadimplente/removido
-  cakto_subscription_id TEXT,
-  cakto_customer_id TEXT,
-  trial_started_at TIMESTAMPTZ DEFAULT now(),
-  trial_ends_at TIMESTAMPTZ,
-  subscription_started_at TIMESTAMPTZ,
-  subscription_ends_at TIMESTAMPTZ,
-  payment_method TEXT,  -- pix/boleto/cartao_recorrente
-  last_payment_at TIMESTAMPTZ,
-  kicked_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
+Baileys gera auth state com dois tipos de dados:
+- `creds` — credentials do dispositivo (atualizam raramente, na conexão inicial)
+- Signal `keys` — chaves criptográficas (atualizam a cada mensagem enviada/recebida)
 
-CREATE TABLE member_notifications (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  member_id UUID REFERENCES members(id),
-  type TEXT NOT NULL,  -- trial_reminder/renewal_reminder/kick_warning
-  channel TEXT NOT NULL,  -- telegram/email
-  sent_at TIMESTAMPTZ DEFAULT now(),
-  message_id TEXT
-);
+Decisão: separar em duas estruturas:
+- `whatsapp_sessions.creds` (JSONB, encrypted) — atualiza raramente
+- Tabela `whatsapp_keys` com colunas `number_id`, `key_type`, `key_id`, `key_data` (encrypted) — upsert granular por key
 
--- /sql/migrations/003_webhook_events.sql
-CREATE TABLE webhook_events (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  idempotency_key TEXT UNIQUE NOT NULL,
-  event_type TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  status TEXT DEFAULT 'pending',  -- pending/processing/completed/failed
-  attempts INT DEFAULT 0,
-  max_attempts INT DEFAULT 5,
-  last_error TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  processed_at TIMESTAMPTZ
-);
+Rationale: Baileys internamente já separa creds de keys (`useMultiFileAuthState`). Permite upsert eficiente de keys individuais sem tocar no blob de credentials. Cada mensagem faz ~1-3 upserts em `whatsapp_keys`, não um UPDATE do blob inteiro.
 
-CREATE INDEX idx_webhook_events_status ON webhook_events(status) WHERE status = 'pending';
-CREATE INDEX idx_members_status ON members(status);
-CREATE INDEX idx_members_telegram_id ON members(telegram_id);
-```
+**Channel Abstraction — Coluna `channel` + `channel_user_id` em `members`**
+
+Decisão: adicionar `channel ENUM('telegram','whatsapp')` + `channel_user_id TEXT` à tabela `members`.
+- `channel='telegram'` + `channel_user_id='123456789'` (= telegram_id atual)
+- `channel='whatsapp'` + `channel_user_id='5511999887766'`
+
+O `telegram_id` existente fica como backward-compat (não quebra queries existentes). Novos queries usam `channel` + `channel_user_id`. Migration adiciona as colunas e popula `channel='telegram'` + `channel_user_id=telegram_id::text` para membros existentes.
+
+Affects: `members` table, `memberService`, webhook processors, admin panel member views.
 
 ### Authentication & Security
 
-| Decisão | Escolha | Rationale |
-|---------|---------|-----------|
-| Cakto Auth | OAuth (client_id/secret) | Padrão da API Cakto |
-| Webhook Validation | HMAC-SHA256 | Segurança de webhooks |
-| Rate Limiting | express-rate-limit (100 req/min) | Proteção contra abuse |
+**Signal Key Encryption — AES-256-GCM**
+
+Decisão: criptografar keys com AES-256-GCM, consistente com o padrão existente de `mtproto_sessions`.
+- Key de criptografia via `WHATSAPP_ENCRYPTION_KEY` (env var)
+- IV único por operação de encrypt
+- Defense-in-depth: RLS + SSL + encryption at-rest
+
+Affects: `whatsapp_keys`, `whatsapp_sessions.creds`, store module.
 
 ### API & Communication Patterns
 
-| Decisão | Escolha | Rationale |
-|---------|---------|-----------|
-| Cakto Integration | Service wrapper `caktoService.js` | Retry pattern do projeto |
-| Webhook Processing | Event sourcing + async worker | ADR-001 |
-| Error Handling | Service Response Pattern | Consistência |
+**Channel Adapter — Interface Uniforme**
 
-**Cakto Service Template:**
-```javascript
-// bot/services/caktoService.js
-const axios = require('axios');
-const logger = require('../../lib/logger');
+Decisão: `channelAdapter` com interface unificada que roteia para o sender correto baseado na config do grupo.
 
-const CAKTO_API_URL = process.env.CAKTO_API_URL;
-const CAKTO_CLIENT_ID = process.env.CAKTO_CLIENT_ID;
-const CAKTO_CLIENT_SECRET = process.env.CAKTO_CLIENT_SECRET;
-
-let accessToken = null;
-let tokenExpiresAt = null;
-
-async function getAccessToken() {
-  if (accessToken && tokenExpiresAt > Date.now()) {
-    return accessToken;
-  }
-
-  const response = await axios.post(`${CAKTO_API_URL}/oauth/token`, {
-    grant_type: 'client_credentials',
-    client_id: CAKTO_CLIENT_ID,
-    client_secret: CAKTO_CLIENT_SECRET
-  });
-
-  accessToken = response.data.access_token;
-  tokenExpiresAt = Date.now() + (response.data.expires_in * 1000) - 60000;
-  return accessToken;
-}
-
-async function getSubscription(subscriptionId) {
-  const token = await getAccessToken();
-  const response = await axios.get(
-    `${CAKTO_API_URL}/subscriptions/${subscriptionId}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  return { success: true, data: response.data };
-}
-
-module.exports = { getSubscription, getAccessToken };
 ```
+channelAdapter.sendMessage(groupId, text, options)
+channelAdapter.sendPhoto(groupId, imageUrl, caption)
+channelAdapter.getGroupMembers(groupId)
+```
+
+O adapter consulta `groups.channel` (ou config equivalente) e delega para `telegramSender` ou `whatsappSender`. Services de negócio (betService, copyService, memberService) chamam o adapter sem saber qual canal.
+
+Rationale: mínima invasão nos services existentes. Só precisa trocar chamadas diretas ao Telegram API por chamadas ao adapter.
+
+Affects: postBets, distributeBets, notificationService, memberService (kick/invite).
 
 ### Infrastructure & Deployment
 
-| Decisão | Escolha | Rationale |
-|---------|---------|-----------|
-| Deploy Strategy | Mesmo processo, portas diferentes | Simplicidade MVP |
-| Bot Port | 3000 | Telegram webhook |
-| Webhook Port | 3001 | Cakto webhook |
-| Process Manager | Node.js nativo (futuro: PM2) | Sem dependências extras |
+**Failover State Machine — Estados Explícitos**
 
-**Environment Variables:**
-```bash
-# Cakto Integration (adicionar ao .env)
-CAKTO_API_URL=https://api.cakto.com.br
-CAKTO_CLIENT_ID=xxx
-CAKTO_CLIENT_SECRET=xxx
-CAKTO_WEBHOOK_SECRET=xxx
-CAKTO_WEBHOOK_PORT=3001
-CAKTO_PRODUCT_ID=xxx
-```
+Decisão: state machine na coluna `whatsapp_numbers.status` com estados:
+- `available` — no pool global, sem grupo atribuído
+- `active` — conectado e operando para um grupo
+- `backup` — conectado, pronto para assumir se active cair
+- `banned` — detectado ban/logout (DisconnectReason 401/515)
+- `cooldown` — pós-ban, aguardando período antes de reutilizar
 
-### Implementation Sequence
+Transições gerenciadas por `failoverService`:
+1. `active` → `banned` (ban detectado)
+2. `backup` → `active` (promoção automática)
+3. `available` → `backup` (alocação do pool)
+4. `banned` → `cooldown` (após notificação admin)
+5. `cooldown` → `available` (após período definido)
 
-```
-1. Criar migrations SQL
-   └── 002_membership_tables.sql
-   └── 003_webhook_events.sql
+Affects: `whatsapp_numbers` table, failoverService, numberPoolService, admin panel.
 
-2. Aplicar migrations no Supabase
+**Health Monitoring — Estender `bot_health` + `job_executions`**
 
-3. Implementar services
-   └── caktoService.js (OAuth + API)
-   └── memberService.js (CRUD)
+Decisão: reutilizar tabelas existentes de monitoring:
+- `bot_health` estendida com coluna `channel` — heartbeat do WhatsApp aparece no admin panel existente
+- Health check executions logadas em `job_executions` como todo job
+- Zero tabelas novas para monitoring
 
-4. Implementar webhook server
-   └── webhook-server.js
-   └── handlers/caktoWebhook.js
+Affects: `bot_health` table, healthCheck job, admin panel bots page.
 
-5. Implementar jobs
-   └── jobs/membership/*.js
+### Decision Impact Analysis
 
-6. Integrar no entry point
-   └── Atualizar index.js
-```
+**Implementation Sequence:**
+1. Migration: novas tabelas (`whatsapp_numbers`, `whatsapp_sessions`, `whatsapp_keys`) + extensões (`members.channel`, `bot_health.channel`)
+2. Store: auth state persistence (creds + keys no Supabase com encryption)
+3. Client: Baileys wrapper com connection lifecycle
+4. Pool + Failover: state machine e gerenciamento de números
+5. Channel Adapter: interface uniforme para services existentes
+6. Handlers + Jobs: message handling, health check, heartbeat
+7. Admin Panel: API routes + UI para gestão WhatsApp
 
----
+**Cross-Component Dependencies:**
+- Store → Client (client precisa do store para persistir auth)
+- Client → Pool (pool gerencia múltiplos clients)
+- Pool → Failover (failover opera sobre o pool)
+- Channel Adapter → Client (adapter usa client para enviar)
+- Admin Panel → Pool + Failover (UI de gestão)
 
 ## Implementation Patterns & Consistency Rules
 
-### Pattern Categories Defined
+### Padrões Existentes (project-context.md — 55 regras)
 
-**Pontos de conflito potencial identificados:** 6 áreas endereçadas para garantir consistência entre AI agents.
+Todos os 55 padrões documentados em `_bmad-output/project-context.md` continuam obrigatórios. Destaques:
 
-### Naming Patterns
+| Categoria | Padrão |
+|-----------|--------|
+| DB naming | `snake_case` (tabelas e colunas) |
+| JS naming | `camelCase` (funções e variáveis) |
+| File naming | `camelCase.js` (services), `kebab-case.js` (jobs) |
+| API response | `{ success: true, data }` / `{ success: false, error }` |
+| Error handling | Try/catch + `logger.error()` + return `{ success: false, error }` |
+| Supabase | `lib/supabase.js` — nunca instanciar client diretamente |
+| Logging | `lib/logger.js` — nunca `console.log` |
+| Multi-tenant | Todas queries filtradas por `group_id` |
+| Jobs | Log em `job_executions` via `jobExecutionService` |
+| Config | `lib/config.js` — nunca hardcodar valores |
 
-| Contexto | Padrão | Exemplo |
-|----------|--------|---------|
-| Tabelas DB | snake_case, plural | `members`, `webhook_events` |
-| Colunas DB | snake_case | `telegram_id`, `cakto_subscription_id` |
-| Arquivos JS | camelCase | `memberService.js`, `caktoWebhook.js` |
-| Funções | camelCase | `getMemberByTelegramId()` |
-| Constantes | UPPER_SNAKE | `MAX_RETRY_ATTEMPTS` |
-| Env vars | UPPER_SNAKE | `CAKTO_WEBHOOK_SECRET` |
-| Jobs | kebab-case | `trial-reminders`, `kick-expired` |
+### Novos Patterns para WhatsApp
 
-### Service Response Pattern
+#### Naming — Tabelas e Colunas
+
+```
+✅ whatsapp_numbers      (prefixo whatsapp_)
+✅ whatsapp_sessions
+✅ whatsapp_keys
+✅ number_id             (FK para whatsapp_numbers)
+✅ phone_number           (formato E.164: +5511999887766)
+✅ jid                    (Baileys JID: 5511999887766@s.whatsapp.net)
+
+❌ wa_numbers            (abreviação inconsistente)
+❌ whatsappNumbers       (camelCase em DB)
+❌ phone                 (ambíguo)
+```
+
+#### Naming — Services e Files
+
+```
+✅ whatsapp/client/baileyClient.js        (wrapper do Baileys)
+✅ whatsapp/services/failoverService.js    (state machine)
+✅ whatsapp/services/numberPoolService.js  (pool management)
+✅ whatsapp/store/authStateStore.js        (Supabase persistence)
+✅ whatsapp/store/encryptionHelper.js      (AES-256-GCM)
+
+❌ whatsapp/baileys.js                    (nome genérico)
+❌ whatsapp/wa-client.js                  (prefixo wa-)
+❌ whatsapp/crypto.js                     (conflito com Node crypto)
+```
+
+#### Baileys Client Lifecycle
 
 ```javascript
-// ✅ Sucesso
-return { success: true, data: { member, action: 'created' } };
+// PADRÃO: criar → conectar → operar → desconectar
+const client = new BaileyClient(numberId, authStateStore);
+await client.connect();     // carrega auth do Supabase, abre WebSocket
+// ... operar ...
+await client.disconnect();  // salva auth, fecha WebSocket limpo
 
-// ✅ Erro
-return { success: false, error: { code: 'MEMBER_NOT_FOUND', message: 'Membro não encontrado' } };
+// NUNCA: instanciar Baileys diretamente (makeWASocket)
+// SEMPRE: usar BaileyClient wrapper que gerencia auth + reconnect
 ```
 
-**Error Codes para Membership:**
-| Code | Quando usar |
-|------|-------------|
-| `MEMBER_NOT_FOUND` | Membro não existe |
-| `MEMBER_ALREADY_EXISTS` | Telegram ID já cadastrado |
-| `INVALID_MEMBER_STATUS` | Transição de estado inválida |
-| `CAKTO_API_ERROR` | Erro na API do Cakto |
-| `WEBHOOK_INVALID_SIGNATURE` | HMAC inválido |
-| `WEBHOOK_DUPLICATE` | Evento já processado (idempotency) |
+#### Auth State Persistence
 
-### Member State Machine
-
-```
-trial ──────► ativo ──────► inadimplente
-  │             │                │
-  │             │                ▼
-  └─────────────┴──────────► removido
-```
-
-**Transições válidas:**
-| De | Para | Trigger |
-|----|------|---------|
-| `trial` | `ativo` | `purchase_approved` webhook |
-| `trial` | `removido` | Trial expirado (dia 8) |
-| `ativo` | `inadimplente` | `subscription_renewal_refused` webhook |
-| `ativo` | `removido` | `subscription_canceled` webhook |
-| `inadimplente` | `ativo` | `subscription_renewed` webhook |
-| `inadimplente` | `removido` | Após período de cobrança |
-
-**Implementação:**
 ```javascript
-const VALID_TRANSITIONS = {
-  trial: ['ativo', 'removido'],
-  ativo: ['inadimplente', 'removido'],
-  inadimplente: ['ativo', 'removido'],
-  removido: []  // Estado final
-};
+// PADRÃO: upsert granular de keys
+await authStateStore.saveKey(numberId, keyType, keyId, encryptedData);
+await authStateStore.saveCreds(numberId, encryptedCreds);
 
-function canTransition(currentStatus, newStatus) {
-  return VALID_TRANSITIONS[currentStatus]?.includes(newStatus) ?? false;
-}
+// PADRÃO: load completo no connect
+const { creds, keys } = await authStateStore.load(numberId);
+
+// NUNCA: salvar auth state em filesystem
+// NUNCA: fazer UPDATE do blob inteiro de keys
+// SEMPRE: encrypt antes de salvar, decrypt depois de carregar
 ```
 
-### Webhook Processing Pattern
+#### Failover Service
 
-```
-Receive → Validate HMAC → Store Raw → Respond 200 → Process Async
-```
-
-**Handler Registry:**
 ```javascript
-const WEBHOOK_HANDLERS = {
-  'purchase_approved': handlePurchaseApproved,
-  'subscription_created': handleSubscriptionCreated,
-  'subscription_renewed': handleSubscriptionRenewed,
-  'subscription_renewal_refused': handleRenewalRefused,
-  'subscription_canceled': handleSubscriptionCanceled
-};
+// PADRÃO: transições explícitas via failoverService
+await failoverService.markBanned(numberId, reason);     // active → banned
+await failoverService.promoteBackup(groupId);            // backup → active
+await failoverService.allocateFromPool(groupId);         // available → backup
+await failoverService.startCooldown(numberId);           // banned → cooldown
 
-async function processWebhookEvent(event) {
-  const handler = WEBHOOK_HANDLERS[event.event_type];
-  if (!handler) {
-    logger.warn('Unknown webhook event', { type: event.event_type });
-    return { success: false, error: { code: 'UNKNOWN_EVENT' } };
-  }
-  return handler(event.payload);
-}
+// NUNCA: UPDATE direto no status de whatsapp_numbers
+// SEMPRE: usar failoverService para transições (validação + logging + notificação)
 ```
 
-### Job Execution Pattern
+#### Channel Adapter
 
-**Logging com prefixo:**
 ```javascript
-logger.info('[membership:trial-reminders] Iniciando verificação', { date: today });
-logger.info('[membership:kick-expired] Membro removido', { memberId, reason: 'trial_expired' });
-logger.error('[membership:process-webhooks] Falha ao processar', { eventId, error: err.message });
+// PADRÃO: services de negócio usam channelAdapter
+const adapter = getChannelAdapter(group);
+await adapter.sendMessage(chatId, text, options);
+await adapter.sendPhoto(chatId, imageUrl, caption);
+
+// NUNCA: chamar Telegram API ou Baileys diretamente de services de negócio
+// SEMPRE: usar channelAdapter para envio de mensagens
 ```
 
-**Wrapper com lock:**
-```javascript
-async function runJob(jobName, fn) {
-  const startTime = Date.now();
-  logger.info(`[${jobName}] Iniciando`);
+#### Rate Limiting
 
-  try {
-    const result = await withLock(jobName, 300, fn);
-    if (result === null) {
-      logger.warn(`[${jobName}] Lock não adquirido, pulando`);
-      return;
-    }
-    logger.info(`[${jobName}] Concluído`, {
-      duration: Date.now() - startTime,
-      ...result
-    });
-  } catch (err) {
-    logger.error(`[${jobName}] Erro`, { error: err.message });
-    await alertAdmin(`Job ${jobName} falhou: ${err.message}`);
-  }
-}
+```javascript
+// PADRÃO: rate limiter por número (10 msgs/min configurável via config)
+const limiter = getRateLimiter(numberId);
+await limiter.waitForSlot();
+await adapter.sendMessage(chatId, text);
+
+// NUNCA: enviar em burst sem rate limiting
+```
+
+#### Phone Number Format
+
+```javascript
+// PADRÃO: armazenar E.164, converter para JID on-the-fly
+const phoneE164 = '+5511999887766';                    // storage format
+const jid = phoneToJid(phoneE164);                     // → '5511999887766@s.whatsapp.net'
+
+// NUNCA: armazenar JID no banco (contém sufixo @s.whatsapp.net)
 ```
 
 ### Enforcement Guidelines
 
-**Todos os AI Agents DEVEM:**
-1. Usar Service Response Pattern (`{ success, data/error }`) em todos os services
-2. Validar transições de estado via `canTransition()` antes de atualizar
-3. Logar com prefixo `[module:job-name]` em todos os jobs
-4. Usar `withLock()` em todos os jobs de membership
-5. Processar webhooks de forma assíncrona (nunca bloquear resposta)
-6. Usar error codes padronizados da tabela acima
+**All AI Agents MUST:**
+1. Seguir os 55 padrões existentes do `project-context.md`
+2. Usar prefixo `whatsapp_` para tabelas/colunas novas
+3. Nunca instanciar Baileys diretamente — usar `BaileyClient` wrapper
+4. Nunca salvar auth state em filesystem — usar `authStateStore` (Supabase)
+5. Nunca fazer transição de status direto no banco — usar `failoverService`
+6. Nunca enviar mensagens diretamente — usar `channelAdapter`
+7. Criptografar keys com `encryptionHelper` antes de persistir
 
-**Anti-Patterns (EVITAR):**
+### Anti-Patterns
+
 ```javascript
-// ❌ Retornar dados diretamente
-return member;
+// ❌ ERRADO: Baileys direto
+const sock = makeWASocket({ auth: state });
 
-// ❌ Transição sem validação
-member.status = 'ativo';
+// ✅ CORRETO: via wrapper
+const client = new BaileyClient(numberId, store);
+await client.connect();
 
-// ❌ Log sem prefixo de módulo
-logger.info('Processando...');
+// ❌ ERRADO: status direto no banco
+await supabase.from('whatsapp_numbers').update({ status: 'banned' });
 
-// ❌ Processar webhook síncronamente
-app.post('/webhook', async (req, res) => {
-  await processPayment(req.body);  // ERRADO - bloqueia
-  res.send('ok');
-});
+// ✅ CORRETO: via service
+await failoverService.markBanned(numberId, 'DisconnectReason.loggedOut');
+
+// ❌ ERRADO: Telegram direto em service de negócio
+await bot.sendMessage(chatId, text);
+
+// ✅ CORRETO: via adapter
+const adapter = getChannelAdapter(group);
+await adapter.sendMessage(chatId, text);
 ```
 
----
-
 ## Project Structure & Boundaries
+
+### Requirements → Structure Mapping
+
+| FR Area | Diretório | Descrição |
+|---------|-----------|-----------|
+| FR1-5 (Pool de Números) | `whatsapp/pool/` | NumberPool manager |
+| FR6-10 (Gestão de Grupos) | `whatsapp/services/`, `admin-panel/src/app/api/whatsapp/` | Group-number assignment |
+| FR11-18 (Membros) | `lib/channelAdapter.js`, `bot/services/memberService.js` | Channel-agnostic member ops |
+| FR19-22 (Postagem Multi-Canal) | `lib/channelAdapter.js`, `whatsapp/services/whatsappSender.js` | Message routing |
+| FR23-29 (Failover) | `whatsapp/services/failoverService.js`, `whatsapp/pool/` | State machine + auto-recovery |
+| FR30-33 (Pagamentos) | Sem mudança — Mercado Pago via `channel_user_id` | Existing webhook |
+| FR34-39 (Admin Panel) | `admin-panel/src/app/whatsapp/`, `admin-panel/src/app/api/whatsapp/` | New pages + API routes |
+| FR40-44 (Conexão/Sessões) | `whatsapp/client/`, `whatsapp/store/` | Baileys wrapper + auth persistence |
 
 ### Complete Project Directory Structure
 
 ```
 bets-estatistica/
-├── README.md
-├── package.json
-├── .env                          # Credenciais (gitignore)
-├── .env.example                  # Template de env vars
-├── .gitignore
-│
-├── agent/                        # [EXISTENTE] Módulo de análise IA
-│   ├── pipeline.js
-│   ├── db.js
-│   ├── tools.js
-│   ├── analysis/
-│   │   ├── runAnalysis.js
-│   │   ├── prompt.js
-│   │   └── schema.js
-│   ├── persistence/
-│   │   ├── main.js
-│   │   ├── saveOutputs.js
-│   │   └── reportService.js
-│   └── shared/
-│       └── naming.js
-│
-├── bot/                          # [EXISTENTE + NOVO] Módulo Telegram Bot
-│   ├── index.js                  # Entry point (polling/dev)
-│   ├── server.js                 # Entry point (webhook/prod) - :3000
-│   ├── webhook-server.js         # [NOVO] Cakto webhooks - :3001
-│   ├── telegram.js               # Singleton client
-│   │
+├── bot/                          # [EXISTENTE — SEM ALTERAÇÃO]
+│   ├── server.js
+│   ├── index.js
 │   ├── handlers/
-│   │   ├── adminGroup.js         # [EXISTENTE] Comandos admin
-│   │   └── caktoWebhook.js       # [NOVO] Handler webhooks Cakto
-│   │
 │   ├── jobs/
-│   │   ├── requestLinks.js       # [EXISTENTE]
-│   │   ├── postBets.js           # [EXISTENTE]
-│   │   ├── enrichOdds.js         # [EXISTENTE]
-│   │   ├── healthCheck.js        # [EXISTENTE]
-│   │   ├── reminders.js          # [EXISTENTE]
-│   │   ├── trackResults.js       # [EXISTENTE]
-│   │   └── membership/           # [NOVO] Jobs de membros
-│   │       ├── index.js          # Registra todos os jobs
-│   │       ├── trial-reminders.js      # 09:00 BRT
-│   │       ├── kick-expired.js         # 00:01 BRT
-│   │       ├── renewal-reminders.js    # 10:00 BRT
-│   │       ├── process-webhooks.js     # */30s
-│   │       └── reconciliation.js       # 03:00 BRT
-│   │
 │   └── services/
-│       ├── betService.js         # [EXISTENTE]
-│       ├── oddsService.js        # [EXISTENTE]
-│       ├── alertService.js       # [EXISTENTE]
-│       ├── copyService.js        # [EXISTENTE]
-│       ├── matchService.js       # [EXISTENTE]
-│       ├── metricsService.js     # [EXISTENTE]
-│       ├── marketInterpreter.js  # [EXISTENTE]
-│       ├── memberService.js      # [NOVO] CRUD membros
-│       └── caktoService.js       # [NOVO] API Cakto
 │
-├── lib/                          # [EXISTENTE] Bibliotecas compartilhadas
-│   ├── db.js                     # PostgreSQL Pool
-│   ├── supabase.js               # Cliente REST Supabase
-│   ├── logger.js                 # Logging centralizado
-│   ├── config.js                 # Configurações
-│   └── lock.js                   # [NOVO] Distributed lock
+├── whatsapp/                     # [NOVO — Serviço WhatsApp]
+│   ├── server.js                 # Entry point (Express + lifecycle)
+│   ├── client/
+│   │   ├── baileyClient.js       # Baileys wrapper (connect, disconnect, reconnect)
+│   │   └── connectionHandler.js  # Connection events (open, close, ban detect)
+│   ├── pool/
+│   │   ├── numberPoolService.js  # CRUD pool, allocate, deallocate
+│   │   └── numberAssignment.js   # Group ↔ number assignment logic
+│   ├── store/
+│   │   ├── authStateStore.js     # Supabase persistence (creds + keys)
+│   │   └── encryptionHelper.js   # AES-256-GCM encrypt/decrypt
+│   ├── services/
+│   │   ├── failoverService.js    # State machine (active→banned→promote)
+│   │   ├── whatsappSender.js     # Send messages via Baileys (adapter backend)
+│   │   ├── rateLimiter.js        # Per-number rate limiting (10 msgs/min)
+│   │   └── qrCodeService.js      # QR generation for number pairing
+│   ├── handlers/
+│   │   ├── messageHandler.js     # Incoming message routing
+│   │   └── groupEventHandler.js  # Member join/leave events
+│   ├── jobs/
+│   │   ├── healthCheck.js        # Heartbeat + connection status
+│   │   └── sessionCleanup.js     # Expired session cleanup
+│   └── __tests__/
+│       ├── baileyClient.test.js
+│       ├── failoverService.test.js
+│       ├── authStateStore.test.js
+│       └── numberPoolService.test.js
 │
-├── scripts/                      # [EXISTENTE] ETL e manutenção
-│   ├── pipeline.js
-│   ├── daily_update.js
-│   ├── check_analysis_queue.js
-│   ├── syncSeasons.js
-│   ├── fetch*.js
-│   ├── load*.js
-│   └── lib/
+├── lib/                          # [EXISTENTE — ESTENDIDO]
+│   ├── supabase.js               # (existente)
+│   ├── logger.js                 # (existente)
+│   ├── config.js                 # (existente — adicionar seção whatsapp)
+│   ├── channelAdapter.js         # [NOVO] Interface uniforme Telegram/WhatsApp
+│   └── phoneUtils.js             # [NOVO] E.164 ↔ JID conversions
 │
-├── sql/                          # [EXISTENTE + NOVO] Schemas SQL
-│   ├── league_schema.sql         # [EXISTENTE]
-│   ├── agent_schema.sql          # [EXISTENTE]
-│   └── migrations/               # [NOVO] Migrations versionadas
-│       ├── 001_initial_schema.sql
-│       ├── 002_membership_tables.sql
-│       └── 003_webhook_events.sql
+├── admin-panel/                  # [EXISTENTE — ESTENDIDO]
+│   └── src/
+│       ├── app/
+│       │   ├── whatsapp/                  # [NOVO — Páginas WhatsApp]
+│       │   │   ├── page.tsx               # Dashboard WhatsApp (números, status)
+│       │   │   └── [numberId]/
+│       │   │       └── page.tsx           # Detalhes do número (QR, logs, status)
+│       │   └── api/
+│       │       └── whatsapp/              # [NOVO — API Routes WhatsApp]
+│       │           ├── numbers/
+│       │           │   └── route.ts       # GET (list), POST (add to pool)
+│       │           ├── numbers/[id]/
+│       │           │   └── route.ts       # GET (detail), PATCH (assign/status), DELETE
+│       │           ├── numbers/[id]/qr/
+│       │           │   └── route.ts       # GET (QR code for pairing)
+│       │           └── numbers/[id]/pair/
+│       │               └── route.ts       # POST (confirm pairing)
+│       ├── components/
+│       │   └── whatsapp/                  # [NOVO — Componentes WhatsApp]
+│       │       ├── NumberPoolTable.tsx     # Tabela de números com status
+│       │       ├── NumberStatusBadge.tsx   # Badge colorido por status
+│       │       ├── QrCodeModal.tsx         # Modal de pairing via QR
+│       │       └── FailoverTimeline.tsx    # Timeline de eventos de failover
+│       └── types/
+│           └── whatsapp.ts                # [NOVO] Types para WhatsApp
 │
-└── docs/                         # [EXISTENTE] Documentação
-    ├── index.md
-    ├── project-overview.md
-    ├── architecture.md
-    ├── data-models.md
-    └── development-guide.md
+├── sql/migrations/               # [EXISTENTE — NOVAS MIGRATIONS]
+│   ├── 029_whatsapp_numbers.sql           # Tabela whatsapp_numbers (pool + status)
+│   ├── 030_whatsapp_sessions.sql          # Tabela whatsapp_sessions (creds)
+│   ├── 031_whatsapp_keys.sql              # Tabela whatsapp_keys (Signal keys)
+│   ├── 032_members_channel.sql            # ADD channel + channel_user_id em members
+│   ├── 033_bot_health_channel.sql         # ADD channel em bot_health
+│   └── 034_whatsapp_rls.sql               # RLS policies para novas tabelas
+│
+├── agent/                        # [EXISTENTE — SEM ALTERAÇÃO]
+├── scripts/                      # [EXISTENTE — SEM ALTERAÇÃO]
+└── docs/                         # [EXISTENTE — SEM ALTERAÇÃO]
 ```
 
 ### Architectural Boundaries
 
-**API Boundaries:**
-| Boundary | Port | Responsabilidade |
-|----------|------|------------------|
-| Telegram Bot | 3000 | Webhook do Telegram |
-| Cakto Webhooks | 3001 | Webhooks de pagamento |
-| Supabase | - | REST API para dados |
-| Cakto API | - | OAuth + REST para consultas |
-
 **Service Boundaries:**
+- `whatsapp/` é um serviço independente (Render Web Service separado). Não importa nada de `bot/`.
+- `bot/` permanece inalterado. Não sabe que WhatsApp existe.
+- `lib/` é shared — ambos os serviços importam de `lib/`.
+- `admin-panel/` se comunica com ambos via Supabase (leitura) e API routes (ações).
+
+**Data Boundaries:**
+- `whatsapp_numbers`, `whatsapp_sessions`, `whatsapp_keys` — acessadas apenas pelo serviço WhatsApp e admin panel
+- `members` — acessada por ambos os serviços (filtrada por `channel`)
+- `groups` — acessada por ambos (config de canal)
+- `bot_health`, `job_executions` — escritas por ambos, lidas pelo admin panel
+
+**API Boundaries:**
+- Admin Panel → WhatsApp: via Supabase REST (leitura) + API routes (ações como pair, assign)
+- WhatsApp Service → Supabase: via `lib/supabase.js` (mesma service key)
+- WhatsApp Service ← WhatsApp Web: via Baileys WebSocket (conexão persistente)
+
+### Integration Points
+
+**Internal:**
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        bot/                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  handlers/   │  │   jobs/      │  │    services/     │  │
-│  │              │  │              │  │                  │  │
-│  │ adminGroup   │  │ postBets     │  │ betService       │  │
-│  │ caktoWebhook │  │ membership/* │  │ memberService    │  │
-│  └──────┬───────┘  └──────┬───────┘  │ caktoService     │  │
-│         │                 │          └────────┬─────────┘  │
-│         └─────────────────┴───────────────────┘            │
-│                           │                                 │
-└───────────────────────────┼─────────────────────────────────┘
-                            │
-┌───────────────────────────┼─────────────────────────────────┐
-│                        lib/                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │supabase.js│  │ logger.js │  │ config.js │  │ lock.js  │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Requirements to Structure Mapping
-
-**FR-MB (Membership) → Arquivos:**
-| FR Range | Funcionalidade | Arquivos |
-|----------|---------------|----------|
-| FR-MB1-5 | Webhooks Cakto | `handlers/caktoWebhook.js`, `services/caktoService.js` |
-| FR-MB6-12 | Trial Management | `jobs/membership/trial-reminders.js`, `kick-expired.js` |
-| FR-MB13-18 | Notifications | `jobs/membership/renewal-reminders.js`, `services/memberService.js` |
-| FR-MB19-24 | Member CRUD | `services/memberService.js` |
-| FR-MB25-27 | Reconciliation | `jobs/membership/reconciliation.js` |
-
-### Data Flow
-
-```
-Cakto Webhook
-     │
-     ▼
-webhook-server.js (validate HMAC)
-     │
-     ▼
-webhook_events table (store raw)
-     │
-     ▼
-process-webhooks.js (async job)
-     │
-     ▼
-memberService.js (update state)
-     │
-     ▼
-members table (persist)
-     │
-     ▼
-Telegram API (kick/notify)
+lib/channelAdapter.js
+    ├── telegramSender (existing bot API calls)
+    └── whatsappSender (Baileys via active client)
 ```
 
-### New Files Summary
+**External:**
+```
+WhatsApp Web ←→ Baileys WebSocket (persistent)
+Supabase     ←→ lib/supabase.js (shared client)
+Mercado Pago ←→ bot/webhook-server.js (existing, channel-agnostic)
+```
 
-| Arquivo | Tipo | Descrição |
-|---------|------|-----------|
-| `bot/webhook-server.js` | Entry point | Express server para Cakto :3001 |
-| `bot/handlers/caktoWebhook.js` | Handler | Valida HMAC, salva evento |
-| `bot/services/memberService.js` | Service | CRUD membros + state machine |
-| `bot/services/caktoService.js` | Service | OAuth + API Cakto |
-| `bot/jobs/membership/index.js` | Registry | Registra todos os jobs |
-| `bot/jobs/membership/trial-reminders.js` | Job | Lembretes trial dia 5-7 |
-| `bot/jobs/membership/kick-expired.js` | Job | Remove trials expirados |
-| `bot/jobs/membership/renewal-reminders.js` | Job | Lembretes PIX/Boleto |
-| `bot/jobs/membership/process-webhooks.js` | Job | Processa fila webhooks |
-| `bot/jobs/membership/reconciliation.js` | Job | Reconcilia com Cakto |
-| `lib/lock.js` | Utility | Distributed lock via Supabase |
-| `sql/migrations/002_membership_tables.sql` | Migration | Tabelas members, member_notifications |
-| `sql/migrations/003_webhook_events.sql` | Migration | Tabela webhook_events |
-
----
+**Data Flow (Postagem WhatsApp):**
+```
+distributeBets job
+    → betService.getReadyBets(groupId)
+    → copyService.generateCopy(bet)
+    → channelAdapter.sendMessage(groupId, formattedText)
+        → resolve group.channel = 'whatsapp'
+        → whatsappSender.send(jid, text)
+            → rateLimiter.waitForSlot(numberId)
+            → baileyClient.sendMessage(jid, { text })
+```
 
 ## Architecture Validation Results
 
 ### Coherence Validation ✅
 
 **Decision Compatibility:**
-| Decisão A | Decisão B | Status |
-|-----------|-----------|--------|
-| Express 4.x | Node.js 20+ | ✅ Compatível |
-| Supabase PostgreSQL | Zod 4.x | ✅ Compatível |
-| CommonJS | node-cron | ✅ Compatível |
-| express-rate-limit | helmet | ✅ Compatível |
+- Node.js 20+ CommonJS + Baileys CommonJS — compatível, sem conflito de module system
+- Supabase PostgreSQL + auth state persistence (creds + keys) — aligned, mesma lib/supabase.js
+- AES-256-GCM + mtproto_sessions pattern existente — consistente
+- Channel adapter + serviços separados (bot/ e whatsapp/) — boundaries limpas
+- Failover state machine + pool management — complementares
+- Nenhuma contradição encontrada
 
 **Pattern Consistency:**
-- ✅ Naming conventions consistentes (snake_case DB, camelCase JS)
-- ✅ Service Response Pattern aplicado em todos os services
-- ✅ Error codes padronizados para membership
-- ✅ Job execution pattern com locks distribuídos
+- Naming: `whatsapp_` prefix DB + `camelCase.js` files — alinhado com padrões existentes
+- Response: `{ success, data/error }` em todos novos services — consistente
+- Logging: `lib/logger.js` em todo whatsapp/ — consistente
+- Multi-tenant: RLS em todas novas tabelas — consistente
 
 **Structure Alignment:**
-- ✅ Estrutura de diretórios suporta separação de concerns
-- ✅ Boundaries claros entre handlers/jobs/services
-- ✅ Integração webhook isolada em porta separada (3001)
+- `whatsapp/` espelha organização de `bot/` — familiar para agents
+- `lib/` estendido com channelAdapter e phoneUtils — shared corretamente
+- admin-panel estendido com nova seção — segue padrão existente
 
-### Requirements Coverage Validation ✅
+### Requirements Coverage ✅
 
-**FR-MB Coverage (27 FRs):**
-| FR Range | Cobertura Arquitetural | Status |
-|----------|------------------------|--------|
-| FR-MB1-5 | Webhook processing, event sourcing | ✅ Coberto |
-| FR-MB6-12 | Trial jobs, state machine | ✅ Coberto |
-| FR-MB13-18 | Notification jobs, memberService | ✅ Coberto |
-| FR-MB19-24 | CRUD memberService | ✅ Coberto |
-| FR-MB25-27 | Reconciliation job | ✅ Coberto |
+**Functional Requirements (44 FRs) — 100% cobertura:**
 
-**NFR Coverage:**
-| NFR | Cobertura | Status |
-|-----|-----------|--------|
-| NFR21: Webhook < 200ms | Event sourcing async | ✅ Endereçado |
-| NFR22: 99.9% uptime Cakto | Retry + reconciliation | ✅ Endereçado |
-| NFR23: Dados criptografados | Supabase at-rest encryption | ✅ Endereçado |
-| NFR24: Auditoria 12 meses | webhook_events table | ✅ Endereçado |
+| FR Area | Status | Componente |
+|---------|--------|------------|
+| FR1-5 (Pool) | ✅ | numberPoolService, whatsapp_numbers, status states |
+| FR6-10 (Grupos) | ✅ | numberAssignment, admin panel API |
+| FR11-18 (Membros) | ✅ | channel column, channelAdapter, memberService |
+| FR19-22 (Postagem) | ✅ | channelAdapter, whatsappSender, rateLimiter |
+| FR23-29 (Failover) | ✅ | failoverService, state machine, connectionHandler |
+| FR30-33 (Pagamentos) | ✅ | channel-agnostic via channel_user_id |
+| FR34-39 (Admin Panel) | ✅ | whatsapp/ pages, API routes, components |
+| FR40-44 (Conexão) | ✅ | baileyClient, authStateStore, qrCodeService |
 
-### Implementation Readiness Validation ✅
+**Non-Functional Requirements (25 NFRs) — 100% cobertura:**
 
-**Decision Completeness:**
-- ✅ 4 ADRs documentados com rationale e código
-- ✅ Versões de tecnologias verificadas
-- ✅ Código de exemplo para cada pattern crítico
+| NFR | Status | Como |
+|-----|--------|------|
+| NFR1 (failover <5min) | ✅ | State machine auto-promote |
+| NFR2 (postagem <30s) | ✅ | Rate limiter gerencia throughput |
+| NFR3 (10 msgs/min) | ✅ | rateLimiter per number |
+| NFR6-7 (24/7, 99.9%) | ✅ | Render Starter + failover |
+| NFR8-9 (sessions survive) | ✅ | authStateStore em Supabase |
+| NFR12 (encryption) | ✅ | AES-256-GCM via encryptionHelper |
+| NFR15 (creds not logged) | ✅ | Enforcement guidelines |
+| NFR16 (RLS) | ✅ | Migration 034_whatsapp_rls.sql |
+| NFR17 (50+ numbers) | ✅ | Pool architecture N conexões |
+| NFR22 (channel abstraction) | ✅ | channelAdapter |
+| NFR23 (same Mercado Pago) | ✅ | channel-agnostic webhook |
 
-**Structure Completeness:**
-- ✅ 13 novos arquivos especificados com responsabilidades
-- ✅ 3 migrations SQL com schemas completos
-- ✅ Data flow documentado end-to-end
+### Implementation Readiness ✅
 
-**Pattern Completeness:**
-- ✅ State machine com transições válidas e validação
-- ✅ Webhook handler registry para todos os eventos
-- ✅ Job wrapper com lock distribuído
+**Decision Completeness:** 6 decisões críticas documentadas com rationale e affects
+**Structure Completeness:** Directory tree completa com ~25 arquivos novos mapeados
+**Pattern Completeness:** 8 novos patterns com exemplos ✅ e ❌ anti-patterns
 
-### Gap Analysis Results
+### Gap Analysis
 
-| Prioridade | Gap | Impacto | Status |
-|------------|-----|---------|--------|
-| ⚠️ Nice-to-have | Testes unitários não especificados | Baixo | Definir na implementação |
-| ⚠️ Nice-to-have | Monitoramento detalhado de jobs | Baixo | Usar alertAdmin existente |
-| ⚠️ Nice-to-have | Scripts de rollback para migrations | Baixo | Criar se necessário |
+**Gaps Encontrados e Resolvidos:**
 
-**Nenhum gap crítico ou bloqueante identificado.**
+1. **Graceful Shutdown (Important)** — `whatsapp/server.js` precisa de handler SIGTERM que itera clients e chama `disconnect()`. Segue padrão de `bot/server.js`. → Documentado como requirement de implementação.
+
+2. **QR Code Flow (Minor)** — Admin insere número, serviço detecta via polling em `whatsapp_numbers`, inicia pairing, grava QR em `whatsapp_sessions.qr_code`, admin panel polls e exibe. Sem API direta entre serviços.
+
+3. **WhatsApp Group Management (Minor)** — Premissa: grupos WhatsApp são criados manualmente. O `group_jid` é cadastrado no admin panel. Não é gap arquitetural.
+
+**Nenhum gap crítico.**
 
 ### Architecture Completeness Checklist
 
 **✅ Requirements Analysis**
-- [x] Project context analisado (~145 FRs em 4 documentos)
-- [x] Complexidade avaliada (Medium-High)
-- [x] Constraints técnicos identificados (Node.js 20+, Supabase, BRT)
-- [x] Cross-cutting concerns mapeados (2 state machines, jobs, webhooks)
+- [x] Project context analisado (55 regras, 27 tabelas)
+- [x] Scale e complexity avaliados (Média-Alta)
+- [x] 8 constraints técnicos identificados
+- [x] 5 cross-cutting concerns mapeados
 
 **✅ Architectural Decisions**
-- [x] 4 ADRs documentados com código de implementação
-- [x] Stack tecnológica completamente especificada
-- [x] Padrões de integração Cakto definidos (OAuth + webhooks)
-- [x] Segurança de webhooks endereçada (HMAC + rate limit)
+- [x] 6 decisões críticas documentadas com rationale
+- [x] Stack specified (Node.js 20+, Baileys v6.x, Supabase)
+- [x] Integration patterns definidos (channelAdapter)
+- [x] Performance addressed (rate limiting, failover <5min)
 
 **✅ Implementation Patterns**
-- [x] Naming conventions estabelecidas e documentadas
-- [x] Structure patterns definidos com exemplos
-- [x] Communication patterns especificados
-- [x] Error handling e logging documentados
+- [x] 8 novos patterns para WhatsApp
+- [x] Naming conventions (DB + files)
+- [x] Communication patterns (adapter, lifecycle)
+- [x] Anti-patterns documentados
 
 **✅ Project Structure**
-- [x] Estrutura de diretórios completa com 13 novos arquivos
-- [x] Boundaries de componentes claramente definidos
-- [x] Pontos de integração mapeados (Cakto, Telegram, Supabase)
-- [x] Mapeamento FR → arquivos completo
+- [x] Directory structure completa
+- [x] Component boundaries (3 service boundaries)
+- [x] Integration points (internal + external)
+- [x] FR → structure mapping (8 áreas)
 
 ### Architecture Readiness Assessment
 
-**Overall Status:** ✅ READY FOR IMPLEMENTATION
+**Overall Status:** READY FOR IMPLEMENTATION
 
-**Confidence Level:** HIGH
+**Confidence Level:** High
 
 **Key Strengths:**
-1. Event sourcing robusto para webhooks de pagamento
-2. State machine bem definida com validação de transições
-3. Separação clara de responsabilidades (handlers/jobs/services)
-4. Patterns 100% consistentes com projeto existente
-5. Segurança em camadas para webhooks financeiros
+- Brownfield com 55 patterns maduros — reduz ambiguidade
+- Zero alteração no serviço Telegram — isolamento total
+- Failover state machine bem definida — feature crítica com design claro
+- Channel adapter minimally invasive — services existentes mudam pouco
 
-**Areas for Future Enhancement:**
-1. Cache layer para queries frequentes de membros
-2. PM2 para gerenciamento multi-process em produção
-3. Dashboard de métricas de membership (MRR, churn, conversão)
-4. Testes de integração automatizados para webhooks
+**Areas for Future Enhancement (Post-MVP):**
+- Escala horizontal (múltiplos processos WhatsApp)
+- Rate limiting adaptativo
+- Monitoring dashboards dedicados
 
 ### Implementation Handoff
 
 **AI Agent Guidelines:**
-1. Seguir todas as decisões arquiteturais exatamente como documentado
-2. Usar implementation patterns consistentemente em todos os componentes
-3. Respeitar estrutura do projeto e boundaries definidos
-4. Consultar este documento para todas as questões arquiteturais
-5. Usar error codes padronizados da tabela de Error Codes
-6. Validar transições de estado via `canTransition()` sempre
+- Seguir todas decisões arquiteturais exatamente como documentadas
+- Usar implementation patterns consistentemente
+- Respeitar project structure e boundaries
+- Consultar este documento + `project-context.md` para todas questões
 
 **First Implementation Priority:**
-```bash
-# 1. Instalar novas dependências
-npm install express express-rate-limit helmet
-
-# 2. Criar migrations SQL
-# sql/migrations/002_membership_tables.sql
-# sql/migrations/003_webhook_events.sql
-
-# 3. Aplicar migrations no Supabase Dashboard
-
-# 4. Implementar na ordem:
-#    - lib/lock.js
-#    - bot/services/caktoService.js
-#    - bot/services/memberService.js
-#    - bot/handlers/caktoWebhook.js
-#    - bot/webhook-server.js
-#    - bot/jobs/membership/*.js
-```
-
----
-
-## Architecture Completion Summary
-
-### Workflow Completion
-
-**Architecture Decision Workflow:** COMPLETED ✅
-**Total Steps Completed:** 8
-**Date Completed:** 2026-01-17
-**Document Location:** `_bmad-output/planning-artifacts/architecture.md`
-
-### Final Architecture Deliverables
-
-**Complete Architecture Document:**
-- 4 Architecture Decision Records (ADRs) com código
-- Implementation patterns para consistência entre AI agents
-- Estrutura completa do projeto com 13 novos arquivos
-- Mapeamento de requisitos para arquitetura
-- Validação confirmando coerência e completude
-
-**Implementation Ready Foundation:**
-- 4 decisões arquiteturais principais documentadas
-- 6 implementation patterns definidos
-- 12 componentes arquiteturais especificados
-- 27 FRs de membership + 4 NFRs totalmente suportados
-
-**AI Agent Implementation Guide:**
-- Stack tecnológica com versões verificadas
-- Regras de consistência que previnem conflitos
-- Estrutura do projeto com boundaries claros
-- Padrões de integração e comunicação
-
-### Quality Assurance Checklist
-
-**✅ Architecture Coherence**
-- [x] Todas as decisões funcionam juntas sem conflitos
-- [x] Escolhas tecnológicas são compatíveis
-- [x] Patterns suportam as decisões arquiteturais
-- [x] Estrutura alinha com todas as escolhas
-
-**✅ Requirements Coverage**
-- [x] Todos os requisitos funcionais suportados
-- [x] Todos os requisitos não-funcionais endereçados
-- [x] Cross-cutting concerns tratados
-- [x] Pontos de integração definidos
-
-**✅ Implementation Readiness**
-- [x] Decisões são específicas e acionáveis
-- [x] Patterns previnem conflitos entre agents
-- [x] Estrutura é completa e sem ambiguidade
-- [x] Exemplos providos para clareza
-
----
-
-**Architecture Status:** ✅ READY FOR IMPLEMENTATION
-
-**Next Phase:** Iniciar implementação usando as decisões e patterns documentados.
-
-**Document Maintenance:** Atualizar esta arquitetura quando decisões técnicas importantes forem tomadas durante implementação.
-
+1. Migrations SQL (tabelas + RLS)
+2. Store (authStateStore + encryptionHelper)
+3. Client (baileyClient + connectionHandler)
+4. Pool + Failover (numberPoolService + failoverService)
+5. Channel Adapter (lib/channelAdapter.js)
+6. Handlers + Jobs
+7. Admin Panel extensions
