@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
 
+const WHATSAPP_SERVER_URL = process.env.WHATSAPP_SERVER_URL || 'http://localhost:3100';
+
 const addNumberSchema = z.object({
   phone_number: z.string().regex(/^\+[1-9]\d{6,14}$/, 'Telefone deve estar no formato E.164 (ex: +5511999887766)'),
 });
@@ -111,6 +113,14 @@ export const POST = createApiHandler(
         { status: 500 },
       );
     }
+
+    // Auto-trigger WhatsApp connection (fire-and-forget)
+    fetch(`${WHATSAPP_SERVER_URL}/api/whatsapp/numbers/${number.id}/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => {
+      // Non-blocking — connection can be triggered manually via UI
+    });
 
     return NextResponse.json({ success: true, data: number }, { status: 201 });
   },

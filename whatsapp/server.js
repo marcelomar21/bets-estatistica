@@ -199,6 +199,71 @@ function createApp() {
     res.status(result.success ? 200 : 400).json(result);
   });
 
+  // Connect a number (triggers QR code generation)
+  app.post('/api/whatsapp/numbers/:numberId/connect', async (req, res) => {
+    const { numberId } = req.params;
+
+    // Check number exists
+    const { data: number, error: numErr } = await supabase
+      .from('whatsapp_numbers')
+      .select('id, phone_number, status')
+      .eq('id', numberId)
+      .single();
+
+    if (numErr || !number) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Number not found' } });
+    }
+
+    // Don't reconnect already-connected or banned numbers
+    if (['banned'].includes(number.status)) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: `Cannot connect number with status: ${number.status}` } });
+    }
+
+    // If already has a client, skip
+    if (clients.has(numberId)) {
+      return res.json({ success: true, message: 'Already connecting or connected' });
+    }
+
+    // Create client and connect (async — returns immediately)
+    const client = new BaileyClient(numberId, number.phone_number);
+    client.setGroupParticipantsHandler(handleGroupParticipantsUpdate);
+    clients.set(numberId, client);
+
+    client.connect().catch((err) => {
+      logger.error('Connect failed for number', { numberId, error: err.message });
+      clients.delete(numberId);
+    });
+
+    res.json({ success: true });
+  });
+
+  // Get QR code for a number
+  app.get('/api/whatsapp/numbers/:numberId/qr', async (req, res) => {
+    const { numberId } = req.params;
+
+    const { data, error } = await supabase
+      .from('whatsapp_sessions')
+      .select('qr_code, connection_state, last_qr_update, updated_at')
+      .eq('number_id', numberId)
+      .single();
+
+    if (error || !data) {
+      return res.json({
+        success: true,
+        data: { qrCode: null, connectionState: 'unknown', lastUpdate: null },
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        qrCode: data.qr_code,
+        connectionState: data.connection_state,
+        lastUpdate: data.last_qr_update || data.updated_at,
+      },
+    });
+  });
+
   // Deallocate a number from its group
   app.delete('/api/whatsapp/numbers/:numberId/deallocate', async (req, res) => {
     const result = await deallocateFromGroup(req.params.numberId);

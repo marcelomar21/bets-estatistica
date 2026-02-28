@@ -1,9 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import QRCode from 'qrcode';
 import type { WhatsAppNumberListItem, WhatsAppPoolSummary } from '@/types/database';
 import { whatsappStatusConfig, formatPhoneNumber } from '@/components/features/whatsapp-pool/whatsapp-pool-utils';
 import { formatDateTime } from '@/lib/format-utils';
+
+interface QrModalState {
+  numberId: string;
+  phone: string;
+}
+
+interface QrData {
+  qrCode: string | null;
+  connectionState: string;
+  lastUpdate: string | null;
+}
 
 export default function WhatsAppPoolPage() {
   const [numbers, setNumbers] = useState<WhatsAppNumberListItem[]>([]);
@@ -16,6 +28,14 @@ export default function WhatsAppPoolPage() {
   const [formPhone, setFormPhone] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // QR modal state
+  const [qrModal, setQrModal] = useState<QrModalState | null>(null);
+  const [qrData, setQrData] = useState<QrData | null>(null);
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [connectLoading, setConnectLoading] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchNumbers = useCallback(async () => {
     setLoading(true);
@@ -44,6 +64,83 @@ export default function WhatsAppPoolPage() {
     fetchNumbers();
   }, [fetchNumbers]);
 
+  // Poll QR code when modal is open
+  const fetchQr = useCallback(async (numberId: string) => {
+    try {
+      const res = await fetch(`/api/whatsapp-pool/${numberId}/qr`);
+      const body = await res.json();
+      if (body.success && body.data) {
+        setQrData(body.data);
+
+        // Convert raw QR string to data URL
+        if (body.data.qrCode) {
+          try {
+            const dataUrl = await QRCode.toDataURL(body.data.qrCode, {
+              width: 280,
+              margin: 2,
+              color: { dark: '#000000', light: '#ffffff' },
+            });
+            setQrImageUrl(dataUrl);
+          } catch {
+            setQrImageUrl(null);
+          }
+        } else {
+          setQrImageUrl(null);
+        }
+
+        // Auto-close on successful connection
+        if (body.data.connectionState === 'open') {
+          setTimeout(() => {
+            setQrModal(null);
+            fetchNumbers();
+          }, 1500);
+        }
+      }
+    } catch {
+      // Silently retry on next poll
+    } finally {
+      setQrLoading(false);
+    }
+  }, [fetchNumbers]);
+
+  useEffect(() => {
+    if (qrModal) {
+      setQrLoading(true);
+      setQrData(null);
+      setQrImageUrl(null);
+      fetchQr(qrModal.numberId);
+
+      pollRef.current = setInterval(() => {
+        fetchQr(qrModal.numberId);
+      }, 3000);
+    }
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [qrModal, fetchQr]);
+
+  async function handleConnect(numberId: string, phone: string) {
+    setConnectLoading(numberId);
+    try {
+      const res = await fetch(`/api/whatsapp-pool/${numberId}/connect`, { method: 'POST' });
+      if (res.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      // Open modal regardless of connect result (QR may already exist)
+      setQrModal({ numberId, phone });
+    } catch {
+      // Open modal anyway — user can retry
+      setQrModal({ numberId, phone });
+    } finally {
+      setConnectLoading(null);
+    }
+  }
+
   async function handleAddNumber(e: React.FormEvent) {
     e.preventDefault();
     setFormLoading(true);
@@ -67,6 +164,10 @@ export default function WhatsAppPoolPage() {
       setFormPhone('');
       setFormError(null);
       await fetchNumbers();
+      // Auto-open QR modal for the new number
+      if (body.data?.id) {
+        setQrModal({ numberId: body.data.id, phone: body.data.phone_number });
+      }
     } catch {
       setFormError('Erro de conexao ao adicionar numero');
     } finally {
@@ -234,11 +335,13 @@ export default function WhatsAppPoolPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Heartbeat</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Criado em</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Acoes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {numbers.map((num) => {
                 const statusBadge = whatsappStatusConfig[num.status] || { label: num.status, className: 'bg-gray-100 text-gray-800' };
+                const showConnectBtn = num.status === 'connecting' || (num.status !== 'banned' && num.health_status !== 'online');
                 return (
                   <tr key={num.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm font-mono text-gray-900">
@@ -261,26 +364,99 @@ export default function WhatsAppPoolPage() {
                           Offline
                         </span>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-gray-400">&mdash;</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">
-                      {num.groups?.name || '—'}
+                      {num.groups?.name || '\u2014'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">
-                      {num.role || '—'}
+                      {num.role || '\u2014'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {num.last_heartbeat ? formatDateTime(num.last_heartbeat) : '—'}
+                      {num.last_heartbeat ? formatDateTime(num.last_heartbeat) : '\u2014'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {formatDateTime(num.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {showConnectBtn && (
+                        <button
+                          onClick={() => handleConnect(num.id, num.phone_number)}
+                          disabled={connectLoading === num.id}
+                          className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {connectLoading === num.id ? 'Conectando...' : 'Conectar'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* QR Code Modal */}
+      {qrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setQrModal(null)}>
+          <div className="relative w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setQrModal(null)}
+              className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+              aria-label="Fechar"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Conectar WhatsApp</h2>
+            <p className="text-sm text-gray-500 mb-4 font-mono">{formatPhoneNumber(qrModal.phone)}</p>
+
+            {/* Status indicator */}
+            {qrData?.connectionState === 'open' ? (
+              <div className="flex flex-col items-center py-8">
+                <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                  <svg className="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold text-green-700">Conectado!</p>
+                <p className="text-sm text-gray-500 mt-1">Numero autenticado com sucesso</p>
+              </div>
+            ) : qrLoading && !qrImageUrl ? (
+              <div className="flex flex-col items-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                <p className="mt-3 text-sm text-gray-500">Aguardando QR code...</p>
+              </div>
+            ) : qrImageUrl ? (
+              <div className="flex flex-col items-center">
+                <div className="rounded-lg border-2 border-gray-200 bg-white p-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrImageUrl} alt="QR Code WhatsApp" width={280} height={280} />
+                </div>
+                <div className="mt-4 rounded-md bg-blue-50 p-3 text-center">
+                  <p className="text-xs text-blue-800 font-medium">
+                    Abra o WhatsApp no celular
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Menu &gt; Aparelhos Conectados &gt; Conectar
+                  </p>
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  O QR code atualiza automaticamente
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center py-12">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                <p className="mt-3 text-sm text-gray-500">Aguardando QR code...</p>
+                <p className="mt-1 text-xs text-gray-400">Isso pode levar alguns segundos</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
