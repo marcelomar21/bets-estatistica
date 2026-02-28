@@ -94,10 +94,19 @@ class BaileyClient {
   async _handleConnectionUpdate(update) {
     const { connection, lastDisconnect, qr } = update;
 
+    logger.info('Connection update received', {
+      numberId: this.numberId,
+      connection,
+      hasQr: !!qr,
+      qrLen: qr ? qr.length : 0,
+      statusCode: lastDisconnect?.error?.output?.statusCode,
+      errorMsg: lastDisconnect?.error?.message,
+    });
+
     // QR code generated — save to DB for admin panel display
     if (qr) {
       await this._saveQrCode(qr);
-      logger.info('QR code generated', { numberId: this.numberId });
+      logger.info('QR code generated and saved', { numberId: this.numberId, qrLen: qr.length });
     }
 
     if (connection === 'open') {
