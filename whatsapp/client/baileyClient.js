@@ -125,6 +125,11 @@ class BaileyClient {
         await this._updateConnectionState('banned');
         await this._updateNumberStatus('banned');
         logger.warn('BaileyClient logged out / banned', { numberId: this.numberId, statusCode });
+
+        // Trigger automatic failover (async, non-blocking)
+        this._triggerFailover().catch((err) => {
+          logger.error('BaileyClient failover trigger failed', { numberId: this.numberId, error: err.message });
+        });
       } else if (this.reconnectAttempt >= this.maxReconnectAttempts) {
         // Max attempts reached — stop reconnecting
         await this._updateConnectionState('closed');
@@ -217,6 +222,39 @@ class BaileyClient {
 
     if (error) {
       logger.error('Failed to update number status', { numberId: this.numberId, status, error: error.message });
+    }
+  }
+
+  /**
+   * Trigger automatic failover after a ban is detected.
+   * Resolves the group_id for this number and delegates to failoverService.
+   */
+  async _triggerFailover() {
+    // Resolve group_id for this number (may already be cleared by _updateNumberStatus)
+    const { data: numberRow, error: queryErr } = await supabase
+      .from('whatsapp_numbers')
+      .select('group_id')
+      .eq('id', this.numberId)
+      .single();
+
+    if (queryErr) {
+      logger.error('[failover] Failed to query group_id for banned number', { numberId: this.numberId, error: queryErr.message });
+      return;
+    }
+
+    const groupId = numberRow?.group_id;
+    if (!groupId) {
+      logger.info('[failover] Banned number has no group_id, skipping failover', { numberId: this.numberId });
+      return;
+    }
+
+    const { handleFailover } = require('../services/failoverService');
+    const result = await handleFailover(this.numberId, groupId, 'ban');
+
+    if (result.success) {
+      logger.info('[failover] Automatic failover completed', { numberId: this.numberId, groupId, data: result.data });
+    } else {
+      logger.error('[failover] Automatic failover failed', { numberId: this.numberId, groupId, error: result.error });
     }
   }
 

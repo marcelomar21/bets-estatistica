@@ -178,6 +178,37 @@ export default function WhatsAppPoolPage() {
         </div>
       )}
 
+      {/* Group health summary */}
+      {(() => {
+        const grouped = new Map<string, { name: string; total: number; online: number }>();
+        for (const num of numbers) {
+          if (!num.group_id) continue;
+          const groupName = num.groups?.name || num.group_id;
+          if (!grouped.has(num.group_id)) {
+            grouped.set(num.group_id, { name: groupName, total: 0, online: 0 });
+          }
+          const g = grouped.get(num.group_id)!;
+          g.total++;
+          if (num.health_status === 'online') g.online++;
+        }
+        if (grouped.size === 0) return null;
+        return (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Health por Grupo</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from(grouped.entries()).map(([gid, g]) => (
+                <div key={gid} className={`rounded-lg border p-3 shadow-sm ${g.online === g.total ? 'border-green-200 bg-green-50' : g.online === 0 ? 'border-red-200 bg-red-50' : 'border-yellow-200 bg-yellow-50'}`}>
+                  <p className="text-sm font-medium text-gray-900">{g.name}</p>
+                  <p className={`text-xs ${g.online === g.total ? 'text-green-700' : g.online === 0 ? 'text-red-700' : 'text-yellow-700'}`}>
+                    {g.online}/{g.total} numeros online
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Numbers table */}
       {numbers.length === 0 ? (
         <div className="text-center py-12">
@@ -198,6 +229,7 @@ export default function WhatsAppPoolPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Telefone</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Health</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Grupo</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Heartbeat</th>
@@ -216,6 +248,21 @@ export default function WhatsAppPoolPage() {
                       <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge.className}`}>
                         {statusBadge.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {num.health_status === 'online' ? (
+                        <span className="inline-flex items-center gap-1 text-green-600">
+                          <span className="h-2 w-2 rounded-full bg-green-500" />
+                          Online
+                        </span>
+                      ) : num.health_status === 'offline' ? (
+                        <span className="inline-flex items-center gap-1 text-red-600" title={num.health_error || undefined}>
+                          <span className="h-2 w-2 rounded-full bg-red-500" />
+                          Offline
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {num.groups?.name || '—'}
