@@ -7,6 +7,7 @@ const { phoneToJid } = require('../../lib/phoneUtils');
 
 const DEFAULT_BACKOFF_MS = [1000, 5000, 15000, 30000, 60000];
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
+const SEND_TIMEOUT_MS = 30000;
 
 class BaileyClient {
   constructor(numberId, phoneNumber) {
@@ -216,6 +217,59 @@ class BaileyClient {
 
     if (error) {
       logger.error('Failed to update heartbeat', { numberId: this.numberId, error: error.message });
+    }
+  }
+
+  /**
+   * Send a text message to a JID (group or individual).
+   * @param {string} jid - Target JID (group@g.us or user@s.whatsapp.net)
+   * @param {string} text - Message text (WhatsApp formatting)
+   * @returns {Promise<{success: boolean, data?: {messageId: string}, error?: {code: string, message: string}}>}
+   */
+  async sendMessage(jid, text) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    try {
+      const result = await Promise.race([
+        this.socket.sendMessage(jid, { text }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Send timeout')), SEND_TIMEOUT_MS)),
+      ]);
+      return { success: true, data: { messageId: result.key.id } };
+    } catch (err) {
+      logger.error('Failed to send message', { numberId: this.numberId, jid, error: err.message });
+      return { success: false, error: { code: 'SEND_FAILED', message: err.message } };
+    }
+  }
+
+  /**
+   * Send an image message with optional caption.
+   * @param {string} jid - Target JID
+   * @param {string} imageUrl - URL of the image
+   * @param {string} [caption] - Optional caption text (WhatsApp formatting)
+   * @returns {Promise<{success: boolean, data?: {messageId: string}, error?: {code: string, message: string}}>}
+   */
+  async sendImage(jid, imageUrl, caption) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      return { success: false, error: { code: 'INVALID_IMAGE_URL', message: 'imageUrl is required and must be a string' } };
+    }
+
+    try {
+      const content = { image: { url: imageUrl } };
+      if (caption) content.caption = caption;
+      const result = await Promise.race([
+        this.socket.sendMessage(jid, content),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Send timeout')), SEND_TIMEOUT_MS)),
+      ]);
+      return { success: true, data: { messageId: result.key.id } };
+    } catch (err) {
+      logger.error('Failed to send image', { numberId: this.numberId, jid, error: err.message });
+      return { success: false, error: { code: 'SEND_FAILED', message: err.message } };
     }
   }
 

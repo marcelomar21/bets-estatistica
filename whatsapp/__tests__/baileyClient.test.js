@@ -328,6 +328,92 @@ describe('BaileyClient', () => {
     });
   });
 
+  describe('sendMessage', () => {
+    it('should return error when socket is null', async () => {
+      const result = await client.sendMessage('jid@s.whatsapp.net', 'Hello');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should send text message via socket', async () => {
+      await client.connect();
+      mockSocket.sendMessage = jest.fn().mockResolvedValue({ key: { id: 'msg-123' } });
+
+      const result = await client.sendMessage('jid@s.whatsapp.net', 'Hello');
+
+      expect(result.success).toBe(true);
+      expect(result.data.messageId).toBe('msg-123');
+      expect(mockSocket.sendMessage).toHaveBeenCalledWith('jid@s.whatsapp.net', { text: 'Hello' });
+    });
+
+    it('should handle send failure', async () => {
+      await client.connect();
+      mockSocket.sendMessage = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const result = await client.sendMessage('jid@s.whatsapp.net', 'Hello');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('SEND_FAILED');
+      expect(result.error.message).toBe('Network error');
+    });
+  });
+
+  describe('sendImage', () => {
+    it('should return error when socket is null', async () => {
+      const result = await client.sendImage('jid@s.whatsapp.net', 'https://img.com/pic.jpg');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should send image with caption via socket', async () => {
+      await client.connect();
+      mockSocket.sendMessage = jest.fn().mockResolvedValue({ key: { id: 'img-123' } });
+
+      const result = await client.sendImage('jid@s.whatsapp.net', 'https://img.com/pic.jpg', 'Nice photo');
+
+      expect(result.success).toBe(true);
+      expect(result.data.messageId).toBe('img-123');
+      expect(mockSocket.sendMessage).toHaveBeenCalledWith('jid@s.whatsapp.net', {
+        image: { url: 'https://img.com/pic.jpg' },
+        caption: 'Nice photo',
+      });
+    });
+
+    it('should return error when imageUrl is invalid', async () => {
+      await client.connect();
+
+      const result1 = await client.sendImage('jid@s.whatsapp.net', null);
+      expect(result1.success).toBe(false);
+      expect(result1.error.code).toBe('INVALID_IMAGE_URL');
+
+      const result2 = await client.sendImage('jid@s.whatsapp.net', '');
+      expect(result2.success).toBe(false);
+      expect(result2.error.code).toBe('INVALID_IMAGE_URL');
+    });
+
+    it('should send image without caption', async () => {
+      await client.connect();
+      mockSocket.sendMessage = jest.fn().mockResolvedValue({ key: { id: 'img-456' } });
+
+      const result = await client.sendImage('jid@s.whatsapp.net', 'https://img.com/pic.jpg');
+
+      expect(result.success).toBe(true);
+      expect(mockSocket.sendMessage).toHaveBeenCalledWith('jid@s.whatsapp.net', {
+        image: { url: 'https://img.com/pic.jpg' },
+      });
+    });
+
+    it('should handle image send failure', async () => {
+      await client.connect();
+      mockSocket.sendMessage = jest.fn().mockRejectedValue(new Error('Upload error'));
+
+      const result = await client.sendImage('jid@s.whatsapp.net', 'https://img.com/pic.jpg', 'caption');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('SEND_FAILED');
+    });
+  });
+
   describe('_createPinoAdapter', () => {
     it('should create a pino-compatible logger', () => {
       const adapter = client._createPinoAdapter();

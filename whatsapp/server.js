@@ -12,11 +12,10 @@ const {
   checkPoolHealth,
 } = require('./pool/numberPoolService');
 
+const { clients } = require('./clientRegistry');
+
 const PORT = process.env.WHATSAPP_PORT || 3100;
 const SHUTDOWN_TIMEOUT_MS = config.whatsapp?.shutdownTimeoutMs ?? 30000;
-
-// Active client instances keyed by numberId
-const clients = new Map();
 
 /**
  * Check if a number has valid auth state (creds exist in whatsapp_sessions).
@@ -236,4 +235,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, start, initClients, shutdown, clients };
+module.exports = { createApp, start, initClients, shutdown };

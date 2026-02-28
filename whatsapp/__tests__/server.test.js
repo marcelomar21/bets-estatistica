@@ -65,7 +65,8 @@ jest.mock('../pool/numberPoolService', () => ({
   listNumbers: mockListNumbers,
 }));
 
-const { createApp, initClients, shutdown, clients } = require('../server');
+const { createApp, initClients, shutdown } = require('../server');
+const { clients } = require('../clientRegistry');
 const logger = require('../../lib/logger');
 
 describe('WhatsApp Server', () => {
