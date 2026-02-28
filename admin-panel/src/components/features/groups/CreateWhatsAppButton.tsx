@@ -25,7 +25,7 @@ export function CreateWhatsAppButton({ groupId, hasWhatsApp }: CreateWhatsAppBut
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/groups/${groupId}/whatsapp`, { method: 'POST' });
+      const res = await fetch(`/api/groups/${groupId}/add-whatsapp`, { method: 'POST' });
       if (res.status === 401) {
         window.location.href = '/login';
         return;
@@ -50,7 +50,7 @@ export function CreateWhatsAppButton({ groupId, hasWhatsApp }: CreateWhatsAppBut
         onClick={() => setShowConfirm(true)}
         className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
       >
-        Criar Grupo WhatsApp
+        Adicionar WhatsApp
       </button>
 
       {showConfirm && (
@@ -61,9 +61,9 @@ export function CreateWhatsAppButton({ groupId, hasWhatsApp }: CreateWhatsAppBut
             aria-hidden="true"
           />
           <div className="relative z-50 rounded-lg bg-white p-6 shadow-xl max-w-sm w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Criar Grupo WhatsApp</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Adicionar WhatsApp</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Isso criara um grupo WhatsApp usando os numeros alocados a este grupo.
+              Isso vai alocar numeros do pool, criar um grupo WhatsApp e gerar o invite link automaticamente.
               O grupo sera configurado como somente admins enviam.
             </p>
 

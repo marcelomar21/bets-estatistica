@@ -13,6 +13,7 @@ const {
 } = require('./pool/numberPoolService');
 const { createWhatsAppGroup } = require('./services/groupService');
 const { generateInviteLink, revokeInviteLink } = require('./services/inviteLinkService');
+const { addWhatsAppChannel } = require('./services/addChannelService');
 
 const { clients } = require('./clientRegistry');
 
@@ -204,6 +205,14 @@ function createApp() {
     const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
     const status = statusMap[result.error?.code] || 400;
     res.status(status).json(result);
+  });
+
+  // Add WhatsApp channel to an existing group (1-click orchestration)
+  app.post('/api/whatsapp/groups/:groupId/add-channel', async (req, res) => {
+    const result = await addWhatsAppChannel(req.params.groupId);
+    if (result.success) return res.status(201).json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
   });
 
   // Generate invite link for a WhatsApp group
