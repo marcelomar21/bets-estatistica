@@ -23,6 +23,7 @@ const navigation: NavItem[] = [
   { name: 'Grupos', href: '/groups', icon: '👥', roles: ['super_admin'] },
   { name: 'Tom de Voz', href: '/tone', icon: '🎙️' },
   { name: 'Bots', href: '/bots', icon: '🤖', roles: ['super_admin'] },
+  { name: 'WhatsApp', href: '/whatsapp-pool', icon: '📲', roles: ['super_admin'] },
   { name: 'Telegram', href: '/settings/telegram', icon: '📱', roles: ['super_admin'] },
 ];
 

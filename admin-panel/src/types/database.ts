@@ -394,3 +394,40 @@ export interface ScheduledMessage {
 export interface ScheduledMessageListItem extends ScheduledMessage {
   groups: { name: string } | null;
 }
+
+// ============================================================
+// WhatsApp Numbers Pool (Story 12.4)
+// ============================================================
+
+export type WhatsAppNumberStatus = 'available' | 'active' | 'backup' | 'banned' | 'cooldown' | 'connecting';
+
+export interface WhatsAppNumber {
+  id: string;
+  phone_number: string;
+  jid: string | null;
+  status: WhatsAppNumberStatus;
+  group_id: string | null;
+  role: 'active' | 'backup' | null;
+  last_heartbeat: string | null;
+  banned_at: string | null;
+  allocated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WhatsAppNumberListItem = Pick<
+  WhatsAppNumber,
+  'id' | 'phone_number' | 'status' | 'group_id' | 'role' | 'last_heartbeat' | 'banned_at' | 'allocated_at' | 'created_at'
+> & {
+  groups: { name: string } | null;
+};
+
+export interface WhatsAppPoolSummary {
+  total: number;
+  available: number;
+  active: number;
+  backup: number;
+  banned: number;
+  cooldown: number;
+  connecting: number;
+}
