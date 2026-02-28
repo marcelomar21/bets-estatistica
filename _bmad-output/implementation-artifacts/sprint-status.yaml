@@ -1,4 +1,4 @@
-# generated: 2026-02-26
+# generated: 2026-02-28
 # project: bets-estatistica
 # project_key: bets-estatistica
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-26
+generated: 2026-02-28
 project: bets-estatistica
 project_key: bets-estatistica
 tracking_system: file-system
@@ -149,3 +149,64 @@ development_status:
   11-1-alertas-dismissiveis-limpeza: done
   11-2-metricas-acerto-dashboard: done
   epic-11-retrospective: optional
+
+  # ========================================
+  # PRD v4 — WhatsApp Integration (Epics 12-17)
+  # Epics planejados em 2026-02-28
+  # ========================================
+
+  # ========================================
+  # Epic 12: Infraestrutura WhatsApp & Pool de Números
+  # ========================================
+  epic-12: in-progress
+  12-1-adicionar-conectar-numero-whatsapp-qr-code: done
+  12-2-reconexao-automatica-sessoes: backlog
+  12-3-pool-global-alocacao-gestao-numeros: backlog
+  12-4-admin-panel-gerenciamento-pool-numeros: backlog
+  12-5-channel-adapter-abstracao-multi-canal: backlog
+  epic-12-retrospective: optional
+
+  # ========================================
+  # Epic 13: Criação e Configuração de Grupos WhatsApp
+  # ========================================
+  epic-13: backlog
+  13-1-criar-grupo-whatsapp-programaticamente: backlog
+  13-2-gestao-invite-links-grupo-whatsapp: backlog
+  13-3-adicionar-canal-whatsapp-grupo-existente: backlog
+  epic-13-retrospective: optional
+
+  # ========================================
+  # Epic 14: Postagem Multi-Canal
+  # ========================================
+  epic-14: backlog
+  14-1-postagem-simultanea-ambos-canais: backlog
+  14-2-dashboard-metricas-agnosticos-canal: backlog
+  epic-14-retrospective: optional
+
+  # ========================================
+  # Epic 15: Ciclo de Vida de Membros no WhatsApp
+  # ========================================
+  epic-15: backlog
+  15-1-detectar-novos-membros-registro-multi-canal: backlog
+  15-2-enviar-dm-via-whatsapp: backlog
+  15-3-trial-automatico-lembretes: backlog
+  15-4-kick-inadimplentes-revogacao-invite: backlog
+  15-5-reativacao-pos-pagamento-filtro-canal: backlog
+  epic-15-retrospective: optional
+
+  # ========================================
+  # Epic 16: Failover Automático & Health Monitoring
+  # ========================================
+  epic-16: backlog
+  16-1-deteccao-ban-failover-automatico: backlog
+  16-2-health-monitoring-heartbeat: backlog
+  16-3-alertas-painel-health-grupo: backlog
+  epic-16-retrospective: optional
+
+  # ========================================
+  # Epic 17: Integração de Pagamentos (Canal WhatsApp)
+  # ========================================
+  epic-17: backlog
+  17-1-ativacao-membro-whatsapp-webhook-pagamento: backlog
+  17-2-kick-automatico-cancelamento-inadimplencia-webhook: backlog
+  epic-17-retrospective: optional
