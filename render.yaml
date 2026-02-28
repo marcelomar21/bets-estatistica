@@ -42,6 +42,26 @@ services:
         value: America/Sao_Paulo
       - fromGroup: bets-secrets
 
+  # WhatsApp multi-number server
+  - type: web
+    name: bets-whatsapp
+    runtime: node
+    plan: free
+    nodeVersion: "20"
+    buildCommand: npm install
+    startCommand: node whatsapp/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TZ
+        value: America/Sao_Paulo
+      - key: WHATSAPP_ENABLED
+        value: "true"
+      - key: WHATSAPP_PORT
+        value: "10000"
+      - fromGroup: bets-secrets
+
 envVarGroups:
   - name: bets-secrets
     envVars:
@@ -64,4 +84,6 @@ envVarGroups:
       - key: CAKTO_CLIENT_SECRET
         sync: false
       - key: CAKTO_WEBHOOK_SECRET
+        sync: false
+      - key: WHATSAPP_ENCRYPTION_KEY
         sync: false
