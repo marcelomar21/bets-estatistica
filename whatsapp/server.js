@@ -12,6 +12,7 @@ const {
   checkPoolHealth,
 } = require('./pool/numberPoolService');
 const { createWhatsAppGroup } = require('./services/groupService');
+const { generateInviteLink, revokeInviteLink } = require('./services/inviteLinkService');
 
 const { clients } = require('./clientRegistry');
 
@@ -203,6 +204,22 @@ function createApp() {
     const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
     const status = statusMap[result.error?.code] || 400;
     res.status(status).json(result);
+  });
+
+  // Generate invite link for a WhatsApp group
+  app.post('/api/whatsapp/groups/:groupId/invite-link', async (req, res) => {
+    const result = await generateInviteLink(req.params.groupId);
+    if (result.success) return res.json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, NO_WHATSAPP_GROUP: 400 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
+  });
+
+  // Revoke invite link and generate new one
+  app.delete('/api/whatsapp/groups/:groupId/invite-link', async (req, res) => {
+    const result = await revokeInviteLink(req.params.groupId);
+    if (result.success) return res.json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, NO_WHATSAPP_GROUP: 400 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
   });
 
   return app;

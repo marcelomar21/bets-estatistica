@@ -463,6 +463,78 @@ describe('BaileyClient', () => {
     });
   });
 
+  describe('getGroupInviteLink', () => {
+    it('should return error when socket is null', async () => {
+      const result = await client.getGroupInviteLink('120363@g.us');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should return error when groupJid is empty', async () => {
+      await client.connect();
+      const result = await client.getGroupInviteLink('');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_JID');
+    });
+
+    it('should get invite link successfully', async () => {
+      await client.connect();
+      mockSocket.groupInviteCode = jest.fn().mockResolvedValue('ABC123DEF');
+
+      const result = await client.getGroupInviteLink('120363@g.us');
+
+      expect(result.success).toBe(true);
+      expect(result.data.inviteLink).toBe('https://chat.whatsapp.com/ABC123DEF');
+      expect(mockSocket.groupInviteCode).toHaveBeenCalledWith('120363@g.us');
+    });
+
+    it('should handle failure', async () => {
+      await client.connect();
+      mockSocket.groupInviteCode = jest.fn().mockRejectedValue(new Error('Not admin'));
+
+      const result = await client.getGroupInviteLink('120363@g.us');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVITE_LINK_FAILED');
+    });
+  });
+
+  describe('revokeGroupInviteLink', () => {
+    it('should return error when socket is null', async () => {
+      const result = await client.revokeGroupInviteLink('120363@g.us');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should return error when groupJid is empty', async () => {
+      await client.connect();
+      const result = await client.revokeGroupInviteLink('');
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_JID');
+    });
+
+    it('should revoke and return new invite link', async () => {
+      await client.connect();
+      mockSocket.groupRevokeInvite = jest.fn().mockResolvedValue('NEW456CODE');
+
+      const result = await client.revokeGroupInviteLink('120363@g.us');
+
+      expect(result.success).toBe(true);
+      expect(result.data.inviteLink).toBe('https://chat.whatsapp.com/NEW456CODE');
+      expect(mockSocket.groupRevokeInvite).toHaveBeenCalledWith('120363@g.us');
+    });
+
+    it('should handle revoke failure', async () => {
+      await client.connect();
+      mockSocket.groupRevokeInvite = jest.fn().mockRejectedValue(new Error('Forbidden'));
+
+      const result = await client.revokeGroupInviteLink('120363@g.us');
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('REVOKE_INVITE_FAILED');
+    });
+  });
+
   describe('_createPinoAdapter', () => {
     it('should create a pino-compatible logger', () => {
       const adapter = client._createPinoAdapter();

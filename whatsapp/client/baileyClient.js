@@ -311,6 +311,64 @@ class BaileyClient {
   }
 
   /**
+   * Get the current invite link for a WhatsApp group.
+   * @param {string} groupJid - Group JID (e.g. '120363xxx@g.us')
+   * @returns {Promise<{success: boolean, data?: {inviteLink: string}, error?: {code: string, message: string}}>}
+   */
+  async getGroupInviteLink(groupJid) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    if (!groupJid || typeof groupJid !== 'string') {
+      return { success: false, error: { code: 'INVALID_JID', message: 'groupJid is required' } };
+    }
+
+    try {
+      const code = await Promise.race([
+        this.socket.groupInviteCode(groupJid),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Invite link timeout')), SEND_TIMEOUT_MS)),
+      ]);
+
+      const inviteLink = `https://chat.whatsapp.com/${code}`;
+      logger.info('Got group invite link', { numberId: this.numberId, groupJid });
+      return { success: true, data: { inviteLink } };
+    } catch (err) {
+      logger.error('Failed to get group invite link', { numberId: this.numberId, groupJid, error: err.message });
+      return { success: false, error: { code: 'INVITE_LINK_FAILED', message: err.message } };
+    }
+  }
+
+  /**
+   * Revoke the current invite link and get a new one.
+   * @param {string} groupJid - Group JID
+   * @returns {Promise<{success: boolean, data?: {inviteLink: string}, error?: {code: string, message: string}}>}
+   */
+  async revokeGroupInviteLink(groupJid) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    if (!groupJid || typeof groupJid !== 'string') {
+      return { success: false, error: { code: 'INVALID_JID', message: 'groupJid is required' } };
+    }
+
+    try {
+      const newCode = await Promise.race([
+        this.socket.groupRevokeInvite(groupJid),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Revoke invite timeout')), SEND_TIMEOUT_MS)),
+      ]);
+
+      const inviteLink = `https://chat.whatsapp.com/${newCode}`;
+      logger.info('Revoked and regenerated group invite link', { numberId: this.numberId, groupJid });
+      return { success: true, data: { inviteLink } };
+    } catch (err) {
+      logger.error('Failed to revoke group invite link', { numberId: this.numberId, groupJid, error: err.message });
+      return { success: false, error: { code: 'REVOKE_INVITE_FAILED', message: err.message } };
+    }
+  }
+
+  /**
    * Get reconnect stats for health endpoint.
    */
   getStats() {
