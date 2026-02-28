@@ -242,22 +242,24 @@ function createApp() {
       clients.delete(numberId);
     }
 
-    // Clear stale auth state so Baileys generates a fresh QR code
-    // (partial creds from a previous failed attempt would cause Baileys
-    //  to try session resume instead of QR flow)
-    const hasAuth = await hasValidAuthState(numberId);
-    if (!hasAuth || number.status === 'connecting') {
-      await supabase.from('whatsapp_sessions').upsert({
-        number_id: numberId,
-        creds: null,
-        qr_code: null,
-        connection_state: 'connecting',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'number_id' });
-      await supabase.from('whatsapp_keys').delete().eq('number_id', numberId);
-    }
+    // Always clear auth state for a fresh QR flow.
+    // This endpoint is an explicit admin action — start clean.
+    await supabase.from('whatsapp_sessions').upsert({
+      number_id: numberId,
+      creds: null,
+      qr_code: null,
+      connection_state: 'connecting',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'number_id' });
+    await supabase.from('whatsapp_keys').delete().eq('number_id', numberId);
 
-    addDebugLog({ event: 'connect_start', numberId, hasAuth, status: number.status });
+    // Reset number status to connecting
+    await supabase.from('whatsapp_numbers').update({
+      status: 'connecting',
+      updated_at: new Date().toISOString(),
+    }).eq('id', numberId);
+
+    addDebugLog({ event: 'connect_start', numberId, prevStatus: number.status });
 
     // Create client and connect (async — returns immediately)
     const client = new BaileyClient(numberId, number.phone_number);
