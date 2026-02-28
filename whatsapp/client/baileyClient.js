@@ -45,11 +45,12 @@ class BaileyClient {
     // Update connection state to connecting
     await this._updateConnectionState('connecting');
 
+    const { Browsers } = baileys;
     this.socket = makeWASocket({
       auth: this.authState.state,
       printQRInTerminal: false,
       logger: this._createPinoAdapter(),
-      browser: ['GuruBet', 'Server', '1.0.0'],
+      browser: Browsers.macOS('GuruBet'),
     });
 
     this.socket.ev.on('connection.update', async (update) => {
