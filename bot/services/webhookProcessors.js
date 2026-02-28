@@ -680,7 +680,7 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
-    // Story 4.4: Send DM confirmation for new member (AC1)
+    // Story 17-1: Send DM confirmation for new member + WhatsApp invite if available
     if (activateResult.data.telegram_id) {
       try {
         const sendPaymentConfirmation = getSendPaymentConfirmation();
@@ -697,6 +697,27 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
           telegramId: activateResult.data.telegram_id,
           error: dmErr.message
         });
+      }
+
+      // Story 17-1 AC2: If group has WhatsApp, send invite link via Telegram DM
+      // New member has no phone number yet — WhatsApp member row will be created
+      // when they join the group (detected by Story 15-1).
+      if (group?.whatsapp_group_jid) {
+        try {
+          const inviteLinkSvc = getInviteLinkService();
+          const linkResult = await inviteLinkSvc.generateInviteLink(groupId);
+          if (linkResult.success) {
+            const bot = getBot();
+            const groupName = group?.name || 'Guru da Bet';
+            const waMsg = `📱 *${groupName}* tambem esta no WhatsApp!\n\n👉 Entre no grupo: ${linkResult.data.inviteLink}\n\n_Receba apostas nos dois canais._`;
+            await bot.sendMessage(activateResult.data.telegram_id, waMsg, { parse_mode: 'Markdown' });
+            logger.info('[webhook:payment] WhatsApp invite sent via Telegram DM', { memberId: createResult.data.id });
+          }
+        } catch (waErr) {
+          logger.warn('[webhook:payment] Failed to send WhatsApp invite (non-blocking)', {
+            memberId: createResult.data.id, error: waErr.message,
+          });
+        }
       }
     }
 
@@ -737,22 +758,40 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
-    // Story 4.4: Send DM confirmation (AC1, AC2)
-    try {
-      const sendPaymentConfirmation = getSendPaymentConfirmation();
-      await sendPaymentConfirmation(
-        member.telegram_id,
-        member.id,
-        activateResult.data.subscription_ends_at,
-        group?.name
-      );
-      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
-    } catch (dmErr) {
-      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
-        memberId: member.id,
-        telegramId: member.telegram_id,
-        error: dmErr.message
-      });
+    // Story 17-1: Send DM confirmation per channel
+    if (member.channel === 'whatsapp') {
+      // WhatsApp member already in group (came from trial) — send confirmation DM
+      if (member.channel_user_id) {
+        try {
+          const channelSendDM = getChannelSendDM();
+          const groupName = group?.name || 'Guru da Bet';
+          const confirmMsg = `Parabens! Seu pagamento foi confirmado. ✅\n\nVoce agora e membro ativo do *${groupName}*.\n\nBoas apostas!`;
+          await channelSendDM(member.channel_user_id, confirmMsg, {
+            channel: 'whatsapp',
+            groupId: groupId || member.group_id,
+          });
+          logger.info('[webhook:payment] WhatsApp activation DM sent', { memberId: member.id });
+        } catch (dmErr) {
+          logger.warn('[webhook:payment] WhatsApp activation DM failed', { memberId: member.id, error: dmErr.message });
+        }
+      }
+    } else if (member.telegram_id) {
+      try {
+        const sendPaymentConfirmation = getSendPaymentConfirmation();
+        await sendPaymentConfirmation(
+          member.telegram_id,
+          member.id,
+          activateResult.data.subscription_ends_at,
+          group?.name
+        );
+        logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+      } catch (dmErr) {
+        logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+          memberId: member.id,
+          telegramId: member.telegram_id,
+          error: dmErr.message
+        });
+      }
     }
 
     await notifyAdminPayment({
@@ -783,22 +822,39 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
-    // Story 4.4: Send DM confirmation for renewal (AC5)
-    try {
-      const sendPaymentConfirmation = getSendPaymentConfirmation();
-      await sendPaymentConfirmation(
-        member.telegram_id,
-        member.id,
-        renewResult.data.subscription_ends_at,
-        group?.name
-      );
-      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
-    } catch (dmErr) {
-      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
-        memberId: member.id,
-        telegramId: member.telegram_id,
-        error: dmErr.message
-      });
+    // Story 17-1: Send DM confirmation for renewal per channel
+    if (member.channel === 'whatsapp') {
+      if (member.channel_user_id) {
+        try {
+          const channelSendDM = getChannelSendDM();
+          const groupName = group?.name || 'Guru da Bet';
+          const confirmMsg = `Assinatura renovada com sucesso! ✅\n\nSeu acesso ao *${groupName}* continua ativo.\n\nBoas apostas!`;
+          await channelSendDM(member.channel_user_id, confirmMsg, {
+            channel: 'whatsapp',
+            groupId: groupId || member.group_id,
+          });
+          logger.info('[webhook:payment] WhatsApp renewal DM sent', { memberId: member.id });
+        } catch (dmErr) {
+          logger.warn('[webhook:payment] WhatsApp renewal DM failed', { memberId: member.id, error: dmErr.message });
+        }
+      }
+    } else if (member.telegram_id) {
+      try {
+        const sendPaymentConfirmation = getSendPaymentConfirmation();
+        await sendPaymentConfirmation(
+          member.telegram_id,
+          member.id,
+          renewResult.data.subscription_ends_at,
+          group?.name
+        );
+        logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+      } catch (dmErr) {
+        logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+          memberId: member.id,
+          telegramId: member.telegram_id,
+          error: dmErr.message
+        });
+      }
     }
 
     await notifyAdminPayment({
@@ -833,22 +889,40 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
-    // Story 4.4: Send DM confirmation for recovery (AC6)
-    try {
-      const sendPaymentConfirmation = getSendPaymentConfirmation();
-      await sendPaymentConfirmation(
-        member.telegram_id,
-        member.id,
-        activateResult.data.subscription_ends_at,
-        group?.name
-      );
-      logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
-    } catch (dmErr) {
-      logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
-        memberId: member.id,
-        telegramId: member.telegram_id,
-        error: dmErr.message
-      });
+    // Story 17-1: Send DM confirmation for recovery per channel
+    if (member.channel === 'whatsapp') {
+      // WhatsApp inadimplente was NOT kicked — still in group. Send confirmation DM.
+      if (member.channel_user_id) {
+        try {
+          const channelSendDM = getChannelSendDM();
+          const groupName = group?.name || 'Guru da Bet';
+          const confirmMsg = `Seu pagamento foi confirmado! ✅\n\nSeu acesso ao *${groupName}* foi restaurado.\n\nBoas apostas!`;
+          await channelSendDM(member.channel_user_id, confirmMsg, {
+            channel: 'whatsapp',
+            groupId: groupId || member.group_id,
+          });
+          logger.info('[webhook:payment] WhatsApp recovery DM sent', { memberId: member.id });
+        } catch (dmErr) {
+          logger.warn('[webhook:payment] WhatsApp recovery DM failed', { memberId: member.id, error: dmErr.message });
+        }
+      }
+    } else if (member.telegram_id) {
+      try {
+        const sendPaymentConfirmation = getSendPaymentConfirmation();
+        await sendPaymentConfirmation(
+          member.telegram_id,
+          member.id,
+          activateResult.data.subscription_ends_at,
+          group?.name
+        );
+        logger.info('[webhook:payment] DM confirmação enviada', { memberId: member.id, telegramId: member.telegram_id });
+      } catch (dmErr) {
+        logger.warn('[webhook:payment] Falha ao enviar DM de confirmação', {
+          memberId: member.id,
+          telegramId: member.telegram_id,
+          error: dmErr.message
+        });
+      }
     }
 
     await notifyAdminPayment({

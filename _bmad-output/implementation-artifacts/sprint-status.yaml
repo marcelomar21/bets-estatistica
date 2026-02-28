@@ -206,7 +206,7 @@ development_status:
   # ========================================
   # Epic 17: Integração de Pagamentos (Canal WhatsApp)
   # ========================================
-  epic-17: backlog
-  17-1-ativacao-membro-whatsapp-webhook-pagamento: backlog
+  epic-17: in-progress
+  17-1-ativacao-membro-whatsapp-webhook-pagamento: done
   17-2-kick-automatico-cancelamento-inadimplencia-webhook: backlog
   epic-17-retrospective: optional
