@@ -101,6 +101,7 @@ class BaileyClient {
       qrLen: qr ? qr.length : 0,
       statusCode: lastDisconnect?.error?.output?.statusCode,
       errorMsg: lastDisconnect?.error?.message,
+      updateKeys: Object.keys(update),
     });
 
     // QR code generated — save to DB for admin panel display

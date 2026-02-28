@@ -25,6 +25,14 @@ const HEARTBEAT_INTERVAL_MS = config.whatsapp?.heartbeatIntervalMs ?? 60000;
 
 let heartbeatInterval = null;
 
+// In-memory log buffer for debugging (last 100 entries)
+const debugLogs = [];
+const MAX_DEBUG_LOGS = 100;
+function addDebugLog(entry) {
+  debugLogs.push({ ts: new Date().toISOString(), ...entry });
+  if (debugLogs.length > MAX_DEBUG_LOGS) debugLogs.shift();
+}
+
 /**
  * Check if a number has valid auth state (creds exist in whatsapp_sessions).
  */
@@ -169,6 +177,11 @@ function createApp() {
     });
   });
 
+  // Debug logs endpoint (temporary)
+  app.get('/debug/logs', (req, res) => {
+    res.json(debugLogs);
+  });
+
   // Pool management routes
 
   // List all numbers
@@ -244,12 +257,17 @@ function createApp() {
       await supabase.from('whatsapp_keys').delete().eq('number_id', numberId);
     }
 
+    addDebugLog({ event: 'connect_start', numberId, hasAuth, status: number.status });
+
     // Create client and connect (async — returns immediately)
     const client = new BaileyClient(numberId, number.phone_number);
     client.setGroupParticipantsHandler(handleGroupParticipantsUpdate);
     clients.set(numberId, client);
 
-    client.connect().catch((err) => {
+    client.connect().then(() => {
+      addDebugLog({ event: 'connect_promise_resolved', numberId });
+    }).catch((err) => {
+      addDebugLog({ event: 'connect_failed', numberId, error: err.message, stack: err.stack?.split('\n').slice(0, 3) });
       logger.error('Connect failed for number', { numberId, error: err.message });
       clients.delete(numberId);
     });
