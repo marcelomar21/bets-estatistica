@@ -16,6 +16,7 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
 const { sendToPublic, sendToAdmin, getBot, getDefaultBotCtx } = require('../telegram');
+const { sendMessage: channelSendMessage } = require('../../lib/channelAdapter');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
 const { sendPostWarn } = require('./jobWarn');
@@ -432,6 +433,62 @@ function validateBetForPosting(bet) {
 }
 
 /**
+ * Send a message to all channels configured for the group.
+ * Sends in parallel and returns per-channel results.
+ * A message is considered "sent" if at least one channel succeeds.
+ *
+ * @param {string} groupId - Group UUID
+ * @param {string} message - Message text (Telegram Markdown format)
+ * @param {object} botCtx - Bot context with channels and whatsappGroupJid
+ * @returns {Promise<{success: boolean, results: object, messageId?: number|string}>}
+ */
+async function postToAllChannels(groupId, message, botCtx) {
+  const channels = botCtx?.channels || ['telegram'];
+  const promises = [];
+  const channelNames = [];
+
+  if (channels.includes('telegram')) {
+    channelNames.push('telegram');
+    promises.push(sendToPublic(message, botCtx));
+  }
+
+  if (channels.includes('whatsapp') && botCtx?.whatsappGroupJid) {
+    channelNames.push('whatsapp');
+    promises.push(
+      channelSendMessage(groupId, message, {
+        channel: 'whatsapp',
+        groupJid: botCtx.whatsappGroupJid,
+      })
+    );
+  }
+
+  const settled = await Promise.allSettled(promises);
+  const results = {};
+
+  for (let i = 0; i < channelNames.length; i++) {
+    const name = channelNames[i];
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      results[name] = outcome.value;
+    } else {
+      results[name] = { success: false, error: { code: 'CHANNEL_ERROR', message: outcome.reason?.message || 'Unknown error' } };
+    }
+  }
+
+  // At least one channel succeeded = overall success
+  const anySuccess = Object.values(results).some((r) => r.success);
+  // Use Telegram messageId for backwards compatibility (used by markBetAsPosted)
+  const telegramMessageId = results.telegram?.success ? results.telegram.data?.messageId : null;
+
+  return {
+    success: anySuccess,
+    results,
+    data: { messageId: telegramMessageId },
+    error: anySuccess ? null : { code: 'ALL_CHANNELS_FAILED', message: 'Posting failed on all channels' },
+  };
+}
+
+/**
  * Main job - Usa getFilaStatus() como fonte única de verdade
  * Garante que /postar posta EXATAMENTE o que /fila mostra
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
@@ -531,13 +588,13 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template, toneConfig);
 
-      const sendResult = await sendToPublic(message, botCtx);
+      const sendResult = await postToAllChannels(groupId, message, botCtx);
 
       if (sendResult.success) {
         // Registrar repost no histórico (não muda status, já é posted)
         await registrarPostagem(bet.id);
         reposted++;
-        logger.info('[postBets] Bet reposted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), telegramMessageId: sendResult.data.messageId });
+        logger.info('[postBets] Bet reposted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), channels: sendResult.results });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({
@@ -549,7 +606,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
           type: 'repost',
         });
       } else {
-        logger.error('[postBets] Failed to repost bet', { betId: bet.id, groupId, error: sendResult.error?.message });
+        logger.error('[postBets] Failed to repost bet', { betId: bet.id, groupId, channels: sendResult.results });
         repostFailed++;
         sendFailed++;
       }
@@ -577,15 +634,15 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       const template = getRandomTemplate();
       const message = await formatBetMessage(bet, template, toneConfig);
 
-      const sendResult = await sendToPublic(message, botCtx);
+      const sendResult = await postToAllChannels(groupId, message, botCtx);
 
       if (sendResult.success) {
-        // Mark as posted (updates status and timestamp)
+        // Mark as posted (uses Telegram messageId for backwards compat)
         await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds);
         // Registrar postagem no histórico
         await registrarPostagem(bet.id);
         posted++;
-        logger.info('[postBets] Bet posted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), telegramMessageId: sendResult.data.messageId });
+        logger.info('[postBets] Bet posted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), channels: sendResult.results });
 
         // Story 14.3: Coletar dados para warn
         postedBetsArray.push({
@@ -597,7 +654,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
           type: 'new',
         });
       } else {
-        logger.error('[postBets] Failed to post new bet', { betId: bet.id, groupId, error: sendResult.error?.message });
+        logger.error('[postBets] Failed to post new bet', { betId: bet.id, groupId, channels: sendResult.results });
         skipped++;
         sendFailed++;
       }
@@ -649,10 +706,10 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   };
 
   // Surface real posting failures to withExecutionLogging (Story 1.1: AC#2)
-  // Only throw when Telegram send actually failed — validation skips are not posting failures
+  // Only throw when all channel sends failed — validation skips are not posting failures
   if (sendFailed > 0 && result.totalSent === 0) {
     const err = new Error(
-      `Post bets failed: ${sendFailed} Telegram send failures, 0 sent successfully`
+      `Post bets failed: ${sendFailed} send failures across all channels, 0 sent successfully`
     );
     err.jobResult = result;
     throw err;

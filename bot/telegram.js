@@ -135,7 +135,9 @@ async function initBots(supabaseClient) {
         checkout_url,
         operator_username,
         subscription_price,
-        status
+        status,
+        channels,
+        whatsapp_group_jid
       )
     `)
     .eq('is_active', true)
@@ -171,6 +173,8 @@ async function initBots(supabaseClient) {
         publicGroupId: row.public_group_id || row.groups?.telegram_group_id,
         botToken: row.bot_token,
         groupConfig,
+        channels: row.groups?.channels || ['telegram'],
+        whatsappGroupJid: row.groups?.whatsapp_group_jid || null,
       };
 
       botRegistry.set(row.group_id, ctx);
