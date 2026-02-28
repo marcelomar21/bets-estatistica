@@ -1,653 +1,804 @@
 ---
-stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories', 'step-04-final-validation']
-status: 'active'
-completedAt: '2026-02-26'
-epicCount: 6
-storyCount: 15
-frsTotal: 78
-frsCovered: 78
-frsDelegatedToMP: 4
+stepsCompleted: [1, 2, 3, 4]
+status: 'complete'
+completedAt: '2026-02-28'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/architecture.md
-  - _bmad-output/planning-artifacts/sprint-change-proposal-2026-02-26.md
 workflowType: 'epics-and-stories'
 projectType: 'brownfield'
 project_name: 'bets-estatistica'
-scope: 'SaaS Multi-tenant Platform — v3 Features'
+scope: 'WhatsApp Integration'
 ---
 
-# bets-estatistica - Epic Breakdown
+# bets-estatistica - Epic Breakdown (WhatsApp Integration)
 
 ## Overview
 
-Este documento contém o breakdown completo de épicos e stories para a plataforma SaaS Multi-tenant do bets-estatistica, transformando os requisitos do PRD e decisões da Arquitetura em stories implementáveis.
-
-**Escopo:** Transformar o sistema single-group existente em plataforma multi-tenant para múltiplos influencers.
+Este documento contém o breakdown completo de épicos e stories para a integração WhatsApp do GuruBet, transformando os requisitos do PRD e decisões da Arquitetura em stories implementáveis.
 
 ## Requirements Inventory
 
-### Functional Requirements
+### Functional Requirements (43 FRs)
 
-**Gestão de Grupos (Multi-tenant)**
-- FR1: Super Admin pode criar um novo grupo/influencer
-- FR2: Super Admin pode visualizar lista de todos os grupos
-- FR3: Super Admin pode editar configurações de um grupo
-- FR4: Super Admin pode pausar ou desativar um grupo
-- FR5: Sistema pode isolar dados de cada grupo (um grupo não vê dados de outro)
+**Pool de Números WhatsApp**
+- FR1: Super admin pode adicionar novos números ao pool global da plataforma
+- FR2: Super admin pode visualizar o status de todos os números do pool (disponível, alocado, banido, conectando)
+- FR3: Sistema pode alocar automaticamente números do pool global para um grupo específico (3 por grupo: 1 ativo + 2 backup)
+- FR4: Sistema pode desalocar números banidos de um grupo e marcá-los como indisponíveis
+- FR5: Sistema pode alertar super admin quando o pool global está com estoque baixo
 
-**Gestão de Membros**
-- FR6: Sistema pode registrar novo membro quando entra no grupo Telegram com status `trial`
-- FR7: Membro entra em trial gerenciado pelo Mercado Pago. Sistema registra status `trial` internamente.
-- ~~FR8: Lembrete dia 5~~ → Delegado ao Mercado Pago
-- ~~FR9: Lembrete dia 6~~ → Delegado ao Mercado Pago
-- ~~FR10: Lembrete dia 7~~ → Delegado ao Mercado Pago
-- FR11: Sistema pode remover (kick) membro cuja assinatura expirou/cancelou no MP
-- FR12: Sistema pode conceder acesso instantâneo após confirmação de pagamento
-- FR13: Admin de Grupo pode visualizar lista de membros do seu grupo
-- FR14: Admin de Grupo pode ver status de cada membro (trial, ativo, vencendo)
-- FR15: Admin de Grupo pode ver data de vencimento de cada membro
-- FR16: Super Admin pode visualizar membros de qualquer grupo
+**Gestão de Grupos WhatsApp**
+- FR6: Super admin pode criar um grupo WhatsApp para um influencer via admin panel (1-click)
+- FR7: Sistema pode criar grupo WhatsApp programaticamente com 3 números como admin
+- FR8: Sistema pode configurar grupo como "só admins enviam" (membros apenas leem)
+- FR9: Sistema pode gerar e revogar links de convite do grupo WhatsApp
+- FR10: Influencer pode solicitar adição de canal WhatsApp ao seu grupo existente
 
-**Gestão de Apostas**
-- FR17: Sistema pode gerar pool de apostas (existente)
-- FR18: Sistema pode distribuir apostas para grupos via round-robin
-- FR19: Sistema pode registrar qual aposta foi para qual grupo
-- FR20: Super Admin pode visualizar todas as apostas e sua distribuição
-- FR21: Super Admin pode atualizar odds de apostas (individual)
-- FR22: Super Admin pode atualizar odds de apostas (em lote/bulk)
-- FR23: Super Admin pode adicionar links de apostas (individual)
-- FR24: Super Admin pode adicionar links de apostas (em lote/bulk)
-- FR25: Bot pode postar apostas no grupo Telegram nos horários programados
+**Gestão de Membros WhatsApp**
+- FR11: Sistema pode detectar novos membros entrando no grupo WhatsApp
+- FR12: Sistema pode enviar mensagem privada (DM) a um membro via WhatsApp
+- FR13: Sistema pode iniciar trial automático de 3 dias para novos membros do grupo WhatsApp
+- FR14: Sistema pode enviar lembretes de trial e renovação via DM WhatsApp (dia 2, dia 3)
+- FR15: Sistema pode remover (kick) membros inadimplentes ou com trial expirado do grupo WhatsApp
+- FR16: Sistema pode reativar membro pós-pagamento enviando novo invite link por DM
+- FR17: Membro pode pertencer a um grupo em mais de um canal simultaneamente (Telegram e/ou WhatsApp)
+- FR18: Sistema pode revogar invite link anterior ao remover membro inadimplente
 
-**Gestão de Bots**
-- FR26: Super Admin pode visualizar pool de bots disponíveis
-- FR27: Super Admin pode visualizar bots em uso e seus grupos
-- FR28: Super Admin pode associar bot do pool a um novo grupo
-- FR29: Sistema pode monitorar status de cada bot (health check)
-- FR30: Sistema pode detectar quando um bot fica offline
-- FR31: Sistema pode enviar alerta quando bot fica offline
-- FR32: Super Admin pode reiniciar um bot remotamente
-- FR33: Super Admin pode ver quantidade de bots disponíveis vs em uso
+**Postagem Multi-Canal**
+- FR19: Sistema pode postar apostas no grupo WhatsApp com mesmo conteúdo do Telegram
+- FR20: Sistema pode adaptar formatação de mensagens do formato Telegram para o formato WhatsApp
+- FR21: Sistema pode postar em ambos os canais (Telegram + WhatsApp) simultaneamente para grupos com dois canais
+- FR22: Sistema pode respeitar o posting_schedule configurado por grupo para postagens WhatsApp
 
-**Painel Admin - Super Admin**
-- FR34: Super Admin pode fazer login no painel
-- FR35: Super Admin pode ver dashboard consolidado de todos os grupos
-- FR36: Super Admin pode acessar tela de onboarding de novo influencer
-- FR37: Super Admin pode completar onboarding em até 5 passos
-- FR38: Super Admin pode ver alertas e notificações do sistema
+**Resiliência e Failover**
+- FR23: Sistema pode detectar ban de número automaticamente (desconexão 401)
+- FR24: Sistema pode promover automaticamente número backup a ativo quando o ativo é banido
+- FR25: Sistema pode alocar novo número do pool global como backup após promoção de reserva
+- FR26: Sistema pode executar failover completo sem intervenção humana
+- FR27: Sistema pode enviar alerta no grupo Telegram admin quando um número é banido
+- FR28: Sistema pode monitorar saúde dos números via heartbeat periódico
+- FR29: Sistema pode alertar quando um número perde conexão sem ser ban (queda de rede, restart)
 
-**Painel Admin - Admin de Grupo**
-- FR39: Admin de Grupo pode fazer login no painel
-- FR40: Admin de Grupo pode ver dashboard apenas do seu grupo
-- FR41: Admin de Grupo pode ver contagem de membros (total, trial, ativos)
-- FR42: Admin de Grupo pode ver lista de membros com vencimentos
-- FR43: Admin de Grupo não pode ver dados de outros grupos
+**Integração de Pagamentos**
+- FR30: Webhook Mercado Pago pode ativar membro no canal WhatsApp (além do Telegram existente)
+- FR31: Sistema pode enviar link de convite WhatsApp automaticamente após confirmação de pagamento
+- FR32: Sistema pode processar cancelamento/inadimplência com kick no canal WhatsApp
 
-**Pagamentos (Mercado Pago)**
-- FR44: Sistema pode receber webhook de pagamento do Mercado Pago
-- FR45: Sistema pode validar assinatura (HMAC) do webhook
-- FR46: Sistema pode identificar qual grupo o pagamento pertence
-- FR47: Sistema pode processar evento de pagamento aprovado
-- FR48: Sistema pode atualizar status do membro após pagamento
-- FR49: Cada grupo pode ter seu próprio link de checkout
+**Admin Panel**
+- FR34: Super admin pode adicionar canal WhatsApp a um grupo existente via painel (botão 1-click)
+- FR35: Super admin pode visualizar status dos números alocados por grupo (ativo, backup, health)
+- FR36: Super admin pode visualizar e gerenciar o pool global de números
+- FR37: Gestão de membros no painel pode filtrar por canal (Telegram/WhatsApp)
+- FR38: Dashboard e métricas funcionam de forma agnóstica de canal
+- FR39: Onboarding de novo grupo pode incluir WhatsApp como opção de canal
 
-**Notificações**
-- FR50: Bot pode enviar mensagem de boas-vindas ao novo membro
-- ~~FR51: Lembretes de pagamento via DM~~ → Delegado ao Mercado Pago
-- FR52: Bot pode enviar confirmação de pagamento
-- FR53: Bot pode enviar mensagem de remoção com link pra voltar
-- FR54: Sistema pode enviar alertas pra Super Admin via Telegram
-
-**Automação Telegram**
-- FR59: Sistema pode criar grupo/supergrupo no Telegram automaticamente via MTProto (conta do founder)
-- FR60: Sistema pode adicionar bot do pool como admin do grupo Telegram criado
-- FR61: Bot Super Admin pode enviar convites de novos grupos para os founders automaticamente
-- FR62: Sistema pode enviar convite do grupo Telegram para o dono (influencer) e outras pessoas configuráveis
-
-**Segurança**
-- FR55: Sistema pode autenticar usuários via Supabase Auth
-- FR56: Sistema pode aplicar Row Level Security por grupo
-- FR57: Sistema pode validar permissões em cada requisição de API
-- FR58: Sistema pode impedir que Admin de Grupo altere seu próprio role
-
-**Mensagens com Mídia (v3)**
-- FR59: Super Admin pode anexar arquivo (PDF ou imagem JPG/PNG, máx 10MB) ao agendar mensagem
-- FR60: Sistema pode armazenar arquivo no Supabase Storage com path referenciado na `scheduled_messages`
-- FR61: Bot pode enviar mensagem com PDF (`sendDocument`) ou imagem (`sendPhoto`) para o grupo Telegram
-- FR62: Super Admin pode pré-visualizar mensagem agendada (texto + mídia) antes de confirmar envio
-
-**Gestão de Apostas — Campeonato (v3)**
-- FR63: Admin pode visualizar o campeonato/liga de cada aposta na tabela de apostas
-- FR64: Admin pode filtrar apostas por campeonato/liga
-
-**Cancelamento de Membros (v3)**
-- FR65: Membro pode solicitar cancelamento da assinatura via comando `/cancelar` no bot
-- FR66: Bot pode exibir instruções de cancelamento e solicitar confirmação antes de processar
-- FR67: Sistema pode processar cancelamento: atualizar status do membro para `cancelado`, remover do grupo Telegram, registrar data e motivo
-- FR68: Operador pode cancelar/expulsar membro pelo painel admin (aba Membros) com motivo obrigatório
-- FR69: Sistema pode registrar cancelamento no audit log com: motivo, data, quem executou
-- FR70: Bot pode enviar mensagem de despedida ao membro cancelado com link de reativação
-
-**Analytics de Taxa de Acerto (v3)**
-- FR71: Admin pode visualizar taxa de acerto total (all-time e por período selecionável)
-- FR72: Admin pode visualizar taxa de acerto por grupo
-- FR73: Admin pode visualizar taxa de acerto por mercado
-- FR74: Admin pode visualizar taxa de acerto por campeonato/liga
-- FR75: Admin pode filtrar métricas de acerto por período personalizado
-
-**Painel Admin — Dashboard (v3)**
-- FR76: Super Admin pode dispensar alertas/notificações do dashboard
-- FR77: Dashboard pode exibir taxa de acerto total e por grupo como métrica principal
-- FR78: Dashboard pode exibir resumo de performance recente com indicador de tendência
+**Conexão e Sessões**
+- FR40: Super admin pode conectar número ao WhatsApp via escaneamento de QR code
+- FR41: Sistema pode persistir sessões (auth state / Signal keys) no banco de dados
+- FR42: Sistema pode reconectar automaticamente todas as sessões após restart do serviço
+- FR43: Sistema pode gerenciar múltiplas conexões WebSocket simultâneas (1 por número alocado)
+- FR44: Sistema pode respeitar rate limits implícitos do WhatsApp para evitar detecção anti-spam
 
 ### NonFunctional Requirements
 
 **Performance**
-- NFR-P1: Postagem de apostas inicia no máximo 30 segundos após horário programado (P0)
-- NFR-P2: Acesso de membro liberado em < 30 segundos após confirmação de pagamento (P0)
-- NFR-P3: Painel admin carrega em < 3 segundos (first contentful paint) (P1)
-- NFR-P4: Lista de membros carrega em < 2 segundos (até 10k registros) (P1)
-- NFR-P5: Bulk update de odds/links processa em < 5 segundos (até 50 itens) (P1)
-
-**Security**
-- NFR-S1: Isolamento de dados: 0 vazamentos entre tenants (validado por testes automatizados) (P0)
-- NFR-S2: Tokens de bot criptografados at rest (AES-256 ou equivalente) (P0)
-- NFR-S3: Webhook Mercado Pago validado via HMAC em 100% das requisições (P0)
-- NFR-S4: Sessões admin expiram em 24 horas sem atividade (P1)
-- NFR-S5: Audit log de ações críticas retido por 90 dias (P1)
-- NFR-S6: Rate limiting: máximo 100 requisições/minuto por usuário (P1)
-
-**Scalability**
-- NFR-SC1: Suportar 3 grupos com 10k membros cada (30k total) sem degradação (Dia 1)
-- NFR-SC2: Escalar para 10 influencers sem mudança de arquitetura (3 meses)
-- NFR-SC3: Suportar pico de 1000 novos membros/hora (lançamento de influencer) (Dia 1)
-- NFR-SC4: Banco de dados dimensionado para 100k membros totais (6 meses)
+- NFR1: Failover completo deve completar em menos de 5 minutos
+- NFR2: Postagem no grupo WhatsApp em menos de 30 segundos após trigger
+- NFR3: Rate limit de no máximo 10 mensagens por minuto por número
+- NFR4: Reconexão após restart em menos de 60 segundos por número
+- NFR5: Heartbeat a cada 60 segundos
 
 **Reliability**
-- NFR-R1: Uptime de bots >= 99.9% durante horários de postagem (7h-23h) (P0)
-- NFR-R2: Health check detecta bot offline em <= 2 minutos (P0)
-- NFR-R3: Alerta de bot offline enviado em <= 5 minutos da detecção (P0)
-- NFR-R4: Tempo médio de recuperação (MTTR) de bot <= 10 minutos (P1)
-- NFR-R5: Webhook Mercado Pago com retry automático (3 tentativas) (P1)
-- NFR-R6: Painel admin disponível 99% do tempo (P2)
+- NFR6: Serviço WhatsApp 24/7 sem spin-down
+- NFR7: Uptime do grupo ≥ 99.9%
+- NFR8: Sessões sobrevivem restarts sem re-escanear QR
+- NFR9: Auth state persistido antes de confirmar ao Baileys
+- NFR10: Reconexão automática com backoff exponencial (max 5 tentativas)
+- NFR11: Serviço WhatsApp isolado do Telegram
+
+**Security**
+- NFR12: Signal keys criptografadas (AES-256-GCM) no Supabase
+- NFR13: Telefones de membros protegidos por RLS
+- NFR14: Pool global acessível apenas por super admin
+- NFR15: Credenciais WhatsApp nunca logadas
+- NFR16: RLS estendido para todas tabelas novas
+
+**Scalability**
+- NFR17: 50+ números conectados simultaneamente
+- NFR18: Escala horizontal possível
+- NFR19: Novos grupos não degradam performance existente
+- NFR20: Pool global suporta 100+ números
 
 **Integration**
-- NFR-I1: Compatível com Telegram Bot API v6.x+ (P0)
-- NFR-I2: Webhook Mercado Pago v2 suportado (P0)
-- NFR-I3: Funciona com Supabase Auth (JWT padrão) (P0)
-- NFR-I4: Deploy automatizado via Render (1 serviço por bot) (P1)
-- NFR-I5: Graceful degradation: se Mercado Pago timeout, retry + log (P1)
+- NFR21: Compatível com Baileys v6+
+- NFR22: Abstração de canal substituível
+- NFR23: Mercado Pago idêntico para ambos canais
+- NFR24: Alertas via Telegram admin existente
+- NFR25: Formatação WhatsApp suportada
 
 ### Additional Requirements
 
-**Da Arquitetura:**
-- Starter template para Admin Panel: `npx create-next-app@latest admin-panel --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"`
-- Migration SQL necessária: criar tabelas `groups`, `admin_users`, `bot_pool`, `bot_health`
-- Adicionar `group_id` (FK → groups) nas tabelas `members` e `suggested_bets`
-- RLS policies obrigatórias em todas as tabelas com `group_id`
-- Middleware de tenant (`withTenant()`) obrigatório em toda API Route do admin panel
-- Onboarding automático: integração com MP API (criar produto) + Render API (deploy bot) + Supabase Auth (criar admin)
-- Health check pattern: bot pinga Supabase a cada 60 segundos via `bot_health`
-- Restart remoto via flag `restart_requested` no Supabase → bot faz `process.exit(1)` → Render reinicia
-- Dois repositórios: `bets-estatistica` (bots existentes) + `admin-panel` (Next.js novo)
-- Sequência recomendada: Migration → RLS → Admin Panel básico → Adaptar Bots → Onboarding → Health Check
-- Identificação de grupo no Mercado Pago: produto por grupo (cada influencer tem seu próprio produto no MP)
-- Distribuição de apostas: pool global → round-robin entre grupos ativos
+**From Architecture:**
+
+- Brownfield — estender monorepo existente, sem starter template
+- Auth state persistence com modelo híbrido: creds (JSONB) + keys separadas (tabela whatsapp_keys com upsert granular)
+- Criptografia AES-256-GCM para Signal keys (consistente com mtproto_sessions)
+- Channel adapter com interface uniforme (sendMessage, sendPhoto, getGroupMembers)
+- Failover state machine com 5 estados: available, active, backup, banned, cooldown
+- Health monitoring reutilizando bot_health + job_executions existentes
+- Graceful shutdown: handler SIGTERM que salva auth state e fecha WebSockets
+- QR code flow: admin insere número → serviço detecta → grava QR em whatsapp_sessions → admin panel polls
+- 6 migrations SQL novas (029-034)
+- Novos arquivos em lib/ (channelAdapter.js, phoneUtils.js)
+- Novos componentes admin panel (NumberPoolTable, NumberStatusBadge, QrCodeModal, FailoverTimeline)
+
+**Implementation Patterns (Architecture):**
+
+- Nunca instanciar Baileys diretamente — usar BaileyClient wrapper
+- Nunca salvar auth state em filesystem — usar authStateStore (Supabase)
+- Nunca fazer transição de status direto no banco — usar failoverService
+- Nunca enviar mensagens diretamente — usar channelAdapter
+- Phone numbers: armazenar E.164, converter para JID on-the-fly
 
 ### FR Coverage Map
 
-- FR1: Epic 1 - Criar novo grupo/influencer (migration + API)
-- FR2: Epic 1 - Listar todos os grupos (API + UI)
-- FR3: Epic 2 - Editar configurações de grupo
-- FR4: Epic 2 - Pausar/desativar grupo
-- FR5: Epic 1 - Isolamento de dados (RLS + middleware)
-- FR6: Epic 3 - Registrar novo membro no Telegram
-- FR7: Epic 4 - Trial gerenciado pelo MP, sistema registra status `trial`
-- ~~FR8: Delegado ao Mercado Pago~~
-- ~~FR9: Delegado ao Mercado Pago~~
-- ~~FR10: Delegado ao Mercado Pago~~
-- FR11: Epic 4 - Kick automático por expiração de assinatura no MP
-- FR12: Epic 4 - Acesso instantâneo pós-pagamento
-- FR13: Epic 3 - Admin de Grupo visualiza membros
-- FR14: Epic 3 - Admin de Grupo vê status dos membros
-- FR15: Epic 3 - Admin de Grupo vê vencimentos
-- FR16: Epic 3 - Super Admin visualiza membros de qualquer grupo
-- FR17: Epic 5 - Gerar pool de apostas (existente)
-- FR18: Epic 5 - Distribuir apostas via round-robin
-- FR19: Epic 5 - Registrar qual aposta foi para qual grupo
-- FR20: Epic 5 - Visualizar apostas e distribuição
-- FR21: Epic 5 - Atualizar odds (individual)
-- FR22: Epic 5 - Atualizar odds (bulk)
-- FR23: Epic 5 - Adicionar links (individual)
-- FR24: Epic 5 - Adicionar links (bulk)
-- FR25: Epic 5 - Bot posta apostas no grupo Telegram
-- FR26: Epic 2 - Visualizar pool de bots
-- FR27: Epic 2 - Visualizar bots em uso
-- FR28: Epic 2 - Associar bot a novo grupo
-- FR29: Epic 6 - Monitorar status de cada bot
-- FR30: Epic 6 - Detectar bot offline
-- FR31: Epic 6 - Enviar alerta de bot offline
-- FR32: Epic 6 - Reiniciar bot remotamente
-- FR33: Epic 2 - Ver quantidade bots disponíveis vs em uso
-- FR34: Epic 1 - Super Admin login no painel
-- FR35: Epic 2 - Dashboard consolidado de todos os grupos
-- FR36: Epic 2 - Tela de onboarding de influencer
-- FR37: Epic 2 - Onboarding em até 5 passos
-- FR38: Epic 2 - Ver alertas e notificações
-- FR39: Epic 3 - Admin de Grupo login no painel
-- FR40: Epic 3 - Dashboard apenas do seu grupo
-- FR41: Epic 3 - Contagem de membros (total, trial, ativos)
-- FR42: Epic 3 - Lista de membros com vencimentos
-- FR43: Epic 3 - Não pode ver dados de outros grupos
-- FR44: Epic 4 - Receber webhook Mercado Pago
-- FR45: Epic 4 - Validar HMAC do webhook
-- FR46: Epic 4 - Identificar grupo do pagamento
-- FR47: Epic 4 - Processar pagamento aprovado
-- FR48: Epic 4 - Atualizar status do membro
-- FR49: Epic 2 - Link de checkout próprio por grupo
-- FR50: Epic 4 - Mensagem de boas-vindas
-- ~~FR51: Delegado ao Mercado Pago~~
-- FR52: Epic 4 - Confirmação de pagamento
-- FR53: Epic 4 - Mensagem de remoção com link
-- FR54: Epic 6 - Alertas pra Super Admin via Telegram
-- FR55: Epic 1 - Autenticação via Supabase Auth
-- FR56: Epic 1 - Row Level Security por grupo
-- FR57: Epic 1 - Validar permissões em cada requisição
-- FR58: Epic 1 - Impedir Admin de Grupo alterar role
-- FR59(auto): Epic 2 - Criar grupo Telegram automaticamente via MTProto
-- FR60(auto): Epic 2 - Adicionar bot como admin do grupo Telegram
-- FR61(auto): Epic 2 - Bot Super Admin envia convites para founders
-- FR62(auto): Epic 2 - Enviar convite para influencer e convidados
+FR1: Epic 1 — Adicionar números ao pool global
+FR2: Epic 1 — Visualizar status dos números no pool
+FR3: Epic 1 — Alocar números do pool para grupo (1 ativo + 2 backup)
+FR4: Epic 1 — Desalocar números banidos
+FR5: Epic 1 — Alerta de estoque baixo no pool
+FR6: Epic 2 — Criar grupo WhatsApp via admin panel (1-click)
+FR7: Epic 2 — Criar grupo programaticamente com 3 números admin
+FR8: Epic 2 — Configurar grupo como "só admins enviam"
+FR9: Epic 2 — Gerar e revogar invite links do grupo
+FR10: Epic 2 — Influencer solicita adição de canal WhatsApp
+FR11: Epic 4 — Detectar novos membros no grupo WhatsApp
+FR12: Epic 4 — Enviar DM via WhatsApp
+FR13: Epic 4 — Trial automático de 3 dias para novos membros
+FR14: Epic 4 — Lembretes de trial/renovação via DM
+FR15: Epic 4 — Kick de membros inadimplentes/trial expirado
+FR16: Epic 4 — Reativar membro pós-pagamento via invite DM
+FR17: Epic 4 — Membro em múltiplos canais simultaneamente
+FR18: Epic 4 — Revogar invite link ao remover membro
+FR19: Epic 3 — Postar apostas no WhatsApp (mesmo conteúdo Telegram)
+FR20: Epic 1 — Channel adapter com formatação Telegram → WhatsApp
+FR21: Epic 3 — Postagem simultânea em ambos os canais
+FR22: Epic 3 — Respeitar posting_schedule por grupo
+FR23: Epic 5 — Detectar ban automaticamente (401)
+FR24: Epic 5 — Promover backup a ativo no ban
+FR25: Epic 5 — Alocar novo backup do pool após promoção
+FR26: Epic 5 — Failover completo sem intervenção humana
+FR27: Epic 5 — Alerta no Telegram admin quando número banido
+FR28: Epic 5 — Heartbeat periódico de saúde dos números
+FR29: Epic 5 — Alerta de perda de conexão (não-ban)
+FR30: Epic 6 — Webhook MP ativa membro no canal WhatsApp
+FR31: Epic 6 — Enviar invite WhatsApp após pagamento confirmado
+FR32: Epic 6 — Kick no WhatsApp por cancelamento/inadimplência
+FR34: Epic 2 — Botão 1-click para adicionar canal WhatsApp a grupo existente
+FR35: Epic 5 — Visualizar status dos números por grupo no admin
+FR36: Epic 1 — Gerenciar pool global no admin panel
+FR37: Epic 4 — Filtrar membros por canal no admin
+FR38: Epic 3 — Dashboard e métricas agnósticos de canal
+FR39: Epic 2 — Onboarding de grupo inclui WhatsApp como opção
+FR40: Epic 1 — Conectar número via QR code
+FR41: Epic 1 — Persistir sessões (auth state + Signal keys) no banco
+FR42: Epic 1 — Reconexão automática após restart
+FR43: Epic 1 — Gerenciar múltiplas conexões WebSocket
+FR44: Epic 1 — Rate limiting anti-spam
 
-**v3 — FR Coverage Map:**
-- FR59: Epic 8 - Anexar arquivo (PDF/imagem) ao agendar mensagem
-- FR60: Epic 8 - Armazenar arquivo no Supabase Storage
-- FR61: Epic 8 - Bot envia PDF/imagem para grupo Telegram
-- FR62: Epic 8 - Preview de mensagem agendada
-- FR63: Epic 7 - Visualizar campeonato na tabela de apostas
-- FR64: Epic 7 - Filtrar apostas por campeonato
-- FR65: Epic 9 - Membro solicita cancelamento via `/cancelar`
-- FR66: Epic 9 - Bot exibe instruções e pede confirmação
-- FR67: Epic 9 - Sistema processa cancelamento
-- FR68: Epic 9 - Operador cancela/expulsa membro pelo painel
-- FR69: Epic 9 - Registro de cancelamento no audit log
-- FR70: Epic 9 - Mensagem de despedida com link de reativação
-- FR71: Epic 10 - Taxa de acerto total
-- FR72: Epic 10 - Taxa de acerto por grupo
-- FR73: Epic 10 - Taxa de acerto por mercado
-- FR74: Epic 10 - Taxa de acerto por campeonato
-- FR75: Epic 10 - Filtro por período personalizado
-- FR76: Epic 11 - Dismiss de alertas/notificações
-- FR77: Epic 11 - Taxa de acerto como métrica principal
-- FR78: Epic 11 - Resumo de performance recente
+**Cobertura: 43/43 FRs mapeados (FR33 removido — canal determinado pela configuração do grupo, sem escolha no checkout)**
 
 ## Epic List
 
-### Epic 6: Health Check, Monitoramento e Alertas
-Sistema monitora bots ativamente, detecta falhas, alerta Super Admin via Telegram e permite restart remoto pelo painel.
-**FRs cobertos:** FR29, FR30, FR31, FR32, FR54
-**NFRs endereçados:** NFR-R1, NFR-R2, NFR-R3, NFR-R4
-**Jornada:** J5 - Bot caiu às 3h da manhã
-**Inclui:** Heartbeat a cada 60s, detecção offline, alertas Telegram, restart via flag no Supabase
+### Epic 1: Infraestrutura WhatsApp & Pool de Números
+Super admin pode conectar números WhatsApp, gerenciar o pool global da plataforma, e o sistema mantém sessões persistentes e reconectáveis. Este épico estabelece toda a fundação técnica (Baileys, auth state, migrations, criptografia) necessária para os demais épicos.
 
-### Epic 7: Coluna Campeonato na Aba de Apostas
-Operador pode visualizar e filtrar apostas por campeonato/liga, facilitando a busca e organização.
-**FRs cobertos:** FR63, FR64
-**NFRs endereçados:** NFR-P3, NFR-P4
-**Jornada:** J7 (parcial)
-**Inclui:** JOIN league_matches → league_seasons, coluna na tabela, filtro no BetFilters, coluna no PostingHistory
+**FRs cobertos:** FR1, FR2, FR3, FR4, FR5, FR20, FR36, FR40, FR41, FR42, FR43, FR44
+**NFRs endereçados:** NFR3, NFR4, NFR6, NFR8, NFR9, NFR10, NFR11, NFR12, NFR14, NFR15, NFR16, NFR17, NFR20, NFR21, NFR22, NFR25
+**Dependências:** Nenhuma (épico fundacional)
 
-### Epic 8: Mensagens com Mídia e Preview
-Operador pode enviar mensagens agendadas com PDF ou imagem anexa, e pré-visualizar antes de confirmar.
-**FRs cobertos:** FR59, FR60, FR61, FR62
-**NFRs endereçados:** NFR-P3
-**Jornada:** Extensão da operação diária
-**Inclui:** Upload de arquivo via Supabase Storage, campos de mídia em scheduled_messages, sendDocument/sendPhoto no bot, botão Preview
+### Epic 2: Criação e Configuração de Grupos WhatsApp
+Super admin pode criar grupos WhatsApp para influencers com 1-click, configurar permissões e gerar invite links. Influencers podem solicitar adição de canal WhatsApp ao grupo existente.
 
-### Epic 9: Fluxo de Cancelamento de Membros
-Membro pode cancelar pelo bot, operador pode cancelar/expulsar pelo painel. Tudo registrado com auditoria.
-**FRs cobertos:** FR65, FR66, FR67, FR68, FR69, FR70
-**NFRs endereçados:** NFR-S1, NFR-S5
-**Jornada:** J6 - Pedro cancela assinatura
-**Inclui:** Comando /cancelar no bot, ação de cancel/kick no painel, estado `cancelado` na state machine, mensagem despedida, audit log
+**FRs cobertos:** FR6, FR7, FR8, FR9, FR10, FR34, FR39
+**NFRs endereçados:** NFR7, NFR22
+**Dependências:** Epic 1 (precisa de números conectados e pool alocável)
 
-### Epic 10: Analytics de Taxa de Acerto
-Admin pode visualizar taxa de acerto por grupo, mercado, campeonato e período. Dados para decisões de negócio.
-**FRs cobertos:** FR71, FR72, FR73, FR74, FR75
-**NFRs endereçados:** NFR-P3, NFR-P4
-**Jornada:** J7 - Marcelo analisa performance
-**Inclui:** API routes de analytics, nova página no admin panel, filtros interativos, cards de resumo, tabela detalhada
+### Epic 3: Postagem Multi-Canal
+Sistema pode postar apostas simultaneamente no Telegram e WhatsApp, adaptando a formatação para cada canal. Dashboard e métricas funcionam de forma agnóstica de canal.
 
-### Epic 11: Revisão do Dashboard
-Dashboard exibe métricas de acerto como destaque principal, alertas são dismissíveis, informações relevantes para o operador.
-**FRs cobertos:** FR76, FR77, FR78
-**NFRs endereçados:** NFR-P3
-**Jornada:** J7 (parcial)
-**Inclui:** Refatorar alertas para dismissíveis, cards de taxa de acerto, resumo de performance recente
+**FRs cobertos:** FR19, FR21, FR22, FR38
+**NFRs endereçados:** NFR2
+**Dependências:** Epic 1 + Epic 2 (precisa de números conectados e grupo criado)
 
----
+### Epic 4: Ciclo de Vida de Membros no WhatsApp
+Sistema gerencia membros no canal WhatsApp: detecta entrada, inicia trial, envia lembretes, remove inadimplentes e reativa após pagamento. Membros podem pertencer a ambos os canais simultaneamente.
 
+**FRs cobertos:** FR11, FR12, FR13, FR14, FR15, FR16, FR17, FR18, FR37
+**NFRs endereçados:** NFR13, NFR16, NFR22, NFR23
+**Dependências:** Epic 1 + Epic 2 (precisa de números conectados e grupo criado)
 
-## Epic 6: Health Check, Monitoramento e Alertas
+### Epic 5: Failover Automático & Health Monitoring
+Sistema detecta bans e falhas automaticamente, promove backups, aloca novos números do pool e executa failover completo sem intervenção humana. Admin visualiza health e timeline no painel.
 
-Sistema monitora bots ativamente, detecta falhas, alerta Super Admin via Telegram e permite restart remoto pelo painel.
+**FRs cobertos:** FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR35
+**NFRs endereçados:** NFR1, NFR5, NFR7, NFR10, NFR24
+**Dependências:** Epic 1 (precisa de números conectados com status machine)
 
-### Story 6.1: Heartbeat dos Bots e Detecção de Offline
+### Epic 6: Integração de Pagamentos (Canal WhatsApp)
+Webhook Mercado Pago ativa e desativa membros no canal WhatsApp automaticamente, enviando invite links após pagamento e removendo inadimplentes. Membro recebe acesso a todos os canais que o grupo oferece.
 
-As a **sistema**,
-I want monitorar o status de cada bot em tempo real,
-So that falhas sejam detectadas rapidamente.
-
-**Acceptance Criteria:**
-
-**Given** um bot está rodando associado a um grupo
-**When** o bot está ativo
-**Then** envia heartbeat a cada 60 segundos atualizando `bot_health.last_heartbeat` e `status = 'online'` (FR29)
-**And** se `last_heartbeat` tem mais de 2 minutos, o bot é considerado offline (FR30, NFR-R2)
-**And** a página `/bots` no admin panel mostra status em tempo real: online/offline com timestamp do último heartbeat
-**And** bot que acabou de iniciar registra heartbeat imediatamente
-**And** uptime dos bots >= 99.9% durante horários de postagem 7h-23h (NFR-R1)
-
-### Story 6.2: Alertas de Bot Offline via Telegram
-
-As a **Super Admin**,
-I want receber alertas quando um bot fica offline,
-So that eu possa agir rapidamente e minimizar impacto.
-
-**Acceptance Criteria:**
-
-**Given** um bot foi detectado como offline (last_heartbeat > 2 min)
-**When** o sistema de monitoramento identifica a falha
-**Then** envia alerta via Telegram para o grupo admin do Super Admin (FR31, FR54)
-**And** alerta inclui: nome do bot, grupo afetado, tempo offline, sugestão de ação
-**And** alerta é enviado em <= 5 minutos da detecção (NFR-R3)
-**And** NÃO envia alertas duplicados (se já alertou sobre esse bot offline, não repete até voltar)
-**And** quando bot volta online, envia alerta de recuperação: "Bot X online novamente"
-
-### Story 6.3: Restart Remoto de Bot pelo Painel
-
-As a **Super Admin**,
-I want reiniciar um bot remotamente pelo painel admin,
-So that eu possa resolver problemas sem acesso ao servidor.
-
-**Acceptance Criteria:**
-
-**Given** Super Admin está na página `/bots` e vê um bot offline
-**When** clica em "Reiniciar" no bot
-**Then** sistema seta `bot_health.restart_requested = true` para o grupo do bot (FR32)
-**And** bot (no próximo health check) detecta a flag e executa `process.exit(1)`
-**And** Render detecta processo morto e reinicia automaticamente
-**And** bot ao reiniciar: limpa `restart_requested = false`, envia heartbeat, status volta para `online`
-**And** MTTR (tempo médio de recuperação) <= 10 minutos (NFR-R4)
-**And** UI mostra feedback: "Restart solicitado" → "Reiniciando..." → "Online"
-**And** audit log registra: quem solicitou restart, qual bot, quando
+**FRs cobertos:** FR30, FR31, FR32
+**NFRs endereçados:** NFR23
+**Dependências:** Epic 2 + Epic 4 (precisa de grupos criados e gestão de membros funcional)
 
 ---
 
-## Epic 7: Coluna Campeonato na Aba de Apostas
+## Epic 1: Infraestrutura WhatsApp & Pool de Números
 
-Operador pode visualizar e filtrar apostas por campeonato/liga, facilitando a busca e organização.
+Super admin pode conectar números WhatsApp, gerenciar o pool global da plataforma, e o sistema mantém sessões persistentes e reconectáveis. Este épico estabelece toda a fundação técnica (Baileys, auth state, migrations, criptografia) necessária para os demais épicos.
 
-### Story 7.1: Coluna Campeonato e Filtro por Liga na Aba de Apostas e Histórico
+### Story 1.1: Adicionar e Conectar Número WhatsApp via QR Code
 
-As a **operador (Super Admin ou Group Admin)**,
-I want ver o campeonato/liga de cada aposta e poder filtrar por campeonato,
-So that eu consiga localizar apostas rapidamente e identificar padrões por liga.
+As a super admin,
+I want adicionar um número telefônico e conectá-lo ao WhatsApp escaneando QR code,
+So that a plataforma tenha um número WhatsApp conectado e pronto para uso.
+
+**Escopo técnico:** Cria migrations (whatsapp_numbers, whatsapp_sessions, whatsapp_keys + RLS), BaileyClient wrapper, authStateStore (Supabase), phoneUtils.js, criptografia AES-256-GCM para Signal keys.
+
+**FRs:** FR1, FR40, FR41, FR44
 
 **Acceptance Criteria:**
 
-**Given** operador está na página `/bets` (aba Apostas)
-**When** a tabela de apostas é carregada
-**Then** exibe coluna "Campeonato" entre "Jogo" e "Mercado", mostrando `league_seasons.league_name` via JOIN `suggested_bets → league_matches → league_seasons` (FR63)
-**And** a coluna é sortable (ordenável)
-**And** o componente `BetFilters` inclui dropdown "Campeonato" com lista distinta de ligas disponíveis nas apostas carregadas (FR64)
-**And** ao selecionar um campeonato no filtro, a tabela mostra apenas apostas daquele campeonato
-**And** a API `GET /api/bets` aceita parâmetro `championship` que filtra por `league_seasons.league_name` via JOIN
-**And** a página `/posting-history` (Histórico) também exibe a coluna "Campeonato" na tabela
-**And** performance: lista carrega em < 2 segundos com filtro de campeonato aplicado (NFR-P4)
+**Given** super admin insere um número E.164 válido no sistema
+**When** o serviço WhatsApp inicia conexão Baileys para esse número
+**Then** um QR code é gerado e gravado em `whatsapp_sessions.qr_code`
+**And** admin panel pode exibir o QR code para escaneamento
+
+**Given** super admin escaneia o QR code com o celular
+**When** Baileys confirma autenticação (connection.update → open)
+**Then** auth state (creds) é persistido como JSONB em `whatsapp_sessions`
+**And** Signal keys são criptografadas (AES-256-GCM) e salvas em `whatsapp_keys`
+**And** status do número muda para `available` em `whatsapp_numbers`
+
+**Given** número conectado e ativo
+**When** sistema envia mensagens
+**Then** rate limit de 10 msg/min por número é respeitado (NFR3)
+
+### Story 1.2: Reconexão Automática de Sessões
+
+As a super admin,
+I want que o sistema reconecte automaticamente todas as sessões WhatsApp após restart do serviço,
+So that os números permaneçam conectados 24/7 sem re-escanear QR code.
+
+**FRs:** FR42, FR43
+
+**Acceptance Criteria:**
+
+**Given** serviço WhatsApp reinicia (deploy ou crash)
+**When** o processo inicia
+**Then** todas as sessões com auth state válido em `whatsapp_sessions` são reconectadas automaticamente
+**And** reconexão completa em menos de 60 segundos por número (NFR4)
+
+**Given** múltiplos números conectados (ex: 10+)
+**When** serviço está rodando
+**Then** cada número mantém sua própria conexão WebSocket independente (FR43)
+**And** reconexão usa backoff exponencial (max 5 tentativas) (NFR10)
+
+**Given** serviço recebe SIGTERM
+**When** shutdown é iniciado
+**Then** auth state de todas as sessões é salvo antes de fechar WebSockets (graceful shutdown)
+
+### Story 1.3: Pool Global — Alocação e Gestão de Números
+
+As a super admin,
+I want visualizar o status de todos os números e ter alocação automática de números para grupos,
+So that cada grupo tenha sempre 1 número ativo + 2 backups sem gestão manual.
+
+**FRs:** FR2, FR3, FR4, FR5
+
+**Acceptance Criteria:**
+
+**Given** super admin acessa a listagem de números
+**When** visualiza o pool global
+**Then** cada número mostra seu status atual (available, active, backup, banned, cooldown)
+**And** mostra a qual grupo está alocado (se aplicável)
+
+**Given** um grupo precisa de números WhatsApp
+**When** sistema executa alocação automática
+**Then** 3 números `available` são alocados: 1 como `active`, 2 como `backup`
+**And** se não há números suficientes, aloca o máximo possível e alerta super admin
+
+**Given** um número é banido
+**When** sistema detecta o ban
+**Then** número é desalocado do grupo e marcado como `banned` em `whatsapp_numbers`
+
+**Given** pool global tem menos que um threshold de números `available`
+**When** sistema verifica estoque periodicamente
+**Then** alerta é enviado ao super admin (via Telegram admin group)
+
+### Story 1.4: Admin Panel — Gerenciamento do Pool de Números
+
+As a super admin,
+I want gerenciar o pool global de números via admin panel,
+So that eu possa adicionar, visualizar e gerenciar números sem acesso direto ao banco.
+
+**FRs:** FR36
+
+**Acceptance Criteria:**
+
+**Given** super admin acessa a página de pool de números no admin panel
+**When** a página carrega
+**Then** tabela exibe todos os números com status, grupo alocado e último heartbeat
+**And** badge visual indica o status de cada número (NumberStatusBadge)
+
+**Given** super admin quer adicionar um novo número
+**When** clica em "Adicionar Número" e insere o telefone
+**Then** número é adicionado ao pool com status `available`
+**And** fluxo de QR code é iniciado (QrCodeModal)
+
+**Given** super admin quer ver detalhes de um número
+**When** clica no número na tabela
+**Then** visualiza histórico de status, grupo atual e métricas de saúde
+
+### Story 1.5: Channel Adapter — Abstração Multi-Canal
+
+As a sistema,
+I want uma abstração uniforme para enviar mensagens em qualquer canal (Telegram ou WhatsApp),
+So that toda a lógica de negócio seja agnóstica de canal e novos canais possam ser adicionados sem alterar services existentes.
+
+**Escopo técnico:** Cria `lib/channelAdapter.js` com interface uniforme. Implementa formatação Telegram→WhatsApp (bold, italic, monospace, links).
+
+**FRs:** FR20
+
+**Acceptance Criteria:**
+
+**Given** `channelAdapter.js` é criado em `lib/`
+**When** qualquer serviço precisa enviar mensagem para um grupo
+**Then** usa `channelAdapter.sendMessage(groupId, content, channel)` com interface uniforme
+**And** nunca envia diretamente via Baileys ou Telegram Bot API
+
+**Given** uma mensagem formatada para Telegram (HTML/Markdown Telegram)
+**When** channel adapter processa para o canal WhatsApp
+**Then** formatação é convertida para WhatsApp (bold com `*`, italic com `_`, monospace com `` ` ``)
+**And** emojis e estrutura visual são preservados
+**And** links são mantidos como texto clicável
+
+**Given** serviço precisa enviar DM a um membro
+**When** `channelAdapter.sendDM(userId, message, channel)` é chamado
+**Then** mensagem é enviada via Baileys (WhatsApp) ou Bot API (Telegram) conforme o canal
+**And** rate limit de 10 msg/min por número é respeitado
+
+**Given** mensagem contém imagem (ex: banner de aposta)
+**When** channel adapter envia para WhatsApp
+**Then** usa `channelAdapter.sendPhoto(groupId, image, caption, channel)` com caption formatada
 
 ---
 
-## Epic 8: Mensagens com Mídia e Preview
+## Epic 2: Criação e Configuração de Grupos WhatsApp
 
-Operador pode enviar mensagens agendadas com PDF ou imagem anexa, e pré-visualizar antes de confirmar.
+Super admin pode criar grupos WhatsApp para influencers com 1-click, configurar permissões e gerar invite links. Influencers podem solicitar adição de canal WhatsApp ao grupo existente.
 
-### Story 8.1: Upload de Arquivo e Schema de Mídia
+### Story 2.1: Criar Grupo WhatsApp Programaticamente
 
-As a **Super Admin**,
-I want anexar um PDF ou imagem ao agendar uma mensagem,
-So that eu possa enviar relatórios, comunicados visuais e conteúdo rico para os grupos.
+As a super admin,
+I want criar um grupo WhatsApp para um influencer com 1-click no admin panel,
+So that o influencer tenha um grupo WhatsApp pronto com os números da plataforma como admins.
 
-**Acceptance Criteria:**
-
-**Given** Super Admin está na página `/messages` criando nova mensagem
-**When** preenche o formulário de agendamento
-**Then** o formulário exibe campo de upload de arquivo (drag & drop ou click) aceitando PDF, JPG e PNG com limite de 10MB (FR59)
-**And** ao selecionar arquivo, mostra preview do nome, tipo e tamanho
-**And** arquivo é enviado para Supabase Storage no bucket `message-media` com path `{group_id}/{uuid}.{ext}` (FR60)
-**And** migration adiciona campos na tabela `scheduled_messages`: `media_url` (TEXT, nullable), `media_type` (VARCHAR: 'pdf'|'image'|null), `media_storage_path` (TEXT, nullable)
-**And** API `POST /api/messages` aceita `media_storage_path` e `media_type` opcionais
-**And** validação: rejeita arquivos > 10MB com mensagem clara de erro
-**And** validação: rejeita tipos de arquivo não suportados (apenas PDF, JPG, PNG)
-**And** mensagem pode ser agendada com texto apenas, mídia apenas, ou texto + mídia
-**And** RLS: storage bucket respeita isolamento por grupo
-
-### Story 8.2: Preview de Mensagem Agendada
-
-As a **Super Admin**,
-I want pré-visualizar como a mensagem ficará antes de confirmar o envio,
-So that eu possa verificar formatação e conteúdo antes de enviar para o grupo.
+**FRs:** FR6, FR7, FR8
 
 **Acceptance Criteria:**
 
-**Given** Super Admin preencheu o formulário de mensagem (texto e/ou mídia)
-**When** clica no botão "Preview"
-**Then** exibe modal de preview mostrando: texto formatado com Telegram Markdown renderizado (FR62)
-**And** se mídia é imagem: exibe a imagem no preview com dimensões proporcionais
-**And** se mídia é PDF: exibe ícone de PDF com nome do arquivo e tamanho
-**And** preview inclui indicação do grupo destino e horário agendado
-**And** modal tem botões "Editar" (volta ao form) e "Confirmar e Agendar" (salva)
-**And** na tabela de mensagens agendadas, coluna "Mídia" exibe ícone indicando tipo (📎 PDF, 🖼️ imagem, ou vazio)
-**And** ao clicar numa mensagem agendada com mídia na tabela, pode ver o preview da mídia
+**Given** super admin acessa a página de um grupo/influencer no admin panel
+**When** clica em "Criar Grupo WhatsApp"
+**Then** sistema cria grupo WhatsApp via Baileys usando o número `active` alocado ao grupo
+**And** os 3 números alocados (1 ativo + 2 backup) são adicionados como admins do grupo
+**And** grupo é configurado como "só admins enviam" (announce mode)
 
-### Story 8.3: Envio de Mídia pelo Bot no Telegram
+**Given** grupo WhatsApp foi criado com sucesso
+**When** criação é confirmada pelo Baileys
+**Then** `whatsapp_group_id` é salvo na tabela do grupo no banco
+**And** status é exibido no admin panel como "WhatsApp ativo"
 
-As a **sistema (job de envio)**,
-I want que o bot envie PDF ou imagem junto com a mensagem agendada,
-So that membros do grupo recebam o conteúdo rico no Telegram.
+**Given** grupo não tem números suficientes alocados
+**When** super admin tenta criar grupo WhatsApp
+**Then** sistema exibe erro explicativo e sugere alocar números primeiro
+
+### Story 2.2: Gestão de Invite Links do Grupo WhatsApp
+
+As a super admin,
+I want gerar e revogar links de convite do grupo WhatsApp,
+So that eu possa controlar o acesso ao grupo e invalidar links antigos quando necessário.
+
+**FRs:** FR9
 
 **Acceptance Criteria:**
 
-**Given** uma mensagem agendada com mídia chegou no horário de envio (`scheduled_at <= now()` e `status = 'pending'`)
-**When** o job de envio de mensagens processa esta mensagem
-**Then** se `media_type = 'image'`: bot usa `sendPhoto` com o arquivo do Supabase Storage e `caption` com o texto da mensagem (FR61)
-**And** se `media_type = 'pdf'`: bot usa `sendDocument` com o arquivo do Supabase Storage e `caption` com o texto da mensagem (FR61)
-**And** se `media_type = null`: bot usa `sendMessage` com o texto (comportamento atual mantido)
-**And** para obter o arquivo do Storage, gera signed URL temporária (60s) via Supabase Storage API
-**And** em caso de falha no envio de mídia, registra erro no `scheduled_messages` com `status = 'failed'` e `attempts` incrementado
-**And** retry automático: até 3 tentativas com backoff de 30s entre tentativas
-**And** após envio bem-sucedido, atualiza `status = 'sent'`, `sent_at = now()`, `telegram_message_id`
+**Given** grupo WhatsApp existe e está ativo
+**When** super admin solicita geração de invite link (via admin panel ou programaticamente)
+**Then** sistema gera novo invite link via Baileys
+**And** link é armazenado no banco vinculado ao grupo
+
+**Given** existe um invite link ativo para o grupo
+**When** super admin solicita revogação do link
+**Then** link anterior é invalidado via Baileys
+**And** novo link pode ser gerado imediatamente
+
+**Given** sistema precisa revogar link (ex: após kick de membro)
+**When** revogação é executada programaticamente
+**Then** link antigo para de funcionar
+**And** novo link é gerado automaticamente para uso futuro
+
+### Story 2.3: Adicionar Canal WhatsApp a Grupo Existente
+
+As a super admin ou influencer,
+I want adicionar WhatsApp como canal a um grupo que já existe no Telegram,
+So that o grupo passe a operar em ambos os canais sem recriar nada.
+
+**FRs:** FR10, FR34, FR39
+
+**Acceptance Criteria:**
+
+**Given** grupo existe com canal Telegram ativo
+**When** super admin clica em "Adicionar WhatsApp" no admin panel (botão 1-click)
+**Then** sistema aloca 3 números do pool para o grupo
+**And** cria grupo WhatsApp programaticamente (reusa lógica da Story 2.1)
+**And** grupo passa a ter `channels: ['telegram', 'whatsapp']`
+
+**Given** influencer quer adicionar WhatsApp ao seu grupo
+**When** solicita via admin panel ou contato com super admin
+**Then** super admin pode executar a adição com 1-click
+
+**Given** onboarding de novo grupo está em andamento
+**When** super admin configura o grupo
+**Then** WhatsApp aparece como opção de canal disponível no formulário de criação
 
 ---
 
-## Epic 9: Fluxo de Cancelamento de Membros
+## Epic 3: Postagem Multi-Canal
 
-Membro pode cancelar pelo bot, operador pode cancelar/expulsar pelo painel. Tudo registrado com auditoria.
+Sistema pode postar apostas simultaneamente no Telegram e WhatsApp, adaptando a formatação para cada canal. Dashboard e métricas funcionam de forma agnóstica de canal.
 
-### Story 9.1: Cancelamento pelo Operador no Painel Admin
+### Story 3.1: Postagem Simultânea em Ambos os Canais
 
-As a **operador (Super Admin ou Group Admin)**,
-I want cancelar ou expulsar um membro pelo painel admin,
-So that eu possa gerenciar membros problemáticos sem depender do desenvolvedor.
+As a sistema (bot de apostas),
+I want postar apostas no WhatsApp e Telegram simultaneamente quando o grupo tem ambos os canais,
+So that membros de qualquer canal recebam as apostas ao mesmo tempo.
 
-**Acceptance Criteria:**
+**Nota:** Usa channelAdapter criado na Story 1.5 (Epic 1).
 
-**Given** operador está na página `/members` e vê a lista de membros
-**When** clica no botão "Cancelar" de um membro com status `trial` ou `ativo`
-**Then** exibe modal de confirmação com: nome do membro, status atual, campo obrigatório de motivo (textarea) (FR68)
-**And** ao confirmar, API `POST /api/members/{id}/cancel` processa: atualiza `status = 'cancelado'`, seta `kicked_at = now()`, registra motivo (FR67)
-**And** sistema chama Telegram Bot API `banChatMember` para remover membro do grupo Telegram
-**And** bot envia mensagem de despedida via DM ao membro: "Sua assinatura foi cancelada. Para reativar: [link checkout do grupo]" (FR70)
-**And** registro no audit log: `{ action: 'member_cancelled', actor: operator_id, actor_type: 'operator', member_id, reason, timestamp }` (FR69)
-**And** tabela de membros atualiza status para "Cancelado" com badge vermelha
-**And** migration adiciona transição `cancelado` na member state machine: `trial → cancelado`, `ativo → cancelado`
-**And** migration adiciona campos em `members`: `cancellation_reason` (TEXT, nullable), `cancelled_by` (UUID, nullable, FK → admin_users)
-**And** Group Admin só pode cancelar membros do próprio grupo (RLS)
-
-### Story 9.2: Cancelamento Self-Service pelo Membro via Bot
-
-As a **membro do grupo**,
-I want poder cancelar minha assinatura via comando no bot,
-So that eu tenha autonomia para sair sem precisar falar com ninguém.
+**FRs:** FR19, FR21, FR22
 
 **Acceptance Criteria:**
 
-**Given** membro está no chat privado com o bot e tem status `trial` ou `ativo`
-**When** envia o comando `/cancelar`
-**Then** bot responde com mensagem de confirmação: "Tem certeza que deseja cancelar? Você perderá acesso ao grupo VIP." com botões inline [Confirmar Cancelamento] e [Voltar] (FR65, FR66)
-**And** se membro clica [Voltar]: bot responde "Cancelamento abortado. Você continua no grupo!" e encerra
-**And** se membro clica [Confirmar Cancelamento]: sistema processa cancelamento (FR67)
-**And** processamento: atualiza `status = 'cancelado'`, `kicked_at = now()`, `cancellation_reason = 'self_cancel'`, `cancelled_by = null` (self-service)
-**And** bot envia mensagem de despedida: "Sentiremos sua falta! Se mudar de ideia: [link checkout]" (FR70)
-**And** sistema remove membro do grupo Telegram via `banChatMember`
-**And** registro no audit log: `{ action: 'member_cancelled', actor_type: 'self', member_id, reason: 'self_cancel', timestamp }` (FR69)
-**And** se membro não tem status `trial` ou `ativo`, bot responde: "Você não tem assinatura ativa para cancelar."
-**And** handler registrado no bot para comando `/cancelar` em chat privado apenas (não funciona no grupo)
+**Given** grupo tem canais `['telegram', 'whatsapp']` configurados
+**When** job `distributeBets` ou `postBets` é executado
+**Then** mensagem é enviada para ambos os canais em paralelo via channel adapter
+**And** postagem no WhatsApp completa em menos de 30 segundos após trigger (NFR2)
 
-### Story 9.3: Histórico de Cancelamentos e Reativação
+**Given** grupo tem apenas canal `['telegram']`
+**When** job de postagem é executado
+**Then** comportamento atual é mantido sem alterações (retrocompatível)
 
-As a **operador (Super Admin)**,
-I want ver o histórico de cancelamentos e poder reativar membros,
-So that eu tenha visibilidade total e possa corrigir cancelamentos indevidos.
+**Given** grupo tem `posting_schedule` configurado
+**When** horário de postagem é atingido
+**Then** postagem WhatsApp respeita o mesmo schedule do Telegram (FR22)
+**And** rate limit de 10 msg/min por número é respeitado
+
+**Given** postagem falha em um canal mas sucede no outro
+**When** erro é detectado
+**Then** sucesso parcial é registrado em `job_executions`
+**And** canal com falha é retentado conforme política de retry
+
+### Story 3.2: Dashboard e Métricas Agnósticos de Canal
+
+As a super admin,
+I want que o dashboard e métricas funcionem de forma agnóstica de canal,
+So that eu veja dados consolidados independente de onde os membros estão.
+
+**FRs:** FR38
 
 **Acceptance Criteria:**
 
-**Given** operador está na página `/members`
-**When** filtra por status "Cancelado"
-**Then** tabela mostra membros cancelados com colunas: Nome, Telegram ID, Motivo do Cancelamento, Cancelado Por (operador ou self-service), Data do Cancelamento (FR69)
-**And** filtro de status no `MemberList` inclui opção "cancelado"
-**And** API `GET /api/members` aceita `status=cancelado` como filtro
-**And** counter cards no topo incluem contagem de "Cancelados" (últimos 30 dias)
-**And** para membros cancelados, exibe botão "Reativar" que reabre acesso: atualiza `status = 'ativo'`, `kicked_at = null`, `cancellation_reason = null`
-**And** reativação via API `POST /api/members/{id}/reactivate` adiciona membro de volta ao grupo Telegram via `unbanChatMember` + `inviteLink`
-**And** reativação registrada no audit log
+**Given** super admin acessa o dashboard no admin panel
+**When** visualiza métricas de membros, receita e engajamento
+**Then** dados são consolidados entre Telegram e WhatsApp
+**And** não há duplicação de contagem para membros em ambos os canais
+
+**Given** super admin quer filtrar por canal
+**When** seleciona filtro "Telegram" ou "WhatsApp" no dashboard
+**Then** métricas são recalculadas apenas para o canal selecionado
+
+**Given** grupo opera em ambos os canais
+**When** métricas de postagem são exibidas
+**Then** mostra taxa de entrega por canal separadamente
 
 ---
 
-## Epic 10: Analytics de Taxa de Acerto
+## Epic 4: Ciclo de Vida de Membros no WhatsApp
 
-Admin pode visualizar taxa de acerto por grupo, mercado, campeonato e período. Dados para decisões de negócio.
+Sistema gerencia membros no canal WhatsApp: detecta entrada, inicia trial, envia lembretes, remove inadimplentes e reativa após pagamento. Membros podem pertencer a ambos os canais simultaneamente.
 
-### Story 10.1: API de Analytics de Acerto com Filtros
+### Story 4.1: Detectar Novos Membros e Registro Multi-Canal
 
-As a **sistema (backend)**,
-I want ter API routes que calculem taxa de acerto com múltiplos filtros,
-So that o frontend possa exibir analytics detalhados.
+As a sistema,
+I want detectar quando um novo membro entra no grupo WhatsApp e registrá-lo no banco,
+So that o sistema conheça todos os membros e suporte pertencimento simultâneo a Telegram e WhatsApp.
 
-**Acceptance Criteria:**
+**Escopo técnico:** Cria migration 032 (ALTER TABLE members ADD channel ENUM('telegram','whatsapp') DEFAULT 'telegram', ADD channel_user_id TEXT).
 
-**Given** existem apostas com `bet_result` IN ('success', 'failure') na tabela `suggested_bets`
-**When** API `GET /api/analytics/accuracy` é chamada
-**Then** retorna objeto com:
-- `total`: `{ rate, wins, losses, total }` — taxa de acerto geral (FR71)
-- `byGroup`: array de `{ group_id, group_name, rate, wins, losses, total }` (FR72)
-- `byMarket`: array de `{ market, category, rate, wins, losses, total }` — usando `categorizeMarket()` existente do metricsService (FR73)
-- `byChampionship`: array de `{ league_name, country, rate, wins, losses, total }` — via JOIN `league_matches → league_seasons` (FR74)
-- `periods`: `{ last7d: { rate, total }, last30d: { rate, total }, allTime: { rate, total } }`
-**And** aceita query params: `group_id` (opcional), `market` (opcional), `championship` (opcional), `date_from` (opcional), `date_to` (opcional) (FR75)
-**And** quando `date_from` e `date_to` são informados, filtra por `result_updated_at` BETWEEN
-**And** apenas apostas com `bet_status = 'posted'` e `bet_result IN ('success', 'failure')` são consideradas
-**And** Group Admin só vê dados do próprio grupo (RLS)
-**And** resposta segue pattern `{ success: true, data: { ... } }`
-**And** performance: resposta em < 2 segundos para até 10k apostas (NFR-P4)
-
-### Story 10.2: Página de Analytics no Admin Panel
-
-As a **operador (Super Admin ou Group Admin)**,
-I want uma página dedicada de analytics no admin panel,
-So that eu possa analisar performance das apostas e tomar decisões baseadas em dados.
+**FRs:** FR11, FR17
 
 **Acceptance Criteria:**
 
-**Given** operador está logado no admin panel
-**When** navega para `/analytics` (nova página no menu lateral)
-**Then** página exibe seção de **Cards de Resumo** no topo:
-- Card "Taxa de Acerto Total" com porcentagem em destaque + wins/total
-- Card "Últimos 7 dias" com porcentagem + indicador de tendência (↑ ou ↓ vs período anterior)
-- Card "Últimos 30 dias" com porcentagem + indicador de tendência
-**And** seção **Acerto por Grupo** com tabela: Grupo | Taxa | Acertos | Total — ordenável por taxa (FR72)
-**And** seção **Acerto por Mercado** com tabela: Mercado | Taxa | Acertos | Total — ordenável por taxa (FR73)
-**And** seção **Acerto por Campeonato** com tabela: Campeonato | Taxa | Acertos | Total — ordenável por taxa (FR74)
-**And** cada tabela tem mínimo de 3 apostas para exibir (evitar dados estatisticamente irrelevantes)
-**And** taxas coloridas: >= 70% verde, >= 50% amarelo, < 50% vermelho
-**And** menu lateral inclui item "Analytics" com ícone de gráfico entre "Histórico" e "Análises"
-**And** página responsiva e carrega em < 3 segundos (NFR-P3)
-**And** Group Admin vê apenas dados do seu grupo (sem seção "por Grupo")
+**Given** um usuário entra no grupo WhatsApp via invite link
+**When** Baileys emite evento `group-participants-update` com action `add`
+**Then** sistema registra o membro em `members` com `channel = 'whatsapp'` e `channel_user_id = phone (E.164)`
+**And** status inicial é `trial`
 
-### Story 10.3: Filtros de Período e Exportação
+**Given** membro já existe no mesmo grupo via Telegram
+**When** entra também no grupo WhatsApp
+**Then** sistema cria um registro separado com `channel = 'whatsapp'` para o mesmo grupo
+**And** ambos os registros coexistem (multi-canal simultâneo)
+**And** membro não é contado em duplicata nas métricas consolidadas
 
-As a **operador (Super Admin)**,
-I want filtrar analytics por período personalizado e exportar os dados,
-So that eu possa analisar períodos específicos e compartilhar relatórios com sócios.
+**Given** membro sai voluntariamente do grupo WhatsApp
+**When** Baileys emite evento `group-participants-update` com action `remove`
+**Then** registro do membro é atualizado com status `left`
+
+### Story 4.2: Enviar DM via WhatsApp
+
+As a sistema,
+I want enviar mensagens privadas (DM) a membros via WhatsApp,
+So that eu possa comunicar trial, lembretes e invite links diretamente ao membro.
+
+**Nota:** Usa `channelAdapter.sendDM()` criado na Story 1.5 (Epic 1).
+
+**FRs:** FR12
 
 **Acceptance Criteria:**
 
-**Given** operador está na página `/analytics`
-**When** interage com os filtros no topo da página
-**Then** exibe date picker com opções rápidas: "Últimos 7 dias", "Últimos 30 dias", "Último mês", "Personalizado" (FR75)
-**And** ao selecionar "Personalizado", exibe campos de data início e data fim
-**And** ao aplicar filtro de período, todas as tabelas e cards se atualizam com dados do período selecionado
-**And** exibe botão "Exportar CSV" que gera arquivo com: data, jogo, mercado, pick, campeonato, grupo, resultado, odds
-**And** CSV inclui linha de resumo no final com totais e taxas
-**And** filtro de grupo (Super Admin): dropdown para filtrar por grupo específico
-**And** filtro de mercado: dropdown para filtrar por categoria de mercado
-**And** filtros são combináveis (período + grupo + mercado)
-**And** URL atualiza com query params dos filtros (permite compartilhar link filtrado)
+**Given** sistema precisa enviar DM a um membro WhatsApp
+**When** `channelAdapter.sendDM(phoneE164, message, 'whatsapp')` é chamado
+**Then** mensagem é enviada via Baileys para o JID do membro (phone@s.whatsapp.net)
+**And** rate limit de 10 msg/min por número é respeitado
+
+**Given** membro não tem WhatsApp ativo no número registrado
+**When** envio de DM falha
+**Then** erro é logado e membro é flagado para revisão
+**And** sistema não retenta indefinidamente (max 3 tentativas com backoff)
+
+**Given** DM é enviada com sucesso
+**When** delivery é confirmado pelo Baileys
+**Then** registro de envio é salvo para auditoria
+
+### Story 4.3: Trial Automático e Lembretes
+
+As a sistema,
+I want iniciar trial de 3 dias para novos membros WhatsApp e enviar lembretes automáticos,
+So that membros experimentem o serviço e sejam incentivados a pagar antes do trial expirar.
+
+**FRs:** FR13, FR14
+
+**Acceptance Criteria:**
+
+**Given** novo membro é detectado no grupo WhatsApp (Story 4.1)
+**When** registro é criado com status `trial`
+**Then** trial de 3 dias é iniciado com `trial_expires_at = now() + 3 days`
+**And** DM de boas-vindas é enviada explicando o trial e como assinar
+
+**Given** membro está no dia 2 do trial
+**When** job de lembretes executa
+**Then** DM de lembrete é enviada via WhatsApp: "Seu trial expira amanhã, assine para continuar"
+
+**Given** membro está no dia 3 (último dia) do trial
+**When** job de lembretes executa
+**Then** DM de urgência é enviada via WhatsApp com link de pagamento
+
+**Given** membro já é assinante ativo via Telegram
+**When** entra no grupo WhatsApp do mesmo grupo
+**Then** trial NÃO é iniciado — membro recebe status `active` automaticamente
+
+### Story 4.4: Kick de Inadimplentes e Revogação de Invite
+
+As a sistema,
+I want remover membros inadimplentes ou com trial expirado do grupo WhatsApp e revogar o invite link,
+So that apenas membros pagantes tenham acesso ao grupo.
+
+**FRs:** FR15, FR18
+
+**Acceptance Criteria:**
+
+**Given** trial de um membro expirou sem pagamento
+**When** job de kick executa
+**Then** membro é removido do grupo WhatsApp via Baileys (`groupParticipantsUpdate` → remove)
+**And** status do membro muda para `kicked`
+
+**Given** membro é removido por inadimplência
+**When** kick é executado
+**Then** invite link atual do grupo é revogado via Baileys
+**And** novo invite link é gerado automaticamente
+**And** link antigo para de funcionar imediatamente
+
+**Given** membro tem assinatura ativa mas foi kickado por erro
+**When** super admin identifica o problema
+**Then** pode reativar manualmente via admin panel
+
+### Story 4.5: Reativação Pós-Pagamento e Filtro por Canal
+
+As a sistema / super admin,
+I want reativar membros após pagamento enviando novo invite link e filtrar membros por canal no admin,
+So that membros pagantes voltem ao grupo automaticamente e a gestão seja organizada por canal.
+
+**FRs:** FR16, FR37
+
+**Acceptance Criteria:**
+
+**Given** membro foi kickado por inadimplência e depois efetuou pagamento
+**When** pagamento é confirmado (webhook ou manual)
+**Then** novo invite link é gerado e enviado via DM WhatsApp
+**And** status do membro muda para `pending_rejoin`
+
+**Given** membro reentrou no grupo via invite link
+**When** sistema detecta reentrada (evento `add`)
+**Then** status muda para `active`
+**And** ciclo de cobrança é reiniciado
+
+**Given** super admin acessa gestão de membros no admin panel
+**When** visualiza a lista de membros de um grupo
+**Then** pode filtrar por canal: "Todos", "Telegram", "WhatsApp"
+**And** cada membro mostra em qual(is) canal(is) está ativo
 
 ---
 
-## Epic 11: Revisão do Dashboard
+## Epic 5: Failover Automático & Health Monitoring
 
-Dashboard exibe métricas de acerto como destaque principal, alertas são dismissíveis, informações relevantes para o operador.
+Sistema detecta bans e falhas automaticamente, promove backups, aloca novos números do pool e executa failover completo sem intervenção humana. Admin visualiza health e timeline no painel.
 
-### Story 11.1: Alertas Dismissíveis e Limpeza de Notificações
+### Story 5.1: Detecção de Ban e Failover Automático
 
-As a **Super Admin**,
-I want dispensar alertas e notificações do dashboard,
-So that eu veja apenas informações relevantes e atuais.
+As a sistema,
+I want detectar bans automaticamente e promover número backup a ativo sem intervenção humana,
+So that o grupo WhatsApp continue operando mesmo quando um número é banido.
 
-**Acceptance Criteria:**
-
-**Given** Super Admin está na página `/` (Dashboard)
-**When** vê alertas/notificações no painel
-**Then** cada alerta individual tem botão "×" (dismiss) que marca como lido e remove da visualização (FR76)
-**And** botão "Limpar todos" marca todas as notificações como lidas de uma vez
-**And** notificações dismissíveis usam o campo `read_at` já existente na tabela `notifications`
-**And** seção de alertas legacy (bot_offline, group_failed, etc.) é removida e substituída por lista de notificações unificada
-**And** API `PATCH /api/notifications/{id}` (já existente) marca notificação individual como lida
-**And** API `PATCH /api/notifications/mark-all-read` (já existente) marca todas como lidas
-**And** dashboard mostra badge com contagem de notificações não lidas
-**And** notificações lidas não aparecem no dashboard (apenas acessíveis via link "Ver todas")
-
-### Story 11.2: Métricas de Acerto no Dashboard
-
-As a **operador (Super Admin ou Group Admin)**,
-I want ver métricas de acerto das apostas diretamente no dashboard,
-So that eu tenha visibilidade imediata da performance ao abrir o painel.
+**FRs:** FR23, FR24, FR25, FR26
 
 **Acceptance Criteria:**
 
-**Given** operador está na página `/` (Dashboard)
-**When** o dashboard carrega
-**Then** seção principal exibe cards de **Performance de Apostas** em destaque:
-- Card "Taxa de Acerto" com porcentagem total em fonte grande + wins/total (FR77)
-- Card "Últimos 7 dias" com taxa e indicador de tendência (↑↓) vs 7 dias anteriores (FR78)
-- Card "Últimos 30 dias" com taxa e indicador de tendência vs 30 dias anteriores (FR78)
-**And** Super Admin vê cards adicionais por grupo: mini-cards com nome do grupo + taxa de acerto
-**And** Group Admin vê apenas a taxa de acerto do seu grupo
-**And** dados vêm da API `GET /api/analytics/accuracy` (Epic 10, Story 10.1)
-**And** cards de performance aparecem ANTES dos cards de membros/bots existentes (prioridade visual)
-**And** se não há apostas com resultado, exibe "Sem dados suficientes" no lugar da porcentagem
-**And** dashboard carrega em < 3 segundos (NFR-P3)
-**And** API `GET /api/dashboard/stats` é expandida para incluir campo `accuracy` com dados básicos de acerto (evita chamada extra)
+**Given** número `active` de um grupo perde conexão com código 401 (ban)
+**When** Baileys emite evento `connection.update` com `lastDisconnect.error.statusCode === 401`
+**Then** `failoverService` muda status do número para `banned`
+**And** número é desalocado do grupo automaticamente
+
+**Given** número ativo foi banido e grupo tem backup disponível
+**When** failover é iniciado pelo failoverService
+**Then** primeiro número `backup` é promovido a `active`
+**And** número promovido assume como admin principal do grupo WhatsApp
+**And** failover completa em menos de 5 minutos (NFR1)
+
+**Given** backup foi promovido a ativo
+**When** promoção é confirmada
+**Then** sistema aloca novo número `available` do pool global como `backup`
+**And** se pool não tem números disponíveis, alerta super admin
+
+**Given** grupo tem 2 backups e ambos falham em sequência
+**When** segundo failover é necessário
+**Then** segundo backup é promovido seguindo a mesma lógica
+**And** grupo opera com 0 backups até reposição do pool
+
+### Story 5.2: Health Monitoring e Heartbeat
+
+As a sistema,
+I want monitorar a saúde de todos os números via heartbeat periódico e alertar sobre problemas,
+So that eu detecte falhas de conexão antes que afetem a operação do grupo.
+
+**Escopo técnico:** Cria migration 033 (ALTER TABLE bot_health ADD channel TEXT, ADD number_id UUID FK).
+
+**FRs:** FR28, FR29
+
+**Acceptance Criteria:**
+
+**Given** números WhatsApp estão conectados
+**When** a cada 60 segundos (NFR5)
+**Then** sistema executa heartbeat para cada número verificando estado da conexão WebSocket
+**And** resultado é registrado em `bot_health` (reutilizando tabela existente)
+
+**Given** heartbeat detecta que um número perdeu conexão SEM ser ban (queda de rede, restart parcial)
+**When** conexão está down mas sem código 401
+**Then** sistema tenta reconexão automática com backoff exponencial (NFR10)
+**And** alerta é enviado se reconexão falha após 5 tentativas
+
+**Given** número não responde ao heartbeat por mais de 3 ciclos consecutivos (3 min)
+**When** sistema avalia a situação
+**Then** número é marcado como `unhealthy` temporariamente
+**And** se não recuperar em 5 min, failover é iniciado como precaução
+
+### Story 5.3: Alertas e Painel de Health por Grupo
+
+As a super admin,
+I want receber alertas quando números são banidos ou perdem conexão e visualizar o health no admin panel,
+So that eu tenha visibilidade completa do estado da infraestrutura WhatsApp.
+
+**FRs:** FR27, FR35
+
+**Acceptance Criteria:**
+
+**Given** um número é banido (failover iniciado)
+**When** failoverService processa o ban
+**Then** alerta é enviado no grupo Telegram admin com detalhes: número banido, grupo afetado, backup promovido
+**And** alerta inclui status atual do pool (quantos disponíveis restam)
+
+**Given** número perde conexão sem ser ban
+**When** sistema detecta via heartbeat
+**Then** alerta de warning é enviado no Telegram admin: "Número X perdeu conexão, tentando reconectar"
+
+**Given** super admin acessa a página de um grupo no admin panel
+**When** visualiza a seção de números WhatsApp
+**Then** vê os 3 números alocados com status visual (active/backup/banned)
+**And** vê último heartbeat e uptime de cada número
+**And** timeline de eventos de failover (FailoverTimeline component)
+
+---
+
+## Epic 6: Integração de Pagamentos (Canal WhatsApp)
+
+Webhook Mercado Pago ativa e desativa membros no canal WhatsApp automaticamente, enviando invite links após pagamento e removendo inadimplentes. Membro recebe acesso a todos os canais que o grupo oferece.
+
+### Story 6.1: Ativação de Membro WhatsApp via Webhook de Pagamento
+
+As a membro pagante,
+I want receber acesso automático ao grupo WhatsApp após confirmar pagamento,
+So that eu comece a receber apostas no WhatsApp sem ação manual.
+
+**FRs:** FR30, FR31
+
+**Acceptance Criteria:**
+
+**Given** webhook Mercado Pago confirma pagamento de um membro
+**When** sistema processa o webhook (`bets-webhook`)
+**Then** membro é ativado em TODOS os canais que o grupo oferece (Telegram e/ou WhatsApp)
+**And** lógica de ativação é idêntica para ambos os canais (NFR23)
+
+**Given** grupo tem canal WhatsApp ativo e membro acabou de pagar
+**When** ativação WhatsApp é processada
+**Then** invite link do grupo WhatsApp é enviado via DM para o telefone do membro
+**And** status do membro WhatsApp muda para `pending_rejoin` (aguardando entrada via link)
+
+**Given** membro já está no grupo WhatsApp (ex: veio do trial)
+**When** pagamento é confirmado
+**Then** status muda diretamente para `active` sem necessidade de novo invite
+**And** nenhuma ação adicional é necessária
+
+**Given** grupo tem apenas canal Telegram (sem WhatsApp)
+**When** pagamento é confirmado
+**Then** comportamento atual é mantido sem alterações (retrocompatível)
+
+### Story 6.2: Kick Automático por Cancelamento/Inadimplência via Webhook
+
+As a sistema,
+I want remover automaticamente membros inadimplentes do grupo WhatsApp quando o pagamento é cancelado,
+So that apenas membros pagantes tenham acesso ao grupo em todos os canais.
+
+**FRs:** FR32
+
+**Acceptance Criteria:**
+
+**Given** webhook Mercado Pago notifica cancelamento ou inadimplência de um membro
+**When** sistema processa o webhook
+**Then** membro é removido do grupo WhatsApp via Baileys (kick)
+**And** membro é removido do grupo Telegram (comportamento existente mantido)
+**And** processamento é idêntico para ambos os canais (NFR23)
+
+**Given** membro é kickado do WhatsApp por inadimplência
+**When** kick é executado
+**Then** invite link atual é revogado (reusa lógica da Story 4.4)
+**And** novo invite link é gerado para futuros membros
+
+**Given** membro inadimplente está apenas no Telegram (sem WhatsApp)
+**When** cancelamento é processado
+**Then** apenas kick do Telegram é executado, sem erro no processamento WhatsApp
+
+**Given** membro regulariza pagamento após kick
+**When** novo webhook de pagamento é recebido
+**Then** fluxo de reativação da Story 6.1 é executado automaticamente
