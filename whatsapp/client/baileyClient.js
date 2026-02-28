@@ -1,10 +1,12 @@
 const { loadBaileys } = require('../baileys');
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
+const { config } = require('../../lib/config');
 const { useDatabaseAuthState } = require('../store/authStateStore');
 const { phoneToJid } = require('../../lib/phoneUtils');
 
-const RECONNECT_BACKOFF_MS = [1000, 5000, 15000, 30000, 60000];
+const DEFAULT_BACKOFF_MS = [1000, 5000, 15000, 30000, 60000];
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
 
 class BaileyClient {
   constructor(numberId, phoneNumber) {
@@ -14,7 +16,10 @@ class BaileyClient {
     this.socket = null;
     this.authState = null;
     this.reconnectAttempt = 0;
+    this.totalReconnects = 0;
     this.isClosing = false;
+    this.maxReconnectAttempts = config.whatsapp?.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
+    this.backoffMs = config.whatsapp?.reconnectBackoffMs ?? DEFAULT_BACKOFF_MS;
   }
 
   /**
@@ -52,6 +57,14 @@ class BaileyClient {
    */
   async disconnect() {
     this.isClosing = true;
+    // Save auth state before closing (AC #3: graceful shutdown)
+    if (this.authState) {
+      try {
+        await this.authState.saveCreds();
+      } catch (err) {
+        logger.error('Failed to save creds during disconnect', { numberId: this.numberId, error: err.message });
+      }
+    }
     if (this.socket) {
       this.socket.end(undefined);
       this.socket = null;
@@ -73,12 +86,16 @@ class BaileyClient {
     }
 
     if (connection === 'open') {
+      if (this.reconnectAttempt > 0) {
+        this.totalReconnects++;
+      }
       this.reconnectAttempt = 0;
       await this._updateConnectionState('open');
       await this._updateNumberStatus('available');
+      await this._updateHeartbeat();
       // Clear QR code since we're connected
       await this._clearQrCode();
-      logger.info('BaileyClient connected', { numberId: this.numberId });
+      logger.info('BaileyClient connected', { numberId: this.numberId, totalReconnects: this.totalReconnects });
     }
 
     if (connection === 'close') {
@@ -93,10 +110,19 @@ class BaileyClient {
         await this._updateConnectionState('banned');
         await this._updateNumberStatus('banned');
         logger.warn('BaileyClient logged out / banned', { numberId: this.numberId, statusCode });
+      } else if (this.reconnectAttempt >= this.maxReconnectAttempts) {
+        // Max attempts reached — stop reconnecting
+        await this._updateConnectionState('closed');
+        await this._updateNumberStatus('cooldown');
+        logger.error('BaileyClient max reconnect attempts reached', {
+          numberId: this.numberId,
+          attempts: this.reconnectAttempt,
+          maxAttempts: this.maxReconnectAttempts,
+        });
       } else {
         // Reconnect with exponential backoff
         await this._updateConnectionState('closed');
-        const delay = RECONNECT_BACKOFF_MS[Math.min(this.reconnectAttempt, RECONNECT_BACKOFF_MS.length - 1)];
+        const delay = this.backoffMs[Math.min(this.reconnectAttempt, this.backoffMs.length - 1)];
         this.reconnectAttempt++;
         logger.info('BaileyClient reconnecting', { numberId: this.numberId, attempt: this.reconnectAttempt, delayMs: delay });
         setTimeout(() => {
@@ -177,6 +203,33 @@ class BaileyClient {
     if (error) {
       logger.error('Failed to update number status', { numberId: this.numberId, status, error: error.message });
     }
+  }
+
+  /**
+   * Update last_heartbeat in whatsapp_numbers.
+   */
+  async _updateHeartbeat() {
+    const { error } = await supabase
+      .from('whatsapp_numbers')
+      .update({ last_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', this.numberId);
+
+    if (error) {
+      logger.error('Failed to update heartbeat', { numberId: this.numberId, error: error.message });
+    }
+  }
+
+  /**
+   * Get reconnect stats for health endpoint.
+   */
+  getStats() {
+    return {
+      numberId: this.numberId,
+      phone: this.phoneNumber,
+      connected: this.socket !== null,
+      reconnectAttempt: this.reconnectAttempt,
+      totalReconnects: this.totalReconnects,
+    };
   }
 
   /**

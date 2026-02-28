@@ -1,15 +1,33 @@
 const express = require('express');
 const logger = require('../lib/logger');
+const { config } = require('../lib/config');
+const { supabase } = require('../lib/supabase');
 const { BaileyClient } = require('./client/baileyClient');
 const { listNumbers } = require('./pool/numberPoolService');
 
 const PORT = process.env.WHATSAPP_PORT || 3100;
+const SHUTDOWN_TIMEOUT_MS = config.whatsapp?.shutdownTimeoutMs ?? 30000;
 
 // Active client instances keyed by numberId
 const clients = new Map();
 
 /**
+ * Check if a number has valid auth state (creds exist in whatsapp_sessions).
+ */
+async function hasValidAuthState(numberId) {
+  const { data, error } = await supabase
+    .from('whatsapp_sessions')
+    .select('creds')
+    .eq('number_id', numberId)
+    .single();
+
+  if (error || !data) return false;
+  return data.creds !== null;
+}
+
+/**
  * Initialize and connect all active WhatsApp numbers from the database.
+ * Uses Promise.allSettled for parallel startup (NFR4: <60s per number).
  */
 async function initClients() {
   const result = await listNumbers();
@@ -18,29 +36,61 @@ async function initClients() {
     return;
   }
 
-  const numbers = result.data.filter((n) =>
+  // Filter to reconnectable statuses (skip banned)
+  const candidates = result.data.filter((n) =>
     ['available', 'active', 'backup', 'connecting'].includes(n.status)
   );
 
-  logger.info(`Initializing ${numbers.length} WhatsApp client(s)`);
+  // Only reconnect numbers with valid auth state (skip numbers that never completed QR)
+  const authChecks = await Promise.allSettled(
+    candidates.map(async (n) => ({ number: n, hasAuth: await hasValidAuthState(n.id) }))
+  );
 
-  for (const number of numbers) {
-    try {
+  const numbers = authChecks
+    .filter((r) => r.status === 'fulfilled' && r.value.hasAuth)
+    .map((r) => r.value.number);
+
+  logger.info(`Initializing ${numbers.length} WhatsApp client(s) (${candidates.length - numbers.length} skipped — no auth state)`);
+
+  const startTime = Date.now();
+
+  // Parallel connect with timing
+  const connectResults = await Promise.allSettled(
+    numbers.map(async (number) => {
+      const t0 = Date.now();
       const client = new BaileyClient(number.id, number.phone_number);
       clients.set(number.id, client);
-      await client.connect();
-    } catch (err) {
+      try {
+        await client.connect();
+      } catch (err) {
+        clients.delete(number.id); // Remove failed client from Map
+        throw err;
+      }
+      const elapsed = Date.now() - t0;
+      logger.info('Client connected', { numberId: number.id, phone: number.phone_number, elapsedMs: elapsed });
+      return { numberId: number.id, elapsedMs: elapsed };
+    })
+  );
+
+  // Log failures
+  for (let i = 0; i < connectResults.length; i++) {
+    const r = connectResults[i];
+    if (r.status === 'rejected') {
       logger.error('Failed to init WhatsApp client', {
-        numberId: number.id,
-        phone: number.phone_number,
-        error: err.message,
+        numberId: numbers[i].id,
+        phone: numbers[i].phone_number,
+        error: r.reason?.message || String(r.reason),
       });
     }
   }
+
+  const totalElapsed = Date.now() - startTime;
+  logger.info('All clients initialized', { totalMs: totalElapsed, connected: clients.size });
 }
 
 /**
  * Graceful shutdown: save auth state and close all WebSockets.
+ * Enforces a maximum timeout to prevent hanging.
  */
 async function shutdown() {
   logger.info('WhatsApp server shutting down...');
@@ -54,7 +104,21 @@ async function shutdown() {
     );
   }
 
-  await Promise.all(disconnectPromises);
+  // Race disconnect against timeout to prevent hanging
+  let timeoutId;
+  const timeoutPromise = new Promise((resolve) => {
+    timeoutId = setTimeout(() => {
+      logger.warn('Shutdown timeout reached, forcing exit', { timeoutMs: SHUTDOWN_TIMEOUT_MS });
+      resolve();
+    }, SHUTDOWN_TIMEOUT_MS);
+  });
+
+  await Promise.race([
+    Promise.all(disconnectPromises),
+    timeoutPromise,
+  ]);
+  clearTimeout(timeoutId);
+
   clients.clear();
   logger.info('All WhatsApp clients disconnected');
 }
@@ -66,14 +130,12 @@ function createApp() {
   const app = express();
   app.use(express.json());
 
-  // Health check
+  // Health check with reconnect stats
   app.get('/health', (req, res) => {
     const clientStatuses = {};
-    for (const [numberId, client] of clients) {
-      clientStatuses[numberId] = {
-        phone: client.phoneNumber,
-        connected: client.socket !== null,
-      };
+    for (const [, client] of clients) {
+      const stats = client.getStats();
+      clientStatuses[stats.numberId] = stats;
     }
 
     res.json({
