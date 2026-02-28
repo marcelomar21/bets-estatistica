@@ -3,7 +3,14 @@ const logger = require('../lib/logger');
 const { config } = require('../lib/config');
 const { supabase } = require('../lib/supabase');
 const { BaileyClient } = require('./client/baileyClient');
-const { listNumbers } = require('./pool/numberPoolService');
+const {
+  listNumbers,
+  addNumber,
+  getGroupNumbers,
+  allocateToGroup,
+  deallocateFromGroup,
+  checkPoolHealth,
+} = require('./pool/numberPoolService');
 
 const PORT = process.env.WHATSAPP_PORT || 3100;
 const SHUTDOWN_TIMEOUT_MS = config.whatsapp?.shutdownTimeoutMs ?? 30000;
@@ -144,6 +151,48 @@ function createApp() {
       clients: clients.size,
       details: clientStatuses,
     });
+  });
+
+  // Pool management routes
+
+  // List all numbers
+  app.get('/api/whatsapp/numbers', async (req, res) => {
+    const result = await listNumbers({ status: req.query.status });
+    res.json(result);
+  });
+
+  // Add a new number
+  app.post('/api/whatsapp/numbers', async (req, res) => {
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, error: { code: 'MISSING_PHONE', message: 'phoneNumber is required' } });
+    }
+    const result = await addNumber(phoneNumber);
+    res.status(result.success ? 201 : 400).json(result);
+  });
+
+  // Get numbers for a group
+  app.get('/api/whatsapp/numbers/group/:groupId', async (req, res) => {
+    const result = await getGroupNumbers(req.params.groupId);
+    res.json(result);
+  });
+
+  // Allocate numbers to a group
+  app.post('/api/whatsapp/numbers/group/:groupId/allocate', async (req, res) => {
+    const result = await allocateToGroup(req.params.groupId);
+    res.status(result.success ? 200 : 400).json(result);
+  });
+
+  // Deallocate a number from its group
+  app.delete('/api/whatsapp/numbers/:numberId/deallocate', async (req, res) => {
+    const result = await deallocateFromGroup(req.params.numberId);
+    res.json(result);
+  });
+
+  // Pool health check
+  app.get('/api/whatsapp/pool/health', async (req, res) => {
+    const result = await checkPoolHealth();
+    res.json(result);
   });
 
   return app;

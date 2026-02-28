@@ -1,6 +1,10 @@
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
+const { config } = require('../../lib/config');
 const { validateE164, phoneToJid } = require('../../lib/phoneUtils');
+
+const MAX_NUMBERS_PER_GROUP = config.whatsapp?.maxNumbersPerGroup ?? 3;
+const POOL_WARN_THRESHOLD = config.whatsapp?.poolWarnThreshold ?? 5;
 
 // Valid status transitions
 const VALID_TRANSITIONS = {
@@ -163,4 +167,214 @@ async function removeNumber(numberId) {
   return { success: true };
 }
 
-module.exports = { addNumber, listNumbers, getNumberById, updateNumberStatus, removeNumber };
+/**
+ * Get all numbers allocated to a specific group.
+ * @param {string} groupId - UUID
+ * @returns {{ success: boolean, data?: Object[], error?: { code: string, message: string } }}
+ */
+async function getGroupNumbers(groupId) {
+  const { data, error } = await supabase
+    .from('whatsapp_numbers')
+    .select('*')
+    .eq('group_id', groupId)
+    .order('role', { ascending: true });
+
+  if (error) {
+    logger.error('Failed to get group numbers', { groupId, error: error.message });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  return { success: true, data: data || [] };
+}
+
+/**
+ * Allocate available numbers from the global pool to a group.
+ * Assigns 1 active + up to (maxNumbersPerGroup - 1) backup.
+ * @param {string} groupId - UUID of the group
+ * @returns {{ success: boolean, data?: { allocated: Object[], total: number }, error?: { code: string, message: string } }}
+ */
+async function allocateToGroup(groupId) {
+  // Check current allocation for the group
+  const existing = await getGroupNumbers(groupId);
+  if (!existing.success) return existing;
+
+  const currentCount = existing.data.length;
+  if (currentCount >= MAX_NUMBERS_PER_GROUP) {
+    return {
+      success: false,
+      error: { code: 'GROUP_FULL', message: `Group already has ${currentCount} numbers (max ${MAX_NUMBERS_PER_GROUP})` },
+    };
+  }
+
+  const needed = MAX_NUMBERS_PER_GROUP - currentCount;
+
+  // Fetch available numbers (not allocated to any group)
+  const { data: available, error: fetchError } = await supabase
+    .from('whatsapp_numbers')
+    .select('*')
+    .eq('status', 'available')
+    .is('group_id', null)
+    .order('created_at', { ascending: true })
+    .limit(needed);
+
+  if (fetchError) {
+    logger.error('Failed to fetch available numbers', { groupId, error: fetchError.message });
+    return { success: false, error: { code: 'DB_ERROR', message: fetchError.message } };
+  }
+
+  if (!available || available.length === 0) {
+    return {
+      success: false,
+      error: { code: 'NO_NUMBERS_AVAILABLE', message: 'No available numbers in the pool' },
+    };
+  }
+
+  // Determine roles: first unassigned slot gets active, rest get backup
+  const hasActive = existing.data.some((n) => n.role === 'active');
+  const allocated = [];
+
+  for (let i = 0; i < available.length; i++) {
+    const number = available[i];
+    const role = (!hasActive && i === 0) ? 'active' : 'backup';
+    const status = role === 'active' ? 'active' : 'backup';
+
+    const { data: updated, error: updateError } = await supabase
+      .from('whatsapp_numbers')
+      .update({
+        group_id: groupId,
+        role,
+        status,
+        allocated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', number.id)
+      .select()
+      .single();
+
+    if (updateError) {
+      logger.error('Failed to allocate number', { numberId: number.id, groupId, error: updateError.message });
+      continue;
+    }
+
+    allocated.push(updated);
+  }
+
+  if (allocated.length < needed) {
+    logger.warn('Partial allocation — not enough numbers in pool', {
+      groupId,
+      needed,
+      allocated: allocated.length,
+    });
+  }
+
+  logger.info('Numbers allocated to group', { groupId, count: allocated.length });
+  return { success: true, data: { allocated, total: currentCount + allocated.length } };
+}
+
+/**
+ * Deallocate a number from its group, resetting to available.
+ * @param {string} numberId - UUID
+ * @returns {{ success: boolean, data?: Object, error?: { code: string, message: string } }}
+ */
+async function deallocateFromGroup(numberId) {
+  const current = await getNumberById(numberId);
+  if (!current.success) return current;
+
+  if (!current.data.group_id) {
+    return {
+      success: false,
+      error: { code: 'NOT_ALLOCATED', message: 'Number is not allocated to any group' },
+    };
+  }
+
+  const { data, error } = await supabase
+    .from('whatsapp_numbers')
+    .update({
+      group_id: null,
+      role: null,
+      status: 'available',
+      allocated_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', numberId)
+    .select()
+    .single();
+
+  if (error) {
+    logger.error('Failed to deallocate number', { numberId, error: error.message });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  logger.info('Number deallocated from group', { numberId, previousGroup: current.data.group_id });
+  return { success: true, data };
+}
+
+/**
+ * Handle a number being banned: mark as banned, clear group and role.
+ * @param {string} numberId - UUID
+ * @returns {{ success: boolean, data?: Object, error?: { code: string, message: string } }}
+ */
+async function handleBan(numberId) {
+  const { data, error } = await supabase
+    .from('whatsapp_numbers')
+    .update({
+      status: 'banned',
+      group_id: null,
+      role: null,
+      banned_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', numberId)
+    .select()
+    .single();
+
+  if (error) {
+    logger.error('Failed to handle ban', { numberId, error: error.message });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  logger.warn('Number banned and deallocated', { numberId, phone: data.phone_number });
+  return { success: true, data };
+}
+
+/**
+ * Check pool health: count available numbers vs threshold.
+ * @returns {{ success: boolean, data?: { available: number, threshold: number, healthy: boolean } }}
+ */
+async function checkPoolHealth() {
+  const { data, error } = await supabase
+    .from('whatsapp_numbers')
+    .select('id', { count: 'exact' })
+    .eq('status', 'available')
+    .is('group_id', null);
+
+  if (error) {
+    logger.error('Failed to check pool health', { error: error.message });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  const availableCount = data ? data.length : 0;
+  const healthy = availableCount >= POOL_WARN_THRESHOLD;
+
+  if (!healthy) {
+    logger.warn('Pool stock low', { available: availableCount, threshold: POOL_WARN_THRESHOLD });
+  }
+
+  return {
+    success: true,
+    data: { available: availableCount, threshold: POOL_WARN_THRESHOLD, healthy },
+  };
+}
+
+module.exports = {
+  addNumber,
+  listNumbers,
+  getNumberById,
+  updateNumberStatus,
+  removeNumber,
+  getGroupNumbers,
+  allocateToGroup,
+  deallocateFromGroup,
+  handleBan,
+  checkPoolHealth,
+};
