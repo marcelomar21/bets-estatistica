@@ -232,13 +232,10 @@ function createApp() {
       return res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: `Cannot connect number with status: ${number.status}` } });
     }
 
-    // If already has an active client, skip
+    // Remove existing client (this is an explicit admin reconnect action)
     const existing = clients.get(numberId);
-    if (existing && existing.socket) {
-      return res.json({ success: true, message: 'Already connecting or connected' });
-    }
-    // Remove stale client (socket died after QR timeout, etc.)
     if (existing) {
+      try { existing.isClosing = true; existing.socket?.end(undefined); } catch {}
       clients.delete(numberId);
     }
 
