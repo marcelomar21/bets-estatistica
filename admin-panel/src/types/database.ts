@@ -426,6 +426,8 @@ export type WhatsAppNumberListItem = Pick<
   'id' | 'phone_number' | 'status' | 'group_id' | 'role' | 'last_heartbeat' | 'banned_at' | 'allocated_at' | 'created_at'
 > & {
   groups: { name: string } | null;
+  health_status: string | null;
+  health_error: string | null;
 };
 
 export interface WhatsAppPoolSummary {

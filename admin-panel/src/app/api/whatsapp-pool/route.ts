@@ -8,19 +8,48 @@ const addNumberSchema = z.object({
 
 export const GET = createApiHandler(
   async (_req, context) => {
-    const { data: numbers, error } = await context.supabase
-      .from('whatsapp_numbers')
-      .select('id, phone_number, status, group_id, role, last_heartbeat, banned_at, allocated_at, created_at, groups(name)')
-      .order('created_at', { ascending: false });
+    const [numbersResult, healthResult] = await Promise.all([
+      context.supabase
+        .from('whatsapp_numbers')
+        .select('id, phone_number, status, group_id, role, last_heartbeat, banned_at, allocated_at, created_at, groups(name)')
+        .order('created_at', { ascending: false }),
+      context.supabase
+        .from('bot_health')
+        .select('number_id, status, last_heartbeat, error_message')
+        .eq('channel', 'whatsapp'),
+    ]);
 
-    if (error) {
+    if (numbersResult.error) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: error.message } },
+        { success: false, error: { code: 'DB_ERROR', message: numbersResult.error.message } },
         { status: 500 },
       );
     }
 
-    const list = numbers ?? [];
+    // Build health lookup by number_id
+    const healthMap = new Map<string, { health_status: string; health_heartbeat: string | null; health_error: string | null }>();
+    if (healthResult.data) {
+      for (const h of healthResult.data) {
+        if (h.number_id) {
+          healthMap.set(h.number_id, {
+            health_status: h.status,
+            health_heartbeat: h.last_heartbeat,
+            health_error: h.error_message,
+          });
+        }
+      }
+    }
+
+    // Merge health data into numbers
+    const list = (numbersResult.data ?? []).map((n) => {
+      const health = healthMap.get(n.id);
+      return {
+        ...n,
+        health_status: health?.health_status ?? null,
+        health_error: health?.health_error ?? null,
+      };
+    });
+
     const summary = {
       total: list.length,
       available: list.filter((n) => n.status === 'available').length,
