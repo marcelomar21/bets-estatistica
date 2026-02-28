@@ -11,6 +11,9 @@ const {
   deallocateFromGroup,
   checkPoolHealth,
 } = require('./pool/numberPoolService');
+const { createWhatsAppGroup } = require('./services/groupService');
+const { generateInviteLink, revokeInviteLink } = require('./services/inviteLinkService');
+const { addWhatsAppChannel } = require('./services/addChannelService');
 
 const { clients } = require('./clientRegistry');
 
@@ -192,6 +195,40 @@ function createApp() {
   app.get('/api/whatsapp/pool/health', async (req, res) => {
     const result = await checkPoolHealth();
     res.json(result);
+  });
+
+  // Create WhatsApp group for a platform group
+  app.post('/api/whatsapp/groups/:groupId/create', async (req, res) => {
+    const { groupName } = req.body;
+    const result = await createWhatsAppGroup(req.params.groupId, groupName);
+    if (result.success) return res.status(201).json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
+    const status = statusMap[result.error?.code] || 400;
+    res.status(status).json(result);
+  });
+
+  // Add WhatsApp channel to an existing group (1-click orchestration)
+  app.post('/api/whatsapp/groups/:groupId/add-channel', async (req, res) => {
+    const result = await addWhatsAppChannel(req.params.groupId);
+    if (result.success) return res.status(201).json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
+  });
+
+  // Generate invite link for a WhatsApp group
+  app.post('/api/whatsapp/groups/:groupId/invite-link', async (req, res) => {
+    const result = await generateInviteLink(req.params.groupId);
+    if (result.success) return res.json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, NO_WHATSAPP_GROUP: 400 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
+  });
+
+  // Revoke invite link and generate new one
+  app.delete('/api/whatsapp/groups/:groupId/invite-link', async (req, res) => {
+    const result = await revokeInviteLink(req.params.groupId);
+    if (result.success) return res.json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, NO_WHATSAPP_GROUP: 400 };
+    res.status(statusMap[result.error?.code] || 400).json(result);
   });
 
   return app;

@@ -169,10 +169,10 @@ development_status:
   # ========================================
   # Epic 13: Criação e Configuração de Grupos WhatsApp
   # ========================================
-  epic-13: backlog
-  13-1-criar-grupo-whatsapp-programaticamente: backlog
-  13-2-gestao-invite-links-grupo-whatsapp: backlog
-  13-3-adicionar-canal-whatsapp-grupo-existente: backlog
+  epic-13: done
+  13-1-criar-grupo-whatsapp-programaticamente: done
+  13-2-gestao-invite-links-grupo-whatsapp: done
+  13-3-adicionar-canal-whatsapp-grupo-existente: done
   epic-13-retrospective: optional
 
   # ========================================

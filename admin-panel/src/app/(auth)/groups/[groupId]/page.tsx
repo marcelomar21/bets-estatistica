@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase-server';
 import type { GroupListItem } from '@/types/database';
 import { statusConfig, formatDateTime } from '@/components/features/groups/group-utils';
+import { CreateWhatsAppButton } from '@/components/features/groups/CreateWhatsAppButton';
+import { InviteLinkManager } from '@/components/features/groups/InviteLinkManager';
 
 export default async function GroupDetailPage({
   params,
@@ -14,7 +16,7 @@ export default async function GroupDetailPage({
 
   const { data: group } = await supabase
     .from('groups')
-    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at')
+    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, whatsapp_group_jid, whatsapp_invite_link, channels, created_at')
     .eq('id', groupId)
     .single();
 
@@ -22,8 +24,10 @@ export default async function GroupDetailPage({
     notFound();
   }
 
-  const typedGroup = group as GroupListItem;
+  const typedGroup = group as GroupListItem & { whatsapp_group_jid: string | null; whatsapp_invite_link: string | null; channels: string[] | null };
   const status = statusConfig[typedGroup.status];
+  const channels = typedGroup.channels || ['telegram'];
+  const hasWhatsApp = !!typedGroup.whatsapp_group_jid;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -83,6 +87,28 @@ export default async function GroupDetailPage({
           )}
 
           <div>
+            <dt className="text-sm font-medium text-gray-500">Canais</dt>
+            <dd className="mt-1 flex items-center gap-2">
+              {channels.map((ch) => (
+                <span
+                  key={ch}
+                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    ch === 'telegram' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                  }`}
+                >
+                  {ch === 'telegram' ? 'Telegram' : 'WhatsApp'}
+                </span>
+              ))}
+            </dd>
+          </div>
+
+          <InviteLinkManager
+            groupId={typedGroup.id}
+            hasWhatsApp={hasWhatsApp}
+            initialInviteLink={typedGroup.whatsapp_invite_link}
+          />
+
+          <div>
             <dt className="text-sm font-medium text-gray-500">Criado em</dt>
             <dd className="mt-1 text-sm text-gray-900">{formatDateTime(typedGroup.created_at)}</dd>
           </div>
@@ -101,6 +127,7 @@ export default async function GroupDetailPage({
           >
             Tom de Voz
           </Link>
+          <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />
         </div>
       </div>
     </div>
