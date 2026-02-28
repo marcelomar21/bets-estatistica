@@ -263,6 +263,7 @@ function createApp() {
 
     // Create client and connect (async — returns immediately)
     const client = new BaileyClient(numberId, number.phone_number);
+    client.setDebugLog(addDebugLog);
     client.setGroupParticipantsHandler(handleGroupParticipantsUpdate);
     clients.set(numberId, client);
 

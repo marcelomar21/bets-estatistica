@@ -22,6 +22,15 @@ class BaileyClient {
     this.maxReconnectAttempts = config.whatsapp?.maxReconnectAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.backoffMs = config.whatsapp?.reconnectBackoffMs ?? DEFAULT_BACKOFF_MS;
     this._onGroupParticipantsUpdate = null;
+    this._debugLog = null; // Optional callback for debug logging
+  }
+
+  setDebugLog(fn) {
+    this._debugLog = fn;
+  }
+
+  _debug(entry) {
+    if (this._debugLog) this._debugLog({ numberId: this.numberId, ...entry });
   }
 
   /**
@@ -94,8 +103,8 @@ class BaileyClient {
   async _handleConnectionUpdate(update) {
     const { connection, lastDisconnect, qr } = update;
 
-    logger.info('Connection update received', {
-      numberId: this.numberId,
+    this._debug({
+      event: 'connection_update',
       connection,
       hasQr: !!qr,
       qrLen: qr ? qr.length : 0,
