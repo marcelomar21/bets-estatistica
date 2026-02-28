@@ -219,9 +219,14 @@ function createApp() {
       return res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: `Cannot connect number with status: ${number.status}` } });
     }
 
-    // If already has a client, skip
-    if (clients.has(numberId)) {
+    // If already has an active client, skip
+    const existing = clients.get(numberId);
+    if (existing && existing.socket) {
       return res.json({ success: true, message: 'Already connecting or connected' });
+    }
+    // Remove stale client (socket died after QR timeout, etc.)
+    if (existing) {
+      clients.delete(numberId);
     }
 
     // Create client and connect (async — returns immediately)
