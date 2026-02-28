@@ -16,6 +16,11 @@ jest.mock('../../bot/services/memberService', () => ({
   markMemberAsRemoved: jest.fn(),
 }));
 
+const mockChannelSendDM = jest.fn().mockResolvedValue({ success: true, data: { messageId: 'dm-welcome' } });
+jest.mock('../../lib/channelAdapter', () => ({
+  sendDM: mockChannelSendDM,
+}));
+
 const {
   getMemberByChannelUserId,
   createWhatsAppTrialMember,
@@ -144,7 +149,92 @@ describe('WhatsApp Member Events', () => {
       expect(createWhatsAppTrialMember).toHaveBeenCalledWith({
         channelUserId: '+5511999887766',
         groupId: 'group-uuid-1',
+      }, 3);
+    });
+
+    it('should send welcome DM after creating trial member', async () => {
+      mockFrom.mockImplementation((table) => {
+        if (table === 'groups') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                maybeSingle: jest.fn().mockResolvedValue({
+                  data: table === 'groups' ? { id: 'group-uuid-1', name: 'TestGroup', checkout_url: 'https://pay.test' } : null,
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
       });
+
+      getMemberByChannelUserId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+
+      createWhatsAppTrialMember.mockResolvedValue({
+        success: true,
+        data: { id: 42, channel_user_id: '+5511999887766', status: 'trial' },
+      });
+
+      await handleGroupParticipantsUpdate(
+        { id: '120363xxx@g.us', participants: ['5511999887766@s.whatsapp.net'], action: 'add' },
+        mockClient
+      );
+
+      // Should send welcome DM via channelAdapter
+      expect(mockChannelSendDM).toHaveBeenCalledWith(
+        '+5511999887766',
+        expect.stringContaining('trial'),
+        { channel: 'whatsapp', groupId: 'group-uuid-1' }
+      );
+    });
+
+    it('should not fail member creation if welcome DM fails', async () => {
+      mockChannelSendDM.mockResolvedValueOnce({
+        success: false,
+        error: { code: 'NO_CLIENT', message: 'No client available' },
+      });
+
+      mockFrom.mockImplementation((table) => {
+        if (table === 'groups') {
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                maybeSingle: jest.fn().mockResolvedValue({
+                  data: { id: 'group-uuid-1', name: 'TestGroup' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: jest.fn().mockResolvedValue({ error: null }),
+        };
+      });
+
+      getMemberByChannelUserId.mockResolvedValue({
+        success: false,
+        error: { code: 'MEMBER_NOT_FOUND' },
+      });
+
+      createWhatsAppTrialMember.mockResolvedValue({
+        success: true,
+        data: { id: 43, channel_user_id: '+5511888877766', status: 'trial' },
+      });
+
+      // Should not throw even if welcome DM fails
+      await handleGroupParticipantsUpdate(
+        { id: '120363xxx@g.us', participants: ['5511888877766@s.whatsapp.net'], action: 'add' },
+        mockClient
+      );
+
+      expect(createWhatsAppTrialMember).toHaveBeenCalled();
     });
 
     it('should skip if member already exists and is active', async () => {

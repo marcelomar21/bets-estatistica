@@ -11,6 +11,7 @@ const {
   createWhatsAppTrialMember,
   markMemberAsRemoved,
 } = require('../../bot/services/memberService');
+const { sendDM } = require('../../lib/channelAdapter');
 
 const JID_SUFFIX_GROUP = '@g.us';
 
@@ -104,6 +105,7 @@ async function handleGroupParticipantsUpdate(event, client) {
  */
 async function handleMemberJoin(participantJid, groupId, groupJid) {
   const phone = extractPhone(participantJid);
+  const WA_TRIAL_DAYS = 3;
 
   logger.info('[wa-member-events] Member joined', { phone, groupId, groupJid });
 
@@ -124,7 +126,7 @@ async function handleMemberJoin(participantJid, groupId, groupJid) {
         .update({
           status: 'trial',
           trial_started_at: new Date().toISOString(),
-          trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          trial_ends_at: new Date(Date.now() + WA_TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString(),
           kicked_at: null,
           updated_at: new Date().toISOString(),
         })
@@ -143,11 +145,11 @@ async function handleMemberJoin(participantJid, groupId, groupJid) {
     return;
   }
 
-  // Create new trial member for WhatsApp
+  // Create new trial member for WhatsApp (3-day trial per epics spec)
   const createResult = await createWhatsAppTrialMember({
     channelUserId: phone,
     groupId,
-  });
+  }, WA_TRIAL_DAYS);
 
   if (createResult.success) {
     logger.info('[wa-member-events] New WhatsApp trial member created', {
@@ -161,6 +163,9 @@ async function handleMemberJoin(participantJid, groupId, groupJid) {
       group_jid: groupJid,
       source: 'baileys_event',
     });
+
+    // Story 15-3: Send welcome DM (non-blocking)
+    await _sendWelcomeDM(phone, groupId);
   } else {
     logger.error('[wa-member-events] Failed to create trial member', {
       phone, groupId, error: createResult.error,
@@ -229,6 +234,49 @@ async function registerMemberEvent(memberId, eventType, metadata = {}) {
   } catch (err) {
     logger.warn('[wa-member-events] Error registering event', {
       memberId, eventType, error: err.message,
+    });
+  }
+}
+
+/**
+ * Send a welcome DM to a new WhatsApp trial member.
+ * Story 15-3 AC1: Non-blocking — failure does not affect member creation.
+ * @param {string} phone - E.164 phone number
+ * @param {string} groupId - Group UUID
+ */
+async function _sendWelcomeDM(phone, groupId) {
+  try {
+    // Get group config for checkout URL
+    const { data: group } = await supabase
+      .from('groups')
+      .select('name, checkout_url')
+      .eq('id', groupId)
+      .maybeSingle();
+
+    const groupName = group?.name || 'Guru da Bet';
+    const checkoutUrl = group?.checkout_url || '';
+
+    const trialDays = 3;
+    let message = `Bem-vindo ao *${groupName}*! 🎉\n\n`;
+    message += `Voce tem *${trialDays} dias de trial gratuito* para experimentar nossas apostas com analise estatistica.\n\n`;
+    message += `Receba ate 3 apostas diarias selecionadas por IA.\n\n`;
+    if (checkoutUrl) {
+      message += `Para continuar apos o trial, assine aqui:\n${checkoutUrl}\n\n`;
+    }
+    message += `Aproveite! 🍀`;
+
+    const result = await sendDM(phone, message, { channel: 'whatsapp', groupId });
+
+    if (result.success) {
+      logger.info('[wa-member-events] Welcome DM sent', { phone, groupId });
+    } else {
+      logger.warn('[wa-member-events] Welcome DM failed (non-blocking)', {
+        phone, groupId, error: result.error,
+      });
+    }
+  } catch (err) {
+    logger.warn('[wa-member-events] Welcome DM error (non-blocking)', {
+      phone, groupId, error: err.message,
     });
   }
 }
