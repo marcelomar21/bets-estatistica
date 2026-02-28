@@ -6,6 +6,7 @@ import { MemberList } from '@/components/features/members/MemberList';
 import { CancelMemberModal } from '@/components/features/members/CancelMemberModal';
 
 type StatusFilter = 'todos' | 'trial' | 'ativo' | 'vencendo' | 'expirado' | 'inadimplente' | 'removido' | 'cancelado';
+type ChannelFilter = '' | 'telegram' | 'whatsapp';
 
 interface MembersApiPayload {
   items: MemberListItem[];
@@ -51,10 +52,11 @@ export default function MembersPage() {
   const [searchFilter, setSearchFilter] = useState('');
   const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('');
   const [cancelTarget, setCancelTarget] = useState<MemberListItem | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
 
-  const fetchMembers = useCallback(async (page: number, status: StatusFilter, search: string, groupId: string) => {
+  const fetchMembers = useCallback(async (page: number, status: StatusFilter, search: string, groupId: string, channel: ChannelFilter = '') => {
     setLoading(true);
     setError(null);
 
@@ -65,6 +67,7 @@ export default function MembersPage() {
       params.set('status', status);
       if (search) params.set('search', search);
       if (groupId) params.set('group_id', groupId);
+      if (channel) params.set('channel', channel);
 
       const response = await fetch(`/api/members?${params.toString()}`);
       if (!response.ok) {
@@ -141,8 +144,8 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!roleResolved) return;
-    fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
-  }, [roleResolved, fetchMembers, pagination.page, statusFilter, searchFilter, selectedGroupId]);
+    fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId, channelFilter);
+  }, [roleResolved, fetchMembers, pagination.page, statusFilter, searchFilter, selectedGroupId, channelFilter]);
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -170,7 +173,10 @@ export default function MembersPage() {
 
   async function handleReactivate(member: MemberListItem) {
     if (reactivateLoading) return;
-    if (!confirm(`Reativar membro ${member.telegram_username || member.telegram_id}?`)) return;
+    const memberLabel = member.channel === 'whatsapp'
+      ? (member.channel_user_id || member.id)
+      : (member.telegram_username || member.telegram_id);
+    if (!confirm(`Reativar membro ${memberLabel}?`)) return;
     setReactivateLoading(true);
     setError(null);
     try {
@@ -182,7 +188,7 @@ export default function MembersPage() {
         setError(payload?.error?.message ?? 'Erro ao reativar membro');
         return;
       }
-      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
+      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId, channelFilter);
     } catch {
       setError('Erro de conexao ao reativar membro');
     } finally {
@@ -205,7 +211,7 @@ export default function MembersPage() {
         return;
       }
       setCancelTarget(null);
-      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId);
+      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId, channelFilter);
     } catch {
       setError('Erro de conexao ao cancelar membro');
     } finally {
@@ -257,6 +263,25 @@ export default function MembersPage() {
               <option value="inadimplente">Inadimplentes</option>
               <option value="removido">Removidos</option>
               <option value="cancelado">Cancelados</option>
+            </select>
+          </div>
+
+          <div className="w-full md:w-40">
+            <label htmlFor="channel-filter" className="mb-1 block text-sm font-medium text-gray-700">
+              Canal
+            </label>
+            <select
+              id="channel-filter"
+              value={channelFilter}
+              onChange={(event) => {
+                setChannelFilter(event.target.value as ChannelFilter);
+                setPagination((prev) => ({ ...prev, page: 1 }));
+              }}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">Todos</option>
+              <option value="telegram">Telegram</option>
+              <option value="whatsapp">WhatsApp</option>
             </select>
           </div>
 

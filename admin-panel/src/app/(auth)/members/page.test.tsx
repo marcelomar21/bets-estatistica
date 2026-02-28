@@ -133,7 +133,7 @@ describe('/members page', () => {
     expect(screen.getByRole('heading', { name: 'Membros' })).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     expect(screen.getByText('Total')).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     await userEvent.selectOptions(screen.getByLabelText('Status'), 'trial');
@@ -170,7 +170,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     await userEvent.type(screen.getByLabelText('Buscar por username'), 'alice');
@@ -254,13 +254,13 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
 
     await waitFor(() => {
-      expect(screen.getByText('charlie')).toBeInTheDocument();
+      expect(screen.getByText('@charlie')).toBeInTheDocument();
     });
 
     const calledUrls = fetchSpy.mock.calls.map((call) => {
@@ -280,7 +280,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     expect(screen.getByRole('columnheader', { name: /grupo/i })).toBeInTheDocument();
@@ -293,7 +293,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     await waitFor(() => {
@@ -314,7 +314,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     expect(screen.queryByLabelText('Grupo')).not.toBeInTheDocument();
@@ -388,7 +388,7 @@ describe('/members page', () => {
     render(<MembersPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getByText('@alice')).toBeInTheDocument();
     });
 
     await waitFor(() => {
@@ -398,7 +398,7 @@ describe('/members page', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Próxima' }));
 
     await waitFor(() => {
-      expect(screen.getByText('charlie')).toBeInTheDocument();
+      expect(screen.getByText('@charlie')).toBeInTheDocument();
     });
 
     await userEvent.selectOptions(screen.getByLabelText('Grupo'), 'group-1');

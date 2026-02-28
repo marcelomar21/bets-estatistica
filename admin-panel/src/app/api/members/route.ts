@@ -7,6 +7,7 @@ const MAX_PER_PAGE = 200;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado']);
+const VALID_CHANNELS = new Set(['telegram', 'whatsapp']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
   if (!rawValue) return fallback;
@@ -37,6 +38,14 @@ export const GET = createApiHandler(
       );
     }
 
+    const channelFilter = url.searchParams.get('channel')?.trim().toLowerCase() || null;
+    if (channelFilter && !VALID_CHANNELS.has(channelFilter)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Filtro de canal invalido' } },
+        { status: 400 },
+      );
+    }
+
     const page = parsePositiveInt(url.searchParams.get('page'), DEFAULT_PAGE);
     const perPageRaw = parsePositiveInt(url.searchParams.get('per_page'), DEFAULT_PER_PAGE);
     const perPage = Math.min(perPageRaw, MAX_PER_PAGE);
@@ -45,7 +54,7 @@ export const GET = createApiHandler(
     const nowIso = new Date().toISOString();
     const sevenDaysIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const baseCols = 'id, telegram_id, telegram_username, status, subscription_ends_at, created_at, group_id';
+    const baseCols = 'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id';
     const cancelCols = statusFilter === 'cancelado' ? ', cancellation_reason, cancelled_by, kicked_at' : '';
     const groupCols = role === 'super_admin' ? ', groups(name)' : '';
     const select = baseCols + cancelCols + groupCols;
@@ -58,6 +67,10 @@ export const GET = createApiHandler(
       query = query.eq('group_id', groupFilter);
     } else if (groupIdParam) {
       query = query.eq('group_id', groupIdParam);
+    }
+
+    if (channelFilter) {
+      query = query.eq('channel', channelFilter);
     }
 
     if (statusFilter !== 'todos') {
@@ -81,7 +94,7 @@ export const GET = createApiHandler(
     }
 
     if (search) {
-      query = query.ilike('telegram_username', `%${search}%`);
+      query = query.or(`telegram_username.ilike.%${search}%,channel_user_id.ilike.%${search}%`);
     }
 
     // Counter queries — run in parallel with main query for global totals
@@ -102,6 +115,12 @@ export const GET = createApiHandler(
       trialQuery = trialQuery.eq('group_id', groupIdParam);
       ativoQuery = ativoQuery.eq('group_id', groupIdParam);
       vencendoQuery = vencendoQuery.eq('group_id', groupIdParam);
+    }
+
+    if (channelFilter) {
+      trialQuery = trialQuery.eq('channel', channelFilter);
+      ativoQuery = ativoQuery.eq('channel', channelFilter);
+      vencendoQuery = vencendoQuery.eq('channel', channelFilter);
     }
 
     const [mainResult, trialResult, ativoResult, vencendoResult] = await Promise.all([

@@ -82,7 +82,7 @@ export interface Member {
 
 export type MemberListItem = Pick<
   Member,
-  'id' | 'telegram_id' | 'telegram_username' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
+  'id' | 'telegram_id' | 'telegram_username' | 'channel' | 'channel_user_id' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
 > & {
   groups?: { name: string } | null;
   cancellation_reason?: string | null;

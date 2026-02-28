@@ -336,6 +336,8 @@ describe('Database Types', () => {
         id: 99,
         telegram_id: 555000,
         telegram_username: 'list-user',
+        channel: 'telegram',
+        channel_user_id: null,
         status: 'ativo',
         subscription_ends_at: '2026-02-20T00:00:00Z',
         created_at: '2026-02-01T00:00:00Z',
@@ -344,6 +346,7 @@ describe('Database Types', () => {
 
       expect(memberListItem.id).toBe(99);
       expect(memberListItem.telegram_username).toBe('list-user');
+      expect(memberListItem.channel).toBe('telegram');
       expect(memberListItem.subscription_ends_at).toBe('2026-02-20T00:00:00Z');
       expect(memberListItem.group_id).toBe('group-uuid-1');
     });

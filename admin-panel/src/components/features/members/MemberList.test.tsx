@@ -11,6 +11,8 @@ const baseMembers: MemberListItem[] = [
     id: 1,
     telegram_id: 1001,
     telegram_username: 'alice',
+    channel: 'telegram',
+    channel_user_id: null,
     status: 'ativo',
     subscription_ends_at: threeDaysFromNow,
     created_at: '2026-02-01T00:00:00Z',
@@ -21,6 +23,8 @@ const baseMembers: MemberListItem[] = [
     id: 2,
     telegram_id: 1002,
     telegram_username: 'bob',
+    channel: 'telegram',
+    channel_user_id: null,
     status: 'trial',
     subscription_ends_at: null,
     created_at: '2026-02-02T00:00:00Z',
@@ -33,13 +37,13 @@ describe('MemberList', () => {
   it('renderiza colunas padrão e membros', () => {
     render(<MemberList members={baseMembers} role="group_admin" />);
 
-    expect(screen.getByText('Nome Telegram')).toBeInTheDocument();
-    expect(screen.getByText('Telegram ID')).toBeInTheDocument();
+    expect(screen.getByText('Canal')).toBeInTheDocument();
+    expect(screen.getByText('Identificador')).toBeInTheDocument();
     expect(screen.getByText('Status')).toBeInTheDocument();
     expect(screen.getByText('Data de Entrada')).toBeInTheDocument();
     expect(screen.getByText('Vencimento')).toBeInTheDocument();
-    expect(screen.getByText('alice')).toBeInTheDocument();
-    expect(screen.getByText('bob')).toBeInTheDocument();
+    expect(screen.getByText('@alice')).toBeInTheDocument();
+    expect(screen.getByText('@bob')).toBeInTheDocument();
   });
 
   it('exibe coluna Grupo para super_admin', () => {
