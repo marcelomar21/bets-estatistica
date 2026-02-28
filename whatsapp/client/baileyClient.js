@@ -274,6 +274,43 @@ class BaileyClient {
   }
 
   /**
+   * Create a WhatsApp group and set it to announce mode (only admins can post).
+   * @param {string} groupName - Name of the group
+   * @param {string[]} participantJids - JIDs of participants to add
+   * @returns {Promise<{success: boolean, data?: {groupJid: string}, error?: {code: string, message: string}}>}
+   */
+  async createGroup(groupName, participantJids) {
+    if (!this.socket) {
+      return { success: false, error: { code: 'NOT_CONNECTED', message: 'Client is not connected' } };
+    }
+
+    if (!groupName || typeof groupName !== 'string') {
+      return { success: false, error: { code: 'INVALID_GROUP_NAME', message: 'groupName is required' } };
+    }
+
+    try {
+      const createAndConfigure = async () => {
+        const result = await this.socket.groupCreate(groupName, participantJids || []);
+        const groupJid = result.id || result.gid;
+        // Set to announce mode (only admins can post)
+        await this.socket.groupSettingUpdate(groupJid, 'announcement');
+        return groupJid;
+      };
+
+      const groupJid = await Promise.race([
+        createAndConfigure(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Group creation timeout')), SEND_TIMEOUT_MS)),
+      ]);
+
+      logger.info('WhatsApp group created', { numberId: this.numberId, groupJid, groupName });
+      return { success: true, data: { groupJid } };
+    } catch (err) {
+      logger.error('Failed to create WhatsApp group', { numberId: this.numberId, groupName, error: err.message });
+      return { success: false, error: { code: 'GROUP_CREATE_FAILED', message: err.message } };
+    }
+  }
+
+  /**
    * Get reconnect stats for health endpoint.
    */
   getStats() {

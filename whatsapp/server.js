@@ -11,6 +11,7 @@ const {
   deallocateFromGroup,
   checkPoolHealth,
 } = require('./pool/numberPoolService');
+const { createWhatsAppGroup } = require('./services/groupService');
 
 const { clients } = require('./clientRegistry');
 
@@ -192,6 +193,16 @@ function createApp() {
   app.get('/api/whatsapp/pool/health', async (req, res) => {
     const result = await checkPoolHealth();
     res.json(result);
+  });
+
+  // Create WhatsApp group for a platform group
+  app.post('/api/whatsapp/groups/:groupId/create', async (req, res) => {
+    const { groupName } = req.body;
+    const result = await createWhatsAppGroup(req.params.groupId, groupName);
+    if (result.success) return res.status(201).json(result);
+    const statusMap = { GROUP_NOT_FOUND: 404, ALREADY_EXISTS: 409 };
+    const status = statusMap[result.error?.code] || 400;
+    res.status(status).json(result);
   });
 
   return app;

@@ -16,6 +16,8 @@ export interface Group {
   posting_schedule: PostingSchedule;
   post_now_requested_at: string | null;
   status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed';
+  whatsapp_group_jid: string | null;
+  channels: string[];
   created_at: string;
 }
 

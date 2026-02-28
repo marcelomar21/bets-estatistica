@@ -414,6 +414,55 @@ describe('BaileyClient', () => {
     });
   });
 
+  describe('createGroup', () => {
+    it('should return error when socket is null', async () => {
+      const result = await client.createGroup('Test Group', []);
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('NOT_CONNECTED');
+    });
+
+    it('should return error when groupName is empty', async () => {
+      await client.connect();
+      const result = await client.createGroup('', []);
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('INVALID_GROUP_NAME');
+    });
+
+    it('should create group and set announce mode', async () => {
+      await client.connect();
+      mockSocket.groupCreate = jest.fn().mockResolvedValue({ id: '120363xxx@g.us' });
+      mockSocket.groupSettingUpdate = jest.fn().mockResolvedValue(undefined);
+
+      const result = await client.createGroup('Test Group', ['jid1@s.whatsapp.net']);
+
+      expect(result.success).toBe(true);
+      expect(result.data.groupJid).toBe('120363xxx@g.us');
+      expect(mockSocket.groupCreate).toHaveBeenCalledWith('Test Group', ['jid1@s.whatsapp.net']);
+      expect(mockSocket.groupSettingUpdate).toHaveBeenCalledWith('120363xxx@g.us', 'announcement');
+    });
+
+    it('should handle gid property from groupCreate result', async () => {
+      await client.connect();
+      mockSocket.groupCreate = jest.fn().mockResolvedValue({ gid: '120363yyy@g.us' });
+      mockSocket.groupSettingUpdate = jest.fn().mockResolvedValue(undefined);
+
+      const result = await client.createGroup('Test Group', []);
+
+      expect(result.success).toBe(true);
+      expect(result.data.groupJid).toBe('120363yyy@g.us');
+    });
+
+    it('should handle create failure', async () => {
+      await client.connect();
+      mockSocket.groupCreate = jest.fn().mockRejectedValue(new Error('Permission denied'));
+
+      const result = await client.createGroup('Test Group', []);
+
+      expect(result.success).toBe(false);
+      expect(result.error.code).toBe('GROUP_CREATE_FAILED');
+    });
+  });
+
   describe('_createPinoAdapter', () => {
     it('should create a pino-compatible logger', () => {
       const adapter = client._createPinoAdapter();
