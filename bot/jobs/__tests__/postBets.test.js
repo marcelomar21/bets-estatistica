@@ -31,18 +31,37 @@ jest.mock('../../../lib/config', () => ({
   validateConfig: jest.fn(),
 }));
 
+// Flexible supabase mock: returns different data based on select() column
+const mockSupabaseFrom = jest.fn();
 jest.mock('../../../lib/supabase', () => ({
   supabase: {
-    from: jest.fn(() => ({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({
-        data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
-        error: null,
-      }),
-    })),
+    from: mockSupabaseFrom,
   },
 }));
+
+function setupDefaultSupabaseMock(toneConfig = null) {
+  mockSupabaseFrom.mockImplementation(() => {
+    let selectedField = null;
+    const chain = {
+      select: jest.fn((field) => { selectedField = field; return chain; }),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn(() => {
+        if (selectedField === 'copy_tone_config') {
+          return Promise.resolve({
+            data: toneConfig ? { copy_tone_config: toneConfig } : { copy_tone_config: null },
+            error: null,
+          });
+        }
+        // Default: posting_schedule
+        return Promise.resolve({
+          data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
+          error: null,
+        });
+      }),
+    };
+    return chain;
+  });
+}
 
 jest.mock('../../telegram', () => ({
   sendToPublic: jest.fn(),
@@ -80,6 +99,7 @@ jest.mock('../jobWarn', () => ({
 const { runPostBets, validateBetForPosting } = require('../postBets');
 const { sendToPublic, sendToAdmin } = require('../../telegram');
 const { getFilaStatus, markBetAsPosted, registrarPostagem } = require('../../services/betService');
+const { generateBetCopy } = require('../../services/copyService');
 
 // Helper: create a bet fixture
 function makeBet(overrides = {}) {
@@ -100,6 +120,7 @@ function makeBet(overrides = {}) {
 describe('postBets', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    setupDefaultSupabaseMock(); // default: no tone config
   });
 
   // ---- validateBetForPosting ----
@@ -406,6 +427,89 @@ describe('postBets', () => {
       await expect(runPostBets(true)).rejects.toThrow();
       expect(sendToAdmin).toHaveBeenCalledWith(
         expect.stringContaining('Connection refused'),
+        null,
+      );
+    });
+  });
+
+  // ---- Story 18.1: toneConfig DB loading ----
+
+  describe('toneConfig DB loading (Story 18.1)', () => {
+    const sampleToneConfig = {
+      tone: 'energético e direto',
+      persona: 'Guru da Bet',
+      examplePost: '🔥 BORA! Flamengo x Palmeiras...',
+      customRules: ['usar emojis de fogo'],
+    };
+
+    it('should load toneConfig from DB when botCtx is not provided (singleton scheduler)', async () => {
+      setupDefaultSupabaseMock(sampleToneConfig);
+      const bet = makeBet({ reasoning: 'Good stats' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '🔥 Generated with tone', fullMessage: true },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true);
+
+      // generateBetCopy should receive the toneConfig loaded from DB
+      expect(generateBetCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'bet-1' }),
+        expect.objectContaining({ tone: 'energético e direto', examplePost: expect.any(String) }),
+      );
+    });
+
+    it('should NOT query DB for toneConfig when botCtx already provides it', async () => {
+      const botCtxTone = { tone: 'from-botCtx', examplePost: 'Via memory' };
+      setupDefaultSupabaseMock(sampleToneConfig); // DB has different config
+      const bet = makeBet({ reasoning: 'Good stats' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: 'copy', fullMessage: true },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true, {
+        botCtx: {
+          groupId: 'test-group-uuid',
+          groupConfig: { copyToneConfig: botCtxTone },
+        },
+      });
+
+      // Should use botCtx toneConfig, not DB one
+      expect(generateBetCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'bet-1' }),
+        expect.objectContaining({ tone: 'from-botCtx' }),
+      );
+    });
+
+    it('should post with null toneConfig when group has no copy_tone_config in DB', async () => {
+      setupDefaultSupabaseMock(null); // no tone config
+      const bet = makeBet({ reasoning: 'Good stats' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '- Stat 1\n- Stat 2' },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true);
+
+      // generateBetCopy called with null toneConfig (fallback behavior)
+      expect(generateBetCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'bet-1' }),
         null,
       );
     });
