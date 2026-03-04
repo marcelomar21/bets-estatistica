@@ -2,17 +2,16 @@
 stepsCompleted: [1, 2, 3, 4]
 status: 'complete'
 completedAt: '2026-02-28'
-updatedAt: '2026-03-03'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/architecture.md
 workflowType: 'epics-and-stories'
 projectType: 'brownfield'
 project_name: 'bets-estatistica'
-scope: 'WhatsApp Integration + Melhorias Operacionais'
+scope: 'WhatsApp Integration'
 ---
 
-# bets-estatistica - Epic Breakdown (WhatsApp Integration + Melhorias Operacionais)
+# bets-estatistica - Epic Breakdown (WhatsApp Integration)
 
 ## Overview
 
@@ -806,86 +805,6 @@ So that apenas membros pagantes tenham acesso ao grupo em todos os canais.
 
 ---
 
-## PRD v5 — Melhorias Operacionais (Epics 18-21)
-
-Adicionado em 2026-03-03. Correções de bugs no pipeline de copy, nova feature de distribuição por campeonato e gestão de acessos.
-
----
-
-## Epic 18: Correções Copy Pipeline (TOM & Preview)
-
-O tom de voz (TOM) configurado pelo tenant é aplicado corretamente no Preview, mas NÃO é aplicado nas postagens reais enviadas ao Telegram. Além disso, o Preview ignora o jogo selecionado pelo operador e busca um jogo aleatório do banco.
-
-**Causa raiz TOM:** `server.scheduler.js` passa `botCtx: { groupId }` sem `groupConfig.copyToneConfig` para o `runPostBets()`. O `postBets.js` lê `botCtx.groupConfig.copyToneConfig` como `null`, e o LLM nunca é chamado para aplicar o tom.
-
-**Causa raiz Preview:** `previewService.js` não aceita `betId` como parâmetro. O método `fetchSampleBets()` busca qualquer bet disponível em vez do jogo que o operador selecionou.
-
-**Dependências:** Nenhuma
-**Prioridade:** Alta — impacta operação diária
-
-### Story 18.1: Fix TOM Aplicado no Post Real do Telegram
-
-As a operador de grupo,
-I want que o tom de voz configurado seja aplicado nas postagens reais do Telegram,
-So that as mensagens enviadas reflitam a identidade e persona do meu grupo.
-
-**Arquivos afetados:**
-- `bot/server.scheduler.js` — scheduler que cria os cron jobs de postagem
-- `bot/jobs/postBets.js` — `runPostBets()` e `formatBetMessage()`
-- `bot/services/previewService.js` — referência de como o tom é carregado corretamente
-
-**Acceptance Criteria:**
-
-**Given** um grupo tem `copy_tone_config` configurado no banco (tabela `groups`, coluna JSONB)
-**When** o job de postagem (`post-bets`) é executado pelo scheduler
-**Then** o `toneConfig` é carregado do banco via query (assim como o `previewService.js` faz)
-**And** o `toneConfig` é passado para `formatBetMessage()` em cada bet
-
-**Given** `toneConfig` contém campos como `tone`, `persona`, `examplePost`, `customRules`
-**When** `formatBetMessage()` recebe o `toneConfig`
-**Then** a chamada ao LLM (`generateBetCopy()`) inclui o tom no prompt
-**And** a copy gerada reflete o tom configurado
-
-**Given** um grupo NÃO tem `copy_tone_config` configurado
-**When** o job de postagem executa
-**Then** comportamento atual é mantido (template padrão sem LLM) — sem regressão
-
-**Given** a copy é gerada com tom e enviada ao Telegram
-**When** comparada com o resultado do Preview para o mesmo jogo
-**Then** o tom é consistente entre Preview e post real
-
-### Story 18.2: Fix Preview Usa o Jogo Selecionado
-
-As a operador de grupo,
-I want que o Preview gere a copy do jogo que eu selecionei,
-So that eu possa avaliar como ficará a mensagem antes de postar.
-
-**Arquivos afetados:**
-- `admin-panel/src/app/api/bets/post-now/preview/route.ts` — API route do admin panel
-- `bot/server.js` — endpoint `/api/preview` do bot (linhas 102-128)
-- `bot/services/previewService.js` — `generatePreview()` e `fetchSampleBets()`
-
-**Acceptance Criteria:**
-
-**Given** operador seleciona um jogo específico na aba de apostas do admin panel
-**When** clica no botão de Preview
-**Then** o `betId` do jogo selecionado é enviado no request para `/api/preview`
-
-**Given** endpoint `/api/preview` do bot recebe um `betId` no body
-**When** `generatePreview(groupId, betId)` é chamado
-**Then** `previewService.js` busca exatamente aquela bet pelo ID em vez de chamar `fetchSampleBets()`
-**And** a copy gerada é daquele jogo específico
-
-**Given** endpoint `/api/preview` é chamado SEM `betId` (retrocompatibilidade)
-**When** `betId` é `null` ou `undefined`
-**Then** comportamento atual é mantido — busca sample bet aleatória
-
-**Given** `betId` fornecido não existe no banco
-**When** query retorna vazio
-**Then** resposta retorna erro 404 com mensagem clara: "Aposta não encontrada"
-
----
-
 ## Epic 19: Campeonato por Cliente na Distribuição
 
 Permitir que cada tenant/grupo configure quais campeonatos deseja receber na distribuição de apostas. Hoje todas as apostas são distribuídas igualmente para todos os grupos, sem filtro por campeonato.
@@ -893,22 +812,31 @@ Permitir que cada tenant/grupo configure quais campeonatos deseja receber na dis
 **Dependências:** Nenhuma
 **Prioridade:** Média — feature nova solicitada
 
+**Decisões de Design (validadas 2026-03-03):**
+- **Tabela relacional separada** `group_league_preferences` (não JSONB) — facilita queries `NOT EXISTS` na distribuição
+- **group_admin pode configurar** as preferências do seu próprio grupo (RLS isola por group_id)
+- **Ligas populadas de `league_seasons`** (não extraídas das apostas) — fonte de verdade mais confiável
+- **Retrocompatível:** tabela vazia = recebe tudo (comportamento atual mantido)
+
 ### Story 19.1: Tabela de Preferências de Campeonato e API
 
-As a super admin,
-I want configurar quais campeonatos cada grupo recebe na distribuição,
+As a admin (super_admin ou group_admin),
+I want configurar quais campeonatos meu grupo recebe na distribuição,
 So that cada grupo receba apenas apostas dos campeonatos relevantes para seu público.
 
-**Escopo técnico:** Nova migration criando tabela `group_league_preferences` (group_id FK, league TEXT, enabled BOOLEAN DEFAULT true) + RLS. API CRUD em `/api/groups/[id]/leagues`.
+**Escopo técnico:**
+- Nova migration: tabela `group_league_preferences` (id SERIAL PK, group_id UUID FK→groups NOT NULL, league_name TEXT NOT NULL, enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ, UNIQUE(group_id, league_name)) + RLS (super_admin: ALL, group_admin: ALL own group)
+- API CRUD em `/api/groups/[id]/leagues` (GET lista preferências + ligas disponíveis, PUT atualiza toggles)
+- UI: seção na página de edição/detalhe do grupo com lista de ligas e toggles on/off
 
 **Acceptance Criteria:**
 
-**Given** super admin acessa as configurações de um grupo no admin panel
+**Given** admin acessa as configurações de um grupo no admin panel
 **When** visualiza a seção de campeonatos/ligas
-**Then** vê uma lista de todos os campeonatos disponíveis (extraídos das apostas existentes)
-**And** cada campeonato tem um toggle on/off
+**Then** vê lista de todos os campeonatos disponíveis (de `league_seasons` com `active = true`)
+**And** cada campeonato tem um toggle on/off (default: on se não há registro)
 
-**Given** super admin desativa um campeonato para um grupo
+**Given** admin desativa um campeonato para um grupo
 **When** salva a configuração
 **Then** registro é criado/atualizado em `group_league_preferences` com `enabled = false`
 **And** próximas distribuições respeitam essa configuração
@@ -917,15 +845,21 @@ So that cada grupo receba apenas apostas dos campeonatos relevantes para seu pú
 **When** distribuição é executada
 **Then** grupo recebe TODAS as apostas — comportamento atual mantido (retrocompatível)
 
+**Given** group_admin acessa as preferências de campeonato
+**When** visualiza e modifica os toggles
+**Then** vê e edita apenas as preferências do seu próprio grupo (RLS enforced)
+
 ### Story 19.2: Distribuição Respeita Filtro de Campeonato
 
 As a sistema (job de distribuição),
 I want filtrar as apostas por campeonato antes de distribuir para cada grupo,
 So that cada grupo receba apenas apostas dos campeonatos que configurou.
 
-**Arquivos afetados:**
-- `bot/jobs/distributeBets.js` ou equivalente — job de distribuição
-- Query de seleção de apostas para cada grupo
+**Escopo técnico:**
+- `bot/jobs/distributeBets.js` — alterar `getUndistributedBets()` ou criar wrapper per-group
+- Adicionar join com `league_seasons` para obter `league_name`
+- Query de distribuição deve excluir apostas cujo `league_name` tem `enabled = false` para o grupo-alvo
+- Lógica: se grupo não tem registros em `group_league_preferences`, recebe tudo (retrocompatível)
 
 **Acceptance Criteria:**
 
@@ -943,30 +877,6 @@ So that cada grupo receba apenas apostas dos campeonatos que configurou.
 **When** distribuição é executada
 **Then** campeonato novo é tratado como "ativado" por padrão (se grupo não tem preferência explícita)
 
----
-
-## Epic 20: Gestão de Acessos — Criar Login Gestor de Grupo
-
-Criar acesso ao admin panel para o Osmar com role de gestor de grupo, permitindo que ele gerencie seu(s) grupo(s) sem acesso de super admin.
-
-**Dependências:** Nenhuma
-**Prioridade:** Baixa — operacional
-
-### Story 20.1: Criar Usuário Osmar como Gestor de Grupo
-
-As a super admin,
-I want criar uma conta no admin panel para o Osmar com role de gestor de grupo,
-So that ele possa gerenciar seu grupo de forma autônoma.
-
-**Acceptance Criteria:**
-
-**Given** super admin decide criar acesso para o Osmar
-**When** cria o usuário via Supabase Auth ou UI de admin
-**Then** usuário é criado com email do Osmar
-**And** role atribuída é `group_manager`
-**And** grupo(s) sob gestão dele são vinculados ao seu usuário
-
-**Given** Osmar faz login no admin panel
-**When** acessa o sistema
-**Then** vê apenas os dados e funcionalidades do(s) grupo(s) que gerencia
-**And** NÃO tem acesso a pool de números, configurações globais ou outros grupos
+**Given** preferências de liga mudam para um grupo
+**When** próximo ciclo de distribuição executa
+**Then** apenas apostas NÃO-POSTADAS e NÃO-DISTRIBUÍDAS são afetadas (apostas já distribuídas permanecem)
