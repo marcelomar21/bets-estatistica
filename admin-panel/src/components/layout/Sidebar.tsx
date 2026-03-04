@@ -25,6 +25,7 @@ const navigation: NavItem[] = [
   { name: 'Bots', href: '/bots', icon: '🤖', roles: ['super_admin'] },
   { name: 'WhatsApp', href: '/whatsapp-pool', icon: '📲', roles: ['super_admin'] },
   { name: 'Telegram', href: '/settings/telegram', icon: '📱', roles: ['super_admin'] },
+  { name: 'Admin Users', href: '/admin-users', icon: '🔑', roles: ['super_admin'] },
 ];
 
 export interface SidebarProps {
