@@ -76,7 +76,7 @@ async function getUndistributedBets() {
 
     const { data, error } = await supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time)')
+      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
       .eq('elegibilidade', 'elegivel')
       .is('group_id', null)
       .is('distributed_at', null)
@@ -125,6 +125,74 @@ async function getGroupBetCounts() {
     counts[bet.group_id] = (counts[bet.group_id] || 0) + 1;
   }
   return counts;
+}
+
+/**
+ * Get league preferences for all active groups.
+ * Returns a Map: groupId → Map<league_name, enabled>
+ * Groups with no preferences will have an empty map (= accept all).
+ * @param {string[]} groupIds - Array of group UUIDs
+ * @returns {Promise<Map<string, Map<string, boolean>>>}
+ */
+async function getAllGroupLeaguePreferences(groupIds) {
+  const prefsMap = new Map();
+  for (const gid of groupIds) {
+    prefsMap.set(gid, new Map());
+  }
+
+  if (groupIds.length === 0) return prefsMap;
+
+  try {
+    const { data, error } = await supabase
+      .from('group_league_preferences')
+      .select('group_id, league_name, enabled')
+      .in('group_id', groupIds);
+
+    if (error) {
+      logger.warn('[bets:distribute] Erro ao carregar preferências de liga', { error: error.message });
+      return prefsMap; // Fallback: no filtering
+    }
+
+    for (const row of (data || [])) {
+      const groupPrefs = prefsMap.get(row.group_id);
+      if (groupPrefs) {
+        groupPrefs.set(row.league_name, row.enabled);
+      }
+    }
+  } catch (err) {
+    logger.warn('[bets:distribute] Erro inesperado ao carregar preferências de liga', { error: err.message });
+  }
+
+  return prefsMap;
+}
+
+/**
+ * Check if a group is eligible for a bet based on league preferences.
+ * - If group has no preferences → eligible (retrocompatible)
+ * - If league_name not in preferences → eligible (new league default)
+ * - If league_name has enabled=false → NOT eligible
+ * @param {Map<string, boolean>} groupPrefs - Group's league preferences
+ * @param {string|null} leagueName - The bet's league name
+ * @returns {boolean}
+ */
+function isGroupEligibleForBet(groupPrefs, leagueName) {
+  // No preferences configured → accept all
+  if (groupPrefs.size === 0) return true;
+  // No league name on bet → accept (edge case)
+  if (!leagueName) return true;
+  // League not in preferences → treat as enabled (new league)
+  if (!groupPrefs.has(leagueName)) return true;
+  // Explicit preference
+  return groupPrefs.get(leagueName) === true;
+}
+
+/**
+ * Extract league_name from a bet's nested join data
+ * @param {object} bet - Bet with league_matches.league_seasons.league_name
+ * @returns {string|null}
+ */
+function getBetLeagueName(bet) {
+  return bet?.league_matches?.league_seasons?.league_name || null;
 }
 
 /**
@@ -191,44 +259,56 @@ async function rebalanceIfNeeded(activeGroups) {
 }
 
 /**
- * Distribute bets among groups using fair round-robin algorithm
- * Groups with fewer existing bets get priority
- * @param {Array} bets - Undistributed bets
+ * Distribute bets among groups using fair round-robin algorithm.
+ * Supports per-group league filtering: each bet is only assigned to groups
+ * that have the bet's league enabled (or have no preferences = accept all).
+ *
+ * @param {Array} bets - Undistributed bets (with league_matches.league_seasons.league_name)
  * @param {Array} groups - Active groups
  * @param {object} [groupCounts={}] - Existing bet counts per group { groupId: count }
+ * @param {Map<string, Map<string, boolean>>} [leaguePrefs=null] - Per-group league preferences
  * @returns {Array<{betId: string, groupId: string}>} Assignment list
  */
-function distributeRoundRobin(bets, groups, groupCounts = {}) {
+function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null) {
   if (!bets.length || !groups.length) return [];
-
-  // Sort groups by current bet count (ascending), with random tiebreaker
-  const sortedGroups = [...groups].sort((a, b) => {
-    const countA = groupCounts[a.id] || 0;
-    const countB = groupCounts[b.id] || 0;
-    if (countA !== countB) return countA - countB;
-    return Math.random() - 0.5; // Random tiebreaker eliminates systematic bias
-  });
 
   // Track running counts during assignment
   const runningCounts = {};
-  for (const g of sortedGroups) {
+  for (const g of groups) {
     runningCounts[g.id] = groupCounts[g.id] || 0;
   }
 
   const assignments = [];
   for (const bet of bets) {
-    // Find group with minimum bets
-    let minGroup = sortedGroups[0];
-    let minCount = runningCounts[minGroup.id];
-    for (const g of sortedGroups) {
-      if (runningCounts[g.id] < minCount) {
+    const leagueName = getBetLeagueName(bet);
+
+    // Filter groups eligible for this bet based on league preferences
+    let eligibleGroups = groups;
+    if (leaguePrefs) {
+      eligibleGroups = groups.filter((g) => {
+        const prefs = leaguePrefs.get(g.id) || new Map();
+        return isGroupEligibleForBet(prefs, leagueName);
+      });
+    }
+
+    if (eligibleGroups.length === 0) {
+      // No group wants this league — skip bet (stays unassigned)
+      continue;
+    }
+
+    // Find eligible group with minimum bets (round-robin)
+    let minGroup = eligibleGroups[0];
+    let minCount = runningCounts[minGroup.id] ?? 0;
+    for (const g of eligibleGroups) {
+      const count = runningCounts[g.id] ?? 0;
+      if (count < minCount) {
         minGroup = g;
-        minCount = runningCounts[g.id];
+        minCount = count;
       }
     }
 
     assignments.push({ betId: bet.id, groupId: minGroup.id });
-    runningCounts[minGroup.id]++;
+    runningCounts[minGroup.id] = (runningCounts[minGroup.id] ?? 0) + 1;
   }
 
   return assignments;
@@ -432,11 +512,23 @@ async function runDistributeBets() {
     };
   }
 
-  // 3. Calculate round-robin assignments
-  // Count existing bets per group for fair distribution
+  // 3. Calculate round-robin assignments with league filtering
   const groupCounts = await getGroupBetCounts();
   logger.info('[bets:distribute] Contagem de apostas por grupo', { groupCounts });
-  const assignments = distributeRoundRobin(bets, groups, groupCounts);
+
+  // Load league preferences for all groups (Story 19.2)
+  const groupIds = groups.map((g) => g.id);
+  const leaguePrefs = await getAllGroupLeaguePreferences(groupIds);
+
+  const groupsWithPrefs = Array.from(leaguePrefs.entries()).filter(([, prefs]) => prefs.size > 0);
+  if (groupsWithPrefs.length > 0) {
+    logger.info('[bets:distribute] Preferências de liga carregadas', {
+      groupsWithPrefs: groupsWithPrefs.length,
+      details: Object.fromEntries(groupsWithPrefs.map(([gid, prefs]) => [gid, prefs.size])),
+    });
+  }
+
+  const assignments = distributeRoundRobin(bets, groups, groupCounts, leaguePrefs);
 
   // 3.5. Pre-load posting times per group for auto-scheduling
   const groupTimesCache = {};
@@ -527,6 +619,9 @@ module.exports = {
   getUndistributedBets,
   getDistributionWindow,
   getGroupBetCounts,
+  getAllGroupLeaguePreferences,
+  isGroupEligibleForBet,
+  getBetLeagueName,
   rebalanceIfNeeded,
   distributeRoundRobin,
   assignBetToGroup,

@@ -229,7 +229,7 @@ development_status:
   # ========================================
   epic-19: in-progress
   19-1-tabela-preferencias-campeonato-api: done
-  19-2-distribuicao-respeita-filtro-campeonato: backlog
+  19-2-distribuicao-respeita-filtro-campeonato: in-progress
   epic-19-retrospective: optional
 
   # ========================================
