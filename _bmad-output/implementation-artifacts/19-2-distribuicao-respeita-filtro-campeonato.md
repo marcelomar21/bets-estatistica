@@ -1,6 +1,6 @@
 # Story 19.2: Distribuição Respeita Filtro de Campeonato
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 

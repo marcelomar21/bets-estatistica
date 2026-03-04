@@ -530,6 +530,16 @@ async function runDistributeBets() {
 
   const assignments = distributeRoundRobin(bets, groups, groupCounts, leaguePrefs);
 
+  // Log skipped bets (no eligible group due to league preferences)
+  const skippedCount = bets.length - assignments.length;
+  if (skippedCount > 0) {
+    logger.info('[bets:distribute] Apostas sem grupo elegível (liga desativada em todos os grupos)', {
+      skippedCount,
+      totalBets: bets.length,
+      assignedCount: assignments.length,
+    });
+  }
+
   // 3.5. Pre-load posting times per group for auto-scheduling
   const groupTimesCache = {};
   const groupTimeCountsCache = {};
