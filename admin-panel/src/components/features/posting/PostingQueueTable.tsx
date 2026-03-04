@@ -28,6 +28,7 @@ interface PostingQueueTableProps {
   onEditOdds?: (bet: QueueBet) => void;
   onEditLink?: (bet: QueueBet) => void;
   onPromote?: (betId: number) => Promise<void>;
+  onPreview?: (betId: number) => void;
   onScheduleBet?: (betId: number, postAt: string | null) => void;
   emptyMessage?: string;
 }
@@ -124,7 +125,7 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
   return dir === 'asc' ? result : -result;
 }
 
-export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
+export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, onPreview, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [promotingId, setPromotingId] = useState<number | null>(null);
@@ -322,6 +323,16 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                         className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
                       >
                         Link
+                      </button>
+                    )}
+                    {/* Preview action — shown in postable table (onPreview passed) */}
+                    {onPreview && (
+                      <button
+                        onClick={() => onPreview(bet.id)}
+                        className="rounded px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 hover:bg-purple-200"
+                        title="Gerar preview desta aposta"
+                      >
+                        Preview
                       </button>
                     )}
                     {/* Remove action */}

@@ -363,15 +363,19 @@ export default function PostagemPage() {
   // Preview flow handlers
   // ──────────────────────────────────────────────────────
 
-  async function handlePreparePreview() {
+  async function handlePreparePreview(betId?: number) {
     setPreviewPhase('loading');
     setPreviewError(null);
 
     try {
+      const payload: Record<string, string | number> = {};
+      if (selectedGroupId) payload.group_id = selectedGroupId;
+      if (betId) payload.bet_id = betId;
+
       const res = await fetch('/api/bets/post-now/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedGroupId ? { group_id: selectedGroupId } : {}),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
@@ -427,10 +431,15 @@ export default function PostagemPage() {
     setRegeneratingIdx(idx);
 
     try {
+      const regenPayload: Record<string, string | number> = {};
+      if (selectedGroupId) regenPayload.group_id = selectedGroupId;
+      const currentBetId = previewBets[idx].betId;
+      if (currentBetId) regenPayload.bet_id = currentBetId;
+
       const res = await fetch('/api/bets/post-now/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(selectedGroupId ? { group_id: selectedGroupId } : {}),
+        body: JSON.stringify(regenPayload),
       });
 
       const json = await res.json();
@@ -441,7 +450,6 @@ export default function PostagemPage() {
       }
 
       const freshData: PreviewData = json.data;
-      const currentBetId = previewBets[idx].betId;
       const freshBet = freshData.bets.find(b => b.betId === currentBetId);
 
       if (freshBet) {
@@ -936,7 +944,7 @@ export default function PostagemPage() {
                 </button>
               </div>
               <button
-                onClick={handlePreparePreview}
+                onClick={() => handlePreparePreview()}
                 disabled={postableBets.length === 0}
                 title={postableBets.length === 0 ? 'Nenhuma aposta pronta' : `Preparar postagem de ${postableBets.length} aposta(s)`}
                 className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -948,6 +956,7 @@ export default function PostagemPage() {
           <PostingQueueTable
             bets={postableBets}
             onRemove={handleRemoveBet}
+            onPreview={(betId) => handlePreparePreview(betId)}
             onScheduleBet={handleScheduleBet}
             emptyMessage="Nenhuma aposta elegivel para postagem."
           />
