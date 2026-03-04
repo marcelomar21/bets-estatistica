@@ -498,8 +498,24 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const period = getPeriod();
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
-  const toneConfig = botCtx?.groupConfig?.copyToneConfig || null;
-  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime });
+
+  // Load toneConfig: prefer botCtx (multi-tenant), fallback to DB query (singleton scheduler)
+  let toneConfig = botCtx?.groupConfig?.copyToneConfig || null;
+  if (!toneConfig && groupId) {
+    const { data: groupData, error: toneError } = await supabase
+      .from('groups')
+      .select('copy_tone_config')
+      .eq('id', groupId)
+      .single();
+    if (toneError) {
+      logger.warn('[postBets] Failed to load toneConfig from DB', { groupId, error: toneError.message });
+    } else if (groupData?.copy_tone_config) {
+      toneConfig = groupData.copy_tone_config;
+      logger.debug('[postBets] Loaded toneConfig from DB', { groupId });
+    }
+  }
+
+  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime, hasToneConfig: !!toneConfig });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis

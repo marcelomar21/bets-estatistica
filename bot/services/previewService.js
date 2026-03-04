@@ -156,18 +156,56 @@ async function formatPreviewMessage(bet, toneConfig) {
 }
 
 /**
+ * Fetch a specific bet by ID for preview.
+ * @param {string} groupId - Group UUID (for multi-tenant security)
+ * @param {string|number} betId - Bet ID
+ * @returns {Promise<Array>}
+ */
+async function fetchBetById(groupId, betId) {
+  const { data, error } = await supabase
+    .from('suggested_bets')
+    .select(`
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      league_matches!inner ( home_team_name, away_team_name, kickoff_time )
+    `)
+    .eq('group_id', groupId)
+    .eq('id', betId)
+    .limit(1);
+
+  if (error) {
+    logger.error('[previewService] Failed to fetch bet by ID', { groupId, betId, error: error.message });
+    return { data: [], error };
+  }
+
+  return { data: data || [], error: null };
+}
+
+/**
  * Generate preview messages for a group.
  * Uses the real posting pipeline but without posting-readiness filters.
  *
  * @param {string} groupId - Group UUID
+ * @param {string|number|null} betId - Optional specific bet ID to preview
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function generatePreview(groupId) {
+async function generatePreview(groupId, betId = null) {
   // 1. Load tone config fresh from DB
   const toneConfig = await loadToneConfig(groupId);
 
-  // 2. Fetch sample bets (no strict filters — preview is for tone testing)
-  const rawBets = await fetchSampleBets(groupId);
+  // 2. Fetch bets: specific bet if betId provided, otherwise sample
+  let rawBets;
+  if (betId) {
+    const result = await fetchBetById(groupId, betId);
+    if (result.error) {
+      return { success: false, error: { code: 'DB_ERROR', message: `Erro ao buscar aposta: ${result.error.message}` } };
+    }
+    rawBets = result.data;
+    if (rawBets.length === 0) {
+      return { success: false, error: { code: 'BET_NOT_FOUND', message: 'Aposta não encontrada' } };
+    }
+  } else {
+    rawBets = await fetchSampleBets(groupId);
+  }
 
   if (rawBets.length === 0) {
     return { success: false, error: { code: 'NO_BETS', message: 'Nenhuma aposta encontrada neste grupo para gerar preview' } };

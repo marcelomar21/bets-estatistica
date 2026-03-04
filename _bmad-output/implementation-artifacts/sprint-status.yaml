@@ -1,4 +1,4 @@
-# generated: 2026-02-28
+# generated: 2026-03-03
 # project: bets-estatistica
 # project_key: bets-estatistica
 # tracking_system: file-system
@@ -210,3 +210,28 @@ development_status:
   17-1-ativacao-membro-whatsapp-webhook-pagamento: done
   17-2-kick-automatico-cancelamento-inadimplencia-webhook: done
   epic-17-retrospective: optional
+
+  # ========================================
+  # PRD v5 — Melhorias Operacionais (Epics 18-21)
+  # Adicionado em 2026-03-03
+  # ========================================
+
+  # ========================================
+  # Epic 18: Correções Copy Pipeline (TOM & Preview)
+  # ========================================
+  epic-18: done
+  18-1-fix-tom-post-real-telegram: done
+  18-2-fix-preview-jogo-selecionado: done
+  epic-18-retrospective: optional
+
+  # ========================================
+  # Epic 19: Campeonato por Cliente na Distribuição
+  # STATUS: AGUARDANDO REFINAMENTO — removido do sprint até análise detalhada
+  # ========================================
+
+  # ========================================
+  # Epic 20: Gestão de Acessos — Login Gestor de Grupo
+  # ========================================
+  epic-20: backlog
+  20-1-criar-usuario-osmar-gestor-grupo: backlog
+  epic-20-retrospective: optional

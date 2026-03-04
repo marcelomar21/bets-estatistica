@@ -23,6 +23,7 @@ export const POST = createApiHandler(
     }
 
     const groupId = groupFilter || body.group_id;
+    const betId = body.bet_id;
 
     if (!groupId) {
       return NextResponse.json(
@@ -39,6 +40,9 @@ export const POST = createApiHandler(
     }
 
     // Proxy to bot's preview endpoint
+    const botPayload: Record<string, string | number> = { group_id: groupId };
+    if (betId) botPayload.bet_id = betId;
+
     const botResponse = await fetchWithRetry(
       `${BOT_API_URL}/api/preview`,
       {
@@ -47,7 +51,7 @@ export const POST = createApiHandler(
           'Content-Type': 'application/json',
           Authorization: `Bearer ${BOT_PREVIEW_API_KEY}`,
         },
-        body: JSON.stringify({ group_id: groupId }),
+        body: JSON.stringify(botPayload),
       },
       2,   // 2 retries (bot on Render may cold-start)
       3000, // 3s delay between retries
@@ -55,12 +59,17 @@ export const POST = createApiHandler(
 
     if (!botResponse.ok) {
       const errorBody = await botResponse.json().catch(() => ({ error: 'Unknown bot error' }));
-      const statusCode = botResponse.status === 422 ? 422 : 500;
+      const statusCode = botResponse.status === 404 ? 404
+        : botResponse.status === 422 ? 422
+        : 500;
+      const errorCode = statusCode === 404 ? 'BET_NOT_FOUND'
+        : statusCode === 422 ? 'NO_VALID_BETS'
+        : 'BOT_ERROR';
       return NextResponse.json(
         {
           success: false,
           error: {
-            code: statusCode === 422 ? 'NO_VALID_BETS' : 'BOT_ERROR',
+            code: errorCode,
             message: errorBody.error?.message || errorBody.error || 'Bot preview failed',
           },
         },
