@@ -28,10 +28,10 @@ export const GET = createApiHandler(
 
 /**
  * POST /api/admin-users
- * Create a new admin user: Supabase Auth invite + admin_users row.
- * Super admin only.
+ * Create a new admin user: Supabase Auth createUser (with password) + admin_users row.
+ * Super admin only. No email is sent — the super admin sets the password and shares it manually.
  *
- * Body: { email: string, role: 'super_admin' | 'group_admin', group_id?: string }
+ * Body: { email: string, password: string, role: 'super_admin' | 'group_admin', group_id?: string }
  */
 export const POST = createApiHandler(
   async (req: NextRequest) => {
@@ -45,12 +45,19 @@ export const POST = createApiHandler(
       );
     }
 
-    const { email, role, group_id } = body;
+    const { email, password, role, group_id } = body;
 
     // Validate required fields
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Email inválido' } },
+        { status: 400 },
+      );
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Senha deve ter no mínimo 6 caracteres' } },
         { status: 400 },
       );
     }
@@ -101,10 +108,12 @@ export const POST = createApiHandler(
       );
     }
 
-    // Invite user via Supabase Auth (sends magic link email)
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      email.toLowerCase().trim(),
-    );
+    // Create user with password (no email sent)
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: email.toLowerCase().trim(),
+      password,
+      email_confirm: true,
+    });
 
     if (authError) {
       return NextResponse.json(
