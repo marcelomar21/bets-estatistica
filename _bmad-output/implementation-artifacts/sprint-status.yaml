@@ -226,8 +226,11 @@ development_status:
 
   # ========================================
   # Epic 19: Campeonato por Cliente na Distribuição
-  # STATUS: AGUARDANDO REFINAMENTO — removido do sprint até análise detalhada
   # ========================================
+  epic-19: done
+  19-1-tabela-preferencias-campeonato-api: done
+  19-2-distribuicao-respeita-filtro-campeonato: done
+  epic-19-retrospective: optional
 
   # ========================================
   # Epic 20: Gestão de Acessos — Login Gestor de Grupo
