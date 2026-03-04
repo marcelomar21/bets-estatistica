@@ -186,15 +186,34 @@ async function fetchBetById(groupId, betId) {
  *
  * @param {string} groupId - Group UUID
  * @param {string|number|null} betId - Optional specific bet ID to preview
+ * @param {number[]|null} betIds - Optional array of bet IDs to preview (from posting queue)
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function generatePreview(groupId, betId = null) {
+async function generatePreview(groupId, betId = null, betIds = null) {
   // 1. Load tone config fresh from DB
   const toneConfig = await loadToneConfig(groupId);
 
-  // 2. Fetch bets: specific bet if betId provided, otherwise sample
+  // 2. Fetch bets: specific IDs from queue, single bet, or sample fallback
   let rawBets;
-  if (betId) {
+  if (betIds && betIds.length > 0) {
+    // Batch mode: fetch specific bets from the posting queue
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+        league_matches!inner ( home_team_name, away_team_name, kickoff_time )
+      `)
+      .eq('group_id', groupId)
+      .in('id', betIds);
+
+    if (error) {
+      return { success: false, error: { code: 'DB_ERROR', message: `Erro ao buscar apostas: ${error.message}` } };
+    }
+    rawBets = data || [];
+    if (rawBets.length === 0) {
+      return { success: false, error: { code: 'BET_NOT_FOUND', message: 'Nenhuma aposta encontrada com os IDs informados' } };
+    }
+  } else if (betId) {
     const result = await fetchBetById(groupId, betId);
     if (result.error) {
       return { success: false, error: { code: 'DB_ERROR', message: `Erro ao buscar aposta: ${result.error.message}` } };

@@ -368,9 +368,15 @@ export default function PostagemPage() {
     setPreviewError(null);
 
     try {
-      const payload: Record<string, string | number> = {};
+      const payload: Record<string, string | number | number[]> = {};
       if (selectedGroupId) payload.group_id = selectedGroupId;
-      if (betId) payload.bet_id = betId;
+      if (betId) {
+        payload.bet_id = betId;
+      } else {
+        // Batch mode: send the specific betIds from the posting queue
+        const queueBetIds = postableBets.map(b => b.id);
+        if (queueBetIds.length > 0) payload.bet_ids = queueBetIds;
+      }
 
       const res = await fetch('/api/bets/post-now/preview', {
         method: 'POST',
