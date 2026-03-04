@@ -107,14 +107,14 @@ app.post('/api/preview', async (req, res) => {
     return res.status(401).json({ success: false, error: 'Unauthorized' });
   }
 
-  const { group_id, bet_id } = req.body || {};
+  const { group_id, bet_id, bet_ids } = req.body || {};
   if (!group_id) {
     return res.status(400).json({ success: false, error: 'group_id is required' });
   }
 
   try {
     const { generatePreview } = require('./services/previewService');
-    const result = await generatePreview(group_id, bet_id || null);
+    const result = await generatePreview(group_id, bet_id || null, Array.isArray(bet_ids) ? bet_ids : null);
 
     if (!result.success) {
       const status = result.error?.code === 'BET_NOT_FOUND' ? 404 : 422;

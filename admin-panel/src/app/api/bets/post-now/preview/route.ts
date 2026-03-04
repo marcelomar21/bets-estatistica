@@ -24,6 +24,7 @@ export const POST = createApiHandler(
 
     const groupId = groupFilter || body.group_id;
     const betId = body.bet_id;
+    const betIds = Array.isArray(body.bet_ids) ? body.bet_ids : null;
 
     if (!groupId) {
       return NextResponse.json(
@@ -40,8 +41,9 @@ export const POST = createApiHandler(
     }
 
     // Proxy to bot's preview endpoint
-    const botPayload: Record<string, string | number> = { group_id: groupId };
+    const botPayload: Record<string, unknown> = { group_id: groupId };
     if (betId) botPayload.bet_id = betId;
+    if (betIds) botPayload.bet_ids = betIds;
 
     const botResponse = await fetchWithRetry(
       `${BOT_API_URL}/api/preview`,
