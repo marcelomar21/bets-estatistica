@@ -494,7 +494,7 @@ async function postToAllChannels(groupId, message, botCtx) {
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
 async function runPostBets(skipConfirmation = false, options = {}) {
-  const { botCtx = null, currentPostTime = null } = options;
+  const { botCtx = null, currentPostTime = null, allowedBetIds = null } = options;
   const period = getPeriod();
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
@@ -515,7 +515,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     }
   }
 
-  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime, hasToneConfig: !!toneConfig });
+  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime, allowedBetIds: allowedBetIds ? allowedBetIds.length : 'all', hasToneConfig: !!toneConfig });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis
@@ -543,6 +543,24 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     logger.info('[postBets] Filtered by post_at', {
       currentPostTime,
       groupId,
+      ativasBefore: beforeAtivas,
+      ativasAfter: ativas.length,
+      novasBefore: beforeNovas,
+      novasAfter: novas.length,
+    });
+  }
+
+  // Filter by specific bet IDs when triggered from admin panel preview
+  // allowedBetIds is set by checkPostNow() when post_now_bet_ids is stored in the group
+  if (allowedBetIds) {
+    const idSet = new Set(allowedBetIds);
+    const beforeAtivas = ativas.length;
+    const beforeNovas = novas.length;
+    ativas = ativas.filter((b) => idSet.has(b.id));
+    novas = novas.filter((b) => idSet.has(b.id));
+    logger.info('[postBets] Filtered by allowedBetIds', {
+      groupId,
+      allowedCount: allowedBetIds.length,
       ativasBefore: beforeAtivas,
       ativasAfter: ativas.length,
       novasBefore: beforeNovas,

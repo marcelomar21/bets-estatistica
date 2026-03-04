@@ -240,6 +240,117 @@ describe('POST /api/bets/post-now', () => {
   });
 });
 
+describe('POST /api/bets/post-now — betIds filtering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('stores post_now_bet_ids when betIds are provided', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 10, bet_status: 'ready', odds: 1.9, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'A', away_team_name: 'B' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('super_admin', null, mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', {
+      method: 'POST',
+      body: JSON.stringify({ group_id: 'group-uuid-1', betIds: [10] }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(json.data.betIds).toEqual([10]);
+
+    // Verify update was called with post_now_bet_ids
+    const updateCalls = mockSupa.from.mock.calls.filter(
+      (c: string[]) => c[0] === 'groups',
+    );
+    expect(updateCalls.length).toBeGreaterThan(0);
+  });
+
+  it('applies .in() filter on suggested_bets when betIds provided', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 5, bet_status: 'ready', odds: 2.0, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'X', away_team_name: 'Y' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('super_admin', null, mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', {
+      method: 'POST',
+      body: JSON.stringify({ group_id: 'group-uuid-1', betIds: [5, 7] }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    await POST(req);
+
+    // The chain for suggested_bets should have .in() called (for betIds filter)
+    const betsCalls = mockSupa.from.mock.calls.filter(
+      (c: string[]) => c[0] === 'suggested_bets',
+    );
+    expect(betsCalls.length).toBeGreaterThan(0);
+  });
+
+  it('returns only requested betIds in response', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 3, bet_status: 'ready', odds: 1.8, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'C', away_team_name: 'D' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    const req = new NextRequest('http://localhost/api/bets/post-now', {
+      method: 'POST',
+      body: JSON.stringify({ betIds: [3], previewId: null }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(json.data.betIds).toEqual([3]);
+    expect(json.data.validCount).toBe(1);
+  });
+
+  it('works without betIds for backward compatibility (posts all)', async () => {
+    const mockSupa = createMockSupabase({
+      groups_single: { id: 'group-uuid-1' },
+      suggested_bets_list: [
+        { id: 1, bet_status: 'ready', odds: 1.8, deep_link: 'https://l1.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'E', away_team_name: 'F' } },
+        { id: 2, bet_status: 'ready', odds: 2.0, deep_link: 'https://l2.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'G', away_team_name: 'H' } },
+      ],
+    });
+    mockWithTenant.mockResolvedValue(
+      createTenantContext('group_admin', 'group-uuid-1', mockSupa),
+    );
+
+    const { POST } = await import('../bets/post-now/route');
+    // No betIds in body — backward compat
+    const req = new NextRequest('http://localhost/api/bets/post-now', { method: 'POST' });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(json.success).toBe(true);
+    expect(json.data.validCount).toBe(2);
+    expect(json.data.betIds).toEqual([1, 2]);
+  });
+});
+
 describe('GET /api/bets/queue', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -551,6 +551,7 @@ export default function PostagemPage() {
         body: JSON.stringify({
           group_id: previewData.groupId,
           previewId: previewData.previewId,
+          betIds: previewBets.map(b => b.betId),
         }),
       });
 

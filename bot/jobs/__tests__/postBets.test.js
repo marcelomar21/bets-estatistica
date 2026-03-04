@@ -432,6 +432,73 @@ describe('postBets', () => {
     });
   });
 
+  // ---- allowedBetIds filtering (Post Now single-bet fix) ----
+
+  describe('allowedBetIds filtering', () => {
+    it('should post only allowed bets when allowedBetIds is set', async () => {
+      const bet1 = makeBet({ id: 'bet-1' });
+      const bet2 = makeBet({ id: 'bet-2' });
+      const bet3 = makeBet({ id: 'bet-3' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1, bet2, bet3] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      const result = await runPostBets(true, { allowedBetIds: ['bet-2'] });
+
+      expect(result.posted).toBe(1);
+      expect(result.totalSent).toBe(1);
+      expect(sendToPublic).toHaveBeenCalledTimes(1);
+      expect(markBetAsPosted).toHaveBeenCalledWith('bet-2', 100, 1.85);
+    });
+
+    it('should post all bets when allowedBetIds is null (backward compat)', async () => {
+      const bet1 = makeBet({ id: 'bet-1' });
+      const bet2 = makeBet({ id: 'bet-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1, bet2] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      const result = await runPostBets(true, { allowedBetIds: null });
+
+      expect(result.posted).toBe(2);
+      expect(result.totalSent).toBe(2);
+    });
+
+    it('should filter ativas by allowedBetIds too', async () => {
+      const active1 = makeBet({ id: 'active-1' });
+      const active2 = makeBet({ id: 'active-2' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [active1, active2], novas: [] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 200 } });
+
+      const result = await runPostBets(true, { allowedBetIds: ['active-1'] });
+
+      expect(result.reposted).toBe(1);
+      expect(sendToPublic).toHaveBeenCalledTimes(1);
+      expect(registrarPostagem).toHaveBeenCalledWith('active-1');
+    });
+
+    it('should return zero when no bets match allowedBetIds', async () => {
+      const bet1 = makeBet({ id: 'bet-1' });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1] },
+      });
+
+      const result = await runPostBets(true, { allowedBetIds: ['bet-999'] });
+
+      expect(result.posted).toBe(0);
+      expect(result.totalSent).toBe(0);
+      expect(sendToPublic).not.toHaveBeenCalled();
+    });
+  });
+
   // ---- Story 18.1: toneConfig DB loading ----
 
   describe('toneConfig DB loading (Story 18.1)', () => {

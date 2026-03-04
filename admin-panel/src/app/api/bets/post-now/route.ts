@@ -5,34 +5,30 @@ const MIN_ODDS = Number(process.env.MIN_ODDS) || 1.60;
 
 /**
  * POST /api/bets/post-now
- * Story 5.5: Trigger immediate posting by setting post_now_requested_at flag
+ * Trigger immediate posting by setting post_now_requested_at flag.
  *
- * Pre-validates bets before setting the flag so the admin gets real feedback
- * instead of a blind "Postagem solicitada".
+ * When betIds are provided (from preview flow), only those specific bets
+ * are stored in post_now_bet_ids so the bot posts ONLY them.
+ * When betIds are NOT provided, post_now_bet_ids is null → bot posts all eligible.
  */
 export const POST = createApiHandler(
   async (req: NextRequest, context) => {
     const { supabase, groupFilter } = context;
 
-    // Determine group ID
+    // Parse body
     let groupId = groupFilter;
-    // Check for preview overrides
     let previewId: string | null = null;
-    if (!groupId) {
-      try {
-        const body = await req.json();
-        groupId = body.group_id;
-        previewId = body.previewId || null;
-      } catch {
-        // No body provided
+    let requestedBetIds: number[] | null = null;
+
+    try {
+      const body = await req.json();
+      if (!groupId) groupId = body.group_id;
+      previewId = body.previewId || null;
+      if (Array.isArray(body.betIds) && body.betIds.length > 0) {
+        requestedBetIds = body.betIds;
       }
-    } else {
-      try {
-        const bodyForPreview = await req.clone().json();
-        previewId = bodyForPreview.previewId || null;
-      } catch {
-        // No body or already consumed
-      }
+    } catch {
+      // No body provided
     }
 
     if (!groupId) {
@@ -70,10 +66,34 @@ export const POST = createApiHandler(
       );
     }
 
-    // Pre-validate: mirror the bot's getBetsReadyForPosting() logic exactly
-    // — eligible bets with link, any active status, future kickoff
+    // Validate preview if provided
+    if (previewId) {
+      const { data: preview, error: previewError } = await supabase
+        .from('post_previews')
+        .select('id, status, expires_at')
+        .eq('preview_id', previewId)
+        .eq('group_id', groupId)
+        .eq('status', 'draft')
+        .single();
+
+      if (previewError || !preview) {
+        return NextResponse.json(
+          { success: false, error: { code: 'PREVIEW_NOT_FOUND', message: 'Preview not found or expired' } },
+          { status: 404 },
+        );
+      }
+
+      if (new Date(preview.expires_at) < new Date()) {
+        return NextResponse.json(
+          { success: false, error: { code: 'PREVIEW_EXPIRED', message: 'Preview has expired' } },
+          { status: 410 },
+        );
+      }
+    }
+
+    // Pre-validate bets — when requestedBetIds are provided, only validate those
     const now = new Date().toISOString();
-    const { data: queueBets, error: queueError } = await supabase
+    let query = supabase
       .from('suggested_bets')
       .select(`
         id,
@@ -92,6 +112,12 @@ export const POST = createApiHandler(
       .not('deep_link', 'is', null)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
       .gt('league_matches.kickoff_time', now);
+
+    if (requestedBetIds) {
+      query = query.in('id', requestedBetIds);
+    }
+
+    const { data: queueBets, error: queueError } = await query;
 
     if (queueError) {
       return NextResponse.json(
@@ -125,37 +151,14 @@ export const POST = createApiHandler(
       }, { status: 422 });
     }
 
-    // Set the post_now_requested_at flag, with optional preview link
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const betIds = validBets.map((b: any) => b.id);
+
+    // Set the post_now_requested_at flag + specific bet IDs
     const updateData: Record<string, unknown> = {
       post_now_requested_at: new Date().toISOString(),
+      post_now_bet_ids: betIds,
     };
-
-    if (previewId) {
-      // Validate preview exists and is not expired
-      const { data: preview, error: previewError } = await supabase
-        .from('post_previews')
-        .select('id, status, expires_at')
-        .eq('preview_id', previewId)
-        .eq('group_id', groupId)
-        .eq('status', 'draft')
-        .single();
-
-      if (previewError || !preview) {
-        return NextResponse.json(
-          { success: false, error: { code: 'PREVIEW_NOT_FOUND', message: 'Preview not found or expired' } },
-          { status: 404 },
-        );
-      }
-
-      if (new Date(preview.expires_at) < new Date()) {
-        return NextResponse.json(
-          { success: false, error: { code: 'PREVIEW_EXPIRED', message: 'Preview has expired' } },
-          { status: 410 },
-        );
-      }
-
-      updateData.active_preview_id = previewId;
-    }
 
     const { error: updateError } = await supabase
       .from('groups')
@@ -168,9 +171,6 @@ export const POST = createApiHandler(
         { status: 500 },
       );
     }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const betIds = validBets.map((b: any) => b.id);
 
     return NextResponse.json({
       success: true,
