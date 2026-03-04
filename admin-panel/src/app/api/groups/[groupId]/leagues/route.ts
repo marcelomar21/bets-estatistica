@@ -125,6 +125,20 @@ export const PUT = createApiHandler(
       );
     }
 
+    // Verify group exists
+    const { data: group, error: groupError } = await supabase
+      .from('groups')
+      .select('id')
+      .eq('id', groupId)
+      .single();
+
+    if (groupError || !group) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
+        { status: 404 },
+      );
+    }
+
     // Upsert each preference using context.supabase (RLS enforced)
     const rows = parsed.data.leagues.map((l) => ({
       group_id: groupId,

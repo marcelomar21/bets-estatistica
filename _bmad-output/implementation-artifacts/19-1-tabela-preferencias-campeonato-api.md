@@ -1,6 +1,6 @@
 # Story 19.1: Tabela de Preferências de Campeonato e API
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -185,5 +185,16 @@ PUT `/api/groups/[groupId]/leagues`:
 claude-opus-4-6
 
 ### Completion Notes List
+- Migration 049 applied to production Supabase
+- Code review: added group existence check on PUT (was returning FK violation 500 instead of 404)
+- Code review: added DB error test, cleaned up dead test mock code
+- All 698 tests pass, build clean, E2E validated via Playwright
 
 ### File List
+| File | Action |
+|------|--------|
+| `sql/migrations/049_group_league_preferences.sql` | CREATED |
+| `admin-panel/src/app/api/groups/[groupId]/leagues/route.ts` | CREATED |
+| `admin-panel/src/app/(auth)/groups/[groupId]/leagues/page.tsx` | CREATED |
+| `admin-panel/src/app/(auth)/groups/[groupId]/page.tsx` | MODIFIED — added Campeonatos link |
+| `admin-panel/src/app/api/__tests__/group-leagues.test.ts` | CREATED — 8 tests |

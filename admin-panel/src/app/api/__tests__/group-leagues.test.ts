@@ -26,38 +26,30 @@ function createSupabaseMock(tableHandlers: Record<string, {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: Record<string, any> = {};
     chain.select = vi.fn(() => chain);
-    chain.eq = vi.fn(() => chain);
     chain.upsert = vi.fn(() => ({
       data: handler.upsertData ?? null,
       error: handler.upsertError ?? null,
     }));
 
-    // Terminal: when chain resolves (no .single()), returns array
-    // We use a Proxy-like approach: calling eq returns the chain,
-    // and the chain itself resolves data when awaited at the end
-    // Since supabase returns { data, error } after the last chaining call,
-    // we need to make the chain thenable OR override the last method.
-    // In our route, the chain is: from().select().eq() → { data, error }
-    // So eq() should return { data, error } on the final call.
-    // Let's track eq calls and return data on the second call for league_seasons,
-    // or first call for group_league_preferences.
-
-    let eqCallCount = 0;
-    chain.eq = vi.fn(() => {
-      eqCallCount++;
-      // league_seasons: from().select().eq('active', true) → terminal
-      // group_league_preferences: from().select().eq('group_id', ...) → terminal
-      // Return data/error when there's no more chaining expected
-      return {
-        ...chain,
-        data: handler.selectData ?? [],
+    // eq() is the terminal call in our chains:
+    // league_seasons: from().select().eq('active', true)
+    // group_league_preferences: from().select().eq('group_id', ...)
+    // groups: from().select().eq('id', ...).single()
+    const eqResult = {
+      data: handler.selectData ?? [],
+      error: handler.selectError ?? null,
+      single: vi.fn(() => ({
+        data: handler.selectData ?? null,
         error: handler.selectError ?? null,
-        // Keep chaining methods available in case more are called
-        select: chain.select,
-        eq: chain.eq,
-        upsert: chain.upsert,
-      };
-    });
+      })),
+      select: null as unknown,
+      eq: null as unknown,
+      upsert: chain.upsert,
+    };
+    eqResult.select = chain.select;
+    eqResult.eq = vi.fn(() => eqResult);
+
+    chain.eq = vi.fn(() => eqResult);
 
     return chain;
   });
@@ -168,6 +160,23 @@ describe('GET /api/groups/[groupId]/leagues', () => {
     expect(json.success).toBe(false);
     expect(json.error.code).toBe('FORBIDDEN');
   });
+
+  it('returns 500 when league_seasons query fails', async () => {
+    const supabaseMock = createSupabaseMock({
+      league_seasons: { selectError: { message: 'connection refused' } },
+    });
+    const context = createMockContext('super_admin', supabaseMock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('../groups/[groupId]/leagues/route');
+    const req = createMockRequest('GET', 'http://localhost/api/groups/group-uuid-1/leagues');
+    const res = await GET(req, createRouteContext({ groupId: 'group-uuid-1' }));
+    const json = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(json.success).toBe(false);
+    expect(json.error.code).toBe('DB_ERROR');
+  });
 });
 
 // ===========================
@@ -181,6 +190,7 @@ describe('PUT /api/groups/[groupId]/leagues', () => {
 
   it('upserts league preferences successfully', async () => {
     const supabaseMock = createSupabaseMock({
+      groups: { selectData: { id: 'group-uuid-1' } },
       group_league_preferences: { upsertData: null, upsertError: null },
     });
     const context = createMockContext('super_admin', supabaseMock);
