@@ -31,6 +31,7 @@ export default function AdminUsersPage() {
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   async function fetchUsers() {
     setLoading(true);
@@ -162,13 +163,31 @@ export default function AdminUsersPage() {
                       {new Date(user.created_at).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        disabled={deletingId === user.id}
-                        className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        {deletingId === user.id ? 'Removendo...' : 'Remover'}
-                      </button>
+                      {confirmDeleteId === user.id ? (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="text-xs text-gray-500">Confirmar?</span>
+                          <button
+                            onClick={() => { handleDelete(user.id); setConfirmDeleteId(null); }}
+                            disabled={deletingId === user.id}
+                            className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
+                          >
+                            {deletingId === user.id ? 'Removendo...' : 'Sim'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                          >
+                            Não
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(user.id)}
+                          className="text-xs font-medium text-red-600 hover:text-red-800"
+                        >
+                          Remover
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

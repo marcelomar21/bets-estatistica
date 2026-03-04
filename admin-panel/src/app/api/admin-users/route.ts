@@ -48,7 +48,7 @@ export const POST = createApiHandler(
     const { email, role, group_id } = body;
 
     // Validate required fields
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message: 'Email inválido' } },
         { status: 400 },
@@ -70,6 +70,22 @@ export const POST = createApiHandler(
     }
 
     const supabaseAdmin = getSupabaseAdmin();
+
+    // Validate group_id references an existing group
+    if (group_id) {
+      const { data: group } = await supabaseAdmin
+        .from('groups')
+        .select('id')
+        .eq('id', group_id)
+        .maybeSingle();
+
+      if (!group) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Grupo não encontrado' } },
+          { status: 400 },
+        );
+      }
+    }
 
     // Check for existing admin user with same email
     const { data: existing } = await supabaseAdmin

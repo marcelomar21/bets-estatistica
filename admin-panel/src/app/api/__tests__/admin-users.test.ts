@@ -119,10 +119,15 @@ describe('POST /api/admin-users', () => {
     const ctx = superAdminContext();
     mockWithTenant.mockResolvedValue(ctx);
 
-    // Mock: no existing user
-    mockAdminFrom.mockImplementation(() => {
-      const chain = createMockChain({ data: null, error: null });
-      return chain;
+    // Mock admin from calls: 1) groups check → found, 2) admin_users duplicate check → not found, 3) admin_users insert → ok
+    let adminCallCount = 0;
+    mockAdminFrom.mockImplementation((table: string) => {
+      adminCallCount++;
+      if (table === 'groups') {
+        return createMockChain({ data: { id: 'group-uuid' }, error: null });
+      }
+      // admin_users: first call = duplicate check (null), second call = insert (ok)
+      return createMockChain({ data: null, error: null });
     });
 
     // Mock: auth invite success
@@ -183,10 +188,12 @@ describe('POST /api/admin-users', () => {
     const ctx = superAdminContext();
     mockWithTenant.mockResolvedValue(ctx);
 
-    // Mock: existing user found
-    mockAdminFrom.mockImplementation(() => {
-      const chain = createMockChain({ data: { id: 'existing' }, error: null });
-      return chain;
+    // Mock: groups check → found, admin_users duplicate check → existing user found
+    mockAdminFrom.mockImplementation((table: string) => {
+      if (table === 'groups') {
+        return createMockChain({ data: { id: 'g1' }, error: null });
+      }
+      return createMockChain({ data: { id: 'existing' }, error: null });
     });
 
     const { POST } = await import('../admin-users/route');
