@@ -16,6 +16,7 @@ jest.mock('../baileys', () => ({
   loadBaileys: jest.fn(async () => ({
     makeWASocket: mockMakeWASocket,
     DisconnectReason: mockDisconnectReason,
+    Browsers: { macOS: jest.fn((name) => [name, 'Safari', '20.0.04']) },
     initAuthCreds: jest.fn(() => ({ registrationId: 1 })),
   })),
 }));
@@ -109,7 +110,7 @@ describe('BaileyClient', () => {
       expect(mockMakeWASocket).toHaveBeenCalledWith(
         expect.objectContaining({
           printQRInTerminal: false,
-          browser: ['GuruBet', 'Server', '1.0.0'],
+          browser: ['GuruBet', 'Safari', '20.0.04'],
         })
       );
       expect(mockSocket.ev.on).toHaveBeenCalledWith('connection.update', expect.any(Function));
