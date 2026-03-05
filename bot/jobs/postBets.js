@@ -125,11 +125,27 @@ const MESSAGE_TEMPLATES = [
 ];
 
 /**
- * Get random template
+ * Get random template (backward compatibility)
  */
 function getRandomTemplate() {
   const index = Math.floor(Math.random() * MESSAGE_TEMPLATES.length);
   return MESSAGE_TEMPLATES[index];
+}
+
+/**
+ * Get template by index, supporting custom headers/footers from toneConfig
+ * @param {object|null} toneConfig - Tone configuration with optional headers/footers arrays
+ * @param {number} betIndex - Index for cycling through templates
+ * @returns {object} - { header, footer }
+ */
+function getTemplate(toneConfig, betIndex) {
+  if (toneConfig?.headers?.length > 0 && toneConfig?.footers?.length > 0) {
+    return {
+      header: toneConfig.headers[betIndex % toneConfig.headers.length],
+      footer: toneConfig.footers[betIndex % toneConfig.footers.length],
+    };
+  }
+  return MESSAGE_TEMPLATES[betIndex % MESSAGE_TEMPLATES.length];
 }
 
 /**
@@ -157,7 +173,7 @@ function getPeriod() {
  * @param {object} template - Message template
  * @returns {Promise<string>}
  */
-async function formatBetMessage(bet, template, toneConfig = null) {
+async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) {
   const kickoffDate = new Date(bet.kickoffTime);
   const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -175,11 +191,11 @@ async function formatBetMessage(bet, template, toneConfig = null) {
     `🗓 ${kickoffStr}`,
     '',
     `📊 ${bet.betMarket}`,
-    `💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}`,
+    `💰 ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed(2) || 'N/A'}`,
   ];
 
   // Extrair dados do reasoning em bullets via LLM (or full message mode with examplePost)
-  if (bet.reasoning || toneConfig?.examplePost) {
+  if (bet.reasoning || toneConfig?.examplePost || toneConfig?.examplePosts?.length > 0) {
     try {
       const copyResult = await generateBetCopy(bet, toneConfig);
       if (copyResult.success && copyResult.data?.copy) {
@@ -210,10 +226,16 @@ async function formatBetMessage(bet, template, toneConfig = null) {
     }
   }
 
-  // Add deep link
+  // Add deep link with cycling CTA
   if (bet.deepLink) {
+    let ctaText = 'Apostar Agora';
+    if (toneConfig?.ctaTexts?.length > 0) {
+      ctaText = toneConfig.ctaTexts[betIndex % toneConfig.ctaTexts.length];
+    } else if (toneConfig?.ctaText) {
+      ctaText = toneConfig.ctaText;
+    }
     parts.push('');
-    parts.push(`🔗 [Apostar Agora](${bet.deepLink})`);
+    parts.push(`🔗 [${ctaText}](${bet.deepLink})`);
   }
 
   parts.push('');
@@ -228,7 +250,7 @@ async function formatBetMessage(bet, template, toneConfig = null) {
  * @param {string} type - 'repost' or 'new'
  * @returns {string}
  */
-function formatBetPreview(bet, type) {
+function formatBetPreview(bet, type, toneConfig = null) {
   const kickoffDate = new Date(bet.kickoffTime);
   const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -239,12 +261,13 @@ function formatBetPreview(bet, type) {
   });
 
   const typeLabel = type === 'repost' ? '🔄' : '🆕';
+  const oddLabel = toneConfig?.oddLabel || 'Odd';
 
   return [
     `${typeLabel} *${bet.homeTeamName} x ${bet.awayTeamName}*`,
     `   🗓 ${kickoffStr}`,
     `   📊 ${bet.betMarket}`,
-    `   💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}`,
+    `   💰 ${oddLabel}: ${bet.odds?.toFixed(2) || 'N/A'}`,
     `   🔗 ${bet.deepLink ? '✅' : '❌ SEM LINK'}`,
   ].join('\n');
 }
@@ -602,6 +625,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const postedBetsArray = [];
 
   // Step 3: Repostar apostas ATIVAS (já postadas, continuam na fila)
+  let betIndex = 0;
   if (ativas.length > 0) {
     logger.info('[postBets] Reposting active bets', {
       groupId,
@@ -619,8 +643,8 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       }
 
       // Format and send message
-      const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template, toneConfig);
+      const template = getTemplate(toneConfig, betIndex);
+      const message = await formatBetMessage(bet, template, toneConfig, betIndex);
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
@@ -644,6 +668,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         repostFailed++;
         sendFailed++;
       }
+      betIndex++;
     }
   }
 
@@ -665,8 +690,8 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       }
 
       // Format and send message
-      const template = getRandomTemplate();
-      const message = await formatBetMessage(bet, template, toneConfig);
+      const template = getTemplate(toneConfig, betIndex);
+      const message = await formatBetMessage(bet, template, toneConfig, betIndex);
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
@@ -692,6 +717,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         skipped++;
         sendFailed++;
       }
+      betIndex++;
     }
   }
 
@@ -765,4 +791,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations, getRandomTemplate };
+module.exports = { runPostBets, formatBetMessage, formatBetPreview, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations, getRandomTemplate, getTemplate };

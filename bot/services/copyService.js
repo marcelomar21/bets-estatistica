@@ -85,13 +85,14 @@ async function generateBetCopy(bet, toneConfig = null) {
   const cached = getFromCache(cacheKey);
   if (cached) {
     logger.debug('Copy from cache', { betId: bet.id });
-    const isFullMessage = !!(toneConfig?.examplePost);
+    const isFullMessage = !!(toneConfig?.examplePost || toneConfig?.examplePosts?.length > 0);
     return { success: true, data: { copy: cached, fullMessage: isFullMessage, fromCache: true } };
   }
 
   try {
-    // Full-message mode when examplePost is provided
-    if (toneConfig?.examplePost) {
+    // Full-message mode when examplePost(s) are provided
+    const effectiveExamples = toneConfig?.examplePosts?.length > 0 ? toneConfig.examplePosts : (toneConfig?.examplePost ? [toneConfig.examplePost] : []);
+    if (effectiveExamples.length > 0) {
       const llmFull = getOpenAI();
 
       let fullSystemMessage = 'Voce e um copywriter de apostas esportivas. Gere mensagens de postagem completas para Telegram.';
@@ -102,7 +103,14 @@ async function generateBetCopy(bet, toneConfig = null) {
       if (toneConfig.forbiddenWords?.length > 0) {
         parts.push(`Palavras PROIBIDAS (NUNCA use): ${toneConfig.forbiddenWords.join(', ')}`);
       }
-      if (toneConfig.ctaText) parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      if (toneConfig.suggestedWords?.length > 0) {
+        parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
+      }
+      if (toneConfig.ctaTexts?.length > 0) {
+        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+      } else if (toneConfig.ctaText) {
+        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      }
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
       }
@@ -111,10 +119,17 @@ async function generateBetCopy(bet, toneConfig = null) {
         fullSystemMessage += '\n\nCONFIGURACAO DE TOM DE VOZ:\n' + parts.join('\n');
       }
 
-      const fullHumanMessage = `Gere uma postagem COMPLETA para Telegram seguindo EXATAMENTE o estilo e formato do exemplo abaixo.
+      const examplesBlock = effectiveExamples.length === 1
+        ? `EXEMPLO DE REFERENCIA:\n${effectiveExamples[0]}`
+        : `EXEMPLOS DE REFERENCIA:\n${effectiveExamples.map((ex, i) => `Exemplo ${i + 1}:\n${ex}`).join('\n\n')}`;
 
-EXEMPLO DE REFERENCIA:
-${toneConfig.examplePost}
+      const styleInstruction = effectiveExamples.length === 1
+        ? 'Siga o MESMO formato, estilo e tom do exemplo'
+        : 'Siga o estilo e formato dos exemplos';
+
+      const fullHumanMessage = `Gere uma postagem COMPLETA para Telegram seguindo EXATAMENTE o estilo e formato ${effectiveExamples.length === 1 ? 'do exemplo abaixo' : 'dos exemplos abaixo'}.
+
+${examplesBlock}
 
 DADOS DA APOSTA:
 - Jogo: ${bet.homeTeamName} x ${bet.awayTeamName}
@@ -126,7 +141,7 @@ DADOS DA APOSTA:
 ${bet.reasoning ? `- Analise: ${bet.reasoning}` : ''}
 
 Regras:
-- Siga o MESMO formato, estilo e tom do exemplo
+- ${styleInstruction}
 - Use os DADOS reais da aposta (nao copie dados do exemplo)
 - Mantenha emojis e formatacao similares ao exemplo
 - A mensagem deve estar PRONTA para enviar no Telegram
@@ -166,7 +181,14 @@ Regras:
       if (toneConfig.forbiddenWords && toneConfig.forbiddenWords.length > 0) {
         parts.push(`Palavras PROIBIDAS (NUNCA use): ${toneConfig.forbiddenWords.join(', ')}`);
       }
-      if (toneConfig.ctaText) parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      if (toneConfig.suggestedWords?.length > 0) {
+        parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
+      }
+      if (toneConfig.ctaTexts?.length > 0) {
+        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+      } else if (toneConfig.ctaText) {
+        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      }
       if (toneConfig.customRules && toneConfig.customRules.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => `- ${r}`).join('\n')}`);
       }
