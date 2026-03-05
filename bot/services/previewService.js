@@ -17,7 +17,7 @@
 const logger = require('../../lib/logger');
 const { supabase } = require('../../lib/supabase');
 const { generateBetCopy, clearBetCache } = require('./copyService');
-const { formatBetMessage, getRandomTemplate } = require('../jobs/postBets');
+const { formatBetMessage, getRandomTemplate, getTemplate } = require('../jobs/postBets');
 
 /**
  * Load copy_tone_config directly from DB (not from botCtx in memory)
@@ -110,9 +110,11 @@ function mapBet(raw) {
  * When toneConfig is empty/null, falls back to formatBetMessage (static template).
  */
 async function formatPreviewMessage(bet, toneConfig) {
-  const template = getRandomTemplate();
+  const template = getTemplate(toneConfig, 0);
   const hasToneConfig = toneConfig && (
     toneConfig.examplePost ||
+    toneConfig.examplePosts?.length > 0 ||
+    toneConfig.suggestedWords?.length > 0 ||
     toneConfig.rawDescription ||
     toneConfig.persona ||
     toneConfig.tone ||
@@ -127,7 +129,7 @@ async function formatPreviewMessage(bet, toneConfig) {
   // Clear cache for this bet so the preview always reflects the latest tone config
   clearBetCache(bet.id);
 
-  if (toneConfig.examplePost) {
+  if (toneConfig.examplePost || toneConfig.examplePosts?.length > 0) {
     // Full-message mode: LLM generates the entire post
     try {
       const copyResult = await generateBetCopy(bet, toneConfig);

@@ -105,13 +105,112 @@ export const PUT = createApiHandler(
       );
     }
 
+    // oddLabel validation
+    if (toneConfig.oddLabel !== undefined) {
+      if (typeof toneConfig.oddLabel !== 'string' || toneConfig.oddLabel.length > 30) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'oddLabel must be a string with max 30 characters' } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // headers validation (max 10 items, each max 50 chars)
+    if (toneConfig.headers !== undefined) {
+      if (!Array.isArray(toneConfig.headers) || toneConfig.headers.length > 10) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Maximum 10 headers allowed' } },
+          { status: 400 },
+        );
+      }
+      if (toneConfig.headers.some((h: unknown) => typeof h !== 'string' || (h as string).length > 50)) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Each header must be a string with max 50 characters' } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // footers validation (max 10 items, each max 100 chars)
+    if (toneConfig.footers !== undefined) {
+      if (!Array.isArray(toneConfig.footers) || toneConfig.footers.length > 10) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Maximum 10 footers allowed' } },
+          { status: 400 },
+        );
+      }
+      if (toneConfig.footers.some((f: unknown) => typeof f !== 'string' || (f as string).length > 100)) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Each footer must be a string with max 100 characters' } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // ctaTexts validation (max 3 items, each max 50 chars)
+    if (toneConfig.ctaTexts !== undefined) {
+      if (!Array.isArray(toneConfig.ctaTexts) || toneConfig.ctaTexts.length > 3) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Maximum 3 CTA texts allowed' } },
+          { status: 400 },
+        );
+      }
+      if (toneConfig.ctaTexts.some((c: unknown) => typeof c !== 'string' || (c as string).length > 50)) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Each CTA text must be a string with max 50 characters' } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // suggestedWords validation (max 30 items)
+    if (toneConfig.suggestedWords !== undefined) {
+      if (!Array.isArray(toneConfig.suggestedWords) || toneConfig.suggestedWords.length > 30) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Maximum 30 suggested words allowed' } },
+          { status: 400 },
+        );
+      }
+    }
+
+    // examplePosts validation (max 5 items, each max 2000 chars)
+    if (toneConfig.examplePosts !== undefined) {
+      if (!Array.isArray(toneConfig.examplePosts) || toneConfig.examplePosts.length > 5) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Maximum 5 example posts allowed' } },
+          { status: 400 },
+        );
+      }
+      if (toneConfig.examplePosts.some((e: unknown) => typeof e !== 'string' || (e as string).length > 2000)) {
+        return NextResponse.json(
+          { success: false, error: { code: 'VALIDATION_ERROR', message: 'Each example post must be under 2000 characters' } },
+          { status: 400 },
+        );
+      }
+    }
+
     // Sanitize: only keep known fields
     const sanitizedConfig: Record<string, unknown> = {};
-    const allowedFields = ['persona', 'tone', 'forbiddenWords', 'ctaText', 'customRules', 'rawDescription', 'examplePost'];
+    const allowedFields = [
+      'persona', 'tone', 'forbiddenWords', 'ctaText', 'customRules',
+      'rawDescription', 'examplePost',
+      // New fields
+      'suggestedWords', 'oddLabel', 'headers', 'footers', 'ctaTexts', 'examplePosts',
+    ];
     for (const field of allowedFields) {
       if (toneConfig[field] !== undefined) {
         sanitizedConfig[field] = toneConfig[field];
       }
+    }
+
+    // Auto-migrate legacy ctaText → ctaTexts[0]
+    if (sanitizedConfig.ctaText && !sanitizedConfig.ctaTexts) {
+      sanitizedConfig.ctaTexts = [sanitizedConfig.ctaText as string];
+    }
+
+    // Auto-migrate legacy examplePost → examplePosts[0]
+    if (sanitizedConfig.examplePost && !sanitizedConfig.examplePosts) {
+      sanitizedConfig.examplePosts = [sanitizedConfig.examplePost as string];
     }
 
     const { data, error } = await supabase

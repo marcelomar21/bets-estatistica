@@ -581,4 +581,85 @@ describe('postBets', () => {
       );
     });
   });
+
+  // ---- getTemplate (custom headers/footers) ----
+
+  describe('getTemplate (custom headers/footers)', () => {
+    it('should return custom header/footer when toneConfig has them', () => {
+      const { getTemplate } = require('../postBets');
+      const tc = { headers: ['HEADER A', 'HEADER B'], footers: ['FOOTER A', 'FOOTER B'] };
+      const t0 = getTemplate(tc, 0);
+      expect(t0.header).toBe('HEADER A');
+      expect(t0.footer).toBe('FOOTER A');
+      const t1 = getTemplate(tc, 1);
+      expect(t1.header).toBe('HEADER B');
+      expect(t1.footer).toBe('FOOTER B');
+      // Cycle back
+      const t2 = getTemplate(tc, 2);
+      expect(t2.header).toBe('HEADER A');
+    });
+
+    it('should fall back to MESSAGE_TEMPLATES when no custom headers', () => {
+      const { getTemplate } = require('../postBets');
+      const t = getTemplate(null, 0);
+      expect(t.header).toBeDefined();
+      expect(t.footer).toBeDefined();
+    });
+
+    it('should fall back when only headers provided without footers', () => {
+      const { getTemplate } = require('../postBets');
+      const tc = { headers: ['H1'] };
+      const t = getTemplate(tc, 0);
+      // Falls back to MESSAGE_TEMPLATES since footers is missing
+      expect(t.header).toBeDefined();
+      expect(t.footer).toBeDefined();
+    });
+  });
+
+  // ---- formatBetMessage with new tone fields ----
+
+  describe('formatBetMessage with new tone fields', () => {
+    it('should use custom oddLabel from toneConfig', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet();
+      const tc = { oddLabel: 'Cotação' };
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const msg = await formatBetMessage(bet, template, tc, 0);
+      expect(msg).toContain('Cotação:');
+      expect(msg).not.toContain('Odd:');
+    });
+
+    it('should use default "Odd" when no oddLabel in toneConfig', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet();
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const msg = await formatBetMessage(bet, template, null, 0);
+      expect(msg).toContain('Odd:');
+    });
+
+    it('should cycle CTAs from ctaTexts using betIndex', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet();
+      const tc = { ctaTexts: ['CTA A', 'CTA B', 'CTA C'] };
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const msg0 = await formatBetMessage(bet, template, tc, 0);
+      expect(msg0).toContain('CTA A');
+      const msg1 = await formatBetMessage(bet, template, tc, 1);
+      expect(msg1).toContain('CTA B');
+      const msg2 = await formatBetMessage(bet, template, tc, 2);
+      expect(msg2).toContain('CTA C');
+      // Cycle
+      const msg3 = await formatBetMessage(bet, template, tc, 3);
+      expect(msg3).toContain('CTA A');
+    });
+
+    it('should fall back to legacy ctaText when no ctaTexts', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet();
+      const tc = { ctaText: 'Legacy CTA' };
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const msg = await formatBetMessage(bet, template, tc, 0);
+      expect(msg).toContain('Legacy CTA');
+    });
+  });
 });
