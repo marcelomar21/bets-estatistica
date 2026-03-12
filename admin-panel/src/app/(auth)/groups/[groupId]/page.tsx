@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-server';
-import type { GroupListItem } from '@/types/database';
+import type { GroupListItem, AdminUser } from '@/types/database';
 import { statusConfig, formatDateTime } from '@/components/features/groups/group-utils';
 import { CreateWhatsAppButton } from '@/components/features/groups/CreateWhatsAppButton';
 import { DeleteGroupButton } from '@/components/features/groups/DeleteGroupButton';
@@ -14,6 +14,13 @@ export default async function GroupDetailPage({
 }) {
   const { groupId } = await params;
   const supabase = await createClient();
+
+  // Fetch user role
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: adminUser } = user
+    ? await supabase.from('admin_users').select('role').eq('id', user.id).single()
+    : { data: null };
+  const isSuperAdmin = (adminUser?.role as AdminUser['role'] | undefined) === 'super_admin';
 
   const { data: group } = await supabase
     .from('groups')
@@ -145,8 +152,8 @@ export default async function GroupDetailPage({
           >
             Campeonatos
           </Link>
-          <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />
-          <DeleteGroupButton groupId={typedGroup.id} groupName={typedGroup.name} />
+          {isSuperAdmin && <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />}
+          {isSuperAdmin && <DeleteGroupButton groupId={typedGroup.id} groupName={typedGroup.name} />}
         </div>
       </div>
     </div>

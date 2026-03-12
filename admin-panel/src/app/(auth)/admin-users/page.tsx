@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
 
 interface AdminUser {
   id: string;
@@ -17,6 +18,14 @@ interface Group {
 }
 
 export default function AdminUsersPage() {
+  return (
+    <SuperAdminGuard>
+      <AdminUsersContent />
+    </SuperAdminGuard>
+  );
+}
+
+function AdminUsersContent() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);

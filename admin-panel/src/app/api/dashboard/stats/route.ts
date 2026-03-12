@@ -93,7 +93,7 @@ async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter
       .eq('id', groupFilter),
     supabase
       .from('members')
-      .select('id, status, vencimento_at')
+      .select('id, status, subscription_ends_at')
       .eq('group_id', groupFilter),
   ]);
 
@@ -117,9 +117,9 @@ async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter
     trial: members.filter((m) => m.status === 'trial').length,
     ativo: members.filter((m) => m.status === 'ativo').length,
     vencendo: members.filter((m) =>
-      m.status === 'ativo' && m.vencimento_at &&
-      new Date(m.vencimento_at) <= sevenDays &&
-      new Date(m.vencimento_at) > now,
+      m.status === 'ativo' && m.subscription_ends_at &&
+      new Date(m.subscription_ends_at) <= sevenDays &&
+      new Date(m.subscription_ends_at) > now,
     ).length,
   };
 

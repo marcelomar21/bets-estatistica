@@ -73,12 +73,12 @@ export const GET = createApiHandler(
       );
     }
 
-    // Build query: bets assigned to a group (posted OR ready)
+    // Build query: only bets that were actually posted
     let query = supabase
       .from('suggested_bets')
       .select(HISTORY_SELECT, { count: 'exact' })
       .not('group_id', 'is', null)
-      .in('bet_status', ['posted', 'ready']);
+      .eq('bet_status', 'posted');
 
     // Multi-tenant filter
     if (groupFilter) {

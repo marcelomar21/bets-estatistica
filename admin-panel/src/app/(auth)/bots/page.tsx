@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { BotPoolListItem } from '@/types/database';
 import { BotCard } from '@/components/features/bots/BotCard';
 import { BotForm, type BotFormData } from '@/components/features/bots/BotForm';
+import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
 
 interface BotsSummary {
   available: number;
@@ -12,6 +13,14 @@ interface BotsSummary {
 }
 
 export default function BotsPage() {
+  return (
+    <SuperAdminGuard>
+      <BotsContent />
+    </SuperAdminGuard>
+  );
+}
+
+function BotsContent() {
   const [bots, setBots] = useState<BotPoolListItem[]>([]);
   const [summary, setSummary] = useState<BotsSummary>({ available: 0, in_use: 0, total: 0 });
   const [loading, setLoading] = useState(true);

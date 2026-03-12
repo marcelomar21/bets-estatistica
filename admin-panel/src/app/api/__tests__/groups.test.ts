@@ -192,8 +192,9 @@ describe('GET /api/groups', () => {
     expect(body.error.code).toBe('UNAUTHORIZED');
   });
 
-  it('returns 403 for group_admin', async () => {
-    const context = createMockContext('group_admin');
+  it('returns filtered data for group_admin (only their group)', async () => {
+    const qb = createMockQueryBuilder();
+    const context = createMockContext('group_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { GET } = await import('@/app/api/groups/route');
@@ -202,9 +203,8 @@ describe('GET /api/groups', () => {
     const response = await GET(req);
     const body = await response.json();
 
-    expect(response.status).toBe(403);
-    expect(body.success).toBe(false);
-    expect(body.error.code).toBe('FORBIDDEN');
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
   });
 
   it('returns 500 on database error', async () => {

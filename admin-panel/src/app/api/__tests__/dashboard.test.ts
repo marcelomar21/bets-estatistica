@@ -192,9 +192,9 @@ describe('GET /api/dashboard/stats', () => {
     // group_admin gets singular group and member summary
     const filteredGroups = [sampleGroups[0]]; // Only g1
     const filteredMembers = [
-      { ...sampleMembers[0], vencimento_at: null },
-      { ...sampleMembers[1], vencimento_at: null },
-      { ...sampleMembers[3], vencimento_at: null },
+      { ...sampleMembers[0], subscription_ends_at: null },
+      { ...sampleMembers[1], subscription_ends_at: null },
+      { ...sampleMembers[3], subscription_ends_at: null },
     ]; // Only g1 members
 
     const mock = createDashboardMock({
@@ -436,10 +436,10 @@ describe('GET /api/dashboard/stats', () => {
   it('returns group_admin dashboard with member summary and singular group', async () => {
     const groupAdminGroup = { id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' };
     const groupAdminMembers = [
-      { id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-20T00:00:00Z' },
-      { id: 'm2', group_id: 'g1', status: 'trial', vencimento_at: null },
-      { id: 'm3', group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-12T00:00:00Z' }, // vencendo em 7d
-      { id: 'm4', group_id: 'g1', status: 'removido', vencimento_at: null },
+      { id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-20T00:00:00Z' },
+      { id: 'm2', group_id: 'g1', status: 'trial', subscription_ends_at: null },
+      { id: 'm3', group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-12T00:00:00Z' }, // vencendo em 7d
+      { id: 'm4', group_id: 'g1', status: 'removido', subscription_ends_at: null },
     ];
 
     const mock = createDashboardMock({
@@ -479,7 +479,7 @@ describe('GET /api/dashboard/stats', () => {
   it('group_admin does not receive bot/group summary stats', async () => {
     const mock = createDashboardMock({
       groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
-      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: null }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: null }], error: null },
     });
     const context = createMockContext('group_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -501,7 +501,7 @@ describe('GET /api/dashboard/stats', () => {
   it('returns 500 for group_admin when unread notifications query fails', async () => {
     const mock = createDashboardMock({
       groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
-      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', vencimento_at: null }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: null }], error: null },
       notifications: { data: null, error: { message: 'Permission denied' } },
     });
     const context = createMockContext('group_admin', mock);
@@ -520,8 +520,8 @@ describe('GET /api/dashboard/stats', () => {
 
   it('builds group_admin dashboard summary for 10k members in under 3 seconds', async () => {
     const tenThousandMembers = Array.from({ length: 10_000 }, (_, i) => {
-      if (i % 4 === 0) return { id: `m-${i}`, group_id: 'g1', status: 'trial', vencimento_at: null };
-      return { id: `m-${i}`, group_id: 'g1', status: 'ativo', vencimento_at: '2026-02-12T00:00:00Z' };
+      if (i % 4 === 0) return { id: `m-${i}`, group_id: 'g1', status: 'trial', subscription_ends_at: null };
+      return { id: `m-${i}`, group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-12T00:00:00Z' };
     });
 
     const mock = createDashboardMock({
