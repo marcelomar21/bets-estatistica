@@ -24,10 +24,11 @@ interface MemberListProps {
   role: 'super_admin' | 'group_admin';
   onCancelClick?: (member: MemberListItem) => void;
   onReactivateClick?: (member: MemberListItem) => void;
+  onToggleAdmin?: (member: MemberListItem) => void;
   showCancellationDetails?: boolean;
 }
 
-export function MemberList({ members, role, onCancelClick, onReactivateClick, showCancellationDetails }: MemberListProps) {
+export function MemberList({ members, role, onCancelClick, onReactivateClick, onToggleAdmin, showCancellationDetails }: MemberListProps) {
   if (members.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
@@ -99,9 +100,14 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, sh
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm font-mono text-gray-500">
-                  {member.channel === 'whatsapp'
-                    ? formatWhatsAppId(member.channel_user_id || '')
-                    : (member.telegram_username ? `@${member.telegram_username}` : member.telegram_id ?? '-')}
+                  <span className="inline-flex items-center gap-1.5">
+                    {member.channel === 'whatsapp'
+                      ? formatWhatsAppId(member.channel_user_id || '')
+                      : (member.telegram_username ? `@${member.telegram_username}` : member.telegram_id ?? '-')}
+                    {member.is_admin && (
+                      <span className="inline-flex rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800">Admin</span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-sm">
                   <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusBadge.className}`}>
@@ -134,7 +140,20 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, sh
                 )}
                 <td className="px-4 py-3 text-sm">
                   <div className="flex gap-1">
-                    {canCancel && onCancelClick && (
+                    {onToggleAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => onToggleAdmin(member)}
+                        className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
+                          member.is_admin
+                            ? 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                            : 'border-purple-300 text-purple-700 hover:bg-purple-50'
+                        }`}
+                      >
+                        {member.is_admin ? 'Remover Admin' : 'Marcar Admin'}
+                      </button>
+                    )}
+                    {canCancel && !member.is_admin && onCancelClick && (
                       <button
                         type="button"
                         onClick={() => onCancelClick(member)}

@@ -77,13 +77,14 @@ export interface Member {
   group_id: string | null;
   cancellation_reason: string | null;
   cancelled_by: string | null;
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export type MemberListItem = Pick<
   Member,
-  'id' | 'telegram_id' | 'telegram_username' | 'channel' | 'channel_user_id' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id'
+  'id' | 'telegram_id' | 'telegram_username' | 'channel' | 'channel_user_id' | 'status' | 'subscription_ends_at' | 'created_at' | 'group_id' | 'is_admin'
 > & {
   groups?: { name: string } | null;
   cancellation_reason?: string | null;

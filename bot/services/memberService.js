@@ -1154,19 +1154,21 @@ async function getMemberStats() {
   try {
     const { data, error } = await supabase
       .from('members')
-      .select('status');
+      .select('status, is_admin');
 
     if (error) {
       logger.error('[memberService] getMemberStats: database error', { error: error.message });
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
+    // Exclude admin/staff members from stats
+    const nonAdmin = data.filter(m => !m.is_admin);
     const counts = {
-      total: data.length,
-      ativo: data.filter(m => m.status === 'ativo').length,
-      trial: data.filter(m => m.status === 'trial').length,
-      inadimplente: data.filter(m => m.status === 'inadimplente').length,
-      removido: data.filter(m => m.status === 'removido').length,
+      total: nonAdmin.length,
+      ativo: nonAdmin.filter(m => m.status === 'ativo').length,
+      trial: nonAdmin.filter(m => m.status === 'trial').length,
+      inadimplente: nonAdmin.filter(m => m.status === 'inadimplente').length,
+      removido: nonAdmin.filter(m => m.status === 'removido').length,
     };
 
     logger.debug('[memberService] getMemberStats: success', counts);
@@ -1201,11 +1203,13 @@ async function calculateConversionRate() {
       .from('members')
       .select('id')
       .eq('status', 'ativo')
+      .eq('is_admin', false)
       .not('trial_started_at', 'is', null);
 
     const { data: allTrials, error: error2 } = await supabase
       .from('members')
       .select('id')
+      .eq('is_admin', false)
       .not('trial_started_at', 'is', null);
 
     if (error1 || error2) {
@@ -1239,6 +1243,7 @@ async function getNewMembersThisWeek() {
     const { data, error } = await supabase
       .from('members')
       .select('id')
+      .eq('is_admin', false)
       .gte('created_at', sevenDaysAgo);
 
     if (error) {

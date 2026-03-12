@@ -196,6 +196,7 @@ export interface GroupParticipant {
   lastName?: string;
   username?: string;
   isBot: boolean;
+  isAdmin: boolean;
 }
 
 /**
@@ -225,6 +226,14 @@ export async function getGroupParticipants(
 
     if (!(result instanceof Api.channels.ChannelParticipants)) break;
 
+    // Build set of admin/creator user IDs from participant types
+    const adminIds = new Set<string>();
+    for (const p of result.participants) {
+      if (p instanceof Api.ChannelParticipantAdmin || p instanceof Api.ChannelParticipantCreator) {
+        adminIds.add(String(p.userId));
+      }
+    }
+
     const users = result.users as Api.User[];
     for (const user of users) {
       participants.push({
@@ -233,6 +242,7 @@ export async function getGroupParticipants(
         lastName: user.lastName,
         username: user.username,
         isBot: !!user.bot,
+        isAdmin: adminIds.has(String(user.id)),
       });
     }
 
