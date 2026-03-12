@@ -4,12 +4,17 @@ import type { DashboardSummary, DashboardGroupCard, DashboardAlert, GroupAdminDa
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TenantContext } from '@/middleware/tenant';
 
+// Maps notification types to severity levels for persistNotifications.
+// new_trial/payment_received are bot-inserted (not dashboard-generated) but included
+// here so persistNotifications fallback returns correct severity if ever called.
 const SEVERITY_MAP: Record<string, string> = {
   bot_offline: 'error',
   group_failed: 'error',
   group_paused: 'warning',
   onboarding_completed: 'success',
   integration_error: 'error',
+  new_trial: 'info',
+  payment_received: 'success',
 };
 
 async function persistNotifications(
@@ -81,6 +86,8 @@ function alertTitle(type: string): string {
     case 'group_paused': return 'Grupo Pausado';
     case 'onboarding_completed': return 'Onboarding Concluido';
     case 'integration_error': return 'Erro de Integração';
+    case 'new_trial': return 'Novo Membro Trial';
+    case 'payment_received': return 'Pagamento Confirmado';
     default: return 'Alerta';
   }
 }
@@ -211,6 +218,8 @@ export const GET = createApiHandler(async (req, context) => {
   const nonAdminMembers = members.filter((m) => !m.is_admin);
   const activeMembers = nonAdminMembers.filter((m) => (m.status === 'trial' || m.status === 'ativo') && (!channelFilter || groupIds.has(m.group_id)));
 
+  const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
   // Build summary (member count scoped to filtered groups when channel filter active)
   const summary: DashboardSummary = {
     groups: {
@@ -222,8 +231,18 @@ export const GET = createApiHandler(async (req, context) => {
       available: bots.filter((b) => b.status === 'available').length,
       in_use: bots.filter((b) => b.status === 'in_use').length,
       total: bots.length,
-      online: botHealth.filter((h) => h.status === 'online').length,
-      offline: botHealth.filter((h) => h.status === 'offline').length,
+      online: botHealth.filter((h) => {
+        if (h.status === 'offline') return false;
+        if (!h.last_heartbeat) return false;
+        if ((Date.now() - new Date(h.last_heartbeat).getTime()) > OFFLINE_THRESHOLD_MS) return false;
+        return true;
+      }).length,
+      offline: botHealth.filter((h) => {
+        if (h.status === 'offline') return true;
+        if (!h.last_heartbeat) return true;
+        if ((Date.now() - new Date(h.last_heartbeat).getTime()) > OFFLINE_THRESHOLD_MS) return true;
+        return false;
+      }).length,
     },
     members: {
       total: activeMembers.length,
@@ -248,9 +267,13 @@ export const GET = createApiHandler(async (req, context) => {
   // Build alerts
   const alerts: DashboardAlert[] = [];
 
-  // Bots offline
+  // Bots offline — by explicit status OR stale heartbeat (> 30 min)
   for (const h of botHealth) {
-    if (h.status === 'offline') {
+    const isStaleHeartbeat = !h.last_heartbeat ||
+      (Date.now() - new Date(h.last_heartbeat).getTime()) > OFFLINE_THRESHOLD_MS;
+    const isOffline = h.status === 'offline' || isStaleHeartbeat;
+
+    if (isOffline) {
       const groupName = (h.groups as unknown as { name: string } | null)?.name;
       alerts.push({
         type: 'bot_offline',
