@@ -15,7 +15,7 @@ export interface Group {
   checkout_url: string | null;
   posting_schedule: PostingSchedule;
   post_now_requested_at: string | null;
-  status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed';
+  status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed' | 'deleted';
   whatsapp_group_jid: string | null;
   whatsapp_invite_link: string | null;
   channels: string[];

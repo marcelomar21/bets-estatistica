@@ -6,6 +6,7 @@ export const statusConfig: Record<Group['status'], { label: string; className: s
   inactive: { label: 'Inativo', className: 'bg-gray-100 text-gray-800' },
   creating: { label: 'Criando', className: 'bg-blue-100 text-blue-800' },
   failed: { label: 'Falhou', className: 'bg-red-100 text-red-800' },
+  deleted: { label: 'Excluído', className: 'bg-red-100 text-red-800' },
 };
 
 export { formatDate, formatDateTime } from '@/lib/format-utils';
