@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import type { WhatsAppNumberListItem, WhatsAppPoolSummary } from '@/types/database';
 import { whatsappStatusConfig, formatPhoneNumber } from '@/components/features/whatsapp-pool/whatsapp-pool-utils';
 import { formatDateTime } from '@/lib/format-utils';
+import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
 
 interface QrModalState {
   numberId: string;
@@ -18,6 +19,14 @@ interface QrData {
 }
 
 export default function WhatsAppPoolPage() {
+  return (
+    <SuperAdminGuard>
+      <WhatsAppPoolContent />
+    </SuperAdminGuard>
+  );
+}
+
+function WhatsAppPoolContent() {
   const [numbers, setNumbers] = useState<WhatsAppNumberListItem[]>([]);
   const [summary, setSummary] = useState<WhatsAppPoolSummary>({
     total: 0, available: 0, active: 0, backup: 0, banned: 0, cooldown: 0, connecting: 0,

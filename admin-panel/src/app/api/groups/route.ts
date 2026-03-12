@@ -10,11 +10,17 @@ const createGroupSchema = z.object({
 
 export const GET = createApiHandler(
   async (_req, context) => {
-    const { data: groups, error } = await context.supabase
+    let query = context.supabase
       .from('groups')
       .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at')
-      .neq('status', 'deleted')
-      .order('created_at', { ascending: false });
+      .neq('status', 'deleted');
+
+    // group_admin can only see their own group
+    if (context.groupFilter) {
+      query = query.eq('id', context.groupFilter);
+    }
+
+    const { data: groups, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       return NextResponse.json(
@@ -25,7 +31,7 @@ export const GET = createApiHandler(
 
     return NextResponse.json({ success: true, data: groups });
   },
-  { allowedRoles: ['super_admin'] },
+  { allowedRoles: ['super_admin', 'group_admin'] },
 );
 
 export const POST = createApiHandler(

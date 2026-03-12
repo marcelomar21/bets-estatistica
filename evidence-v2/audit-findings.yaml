@@ -1,0 +1,193 @@
+audit:
+  date: "2026-03-12"
+  tester: "Claude (icarocr30@gmail.com — group_admin)"
+  app: "Admin Panel - Bets Estatistica"
+  url: "http://localhost:3000"
+  role: "group_admin"
+  group: "Rajizito Tips"
+
+findings:
+
+  - id: CRASH-001
+    severity: critical
+    page: /dashboard
+    title: "Dashboard completamente quebrado — erro de coluna inexistente"
+    description: >
+      Ao acessar o Dashboard como group_admin, a pagina mostra apenas a mensagem
+      de erro "column members.vencimento_at does not exist" com um botao "Tentar
+      Novamente". O dashboard e a primeira pagina que o cliente ve apos login —
+      esta totalmente inutilizavel. A API /api/dashboard/stats retorna 500.
+    evidence: "evidence-v2/01-dashboard-error.png"
+    suggested_fix: >
+      A query em /api/dashboard/stats referencia a coluna members.vencimento_at
+      que nao existe na tabela. Verificar se a coluna foi renomeada ou se a
+      migration nao foi aplicada. Corrigir a query para usar o nome correto
+      da coluna (provavelmente subscription_end_date ou similar).
+
+  - id: AUTH-001
+    severity: critical
+    page: /settings/telegram
+    title: "Pagina de configuracao Telegram acessivel para group_admin"
+    description: >
+      O group_admin consegue acessar /settings/telegram que exibe formularios
+      de Sessao MTProto (conta do founder), Bot Token e Founder Chat IDs.
+      Embora as APIs retornem 403, a pagina inteira renderiza com labels e
+      placeholders que revelam detalhes de infraestrutura interna. Um cliente
+      (influencer) nao deveria ver essa pagina.
+    evidence: "evidence-v2/16-telegram-settings-exposed.png"
+    suggested_fix: >
+      Adicionar middleware de role check no frontend para redirecionar
+      group_admin para /dashboard ao acessar /settings/telegram.
+      Idealmente, rotas super_admin-only devem ter guard no layout.
+
+  - id: AUTH-002
+    severity: high
+    page: /admin-users
+    title: "Pagina Admin Users acessivel para group_admin com botao 'Criar Admin User'"
+    description: >
+      O group_admin pode navegar para /admin-users. A API retorna 403 e mostra
+      "Insufficient permissions", mas a pagina renderiza com o header "Admin Users",
+      tabela vazia e botao "Criar Admin User" visivel. Um cliente nao deveria
+      saber que essa pagina existe.
+    evidence: "evidence-v2/14-admin-users-forbidden.png"
+    suggested_fix: >
+      Redirecionar group_admin no frontend ao tentar acessar rotas exclusivas
+      de super_admin. Esconder o botao "Criar Admin User" quando role != super_admin.
+
+  - id: AUTH-003
+    severity: high
+    page: /job-executions
+    title: "Pagina Job Executions acessivel para group_admin"
+    description: >
+      O group_admin pode navegar para /job-executions. A API retorna 403 mas a
+      pagina renderiza com cards "Jobs Monitorados: 0", "Status Geral: Saudavel",
+      "Taxa de Sucesso: 100%" e filtros. Informacoes operacionais internas
+      expostas ao cliente.
+    evidence: "evidence-v2/15-job-executions-forbidden.png"
+    suggested_fix: >
+      Adicionar guard de role no frontend para essas rotas. Apenas super_admin
+      deveria acessar /job-executions, /bots, /settings/telegram, /admin-users.
+
+  - id: TONE-001
+    severity: high
+    page: /tone
+    title: "Tom de Voz inacessivel pela sidebar — /api/groups retorna 403"
+    description: >
+      A pagina /tone (sidebar) mostra "Selecione um grupo para configurar o
+      tom de voz" mas nao ha dropdown de grupo porque a chamada /api/groups
+      retorna 403 para group_admin. O Tom de Voz so funciona pelo caminho
+      /groups/:id/tone. Para o influencer, o link na sidebar e um dead-end.
+    evidence: "evidence-v2/09-tone.png"
+    suggested_fix: >
+      Duas opcoes: (1) Fazer /api/groups retornar apenas o grupo do
+      group_admin (respeitando group_filter), ou (2) Redirecionar
+      automaticamente para /groups/:groupId/tone quando role=group_admin
+      (ja que ele so tem 1 grupo).
+
+  - id: API-001
+    severity: medium
+    page: "(multiplas)"
+    title: "403 em /api/groups em TODAS as paginas — console poluido"
+    description: >
+      Toda navegacao dispara 2x chamadas para /api/groups que retornam 403
+      para group_admin. Isso aparece em Apostas, Postagem, Mensagens, Tom de Voz,
+      etc. Sao 12+ erros 403 no console durante uma sessao normal. Impacta
+      debuggability e pode confundir developers.
+    evidence: "evidence-v2/03-bets.png (console errors)"
+    suggested_fix: >
+      O componente que chama /api/groups (provavelmente o group selector
+      ou layout) deveria verificar o role antes de fazer a chamada. Se
+      group_admin, usar o group_id do contexto de auth em vez de chamar
+      /api/groups.
+
+  - id: SEC-001
+    severity: medium
+    page: /groups/[id]
+    title: "Botao 'Excluir' grupo visivel para group_admin"
+    description: >
+      Na pagina de detalhe do grupo, o group_admin ve o botao "Excluir" em
+      vermelho. Se a API bloquear, e apenas um problema de UX. Se nao bloquear,
+      e um problema de seguranca grave — o influencer poderia excluir seu
+      proprio grupo.
+    evidence: "evidence-v2/12-group-detail.png"
+    suggested_fix: >
+      Esconder o botao "Excluir" para group_admin no frontend. Verificar
+      tambem se a API PATCH/DELETE bloqueia group_admin de excluir.
+
+  - id: SEC-002
+    severity: medium
+    page: /groups
+    title: "Botao 'Novo Grupo' visivel para group_admin"
+    description: >
+      Na listagem de grupos, o group_admin ve o botao "Novo Grupo". Um
+      influencer nao deveria poder criar novos grupos — isso e funcao
+      do super_admin (onboarding).
+    evidence: "evidence-v2/11-groups.png"
+    suggested_fix: >
+      Esconder "Novo Grupo" para group_admin. Apenas super_admin deve ver
+      esse botao.
+
+  - id: DATA-001
+    severity: medium
+    page: /posting-history
+    title: "Historico mostra aposta nao-postada com 'Postado em: —'"
+    description: >
+      O Historico de Postagens lista a aposta 2711 (Torino vs Parma) com
+      status "Pendente" e "Postado em: —". Os contadores mostram "Total
+      Postadas: 0" mas a aposta aparece na tabela. Se total postadas = 0,
+      a tabela deveria estar vazia ou a aposta deveria ser filtrada.
+    evidence: "evidence-v2/07-posting-history.png"
+    suggested_fix: >
+      Verificar se o Historico esta filtrando corretamente por bet_status.
+      Se "Total Postadas = 0", apostas com status != 'posted' nao deveriam
+      aparecer na lista, ou o contador deveria refletir o total de apostas
+      listadas (nao apenas as postadas).
+
+  - id: UI-001
+    severity: low
+    page: /groups/[id]
+    title: "Telegram Group ID e Admin Group ID identicos"
+    description: >
+      O grupo Rajizito Tips mostra Telegram Group ID e Telegram Admin Group ID
+      ambos como "3581390882". Normalmente o grupo publico e o admin deveriam
+      ser supergrupos diferentes.
+    evidence: "evidence-v2/12-group-detail.png"
+    suggested_fix: >
+      Pode ser intencional para grupos simples. Se nao for, o onboarding
+      deveria criar dois supergrupos separados. Considerar adicionar
+      uma validacao ou aviso quando os IDs sao iguais.
+
+  - id: UI-002
+    severity: low
+    page: /members
+    title: "Vencimento mostra '-' para membro ativo"
+    description: >
+      O membro @marcelomar1121 esta ativo desde 12/03/2026 mas a coluna
+      Vencimento mostra "-". Membros ativos pagantes deveriam ter data de
+      vencimento da assinatura.
+    evidence: "evidence-v2/02-members.png"
+    suggested_fix: >
+      Verificar se o campo subscription_end_date esta sendo populado
+      pelo webhook do Mercado Pago. Pode ser que ativacao manual nao
+      defina vencimento. Mostrar "Sem vencimento" em vez de "-" para
+      membros ativados manualmente.
+
+summary:
+  total_findings: 12
+  critical: 2
+  high: 3
+  medium: 4
+  low: 3
+  pages_tested: 15
+  pages_ok:
+    - /login (funcional)
+    - /members (funcional, dados corretos)
+    - /bets (funcional, filtros OK)
+    - /postagem (funcional, 1 aposta pronta)
+    - /messages (funcional, formulario OK)
+    - /analyses (funcional, PDFs abrem)
+    - /analytics (funcional, dados zerados - esperado)
+    - /groups (isolamento OK - so mostra grupo do admin)
+    - /groups/[id]/edit (funcional)
+    - /groups/[id]/tone (funcional)
+    - /groups/[id]/leagues (funcional, 13 ligas)

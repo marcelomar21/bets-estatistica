@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { RoleProvider } from '@/contexts/RoleContext';
 import TelegramSettingsPage from './page';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
+
+function renderWithRole(ui: React.ReactElement) {
+  return render(<RoleProvider role="super_admin">{ui}</RoleProvider>);
+}
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -16,7 +25,7 @@ describe('TelegramSettingsPage', () => {
   });
 
   it('renders page title and all sections', async () => {
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Configurações Telegram' })).toBeInTheDocument();
@@ -28,7 +37,7 @@ describe('TelegramSettingsPage', () => {
   });
 
   it('shows empty sessions message when no sessions exist', async () => {
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Nenhuma sessão configurada')).toBeInTheDocument();
@@ -49,7 +58,7 @@ describe('TelegramSettingsPage', () => {
       })
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ success: true, data: null }) });
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByText('founder_test')).toBeInTheDocument();
@@ -73,7 +82,7 @@ describe('TelegramSettingsPage', () => {
       })
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ success: true, data: null }) });
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Requer Re-auth')).toBeInTheDocument();
@@ -83,7 +92,7 @@ describe('TelegramSettingsPage', () => {
   it('sends code on phone number submit', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Número do Telefone/)).toBeInTheDocument();
@@ -109,7 +118,7 @@ describe('TelegramSettingsPage', () => {
   it('shows error when send code fails', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Número do Telefone/)).toBeInTheDocument();
@@ -135,7 +144,7 @@ describe('TelegramSettingsPage', () => {
   it('verifies code and refreshes sessions', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Número do Telefone/)).toBeInTheDocument();
@@ -180,7 +189,7 @@ describe('TelegramSettingsPage', () => {
   it('shows 2FA field when required', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Número do Telefone/)).toBeInTheDocument();
@@ -235,7 +244,7 @@ describe('TelegramSettingsPage', () => {
       })
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ success: true, data: null }) });
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByText('founder_test')).toBeInTheDocument();
@@ -265,7 +274,7 @@ describe('TelegramSettingsPage', () => {
   it('saves bot configuration', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Bot Token/)).toBeInTheDocument();
@@ -297,7 +306,7 @@ describe('TelegramSettingsPage', () => {
   it('shows error for invalid founder chat IDs', async () => {
     const user = userEvent.setup();
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByLabelText(/Bot Token/)).toBeInTheDocument();
@@ -324,7 +333,7 @@ describe('TelegramSettingsPage', () => {
         }),
       });
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByText(/@superbot/)).toBeInTheDocument();
@@ -347,7 +356,7 @@ describe('TelegramSettingsPage', () => {
         }),
       });
 
-    render(<TelegramSettingsPage />);
+    renderWithRole(<TelegramSettingsPage />);
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Testar Notificação' })).toBeInTheDocument();

@@ -15,14 +15,14 @@ function createMockRequest(url = 'http://localhost/api/bets/posting-history'): N
 function createMockSupabase(data: unknown[] = [], count = 0) {
   const mockRange = vi.fn().mockResolvedValue({ data, count, error: null });
   const mockOrder = vi.fn().mockReturnValue({ range: mockRange });
-  const mockIn = vi.fn().mockReturnValue({ order: mockOrder });
-  const mockNotNull = vi.fn().mockReturnValue({ in: mockIn, eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ count, error: null }) }) });
+  // Main query chain: .not('group_id', ...).eq('bet_status', 'posted') → .order → .range
+  const mockMainEq = vi.fn().mockReturnValue({ order: mockOrder, eq: vi.fn().mockReturnValue({ order: mockOrder }) });
+  const mockNotNull = vi.fn().mockReturnValue({ eq: mockMainEq });
 
   // Counter chain: .eq('bet_result', ...).eq('bet_status', 'posted').not('group_id', 'is', null)
   const mockCounterEq = vi.fn().mockResolvedValue({ count, error: null });
   const mockCounterNot = vi.fn().mockReturnValue({ eq: mockCounterEq });
   const mockCounterBetStatusEq = vi.fn().mockReturnValue({ not: mockCounterNot });
-  const mockCounterHead = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: mockCounterBetStatusEq }) });
 
   return {
     from: vi.fn().mockReturnValue({

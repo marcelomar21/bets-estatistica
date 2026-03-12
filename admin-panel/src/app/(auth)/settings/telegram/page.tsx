@@ -2,10 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { MtprotoSession, SuperAdminBotConfig } from '@/types/database';
+import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
 
 type SetupPhase = 'idle' | 'sending_code' | 'awaiting_code' | 'verifying';
 
 export default function TelegramSettingsPage() {
+  return (
+    <SuperAdminGuard>
+      <TelegramSettingsContent />
+    </SuperAdminGuard>
+  );
+}
+
+function TelegramSettingsContent() {
   // MTProto Session state
   const [sessions, setSessions] = useState<MtprotoSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);

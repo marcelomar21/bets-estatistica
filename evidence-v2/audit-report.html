@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Report v2 - Admin Panel (Group Admin / Influencer)</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --critical: #ef4444;
+      --high: #f97316;
+      --medium: #eab308;
+      --low: #3b82f6;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.5rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--muted); margin-bottom: 0.5rem; }
+    .role-badge {
+      display: inline-block;
+      background: #7c3aed;
+      color: #fff;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .summary-card .number {
+      font-size: 2.5rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .summary-card .label {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .summary-card.critical .number { color: var(--critical); }
+    .summary-card.high .number { color: var(--high); }
+    .summary-card.medium .number { color: var(--medium); }
+    .summary-card.low .number { color: var(--low); }
+    .summary-card.ok .number { color: var(--ok); }
+
+    .finding {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .finding-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .finding-header:hover { background: rgba(255,255,255,0.03); }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .badge.critical { background: var(--critical); color: #fff; }
+    .badge.high { background: var(--high); color: #000; }
+    .badge.medium { background: var(--medium); color: #000; }
+    .badge.low { background: var(--low); color: #fff; }
+    .badge.fixed { background: var(--ok); color: #fff; margin-left: auto; }
+    .finding-id { color: var(--muted); font-family: monospace; font-size: 0.85rem; min-width: 110px; }
+    .finding-title { flex: 1; font-weight: 600; }
+    .finding-page { color: var(--muted); font-family: monospace; font-size: 0.85rem; }
+    .finding-body {
+      padding: 0 1.5rem 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .finding-body p { margin: 0.75rem 0; }
+    .finding-body .label-inline {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 1.25rem;
+      margin-bottom: 0.25rem;
+    }
+    .fix-box {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.5rem;
+    }
+    .evidence-img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-top: 0.5rem;
+    }
+    .toggle-arrow {
+      transition: transform 0.2s;
+      color: var(--muted);
+    }
+    .finding.open .toggle-arrow { transform: rotate(90deg); }
+    .finding:not(.open) .finding-body { display: none; }
+
+    .pages-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 0.75rem;
+    }
+    .page-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+    }
+    .page-item .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+    }
+    .page-item .status-dot.ok { background: var(--ok); }
+    .page-item .status-dot.issue { background: var(--critical); }
+    .page-item .status-dot.warn { background: var(--medium); }
+
+    .context-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1rem 0 2rem;
+    }
+    .context-box p { margin: 0.5rem 0; }
+    .context-box strong { color: #a78bfa; }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Audit Report v2 - Admin Panel</h1>
+    <p class="meta">Data: 12/03/2026 | App: Bets Estatistica | Testador: Claude (via Playwright) | URL: localhost:3000</p>
+    <span class="role-badge">Perspectiva: group_admin (influencer / cliente)</span>
+
+    <div class="context-box">
+      <p><strong>Objetivo:</strong> Testar o painel administrativo do ponto de vista de um <strong>group_admin</strong> (influencer/cliente), que e o papel de menor privilegio. Verificar se o cliente consegue usar o sistema normalmente, sem acesso a funcionalidades internas.</p>
+      <p><strong>Usuario:</strong> <code>icarocr30@gmail.com</code> &mdash; Group Admin do grupo <strong>Rajizito Tips</strong></p>
+      <p><strong>Escopo:</strong> Todas as paginas acessiveis pela sidebar + rotas internas (admin-users, jobs, bots, settings/telegram)</p>
+    </div>
+
+    <h2>Resumo</h2>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="number">12</div>
+        <div class="label">Total de Problemas</div>
+      </div>
+      <div class="summary-card critical">
+        <div class="number">2</div>
+        <div class="label">Criticos</div>
+      </div>
+      <div class="summary-card high">
+        <div class="number">3</div>
+        <div class="label">Altos</div>
+      </div>
+      <div class="summary-card medium">
+        <div class="number">4</div>
+        <div class="label">Medios</div>
+      </div>
+      <div class="summary-card low">
+        <div class="number">3</div>
+        <div class="label">Baixos</div>
+      </div>
+      <div class="summary-card ok">
+        <div class="number">15</div>
+        <div class="label">Paginas Testadas</div>
+      </div>
+    </div>
+
+    <h2>Paginas Testadas</h2>
+    <div class="pages-grid">
+      <div class="page-item"><span class="status-dot ok"></span>/login (funcional)</div>
+      <div class="page-item"><span class="status-dot issue"></span>/dashboard (crash)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/members (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/bets (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/postagem (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/messages (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analyses (funcional)</div>
+      <div class="page-item"><span class="status-dot warn"></span>/posting-history (dado inconsistente)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analytics (funcional)</div>
+      <div class="page-item"><span class="status-dot issue"></span>/tone (dead-end)</div>
+      <div class="page-item"><span class="status-dot warn"></span>/groups (botao indevido)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/groups/[id] (funcional)</div>
+      <div class="page-item"><span class="status-dot issue"></span>/settings/telegram (exposta)</div>
+      <div class="page-item"><span class="status-dot issue"></span>/admin-users (acessivel)</div>
+      <div class="page-item"><span class="status-dot issue"></span>/job-executions (acessivel)</div>
+    </div>
+
+    <h2>Problemas Encontrados</h2>
+
+    <!-- CRASH-001: CRITICAL -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge critical">Critico</span>
+        <span class="finding-id">CRASH-001</span>
+        <span class="finding-title">Dashboard completamente quebrado &mdash; erro de coluna inexistente</span>
+        <span class="finding-page">/dashboard</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Ao acessar o Dashboard como <code>group_admin</code>, a pagina mostra apenas a mensagem
+          de erro <strong>"column members.vencimento_at does not exist"</strong> com um botao "Tentar
+          Novamente". O dashboard e a <strong>primeira pagina que o cliente ve apos login</strong> &mdash;
+          esta totalmente inutilizavel. A API <code>/api/dashboard/stats</code> retorna <strong>500</strong>.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="01-dashboard-error.png" alt="Dashboard com erro de coluna inexistente">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          A query em <code>/api/dashboard/stats</code> referencia a coluna <code>members.vencimento_at</code>
+          que nao existe na tabela. Verificar se a coluna foi renomeada ou se a migration nao foi aplicada.
+          Corrigir a query para usar o nome correto da coluna (provavelmente <code>subscription_end_date</code>
+          ou similar).
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH-001: CRITICAL -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge critical">Critico</span>
+        <span class="finding-id">AUTH-001</span>
+        <span class="finding-title">Pagina de configuracao Telegram acessivel para group_admin</span>
+        <span class="finding-page">/settings/telegram</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O <code>group_admin</code> consegue acessar <code>/settings/telegram</code> que exibe formularios
+          de <strong>Sessao MTProto</strong> (conta do founder), <strong>Bot Token</strong> e <strong>Founder Chat IDs</strong>.
+          Embora as APIs retornem 403, a pagina inteira renderiza com labels e placeholders que
+          <strong>revelam detalhes de infraestrutura interna</strong>. Um cliente (influencer) nao deveria ver essa pagina.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="16-telegram-settings-exposed.png" alt="Telegram settings exposta para group_admin">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Adicionar middleware de role check no frontend para redirecionar <code>group_admin</code> para
+          <code>/dashboard</code> ao acessar <code>/settings/telegram</code>. Idealmente, rotas super_admin-only
+          devem ter guard no layout. Considerar um wrapper <code>SuperAdminGuard</code> reutilizavel.
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH-002: HIGH -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge high">Alto</span>
+        <span class="finding-id">AUTH-002</span>
+        <span class="finding-title">Pagina Admin Users acessivel para group_admin com botao "Criar Admin User"</span>
+        <span class="finding-page">/admin-users</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O <code>group_admin</code> pode navegar para <code>/admin-users</code>. A API retorna 403 e mostra
+          "Insufficient permissions", mas a pagina renderiza com o header <strong>"Admin Users"</strong>,
+          tabela vazia e botao <strong>"Criar Admin User"</strong> visivel. Um cliente nao deveria
+          saber que essa pagina existe.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="14-admin-users-forbidden.png" alt="Admin Users acessivel com 403">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Redirecionar <code>group_admin</code> no frontend ao tentar acessar rotas exclusivas de
+          <code>super_admin</code>. Esconder o botao "Criar Admin User" quando <code>role != super_admin</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- AUTH-003: HIGH -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge high">Alto</span>
+        <span class="finding-id">AUTH-003</span>
+        <span class="finding-title">Pagina Job Executions acessivel para group_admin</span>
+        <span class="finding-page">/job-executions</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O <code>group_admin</code> pode navegar para <code>/job-executions</code>. A API retorna 403 mas a
+          pagina renderiza com cards <strong>"Jobs Monitorados: 0"</strong>, <strong>"Status Geral: Saudavel"</strong>,
+          <strong>"Taxa de Sucesso: 100%"</strong> e filtros. Informacoes operacionais internas expostas ao cliente.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="15-job-executions-forbidden.png" alt="Job Executions acessivel com 403">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Adicionar guard de role no frontend para essas rotas. Apenas <code>super_admin</code> deveria
+          acessar <code>/job-executions</code>, <code>/bots</code>, <code>/settings/telegram</code>,
+          <code>/admin-users</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- TONE-001: HIGH -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge high">Alto</span>
+        <span class="finding-id">TONE-001</span>
+        <span class="finding-title">Tom de Voz inacessivel pela sidebar &mdash; /api/groups retorna 403</span>
+        <span class="finding-page">/tone</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          A pagina <code>/tone</code> (sidebar) mostra <strong>"Selecione um grupo para configurar o
+          tom de voz"</strong> mas nao ha dropdown de grupo porque a chamada <code>/api/groups</code>
+          retorna 403 para <code>group_admin</code>. O Tom de Voz so funciona pelo caminho
+          <code>/groups/:id/tone</code>. Para o influencer, o link na sidebar e um <strong>dead-end</strong>.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="09-tone.png" alt="Tom de Voz sem dropdown de grupo">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Duas opcoes:
+          <ol style="margin: 0.5rem 0 0 1.5rem;">
+            <li>Fazer <code>/api/groups</code> retornar apenas o grupo do <code>group_admin</code> (respeitando <code>group_filter</code>)</li>
+            <li>Redirecionar automaticamente para <code>/groups/:groupId/tone</code> quando <code>role=group_admin</code> (ja que ele so tem 1 grupo)</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- API-001: MEDIUM -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">API-001</span>
+        <span class="finding-title">403 em /api/groups em TODAS as paginas &mdash; console poluido</span>
+        <span class="finding-page">(multiplas)</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Toda navegacao dispara <strong>2x chamadas</strong> para <code>/api/groups</code> que retornam
+          <strong>403</strong> para <code>group_admin</code>. Isso aparece em Apostas, Postagem, Mensagens,
+          Tom de Voz, etc. Sao <strong>12+ erros 403</strong> no console durante uma sessao normal.
+          Impacta debuggability e pode confundir developers.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="03-bets.png" alt="Console com 403 errors">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          O componente que chama <code>/api/groups</code> (provavelmente o group selector ou layout) deveria
+          verificar o role antes de fazer a chamada. Se <code>group_admin</code>, usar o <code>group_id</code>
+          do contexto de auth em vez de chamar <code>/api/groups</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- SEC-001: MEDIUM -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">SEC-001</span>
+        <span class="finding-title">Botao "Excluir" grupo visivel para group_admin</span>
+        <span class="finding-page">/groups/[id]</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Na pagina de detalhe do grupo, o <code>group_admin</code> ve o botao <strong>"Excluir"</strong>
+          em vermelho. Se a API bloquear, e apenas um problema de UX. Se nao bloquear,
+          e um <strong>problema de seguranca grave</strong> &mdash; o influencer poderia excluir seu proprio grupo.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="12-group-detail.png" alt="Botao Excluir visivel para group_admin">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Esconder o botao "Excluir" para <code>group_admin</code> no frontend. Verificar tambem se a
+          API <code>PATCH/DELETE</code> bloqueia <code>group_admin</code> de excluir.
+        </div>
+      </div>
+    </div>
+
+    <!-- SEC-002: MEDIUM -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">SEC-002</span>
+        <span class="finding-title">Botao "Novo Grupo" visivel para group_admin</span>
+        <span class="finding-page">/groups</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Na listagem de grupos, o <code>group_admin</code> ve o botao <strong>"Novo Grupo"</strong>.
+          Um influencer nao deveria poder criar novos grupos &mdash; isso e funcao do
+          <code>super_admin</code> (onboarding).
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="11-groups.png" alt="Botao Novo Grupo visivel para group_admin">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Esconder "Novo Grupo" para <code>group_admin</code>. Apenas <code>super_admin</code> deve ver esse botao.
+        </div>
+      </div>
+    </div>
+
+    <!-- DATA-001: MEDIUM -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">DATA-001</span>
+        <span class="finding-title">Historico mostra aposta nao-postada com "Postado em: &mdash;"</span>
+        <span class="finding-page">/posting-history</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O Historico de Postagens lista a aposta <strong>2711</strong> (Torino vs Parma) com status
+          <strong>"Pendente"</strong> e <strong>"Postado em: &mdash;"</strong>. Os contadores mostram
+          <strong>"Total Postadas: 0"</strong> mas a aposta aparece na tabela. Se total postadas = 0,
+          a tabela deveria estar vazia ou a aposta deveria ser filtrada.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="07-posting-history.png" alt="Historico com aposta nao-postada">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Verificar se o Historico esta filtrando corretamente por <code>bet_status</code>. Se
+          "Total Postadas = 0", apostas com <code>status != 'posted'</code> nao deveriam aparecer na
+          lista, ou o contador deveria refletir o total de apostas listadas (nao apenas as postadas).
+        </div>
+      </div>
+    </div>
+
+    <!-- UI-001: LOW -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-001</span>
+        <span class="finding-title">Telegram Group ID e Admin Group ID identicos</span>
+        <span class="finding-page">/groups/[id]</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O grupo <strong>Rajizito Tips</strong> mostra Telegram Group ID e Telegram Admin Group ID
+          ambos como <code>3581390882</code>. Normalmente o grupo publico e o admin deveriam ser
+          supergrupos diferentes.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="12-group-detail.png" alt="IDs de grupo identicos">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Pode ser intencional para grupos simples. Se nao for, o onboarding deveria criar dois
+          supergrupos separados. Considerar adicionar validacao ou aviso quando os IDs sao iguais.
+        </div>
+      </div>
+    </div>
+
+    <!-- UI-002: LOW -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-002</span>
+        <span class="finding-title">Vencimento mostra "-" para membro ativo</span>
+        <span class="finding-page">/members</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O membro <code>@marcelomar1121</code> esta ativo desde 12/03/2026 mas a coluna Vencimento
+          mostra <strong>"-"</strong>. Membros ativos pagantes deveriam ter data de vencimento da assinatura.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="02-members.png" alt="Membro ativo sem data de vencimento">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Verificar se o campo <code>subscription_end_date</code> esta sendo populado pelo webhook do
+          Mercado Pago. Pode ser que ativacao manual nao defina vencimento. Mostrar
+          <strong>"Sem vencimento"</strong> em vez de "-" para membros ativados manualmente.
+        </div>
+      </div>
+    </div>
+
+    <!-- UI-003: LOW (not in pages_ok but found in testing) -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-003</span>
+        <span class="finding-title">Bots page mostra "Insufficient permissions" mas renderiza UI</span>
+        <span class="finding-page">/bots</span>
+        <span class="badge fixed">FIXED</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          A pagina <code>/bots</code> mostra a mensagem "Insufficient permissions" mas renderiza
+          o layout da pagina incluindo sidebar e header. Nao e tao grave quanto as outras paginas
+          admin-only, pois mostra um bloqueio visivel, mas o <code>group_admin</code> ainda nao deveria
+          conseguir navegar ate essa rota.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="17-bots-forbidden.png" alt="Bots page com Insufficient permissions">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Incluir <code>/bots</code> no mesmo guard de role que bloqueia as demais rotas admin-only.
+          Redirecionar para <code>/dashboard</code> em vez de mostrar a mensagem de erro.
+        </div>
+      </div>
+    </div>
+
+    <h2>Paginas OK (Sem Problemas)</h2>
+    <div class="pages-grid">
+      <div class="page-item"><span class="status-dot ok"></span>/login (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/members (dados corretos)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/bets (filtros OK)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/postagem (1 aposta pronta)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/messages (formulario OK)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analyses (PDFs abrem)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analytics (dados zerados - esperado)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/groups (isolamento OK)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/groups/[id]/edit (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/groups/[id]/tone (funcional)</div>
+      <div class="page-item"><span class="status-dot ok"></span>/groups/[id]/leagues (13 ligas)</div>
+    </div>
+
+    <h2>Observacoes Gerais</h2>
+    <div class="context-box">
+      <p><strong>Isolamento de dados:</strong> O <code>group_admin</code> so consegue ver dados do seu proprio grupo (Rajizito Tips). O isolamento de dados esta funcionando corretamente em todas as paginas testadas.</p>
+      <p><strong>Principal problema:</strong> A ausencia de <strong>guards de role no frontend</strong> permite que o <code>group_admin</code> acesse rotas internas (<code>/settings/telegram</code>, <code>/admin-users</code>, <code>/job-executions</code>, <code>/bots</code>). As APIs bloqueiam corretamente (403), mas a UI renderiza com informacoes parciais.</p>
+      <p><strong>Impacto no cliente:</strong> O dashboard quebrado (CRASH-001) e o problema mais urgente pois impede o uso basico do sistema. Os demais problemas de autorizacao afetam a experiencia mas nao bloqueiam funcionalidades core.</p>
+      <p><strong>Comparacao com Audit v1:</strong> O audit anterior (super_admin) encontrou 13 problemas. Este audit (group_admin) encontrou 12 problemas, sendo a maioria relacionados a falta de guards de frontend para role. Os problemas sao complementares &mdash; corrigir ambos os conjuntos garantiria uma experiencia solida para ambos os roles.</p>
+    </div>
+
+    <footer>
+      Gerado automaticamente por Claude via Playwright MCP | 12/03/2026 | Perspectiva: group_admin (icarocr30@gmail.com)
+    </footer>
+  </div>
+
+  <script>
+    // All findings start collapsed except critical and high
+    document.querySelectorAll('.finding').forEach(f => {
+      const badge = f.querySelector('.badge');
+      if (!badge.classList.contains('critical') && !badge.classList.contains('high')) {
+        f.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>

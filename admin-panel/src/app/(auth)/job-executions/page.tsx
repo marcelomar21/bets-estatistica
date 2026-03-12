@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { JobExecutionsTable } from '@/components/features/jobs/JobExecutionsTable';
 import { JobHealthSummary } from '@/components/features/jobs/JobHealthSummary';
+import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
 import type { JobExecution } from '@/components/features/jobs/JobExecutionsTable';
 
 interface Pagination {
@@ -40,6 +41,14 @@ const DEFAULT_COUNTERS: Counters = { total: 0, success: 0, failed: 0, success_ra
 const DEFAULT_HEALTH: HealthData = { total_jobs: 0, failed_count: 0, status: 'healthy', last_error: null };
 
 export default function JobExecutionsPage() {
+  return (
+    <SuperAdminGuard>
+      <JobExecutionsContent />
+    </SuperAdminGuard>
+  );
+}
+
+function JobExecutionsContent() {
   const [executions, setExecutions] = useState<JobExecution[]>([]);
   const [pagination, setPagination] = useState<Pagination>(DEFAULT_PAGINATION);
   const [counters, setCounters] = useState<Counters>(DEFAULT_COUNTERS);
