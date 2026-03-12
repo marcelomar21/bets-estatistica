@@ -7,6 +7,7 @@ const statusConfig: Record<DashboardGroupCard['status'], { label: string; classN
   inactive: { label: 'Inativo', className: 'bg-gray-100 text-gray-800' },
   creating: { label: 'Criando', className: 'bg-blue-100 text-blue-800' },
   failed: { label: 'Falhou', className: 'bg-red-100 text-red-800' },
+  deleted: { label: 'Excluído', className: 'bg-red-100 text-red-800' },
 };
 
 interface GroupSummaryCardProps {
