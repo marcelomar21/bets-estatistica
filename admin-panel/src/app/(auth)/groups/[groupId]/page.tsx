@@ -16,7 +16,7 @@ export default async function GroupDetailPage({
 
   const { data: group } = await supabase
     .from('groups')
-    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, whatsapp_group_jid, whatsapp_invite_link, channels, created_at')
+    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, whatsapp_group_jid, whatsapp_invite_link, channels, is_test, created_at')
     .eq('id', groupId)
     .single();
 
@@ -24,7 +24,7 @@ export default async function GroupDetailPage({
     notFound();
   }
 
-  const typedGroup = group as GroupListItem & { whatsapp_group_jid: string | null; whatsapp_invite_link: string | null; channels: string[] | null };
+  const typedGroup = group as GroupListItem & { whatsapp_group_jid: string | null; whatsapp_invite_link: string | null; channels: string[] | null; is_test: boolean };
   const status = statusConfig[typedGroup.status];
   const channels = typedGroup.channels || ['telegram'];
   const hasWhatsApp = !!typedGroup.whatsapp_group_jid;
@@ -101,6 +101,17 @@ export default async function GroupDetailPage({
               ))}
             </dd>
           </div>
+
+          {typedGroup.is_test && (
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Modo</dt>
+              <dd className="mt-1">
+                <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
+                  Grupo de teste
+                </span>
+              </dd>
+            </div>
+          )}
 
           <InviteLinkManager
             groupId={typedGroup.id}

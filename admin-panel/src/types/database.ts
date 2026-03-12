@@ -19,10 +19,11 @@ export interface Group {
   whatsapp_group_jid: string | null;
   whatsapp_invite_link: string | null;
   channels: string[];
+  is_test: boolean;
   created_at: string;
 }
 
-export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'telegram_invite_link' | 'checkout_url' | 'posting_schedule' | 'created_at'> & {
+export type GroupListItem = Pick<Group, 'id' | 'name' | 'status' | 'telegram_group_id' | 'telegram_admin_group_id' | 'telegram_invite_link' | 'checkout_url' | 'posting_schedule' | 'is_test' | 'created_at'> & {
   bot_pool?: { bot_username: string }[] | null;
 };
 
