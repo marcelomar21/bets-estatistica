@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
+import { deactivateSubscriptionPlan } from '@/lib/mercadopago';
+import { suspendBotService } from '@/lib/render';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 type GroupRouteContext = { params: Promise<{ groupId: string }> };
 
@@ -158,4 +161,121 @@ export const PUT = createApiHandler(
     return NextResponse.json({ success: true, data: group });
   },
   { allowedRoles: ['super_admin', 'group_admin'] },
+);
+
+export const DELETE = createApiHandler(
+  async (_req: NextRequest, context, routeContext) => {
+    const { groupId } = await (routeContext as GroupRouteContext).params;
+
+    // Fetch group with cleanup-relevant fields
+    const { data: group, error: fetchError } = await context.supabase
+      .from('groups')
+      .select('id, name, status, mp_plan_id, render_service_id')
+      .eq('id', groupId)
+      .single();
+
+    if (fetchError || !group) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Grupo não encontrado' } },
+        { status: 404 },
+      );
+    }
+
+    if (group.status === 'deleted') {
+      return NextResponse.json(
+        { success: false, error: { code: 'ALREADY_DELETED', message: 'Grupo já foi excluído' } },
+        { status: 400 },
+      );
+    }
+
+    // Best-effort cleanup — failures are logged but don't block the delete
+
+    // 1. Cancel MercadoPago subscription plan
+    if (group.mp_plan_id) {
+      const mpResult = await deactivateSubscriptionPlan(group.mp_plan_id);
+      if (!mpResult.success) {
+        console.warn('[delete-group] Failed to deactivate MP plan', groupId, mpResult.error);
+      }
+    }
+
+    // 2. Suspend Render bot service (for legacy groups with individual services)
+    if (group.render_service_id) {
+      const renderResult = await suspendBotService(group.render_service_id);
+      if (!renderResult.success) {
+        console.warn('[delete-group] Failed to suspend Render service', groupId, renderResult.error);
+      }
+    }
+
+    // 3. Release bot_pool entries
+    await context.supabase
+      .from('bot_pool')
+      .update({ group_id: null, status: 'available', is_active: false })
+      .eq('group_id', groupId);
+
+    // 4. Delete admin users (auth + admin_users table)
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: adminUsers } = await supabaseAdmin
+      .from('admin_users')
+      .select('id')
+      .eq('group_id', groupId);
+
+    if (adminUsers && adminUsers.length > 0) {
+      for (const adminUser of adminUsers) {
+        const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(adminUser.id);
+        if (authErr) {
+          console.warn('[delete-group] Failed to delete auth user', adminUser.id, authErr.message);
+        }
+        const { error: rowErr } = await supabaseAdmin
+          .from('admin_users')
+          .delete()
+          .eq('id', adminUser.id);
+        if (rowErr) {
+          console.warn('[delete-group] Failed to delete admin_users row', adminUser.id, rowErr.message);
+        }
+      }
+    }
+
+    // 5. Delete bot_health
+    await context.supabase
+      .from('bot_health')
+      .delete()
+      .eq('group_id', groupId);
+
+    // 6. Release whatsapp_numbers
+    await context.supabase
+      .from('whatsapp_numbers')
+      .update({ group_id: null, status: 'available' })
+      .eq('group_id', groupId);
+
+    // 7. Soft delete: set group status to 'deleted'
+    const { error: updateError } = await context.supabase
+      .from('groups')
+      .update({ status: 'deleted' })
+      .eq('id', groupId);
+
+    if (updateError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
+        { status: 500 },
+      );
+    }
+
+    // Audit log
+    const { error: auditError } = await context.supabase.from('audit_log').insert({
+      table_name: 'groups',
+      record_id: groupId,
+      action: 'delete',
+      changed_by: context.user.id,
+      changes: { old: { status: group.status }, new: { status: 'deleted' }, group_name: group.name },
+    });
+    if (auditError) {
+      console.warn('[audit_log] Failed to insert audit log for group delete', groupId, auditError.message);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: { message: 'Grupo excluído com sucesso' },
+    });
+  },
+  { allowedRoles: ['super_admin'] },
 );

@@ -10,6 +10,68 @@ export interface MercadoPagoError {
 
 export type MercadoPagoResult = MercadoPagoSuccess | MercadoPagoError;
 
+export interface DeactivatePlanSuccess {
+  success: true;
+}
+
+export interface DeactivatePlanError {
+  success: false;
+  error: string;
+}
+
+export type DeactivatePlanResult = DeactivatePlanSuccess | DeactivatePlanError;
+
+export async function deactivateSubscriptionPlan(
+  planId: string,
+): Promise<DeactivatePlanResult> {
+  const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  if (!accessToken) {
+    return { success: false, error: 'MERCADO_PAGO_ACCESS_TOKEN não configurado' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.mercadopago.com/preapproval_plan/${planId}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'cancelled' }),
+      },
+    );
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        return { success: false, error: 'Credenciais inválidas do Mercado Pago' };
+      }
+
+      if (response.status >= 500) {
+        return { success: false, error: 'Erro temporário do Mercado Pago. Tente novamente.' };
+      }
+
+      return { success: false, error: data.message || 'Erro ao desativar plano de assinatura no Mercado Pago' };
+    }
+
+    return { success: true };
+  } catch (err) {
+    if (err instanceof Error && err.message.toLowerCase().includes('timeout')) {
+      return {
+        success: false,
+        error: 'Timeout ao conectar com Mercado Pago',
+      };
+    }
+
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Erro ao conectar com Mercado Pago',
+    };
+  }
+}
+
 export async function createSubscriptionPlan(
   groupName: string,
   groupId: string,

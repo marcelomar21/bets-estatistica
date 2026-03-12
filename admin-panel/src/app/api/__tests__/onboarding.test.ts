@@ -12,7 +12,8 @@ vi.mock('@/lib/mercadopago', () => ({
 }));
 
 vi.mock('@/lib/render', () => ({
-  createBotService: vi.fn(),
+  restartBotService: vi.fn(),
+  toBotApiGroupId: (id: number) => (id > 0 ? `-100${id}` : String(id)),
 }));
 
 // Mock supabase-js createClient (for admin operations)
@@ -65,7 +66,7 @@ vi.mock('@/lib/super-admin-bot', () => ({
 import { POST } from '../groups/onboarding/route';
 import { validateBotToken } from '@/lib/telegram';
 import { createSubscriptionPlan } from '@/lib/mercadopago';
-import { createBotService } from '@/lib/render';
+import { restartBotService } from '@/lib/render';
 import { withMtprotoSession, createSupergroup, addBotAsAdmin, createInviteLink, verifyBotIsAdmin, classifyMtprotoError, MtprotoError } from '@/lib/mtproto';
 import { getBotConfig, sendFounderNotification } from '@/lib/super-admin-bot';
 
@@ -437,24 +438,24 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     expect(json.error.message).toContain('planId: plan-123');
   });
 
-  it('returns error when Render API fails (deploying_bot step)', async () => {
+  it('returns error when Render restart fails (deploying_bot step)', async () => {
     const mockCtx = createMockContext({
       groups: {
         single: vi.fn().mockResolvedValue({
-          data: { id: 'group-1', name: 'Test', render_service_id: null, telegram_group_id: -1001234567890 },
+          data: { id: 'group-1', name: 'Test', render_service_id: null, telegram_group_id: -1001234567890, telegram_admin_group_id: -1001234567890 },
           error: null,
         }),
       },
       bot_pool: {
         single: vi.fn().mockResolvedValue({
-          data: { bot_token: 'token' },
+          data: { id: 'bot-1', bot_token: 'token' },
           error: null,
         }),
       },
     });
     mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
 
-    vi.mocked(createBotService).mockResolvedValue({ success: false, error: 'Render error' });
+    vi.mocked(restartBotService).mockResolvedValue({ success: false, error: 'Render error' });
 
     const req = createRequest({ step: 'deploying_bot', group_id: VALID_GROUP_ID });
     const res = await POST(req);
@@ -483,7 +484,48 @@ describe('POST /api/groups/onboarding (step-by-step)', () => {
     expect(res.status).toBe(200);
     expect(json.success).toBe(true);
     expect(json.data.service_id).toBe('srv-1');
-    expect(createBotService).not.toHaveBeenCalled();
+    expect(restartBotService).not.toHaveBeenCalled();
+  });
+
+  it('deploying_bot activates bot in bot_pool and restarts unified service', async () => {
+    const botPoolUpdateBuilder = createMockQueryBuilder({
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'bot-1', bot_token: 'token' },
+        error: null,
+      }),
+    });
+
+    const mockCtx = createMockContext({
+      groups: {
+        single: vi.fn().mockResolvedValue({
+          data: { id: 'group-1', name: 'Test', render_service_id: null, telegram_group_id: 3647535811, telegram_admin_group_id: 3363567204 },
+          error: null,
+        }),
+      },
+      bot_pool: botPoolUpdateBuilder,
+    });
+    mockWithTenant.mockResolvedValue({ success: true, context: mockCtx } as unknown as TenantResult);
+
+    vi.mocked(restartBotService).mockResolvedValue({ success: true });
+
+    const req = createRequest({ step: 'deploying_bot', group_id: VALID_GROUP_ID });
+    const res = await POST(req);
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    // Should use the unified service ID
+    expect(json.data.service_id).toBe('srv-d6fliv6a2pns7382ckd0');
+    // restartBotService should have been called
+    expect(restartBotService).toHaveBeenCalled();
+    // bot_pool should have been updated with is_active and group IDs
+    expect(botPoolUpdateBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        is_active: true,
+        admin_group_id: '-1003363567204',
+        public_group_id: '-1003647535811',
+      }),
+    );
   });
 
   it('returns error when Supabase Auth fails (creating_admin step)', async () => {

@@ -13,6 +13,7 @@ export const GET = createApiHandler(
     const { data: groups, error } = await context.supabase
       .from('groups')
       .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at')
+      .neq('status', 'deleted')
       .order('created_at', { ascending: false });
 
     if (error) {

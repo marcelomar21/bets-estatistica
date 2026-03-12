@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server';
 import type { GroupListItem } from '@/types/database';
 import { statusConfig, formatDateTime } from '@/components/features/groups/group-utils';
 import { CreateWhatsAppButton } from '@/components/features/groups/CreateWhatsAppButton';
+import { DeleteGroupButton } from '@/components/features/groups/DeleteGroupButton';
 import { InviteLinkManager } from '@/components/features/groups/InviteLinkManager';
 
 export default async function GroupDetailPage({
@@ -145,6 +146,7 @@ export default async function GroupDetailPage({
             Campeonatos
           </Link>
           <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />
+          <DeleteGroupButton groupId={typedGroup.id} groupName={typedGroup.name} />
         </div>
       </div>
     </div>
