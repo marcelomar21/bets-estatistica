@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Report - Admin Panel Bets Estatistica</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --critical: #ef4444;
+      --high: #f97316;
+      --medium: #eab308;
+      --low: #3b82f6;
+      --ok: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.5rem; margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--muted); margin-bottom: 2rem; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .summary-card .number {
+      font-size: 2.5rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .summary-card .label {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .summary-card.critical .number { color: var(--critical); }
+    .summary-card.high .number { color: var(--high); }
+    .summary-card.medium .number { color: var(--medium); }
+    .summary-card.low .number { color: var(--low); }
+    .summary-card.ok .number { color: var(--ok); }
+
+    .finding {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    .finding-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .finding-header:hover { background: rgba(255,255,255,0.03); }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .badge.critical { background: var(--critical); color: #fff; }
+    .badge.high { background: var(--high); color: #000; }
+    .badge.medium { background: var(--medium); color: #000; }
+    .badge.low { background: var(--low); color: #fff; }
+    .finding-id { color: var(--muted); font-family: monospace; font-size: 0.85rem; min-width: 120px; }
+    .finding-title { flex: 1; font-weight: 600; }
+    .finding-page { color: var(--muted); font-family: monospace; font-size: 0.85rem; }
+    .finding-body {
+      padding: 0 1.5rem 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .finding-body p { margin: 0.75rem 0; }
+    .finding-body .label-inline {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 1.25rem;
+      margin-bottom: 0.25rem;
+    }
+    .fix-box {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.5rem;
+    }
+    .evidence-img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-top: 0.5rem;
+    }
+    .toggle-arrow {
+      transition: transform 0.2s;
+      color: var(--muted);
+    }
+    .finding.open .toggle-arrow { transform: rotate(90deg); }
+    .finding:not(.open) .finding-body { display: none; }
+
+    .pages-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+    }
+    .page-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+    }
+    .page-item .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+    }
+    .page-item .status-dot.ok { background: var(--ok); }
+    .page-item .status-dot.issue { background: var(--critical); }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Audit Report - Admin Panel</h1>
+    <p class="meta">Data: 12/03/2026 | App: Bets Estatistica | Testador: Claude (via Playwright) | URL: localhost:3000</p>
+
+    <h2>Resumo</h2>
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="number">13</div>
+        <div class="label">Total de Problemas</div>
+      </div>
+      <div class="summary-card critical">
+        <div class="number">1</div>
+        <div class="label">Critico</div>
+      </div>
+      <div class="summary-card high">
+        <div class="number">2</div>
+        <div class="label">Alto</div>
+      </div>
+      <div class="summary-card medium">
+        <div class="number">4</div>
+        <div class="label">Medio</div>
+      </div>
+      <div class="summary-card low">
+        <div class="number">6</div>
+        <div class="label">Baixo</div>
+      </div>
+      <div class="summary-card ok">
+        <div class="number">15</div>
+        <div class="label">Paginas Testadas</div>
+      </div>
+    </div>
+
+    <h2>Paginas Testadas</h2>
+    <div class="pages-grid">
+      <div class="page-item"><span class="status-dot issue"></span>/login</div>
+      <div class="page-item"><span class="status-dot ok"></span>/dashboard</div>
+      <div class="page-item"><span class="status-dot ok"></span>/members</div>
+      <div class="page-item"><span class="status-dot ok"></span>/bets</div>
+      <div class="page-item"><span class="status-dot issue"></span>/postagem</div>
+      <div class="page-item"><span class="status-dot ok"></span>/messages</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analyses</div>
+      <div class="page-item"><span class="status-dot issue"></span>/posting-history</div>
+      <div class="page-item"><span class="status-dot ok"></span>/analytics</div>
+      <div class="page-item"><span class="status-dot issue"></span>/job-executions</div>
+      <div class="page-item"><span class="status-dot issue"></span>/groups</div>
+      <div class="page-item"><span class="status-dot ok"></span>/tone</div>
+      <div class="page-item"><span class="status-dot ok"></span>/bots</div>
+      <div class="page-item"><span class="status-dot ok"></span>/whatsapp-pool</div>
+      <div class="page-item"><span class="status-dot ok"></span>/settings/telegram</div>
+      <div class="page-item"><span class="status-dot ok"></span>/admin-users</div>
+    </div>
+
+    <h2>Problemas Encontrados</h2>
+
+    <!-- CRITICAL -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge critical">Critico</span>
+        <span class="finding-id">LOGIN-001</span>
+        <span class="finding-title">Login falha para group_admin icarocr30@gmail.com</span>
+        <span class="finding-page">/login</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O usuario <code>icarocr30@gmail.com</code> existe na tabela <code>admin_users</code> como
+          <strong>Group Admin</strong> do grupo <strong>Rajizito Tips</strong> (criado em 12/03/2026),
+          porem o login retorna <strong>"Email ou senha invalidos"</strong>.
+        </p>
+        <p>
+          Credenciais testadas: <code>icarocr30@gmail.com</code> / <code>XNvsVZAzn5$</code>
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="15-admin-users.png" alt="Admin Users mostrando icarocr30@gmail.com">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Verificar se o usuario foi criado no <strong>Supabase Auth</strong> (tabela <code>auth.users</code>)
+          alem da tabela <code>admin_users</code>. O fluxo de onboarding "Criar Admin User" pode estar
+          inserindo na tabela customizada sem criar o usuario no Supabase Auth via
+          <code>supabase.auth.admin.createUser()</code>. Checar a API route <code>POST /api/admin-users</code>.
+          <br><br>
+          Alternativa: o usuario pode nao ter confirmado o email ou a senha definida no cadastro
+          pode ser diferente da fornecida.
+        </div>
+      </div>
+    </div>
+
+    <!-- HIGH -->
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge high">Alto</span>
+        <span class="finding-id">DATA-001</span>
+        <span class="finding-title">Contadores de acertos/erros contam TODAS as apostas, nao so postadas</span>
+        <span class="finding-page">/posting-history</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O cabecalho mostra <strong>"Total Postadas: 170"</strong> mas <strong>"Acertos: 594"</strong>
+          e <strong>"Erros: 307"</strong> (total 901). Os contadores estao incluindo apostas do pool
+          inteiro, nao apenas as 170 postadas.
+        </p>
+        <p>
+          Alem disso, ha discrepancia com Analytics que mostra "Taxa das Postadas: 62.9% (61/97)",
+          sugerindo que apenas 97 apostas postadas tem resultado, nao 170.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="07-posting-history.png" alt="Historico com dados inconsistentes">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          A query da API <code>/api/posting-history</code> deve filtrar por <code>bet_status='posted'</code>
+          ao calcular acertos e erros. Reconciliar os numeros entre Historico (170 postadas) e
+          Analytics (97 postadas com resultado).
+        </div>
+      </div>
+    </div>
+
+    <div class="finding open">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge high">Alto</span>
+        <span class="finding-id">HYDRATION-001</span>
+        <span class="finding-title">React hydration errors na pagina de Grupos</span>
+        <span class="finding-page">/groups</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          A pagina <code>/groups</code> gera <strong>3 erros de console</strong> ao carregar:
+        </p>
+        <ol style="margin: 0.5rem 0 0.5rem 1.5rem;">
+          <li>"In HTML, &lt;X&gt; cannot be a descendant of &lt;Y&gt;"</li>
+          <li>"&lt;X&gt; cannot contain a nested &lt;Y&gt;"</li>
+          <li>"Hydration failed because the server rendered..."</li>
+        </ol>
+        <p>
+          Isso indica HTML invalido que causa mismatch entre SSR e client rendering.
+          O Next.js badge "3 Issues" aparece no canto inferior da tela.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="10-groups.png" alt="Pagina Grupos com badge 3 Issues">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Os cards de grupo sao <code>&lt;Link&gt;</code> (que renderiza <code>&lt;a&gt;</code>) e dentro
+          deles ha <code>&lt;button&gt;</code> e <code>&lt;a&gt;</code> (Grupo Telegram, @bot). Em HTML,
+          um <code>&lt;a&gt;</code> nao pode conter outro <code>&lt;a&gt;</code> ou interactive content.
+          <br><br>
+          Solucao: usar <code>onClick</code> + <code>router.push()</code> no card wrapper em vez de
+          <code>&lt;Link&gt;</code>, ou extrair os botoes/links internos para fora do card linkavel
+          usando <code>e.stopPropagation()</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- MEDIUM -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">DATA-002</span>
+        <span class="finding-title">Taxa de Sucesso mostra 100% com 16 falhas</span>
+        <span class="finding-page">/job-executions</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Jobs mostra <strong>"Taxa de Sucesso: 100%"</strong> mas existem <strong>16 falhas</strong>
+          em 44.518 execucoes. A taxa real seria ~99.96%.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="09-jobs.png" alt="Jobs com 100% e 16 falhas">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Usar <code>Math.floor()</code> ou exibir com mais casas decimais para nao
+          arredondar para 100% quando ha falhas. Ex: "99.96%" ou "99.9%".
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">UI-002</span>
+        <span class="finding-title">Grupo excluido aparece no dropdown de Postagem</span>
+        <span class="finding-page">/postagem</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O dropdown de grupo na Postagem inclui <strong>"CAP 1000 Tips"</strong> que tem
+          uma versao excluida. Nao ha filtragem de grupos deletados.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="04-postagem.png" alt="Postagem com grupo excluido">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Filtrar grupos com <code>status='deleted'</code> dos dropdowns de selecao.
+          Aplicar em todas as paginas que listam grupos (Postagem, Historico, Analytics, etc.).
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">DATA-003</span>
+        <span class="finding-title">Dashboard "Ultimos 7 dias" mostra 0/0</span>
+        <span class="finding-page">/dashboard</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O card "Ultimos 7 dias" mostra <strong>"0/0 acertos"</strong> com indicador "---".
+          Apostas foram postadas nos ultimos dias (11/03), entao deveria haver dados.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="01-dashboard.png" alt="Dashboard com 0/0 em 7 dias">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Provavelmente as apostas recentes ainda estao com <code>bet_result='pending'</code>
+          e a query filtra pendentes. Se intencional, mostrar "Sem resultados ainda" em vez de
+          "---". Verificar tambem se o filtro de timezone esta correto (BRT vs UTC).
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge medium">Medio</span>
+        <span class="finding-id">PERF-001</span>
+        <span class="finding-title">Volume excessivo de execucoes de jobs (44k+ registros)</span>
+        <span class="finding-page">/job-executions</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          O job <code>send-scheduled-messages</code> executa a cada ~30 segundos, gerando
+          <strong>44.518 registros</strong> (891 paginas). A maioria retorna <code>{"sent":0,"failed":0}</code>.
+        </p>
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          <ol style="margin-left: 1rem;">
+            <li>Aumentar intervalo do job (ex: 5 minutos em vez de 30 segundos)</li>
+            <li>Nao registrar execucoes com resultado vazio</li>
+            <li>Adicionar politica de retencao (ex: limpar registros > 7 dias)</li>
+            <li>Filtrar execucoes vazias na UI por padrao</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOW -->
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-001</span>
+        <span class="finding-title">Typo "elegivelis" na pagina de Postagem</span>
+        <span class="finding-page">/postagem</span>
+      </div>
+      <div class="finding-body">
+        <p>O heading mostra <strong>"(0 apostas elegivelis)"</strong> em vez de <strong>"(0 apostas elegiveis)"</strong>.</p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="04-postagem.png" alt="Typo elegivelis">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">Corrigir o texto no componente de 'elegivelis' para 'elegiveis'.</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-003</span>
+        <span class="finding-title">Membros WhatsApp mostram JID bruto</span>
+        <span class="finding-page">/members</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Membros WhatsApp mostram <code>+152114957422606@lid</code> em vez de numeros formatados.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="02-members.png" alt="JIDs brutos em membros">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Formatar o JID removendo <code>@lid</code> e aplicando mascara de telefone.
+          Se o JID for um Linked ID (nao telefone), exibir label amigavel.
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-004</span>
+        <span class="finding-title">Vencimento mostra "-" para maioria dos membros ativos</span>
+        <span class="finding-page">/members</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Quase todos os membros ativos mostram <strong>"-"</strong> na coluna Vencimento.
+          Apenas 1 membro tem data real (13/03/2026).
+        </p>
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Verificar se <code>subscription_end_date</code> esta sendo populado pelo webhook
+          do Mercado Pago. Ativacoes manuais podem nao definir data de vencimento.
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-005</span>
+        <span class="finding-title">Grupo excluido exibido ao lado do ativo com mesmo nome</span>
+        <span class="finding-page">/groups</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          "CAP 1000 Tips" aparece duas vezes - Ativo e Excluido - sem diferenciacao suficiente.
+        </p>
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Ocultar grupos excluidos por padrao (toggle para mostrar) ou adicionar "(Excluido)" ao nome.
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-006</span>
+        <span class="finding-title">Telegram Group ID e Admin Group ID identicos</span>
+        <span class="finding-page">/groups/[id]</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Detalhe do grupo CAP 1000 Tips mostra Group ID e Admin Group ID ambos como
+          <code>3836475731</code>. Normalmente devem ser grupos Telegram separados.
+        </p>
+        <p class="label-inline">Evidencia</p>
+        <img class="evidence-img" src="16-group-detail.png" alt="IDs identicos">
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Verificar se o onboarding cria dois grupos separados (admin + publico).
+          Se intencional, documentar.
+        </div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="toggle-arrow">&#9654;</span>
+        <span class="badge low">Baixo</span>
+        <span class="finding-id">UI-007</span>
+        <span class="finding-title">Coluna Mercado truncada no Historico</span>
+        <span class="finding-page">/posting-history</span>
+      </div>
+      <div class="finding-body">
+        <p>
+          Textos na coluna Mercado sao cortados sem tooltip para ver o texto completo.
+        </p>
+        <p class="label-inline">Sugestao de Fix</p>
+        <div class="fix-box">
+          Adicionar <code>title</code> attribute com texto completo ou permitir expandir ao clicar.
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Gerado automaticamente por Claude via Playwright MCP | 12/03/2026
+    </footer>
+  </div>
+
+  <script>
+    // All findings start collapsed except critical and high
+    document.querySelectorAll('.finding').forEach(f => {
+      const badge = f.querySelector('.badge');
+      if (!badge.classList.contains('critical') && !badge.classList.contains('high')) {
+        f.classList.remove('open');
+      }
+    });
+  </script>
+</body>
+</html>

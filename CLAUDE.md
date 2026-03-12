@@ -84,6 +84,12 @@ Ao testar fluxos via Playwright, ser **extremamente criterioso**:
 - **Validar pre-condicoes**: antes de executar uma acao (ex: promover), verificar se a aposta tem os dados necessarios (link, odds). Se nao tem, o sistema deveria bloquear — se nao bloqueia, e bug.
 - **Nao ignorar inconsistencias**: se algo parece errado (contadores nao batem, item sumiu, mensagem no lugar errado), investigar e reportar.
 
+## Admin Panel — Credenciais de teste
+
+| Role | Email | Senha |
+|------|-------|-------|
+| super_admin | `super@admin.test` | `admin123` |
+
 ## Telegram — Debug de mensagens
 
 ### Servicos no Render

@@ -1,0 +1,207 @@
+audit:
+  date: "2026-03-12"
+  tester: "Claude (super@admin.test)"
+  app: "Admin Panel - Bets Estatistica"
+  url: "http://localhost:3000"
+
+findings:
+
+  - id: LOGIN-001
+    severity: critical
+    page: /login
+    title: "Login falha para group_admin icarocr30@gmail.com"
+    description: >
+      O usuario icarocr30@gmail.com existe na tabela admin_users como Group Admin
+      do grupo Rajizito Tips (criado em 12/03/2026), porem login retorna
+      "Email ou senha invalidos". Credenciais: icarocr30@gmail.com / XNvsVZAzn5$
+    evidence: "evidence/01-dashboard.png (login com super_admin funcionou)"
+    suggested_fix: >
+      Verificar se o usuario foi criado no Supabase Auth (tabela auth.users) alem
+      da tabela admin_users. O fluxo de onboarding "Criar Admin User" pode estar
+      inserindo na tabela admin_users sem criar o usuario no Supabase Auth via
+      supabase.auth.admin.createUser(). Checar a API route POST /api/admin-users.
+
+  - id: DATA-001
+    severity: high
+    page: /posting-history
+    title: "Contadores de acertos/erros contam TODAS as apostas, nao so as postadas"
+    description: >
+      O cabecalho mostra "Total Postadas: 170" mas "Acertos: 594" e "Erros: 307"
+      (total 901). Os acertos/erros estao contando apostas do pool inteiro (incluindo
+      nao-postadas), nao apenas as 170 que foram efetivamente postadas.
+      Na pagina Analytics, "Taxa das Postadas" = 62.9% (61/97), o que contradiz
+      o Historico que mostra 170 postadas.
+    evidence: "evidence/07-posting-history.png"
+    suggested_fix: >
+      A query da API /api/posting-history deve filtrar por bet_status='posted'
+      ao calcular acertos e erros. O campo total_postadas e os contadores
+      devem usar o mesmo filtro. Verificar tambem discrepancia 170 vs 97 postadas
+      entre Historico e Analytics.
+
+  - id: DATA-002
+    severity: medium
+    page: /job-executions
+    title: "Taxa de Sucesso mostra 100% mesmo com 16 falhas"
+    description: >
+      Jobs mostra "Taxa de Sucesso: 100%" mas existem 16 falhas em 44.518 execucoes.
+      A taxa real seria ~99.96%. O arredondamento para 100% oculta problemas reais.
+    evidence: "evidence/09-jobs.png"
+    suggested_fix: >
+      Usar Math.floor() ou exibir 1 casa decimal (99.9%) para nao arredondar
+      para 100% quando ha falhas. Ou mostrar "99.96%" com 2 casas.
+
+  - id: UI-001
+    severity: low
+    page: /postagem
+    title: "Typo 'elegivelis' na pagina de Postagem"
+    description: >
+      O heading mostra "(0 apostas elegivelis)" em vez de "(0 apostas elegiveis)".
+    evidence: "evidence/04-postagem.png"
+    suggested_fix: >
+      Corrigir o texto no componente de Postagem de 'elegivelis' para 'elegiveis'.
+
+  - id: UI-002
+    severity: medium
+    page: /postagem
+    title: "Grupo excluido aparece no dropdown de Postagem"
+    description: >
+      O dropdown de grupo na pagina Postagem mostra "CAP 1000 Tips" como primeira
+      opcao, mas existe um grupo com esse nome que foi excluido. O dropdown nao
+      diferencia entre o ativo e o excluido, nem filtra grupos excluidos.
+    evidence: "evidence/04-postagem.png"
+    suggested_fix: >
+      Filtrar grupos com status='deleted' do dropdown de selecao em Postagem.
+      Apenas grupos ativos devem aparecer como opcao.
+
+  - id: HYDRATION-001
+    severity: high
+    page: /groups
+    title: "React hydration errors na pagina de Grupos"
+    description: >
+      A pagina /groups gera 3 erros de console ao carregar:
+      1. "In HTML, <X> cannot be a descendant of <Y>"
+      2. "<X> cannot contain a nested <Y>"
+      3. "Hydration failed because the server rendered..."
+      Isso indica HTML invalido no componente que causa mismatch entre SSR e client.
+    evidence: "evidence/10-groups.png"
+    suggested_fix: >
+      Provavelmente um <button> ou <a> aninhado dentro de outro <a> (link).
+      Os cards de grupo sao links (<a>) e dentro deles ha botoes (@Capmilbetbot,
+      Grupo Telegram). Refatorar para que os botoes/links internos nao sejam
+      descendentes diretos do <a> pai, ou usar onClick no card em vez de <Link>.
+
+  - id: UI-003
+    severity: low
+    page: /members
+    title: "Membros WhatsApp mostram JID bruto em vez de telefone"
+    description: >
+      Membros do WhatsApp mostram identificadores como "+152114957422606@lid" e
+      "+68543517356032@lid" em vez de numeros de telefone formatados.
+    evidence: "evidence/02-members.png"
+    suggested_fix: >
+      Formatar o JID do WhatsApp removendo o sufixo "@lid" e aplicando mascara
+      de telefone internacional. Se o JID nao for um telefone real (parece ser
+      um LID - Linked ID), exibir um label mais amigavel.
+
+  - id: UI-004
+    severity: low
+    page: /members
+    title: "Vencimento mostra '-' para maioria dos membros ativos"
+    description: >
+      Quase todos os membros ativos mostram "-" na coluna Vencimento. Apenas 1
+      membro (8434980329) tem data de vencimento (13/03/2026). Membros pagantes
+      deveriam ter data de vencimento da assinatura.
+    evidence: "evidence/02-members.png"
+    suggested_fix: >
+      Verificar se o campo subscription_end_date esta sendo populado corretamente
+      pelo webhook do Mercado Pago ao processar pagamentos. Pode ser que o fluxo
+      de ativacao manual (sem MP) nao defina a data de vencimento.
+
+  - id: DATA-003
+    severity: medium
+    page: /dashboard
+    title: "Dashboard 'Ultimos 7 dias' mostra 0/0 acertos"
+    description: >
+      O card "Ultimos 7 dias" no dashboard mostra "0/0 acertos" com o indicador "—".
+      Considerando que ha apostas postadas nos ultimos dias (Corinthians x Coritiba,
+      Flamengo x Cruzeiro em 11/03), deveria haver dados recentes.
+    evidence: "evidence/01-dashboard.png"
+    suggested_fix: >
+      A query de "ultimos 7 dias" provavelmente filtra por bet_result != 'pending',
+      e as apostas dos ultimos dias ainda estao pendentes de resultado. Se for
+      intencional, mostrar "Sem resultados ainda" em vez de "—" e "0/0".
+      Alternativamente, o filtro de data pode estar com timezone incorreto.
+
+  - id: UI-005
+    severity: low
+    page: /groups
+    title: "Grupo excluido 'CAP 1000 Tips' exibido ao lado do ativo com mesmo nome"
+    description: >
+      Na listagem de grupos aparecem dois "CAP 1000 Tips" - um Ativo e um Excluido.
+      Nao ha diferenciacao visual suficiente alem do badge de status.
+    evidence: "evidence/10-groups.png"
+    suggested_fix: >
+      Considerar ocultar grupos excluidos por padrao (com toggle para mostrar),
+      ou adicionar "(Excluido)" ao nome. Tambem seria util mostrar a data de
+      exclusao para diferenciar os dois.
+
+  - id: UI-006
+    severity: low
+    page: /groups/[id]
+    title: "Telegram Group ID e Admin Group ID identicos no grupo CAP 1000 Tips"
+    description: >
+      O detalhe do grupo CAP 1000 Tips mostra Telegram Group ID e Telegram Admin
+      Group ID ambos como "3836475731". Normalmente o grupo publico e o admin
+      deveriam ser supergrupos diferentes.
+    evidence: "evidence/16-group-detail.png"
+    suggested_fix: >
+      Verificar se o onboarding esta criando dois grupos separados (admin + publico)
+      ou se esta reutilizando o mesmo. Se for intencional (admin e publico no mesmo
+      grupo), documentar. Caso contrario, corrigir o fluxo de criacao.
+
+  - id: PERF-001
+    severity: medium
+    page: /job-executions
+    title: "Volume excessivo de execucoes de jobs (44k+ registros)"
+    description: >
+      O job "send-scheduled-messages" executa a cada ~30 segundos, gerando
+      44.518 registros totais (891 paginas). A grande maioria retorna
+      {"sent":0,"failed":0} (nenhuma mensagem para enviar). Isso polui o
+      historico e dificulta encontrar execucoes relevantes.
+    evidence: "evidence/09-jobs.png"
+    suggested_fix: >
+      1. Aumentar o intervalo do job send-scheduled-messages (ex: 5 minutos)
+      2. Nao registrar execucoes com resultado vazio (sent=0, failed=0)
+      3. Adicionar politica de retencao para limpar registros antigos (ex: 7 dias)
+      4. Ou filtrar execucoes "vazias" na UI por padrao.
+
+  - id: UI-007
+    severity: low
+    page: /posting-history
+    title: "Coluna Mercado truncada no Historico de Postagens"
+    description: >
+      Os textos na coluna Mercado sao cortados (ex: "Aposte em menos de 3,5 gols em Olympique Ma...")
+      sem tooltip ou forma de ver o texto completo.
+    evidence: "evidence/07-posting-history.png"
+    suggested_fix: >
+      Adicionar tooltip (title attribute) com o texto completo ao hover,
+      ou permitir expandir a celula ao clicar.
+
+summary:
+  total_findings: 13
+  critical: 1
+  high: 2
+  medium: 4
+  low: 6
+  pages_tested: 15
+  pages_ok:
+    - /dashboard (funcional, dados corretos exceto 7 dias)
+    - /bets (funcional)
+    - /messages (funcional)
+    - /analyses (funcional)
+    - /analytics (funcional)
+    - /tone (funcional)
+    - /bots (funcional)
+    - /whatsapp-pool (funcional)
+    - /settings/telegram (funcional)
+    - /admin-users (funcional)
