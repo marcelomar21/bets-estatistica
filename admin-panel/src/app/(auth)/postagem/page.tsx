@@ -91,6 +91,7 @@ export default function PostagemPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [removingPreviewIdx, setRemovingPreviewIdx] = useState<number | null>(null);
   const [regeneratingIdx, setRegeneratingIdx] = useState<number | null>(null);
+  const [savingPreviewEdit, setSavingPreviewEdit] = useState(false);
   const [sendStatusMessage, setSendStatusMessage] = useState<string | null>(null);
   const [postedCount, setPostedCount] = useState(0);
   const [totalSendCount, setTotalSendCount] = useState(0);
@@ -417,14 +418,35 @@ export default function PostagemPage() {
     setEditingPreviewText(previewBets[idx].preview);
   }
 
-  function handleSavePreviewEdit(idx: number) {
-    setPreviewBets(prev => {
-      const updated = [...prev];
-      updated[idx] = { ...updated[idx], preview: editingPreviewText };
-      return updated;
-    });
+  async function handleSavePreviewEdit(idx: number) {
+    const previousBets = [...previewBets];
+    const updatedBets = [...previewBets];
+    updatedBets[idx] = { ...updatedBets[idx], preview: editingPreviewText };
+    setPreviewBets(updatedBets);
     setEditingPreviewIdx(null);
     setEditingPreviewText('');
+
+    // Persist edit to database (awaited to prevent race with Send)
+    if (previewData?.previewId) {
+      setSavingPreviewEdit(true);
+      try {
+        const res = await fetch('/api/bets/post-now/preview', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ previewId: previewData.previewId, bets: updatedBets }),
+        });
+        if (!res.ok) {
+          // Rollback optimistic update
+          setPreviewBets(previousBets);
+          showToast('Erro ao salvar edicao do preview no banco', 'error');
+        }
+      } catch {
+        setPreviewBets(previousBets);
+        showToast('Erro ao salvar edicao do preview no banco', 'error');
+      } finally {
+        setSavingPreviewEdit(false);
+      }
+    }
   }
 
   function handleCancelPreviewEdit() {
@@ -762,10 +784,10 @@ export default function PostagemPage() {
                     </button>
                     <button
                       onClick={handleSendAll}
-                      disabled={previewBets.length === 0}
+                      disabled={previewBets.length === 0 || savingPreviewEdit}
                       className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Enviar Todas ({previewBets.length})
+                      {savingPreviewEdit ? 'Salvando...' : `Enviar Todas (${previewBets.length})`}
                     </button>
                   </>
                 )}

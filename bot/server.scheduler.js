@@ -279,7 +279,7 @@ async function checkPostNow() {
 
     const { data, error } = await supabase
       .from('groups')
-      .select('post_now_requested_at, post_now_bet_ids')
+      .select('post_now_requested_at, post_now_bet_ids, post_now_preview_id')
       .eq('id', config.membership.groupId)
       .single();
 
@@ -296,15 +296,17 @@ async function checkPostNow() {
 
     const requestedAt = data.post_now_requested_at;
     const allowedBetIds = Array.isArray(data.post_now_bet_ids) ? data.post_now_bet_ids : null;
+    const previewId = data.post_now_preview_id || null;
     logger.info('[scheduler] Post Now requested via admin panel', {
       groupId: config.membership.groupId,
       requestedAt,
       allowedBetIds: allowedBetIds ? allowedBetIds.length : 'all',
+      previewId,
     });
 
     isManualPostInProgress = true;
     try {
-      await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: currentSchedule?.times, allowedBetIds }));
+      await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: currentSchedule?.times, allowedBetIds, previewId }));
       logger.info('[scheduler] Post Now completed successfully', {
         groupId: config.membership.groupId,
       });
@@ -316,7 +318,7 @@ async function checkPostNow() {
     } finally {
       const { error: clearError } = await supabase
         .from('groups')
-        .update({ post_now_requested_at: null, post_now_bet_ids: null })
+        .update({ post_now_requested_at: null, post_now_bet_ids: null, post_now_preview_id: null })
         .eq('id', config.membership.groupId)
         .eq('post_now_requested_at', requestedAt);
 
@@ -429,24 +431,26 @@ function createScheduler(groupId, botCtx = null) {
 
       const { data, error } = await supabase
         .from('groups')
-        .select('post_now_requested_at')
+        .select('post_now_requested_at, post_now_bet_ids, post_now_preview_id')
         .eq('id', groupId)
         .single();
 
       if (error || !data?.post_now_requested_at) return;
 
       const requestedAt = data.post_now_requested_at;
-      logger.info('[scheduler:factory] Post Now requested', { groupId, requestedAt });
+      const allowedBetIds = Array.isArray(data.post_now_bet_ids) ? data.post_now_bet_ids : null;
+      const previewId = data.post_now_preview_id || null;
+      logger.info('[scheduler:factory] Post Now requested', { groupId, requestedAt, allowedBetIds: allowedBetIds ? allowedBetIds.length : 'all', previewId });
 
       instanceManualPostInProgress = true;
       try {
-        await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: instanceSchedule?.times, botCtx: botCtx || { groupId } }));
+        await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: instanceSchedule?.times, allowedBetIds, previewId, botCtx: botCtx || { groupId } }));
       } catch (err) {
         logger.error('[scheduler:factory] Post Now failed', { groupId, error: err.message });
       } finally {
         await supabase
           .from('groups')
-          .update({ post_now_requested_at: null })
+          .update({ post_now_requested_at: null, post_now_bet_ids: null, post_now_preview_id: null })
           .eq('id', groupId)
           .eq('post_now_requested_at', requestedAt);
         instanceManualPostInProgress = false;

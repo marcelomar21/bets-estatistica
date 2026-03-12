@@ -3,6 +3,65 @@ import { createApiHandler } from '@/middleware/api-handler';
 import { randomUUID } from 'crypto';
 import { fetchWithRetry } from '@/lib/fetch-utils';
 
+/**
+ * PATCH /api/bets/post-now/preview
+ * Persist preview edits to the database (post_previews.bets JSONB).
+ */
+export const PATCH = createApiHandler(
+  async (req: NextRequest, context) => {
+    const { supabase, groupFilter } = context;
+
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid JSON body' } },
+        { status: 400 },
+      );
+    }
+
+    const { previewId, bets } = body;
+
+    if (!previewId || !Array.isArray(bets)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'previewId and bets array are required' } },
+        { status: 400 },
+      );
+    }
+
+    // Build query with group isolation
+    let query = supabase
+      .from('post_previews')
+      .update({ bets }, { count: 'exact' })
+      .eq('preview_id', previewId)
+      .eq('status', 'draft');
+
+    if (groupFilter) {
+      query = query.eq('group_id', groupFilter);
+    }
+
+    const { error, count } = await query;
+
+    if (error) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: error.message } },
+        { status: 500 },
+      );
+    }
+
+    if (count === 0) {
+      return NextResponse.json(
+        { success: false, error: { code: 'PREVIEW_NOT_FOUND', message: 'Preview not found, expired, or already confirmed' } },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  },
+  { allowedRoles: ['super_admin', 'group_admin'] },
+);
+
 const BOT_API_URL = process.env.BOT_API_URL;
 const BOT_PREVIEW_API_KEY = process.env.BOT_PREVIEW_API_KEY;
 
