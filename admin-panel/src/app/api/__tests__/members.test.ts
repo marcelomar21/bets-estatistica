@@ -116,7 +116,7 @@ describe('GET /api/members', () => {
     expect(body.success).toBe(true);
     expect(body.data.items).toEqual(rows);
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, groups(name)',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin, groups(name)',
       { count: 'exact' },
     );
     expect(supabase.query.order).toHaveBeenCalledWith('created_at', { ascending: false });
@@ -150,7 +150,7 @@ describe('GET /api/members', () => {
     expect(body.success).toBe(true);
     expect(body.data.items).toEqual(rows);
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin',
       { count: 'exact' },
     );
     expect(supabase.query.eq).toHaveBeenCalledWith('group_id', 'group-uuid-1');

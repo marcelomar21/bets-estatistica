@@ -92,7 +92,8 @@ async function getAllInadimplenteMembers(groupId = null) {
     let query = supabase
       .from('members')
       .select('*')
-      .eq('status', 'inadimplente');
+      .eq('status', 'inadimplente')
+      .eq('is_admin', false);
 
     if (groupId) {
       query = query.eq('group_id', groupId);
@@ -132,6 +133,7 @@ async function getExpiredTrialMembers(groupId = null) {
       .from('members')
       .select('*')
       .eq('status', 'trial')
+      .eq('is_admin', false)
       .not('trial_ends_at', 'is', null)
       .lte('trial_ends_at', new Date().toISOString());
 

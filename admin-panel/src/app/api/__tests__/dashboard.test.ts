@@ -126,10 +126,10 @@ const sampleBotHealth = [
 ];
 
 const sampleMembers = [
-  { id: 'm1', group_id: 'g1', status: 'ativo' },
-  { id: 'm2', group_id: 'g1', status: 'trial' },
-  { id: 'm3', group_id: 'g2', status: 'ativo' },
-  { id: 'm4', group_id: 'g1', status: 'removido' },
+  { id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false },
+  { id: 'm2', group_id: 'g1', status: 'trial', is_admin: false },
+  { id: 'm3', group_id: 'g2', status: 'ativo', is_admin: false },
+  { id: 'm4', group_id: 'g1', status: 'removido', is_admin: false },
 ];
 
 describe('GET /api/dashboard/stats', () => {
@@ -436,10 +436,10 @@ describe('GET /api/dashboard/stats', () => {
   it('returns group_admin dashboard with member summary and singular group', async () => {
     const groupAdminGroup = { id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' };
     const groupAdminMembers = [
-      { id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-20T00:00:00Z' },
-      { id: 'm2', group_id: 'g1', status: 'trial', subscription_ends_at: null },
-      { id: 'm3', group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-12T00:00:00Z' }, // vencendo em 7d
-      { id: 'm4', group_id: 'g1', status: 'removido', subscription_ends_at: null },
+      { id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: '2026-02-20T00:00:00Z' },
+      { id: 'm2', group_id: 'g1', status: 'trial', is_admin: false, subscription_ends_at: null },
+      { id: 'm3', group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: '2026-02-12T00:00:00Z' }, // vencendo em 7d
+      { id: 'm4', group_id: 'g1', status: 'removido', is_admin: false, subscription_ends_at: null },
     ];
 
     const mock = createDashboardMock({
@@ -479,7 +479,7 @@ describe('GET /api/dashboard/stats', () => {
   it('group_admin does not receive bot/group summary stats', async () => {
     const mock = createDashboardMock({
       groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
-      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: null }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: null }], error: null },
     });
     const context = createMockContext('group_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -501,7 +501,7 @@ describe('GET /api/dashboard/stats', () => {
   it('returns 500 for group_admin when unread notifications query fails', async () => {
     const mock = createDashboardMock({
       groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
-      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', subscription_ends_at: null }], error: null },
+      members: { data: [{ id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: null }], error: null },
       notifications: { data: null, error: { message: 'Permission denied' } },
     });
     const context = createMockContext('group_admin', mock);
@@ -520,8 +520,8 @@ describe('GET /api/dashboard/stats', () => {
 
   it('builds group_admin dashboard summary for 10k members in under 3 seconds', async () => {
     const tenThousandMembers = Array.from({ length: 10_000 }, (_, i) => {
-      if (i % 4 === 0) return { id: `m-${i}`, group_id: 'g1', status: 'trial', subscription_ends_at: null };
-      return { id: `m-${i}`, group_id: 'g1', status: 'ativo', subscription_ends_at: '2026-02-12T00:00:00Z' };
+      if (i % 4 === 0) return { id: `m-${i}`, group_id: 'g1', status: 'trial', is_admin: false, subscription_ends_at: null };
+      return { id: `m-${i}`, group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: '2026-02-12T00:00:00Z' };
     });
 
     const mock = createDashboardMock({
@@ -579,5 +579,62 @@ describe('GET /api/dashboard/stats', () => {
         expect.objectContaining({ type: 'bot_offline' }),
       ]),
     );
+  });
+
+  it('excludes is_admin members from group_admin dashboard stats', async () => {
+    const groupAdminMembers = [
+      { id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false, subscription_ends_at: null },
+      { id: 'm2', group_id: 'g1', status: 'trial', is_admin: false, subscription_ends_at: null },
+      { id: 'm3', group_id: 'g1', status: 'ativo', is_admin: true, subscription_ends_at: null }, // admin — should be excluded
+    ];
+
+    const mock = createDashboardMock({
+      groups: { data: [{ id: 'g1', name: 'Grupo Alpha', status: 'active', created_at: '2026-01-01T00:00:00Z' }], error: null },
+      members: { data: groupAdminMembers, error: null },
+    });
+    const context = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    // Admin member should NOT be counted
+    expect(body.data.summary.members.total).toBe(2); // 1 ativo + 1 trial (admin excluded)
+    expect(body.data.summary.members.ativo).toBe(1); // only non-admin ativo
+    expect(body.data.summary.members.trial).toBe(1);
+  });
+
+  it('excludes is_admin members from super_admin dashboard stats', async () => {
+    const membersWithAdmin = [
+      { id: 'm1', group_id: 'g1', status: 'ativo', is_admin: false },
+      { id: 'm2', group_id: 'g1', status: 'trial', is_admin: false },
+      { id: 'm3', group_id: 'g1', status: 'ativo', is_admin: true }, // admin — excluded
+      { id: 'm4', group_id: 'g2', status: 'ativo', is_admin: false },
+    ];
+
+    const mock = createDashboardMock({
+      groups: { data: sampleGroups, error: null },
+      bot_pool: { data: sampleBots, error: null },
+      bot_health: { data: sampleBotHealth, error: null },
+      members: { data: membersWithAdmin, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    // 3 non-admin active members (m1 ativo + m2 trial + m4 ativo), admin m3 excluded
+    expect(body.data.summary.members.total).toBe(3);
   });
 });

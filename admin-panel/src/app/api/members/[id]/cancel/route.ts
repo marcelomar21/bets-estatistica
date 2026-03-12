@@ -48,7 +48,7 @@ export const POST = createApiHandler(
     // Fetch member with group filter (RLS enforcement)
     let query = supabase
       .from('members')
-      .select('id, telegram_id, telegram_username, status, group_id')
+      .select('id, telegram_id, telegram_username, status, group_id, is_admin')
       .eq('id', memberId);
 
     if (groupFilter) {
@@ -61,6 +61,13 @@ export const POST = createApiHandler(
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Membro nao encontrado' } },
         { status: 404 },
+      );
+    }
+
+    if (member.is_admin) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Membros admin nao podem ser cancelados. Remova o flag de admin primeiro.' } },
+        { status: 400 },
       );
     }
 

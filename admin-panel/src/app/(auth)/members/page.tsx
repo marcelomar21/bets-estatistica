@@ -169,7 +169,34 @@ export default function MembersPage() {
     }));
   }
 
+  const [toggleAdminLoading, setToggleAdminLoading] = useState(false);
   const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  async function handleToggleAdmin(member: MemberListItem) {
+    if (toggleAdminLoading) return;
+    const memberLabel = member.channel === 'whatsapp'
+      ? (member.channel_user_id || member.id)
+      : (member.telegram_username || member.telegram_id);
+    const action = member.is_admin ? 'remover admin de' : 'marcar como admin';
+    if (!confirm(`${action} ${memberLabel}?`)) return;
+    setToggleAdminLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/members/${member.id}/toggle-admin`, {
+        method: 'PATCH',
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) {
+        setError(payload?.error?.message ?? 'Erro ao alterar flag admin');
+        return;
+      }
+      fetchMembers(pagination.page, statusFilter, searchFilter, selectedGroupId, channelFilter);
+    } catch {
+      setError('Erro de conexao ao alterar flag admin');
+    } finally {
+      setToggleAdminLoading(false);
+    }
+  }
 
   async function handleReactivate(member: MemberListItem) {
     if (reactivateLoading) return;
@@ -346,6 +373,7 @@ export default function MembersPage() {
           role={role}
           onCancelClick={setCancelTarget}
           onReactivateClick={handleReactivate}
+          onToggleAdmin={handleToggleAdmin}
           showCancellationDetails={statusFilter === 'cancelado'}
         />
       )}
