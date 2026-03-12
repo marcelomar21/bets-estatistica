@@ -42,6 +42,7 @@ export const POST = createApiHandler(
       .from('groups')
       .select('id')
       .eq('id', groupId)
+      .neq('status', 'deleted')
       .single();
 
     if (groupError) {

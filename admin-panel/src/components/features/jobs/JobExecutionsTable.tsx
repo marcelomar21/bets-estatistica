@@ -64,6 +64,19 @@ function formatResult(jobName: string, result: Record<string, unknown> | null): 
       return `${(result.enriched as number) || (result.count as number) || 0} enriched`;
     case 'distribute-bets':
       return `${(result.distributed as number) || (result.count as number) || 0} distributed`;
+    case 'send-scheduled-messages': {
+      const sent = (result.sent as number) || 0;
+      const failed = (result.failed as number) || 0;
+      const retried = (result.retried as number) || 0;
+      if (sent > 0 || failed > 0 || retried > 0) {
+        const parts = [];
+        if (sent > 0) parts.push(`${sent} sent`);
+        if (failed > 0) parts.push(`${failed} failed`);
+        if (retried > 0) parts.push(`${retried} retried`);
+        return parts.join(', ');
+      }
+      return 'nenhuma';
+    }
     case 'healthCheck':
       if (result.alerts && Array.isArray(result.alerts) && result.alerts.length > 0) {
         return `${result.alerts.length} warns`;

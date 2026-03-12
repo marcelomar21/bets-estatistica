@@ -184,7 +184,10 @@ export function PostingHistoryTable({
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                   {match.league_seasons?.league_name ?? '—'}
                 </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                <td
+                  className="px-4 py-3 text-sm text-gray-600 max-w-[200px] truncate"
+                  title={`${bet.bet_market} — ${bet.bet_pick}`}
+                >
                   {bet.bet_market} — {bet.bet_pick}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">

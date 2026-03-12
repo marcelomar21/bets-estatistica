@@ -952,7 +952,7 @@ export default function PostagemPage() {
             <h2 className="text-lg font-semibold text-gray-900">
               Fila de Postagem
               <span className="ml-2 text-sm font-normal text-gray-500">
-                ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} elegivel{postableBets.length !== 1 ? 'is' : ''})
+                ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} {postableBets.length !== 1 ? 'elegiveis' : 'elegivel'})
               </span>
             </h2>
             <div className="flex items-center gap-3">

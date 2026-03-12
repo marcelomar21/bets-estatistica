@@ -68,18 +68,23 @@ function createDashboardMock(overrides: {
       return chain;
     }
 
-    chain.select = vi.fn(() => ({
+    const selectResult = {
       ...tableData,
       order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
       eq: vi.fn(() => ({
         ...tableData,
         order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
       })),
+      neq: vi.fn(() => ({
+        ...tableData,
+        contains: vi.fn(() => tableData),
+      })),
       gte: vi.fn(() => ({
         ...tableData,
         order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
       })),
-    }));
+    };
+    chain.select = vi.fn(() => selectResult);
     return chain;
   });
 

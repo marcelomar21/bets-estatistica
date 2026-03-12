@@ -128,11 +128,13 @@ export const GET = createApiHandler(
     let successQuery = supabase.from('suggested_bets')
       .select('*', { count: 'exact', head: true })
       .eq('bet_result', 'success')
+      .eq('bet_status', 'posted')
       .not('group_id', 'is', null);
 
     let failureQuery = supabase.from('suggested_bets')
       .select('*', { count: 'exact', head: true })
       .eq('bet_result', 'failure')
+      .eq('bet_status', 'posted')
       .not('group_id', 'is', null);
 
     let postedQuery = supabase.from('suggested_bets')

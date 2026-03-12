@@ -28,6 +28,7 @@ export const GET = createApiHandler(
     const jobNameFilter = url.searchParams.get('job_name')?.trim() || null;
     const statusFilter = url.searchParams.get('status')?.trim().toLowerCase() || null;
     const sortDir = url.searchParams.get('sort_dir')?.trim().toLowerCase() || 'desc';
+    const hideEmpty = url.searchParams.get('hide_empty') === '1';
 
     // Validate
     if (statusFilter && !VALID_STATUSES.has(statusFilter)) {
@@ -54,6 +55,14 @@ export const GET = createApiHandler(
     if (statusFilter) {
       query = query.eq('status', statusFilter);
     }
+    if (hideEmpty) {
+      // Exclude no-op executions: result is null, empty object, or all-zero values
+      // Common patterns: {"sent":0,"failed":0}, {"sent":0,"failed":0,"retried":0}, {"count":0}, null
+      query = query.not('result', 'is', null)
+        .not('result', 'cs', '{"sent":0,"failed":0}')
+        .not('result', 'cs', '{"count":0}')
+        .not('result', 'cs', '{"posted":0,"reposted":0}');
+    }
 
     query = query.order('started_at', { ascending: sortDir === 'asc' });
 
@@ -68,6 +77,15 @@ export const GET = createApiHandler(
     if (jobNameFilter) {
       successQuery = successQuery.eq('job_name', jobNameFilter);
       failedQuery = failedQuery.eq('job_name', jobNameFilter);
+    }
+    if (hideEmpty) {
+      const applyHideEmpty = (q: typeof successQuery) =>
+        q.not('result', 'is', null)
+          .not('result', 'cs', '{"sent":0,"failed":0}')
+          .not('result', 'cs', '{"count":0}')
+          .not('result', 'cs', '{"posted":0,"reposted":0}');
+      successQuery = applyHideEmpty(successQuery);
+      failedQuery = applyHideEmpty(failedQuery);
     }
 
     const [mainResult, successResult, failedResult] = await Promise.all([
@@ -98,7 +116,11 @@ export const GET = createApiHandler(
           total: totalExecutions,
           success: successCount,
           failed: failedCount,
-          success_rate: totalExecutions > 0 ? Math.round((successCount / totalExecutions) * 100) : 100,
+          success_rate: totalExecutions > 0
+            ? failedCount > 0
+              ? Math.min(parseFloat(((successCount / totalExecutions) * 100).toFixed(2)), 99.99)
+              : 100
+            : 100,
         },
       },
     });

@@ -36,11 +36,12 @@ export const POST = createApiHandler(
 
     const { groupId } = body;
 
-    // Validate group exists
+    // Validate group exists and is not deleted
     const { data: group, error: groupError } = await supabase
       .from('groups')
       .select('id, name')
       .eq('id', groupId)
+      .neq('status', 'deleted')
       .single();
 
     if (groupError || !group) {

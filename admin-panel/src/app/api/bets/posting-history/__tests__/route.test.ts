@@ -18,16 +18,18 @@ function createMockSupabase(data: unknown[] = [], count = 0) {
   const mockIn = vi.fn().mockReturnValue({ order: mockOrder });
   const mockNotNull = vi.fn().mockReturnValue({ in: mockIn, eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ count, error: null }) }) });
 
-  // Counter chain
+  // Counter chain: .eq('bet_result', ...).eq('bet_status', 'posted').not('group_id', 'is', null)
   const mockCounterEq = vi.fn().mockResolvedValue({ count, error: null });
   const mockCounterNot = vi.fn().mockReturnValue({ eq: mockCounterEq });
-  const mockCounterHead = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ not: mockCounterNot }) });
+  const mockCounterBetStatusEq = vi.fn().mockReturnValue({ not: mockCounterNot });
+  const mockCounterHead = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: mockCounterBetStatusEq }) });
 
   return {
     from: vi.fn().mockReturnValue({
       select: vi.fn().mockReturnValue({
         not: mockNotNull,
         eq: vi.fn().mockReturnValue({
+          eq: mockCounterBetStatusEq,
           not: mockCounterNot,
         }),
       }),

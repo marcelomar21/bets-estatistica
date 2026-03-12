@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { GroupListItem } from '@/types/database';
 import { statusConfig, formatDate } from './group-utils';
 
@@ -10,14 +10,18 @@ interface GroupCardProps {
 }
 
 export function GroupCard({ group }: GroupCardProps) {
+  const router = useRouter();
   const status = statusConfig[group.status];
   const botUsername = group.bot_pool?.[0]?.bot_username;
   const botInviteLink = botUsername ? `https://t.me/${botUsername}?start=subscribe` : null;
   const groupInviteLink = group.telegram_invite_link;
   const [copiedBot, setCopiedBot] = useState(false);
 
+  function handleCardClick() {
+    router.push(`/groups/${group.id}`);
+  }
+
   async function copyBotLink(e: React.MouseEvent) {
-    e.preventDefault();
     e.stopPropagation();
     if (!botInviteLink) return;
     await navigator.clipboard.writeText(botInviteLink);
@@ -26,9 +30,12 @@ export function GroupCard({ group }: GroupCardProps) {
   }
 
   return (
-    <Link
-      href={`/groups/${group.id}`}
-      className="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
+    <div
+      role="link"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCardClick(); }}
+      className="block cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
     >
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">{group.name}</h3>
@@ -43,7 +50,7 @@ export function GroupCard({ group }: GroupCardProps) {
       </p>
 
       {(botInviteLink || groupInviteLink) && (
-        <div className="mt-3 flex flex-wrap gap-2" onClick={(e) => e.preventDefault()}>
+        <div className="mt-3 flex flex-wrap gap-2">
           {botInviteLink && (
             <button
               onClick={copyBotLink}
@@ -73,6 +80,6 @@ export function GroupCard({ group }: GroupCardProps) {
           )}
         </div>
       )}
-    </Link>
+    </div>
   );
 }
