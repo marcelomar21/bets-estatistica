@@ -154,10 +154,11 @@ export const POST = createApiHandler(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const betIds = validBets.map((b: any) => b.id);
 
-    // Set the post_now_requested_at flag + specific bet IDs
+    // Set the post_now_requested_at flag + specific bet IDs + preview ID
     const updateData: Record<string, unknown> = {
       post_now_requested_at: new Date().toISOString(),
       post_now_bet_ids: betIds,
+      post_now_preview_id: previewId,
     };
 
     const { error: updateError } = await supabase

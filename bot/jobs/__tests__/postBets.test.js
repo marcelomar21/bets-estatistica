@@ -616,6 +616,161 @@ describe('postBets', () => {
     });
   });
 
+  // ---- preview-first posting ----
+
+  describe('preview-first posting', () => {
+    function setupPreviewSupabaseMock(previewData, toneConfig = null) {
+      mockSupabaseFrom.mockImplementation((table) => {
+        if (table === 'post_previews') {
+          let updatePayload = null;
+          const chain = {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn(() =>
+              Promise.resolve({
+                data: previewData,
+                error: previewData ? null : { message: 'not found' },
+              })
+            ),
+            update: jest.fn((payload) => {
+              updatePayload = payload;
+              return {
+                eq: jest.fn().mockReturnValue(Promise.resolve({ error: null })),
+              };
+            }),
+            _getUpdatePayload: () => updatePayload,
+          };
+          return chain;
+        }
+        // Default: groups table
+        let selectedField = null;
+        const chain = {
+          select: jest.fn((field) => { selectedField = field; return chain; }),
+          eq: jest.fn().mockReturnThis(),
+          single: jest.fn(() => {
+            if (selectedField === 'copy_tone_config') {
+              return Promise.resolve({
+                data: toneConfig ? { copy_tone_config: toneConfig } : { copy_tone_config: null },
+                error: null,
+              });
+            }
+            return Promise.resolve({
+              data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
+              error: null,
+            });
+          }),
+        };
+        return chain;
+      });
+    }
+
+    it('should use preview message when previewId is provided', async () => {
+      const bet = makeBet({ id: 42 });
+      setupPreviewSupabaseMock({
+        bets: [{ betId: 42, preview: 'Preview text for bet 42' }],
+        status: 'draft',
+      });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true, { previewId: 'prev_abc123' });
+
+      // Should NOT call generateBetCopy since preview is used
+      expect(generateBetCopy).not.toHaveBeenCalled();
+      // sendToPublic should receive the preview text
+      expect(sendToPublic).toHaveBeenCalledWith(
+        'Preview text for bet 42',
+        null,
+      );
+    });
+
+    it('should fall back to LLM when previewId not found', async () => {
+      const bet = makeBet();
+      setupPreviewSupabaseMock(null); // preview not found
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '- Stat 1\n- Stat 2' },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      const result = await runPostBets(true, { previewId: 'prev_notfound' });
+
+      expect(result.posted).toBe(1);
+      // formatBetMessage calls generateBetCopy internally
+      expect(sendToPublic).toHaveBeenCalledTimes(1);
+    });
+
+    it('should fall back to LLM for bets not in preview map', async () => {
+      const bet1 = makeBet({ id: 42 });
+      const bet2 = makeBet({ id: 99 });
+      setupPreviewSupabaseMock({
+        bets: [{ betId: 42, preview: 'Preview for 42 only' }],
+        status: 'draft',
+      });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet1, bet2] },
+      });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '- LLM generated' },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      const result = await runPostBets(true, { previewId: 'prev_partial' });
+
+      expect(result.posted).toBe(2);
+      // First call uses preview text, second uses LLM-generated
+      expect(sendToPublic).toHaveBeenCalledTimes(2);
+      const firstCallMessage = sendToPublic.mock.calls[0][0];
+      expect(firstCallMessage).toBe('Preview for 42 only');
+    });
+
+    it('should still validate bets even with preview (kickoff, deepLink)', async () => {
+      const expiredBet = makeBet({ id: 42, kickoffTime: new Date(Date.now() - 3600000).toISOString() });
+      setupPreviewSupabaseMock({
+        bets: [{ betId: 42, preview: 'Preview text' }],
+        status: 'draft',
+      });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [expiredBet] },
+      });
+
+      const result = await runPostBets(true, { previewId: 'prev_expired_bet' });
+
+      expect(result.posted).toBe(0);
+      expect(result.skipped).toBe(1);
+      expect(sendToPublic).not.toHaveBeenCalled();
+    });
+
+    it('should mark preview as confirmed after successful posting', async () => {
+      const bet = makeBet({ id: 42 });
+      setupPreviewSupabaseMock({
+        bets: [{ betId: 42, preview: 'Preview text' }],
+        status: 'draft',
+      });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true, { previewId: 'prev_confirm' });
+
+      // Verify that post_previews.update({status:'confirmed'}) was called
+      const postPreviewsCalls = mockSupabaseFrom.mock.calls.filter(c => c[0] === 'post_previews');
+      expect(postPreviewsCalls.length).toBeGreaterThanOrEqual(2); // select + update
+    });
+  });
+
   // ---- formatBetMessage with new tone fields ----
 
   describe('formatBetMessage with new tone fields', () => {

@@ -517,7 +517,7 @@ async function postToAllChannels(groupId, message, botCtx) {
  * @param {boolean} skipConfirmation - Skip confirmation (for manual /postar command)
  */
 async function runPostBets(skipConfirmation = false, options = {}) {
-  const { botCtx = null, currentPostTime = null, allowedBetIds = null } = options;
+  const { botCtx = null, currentPostTime = null, allowedBetIds = null, previewId = null } = options;
   const period = getPeriod();
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
@@ -538,7 +538,32 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     }
   }
 
-  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime, allowedBetIds: allowedBetIds ? allowedBetIds.length : 'all', hasToneConfig: !!toneConfig });
+  // Load preview messages if previewId is provided (preview-first posting)
+  let previewMessages = null;
+  if (previewId) {
+    const { data: previewData, error: previewError } = await supabase
+      .from('post_previews')
+      .select('bets, status')
+      .eq('preview_id', previewId)
+      .single();
+    if (!previewError && previewData?.bets && previewData.status === 'draft') {
+      previewMessages = new Map();
+      for (const item of previewData.bets) {
+        // Coerce betId to number to match bet.id from DB (JSONB may store as string or number)
+        const key = typeof item.betId === 'string' ? Number(item.betId) : item.betId;
+        previewMessages.set(key, item.preview);
+      }
+      logger.info('[postBets] Loaded preview messages', {
+        groupId, previewId, count: previewMessages.size,
+      });
+    } else {
+      logger.warn('[postBets] Preview not found or expired, falling back to LLM', {
+        groupId, previewId, error: previewError?.message,
+      });
+    }
+  }
+
+  logger.info('[postBets] Starting post bets job', { period, timestamp: now, skipConfirmation, groupId: groupId || 'single-tenant', currentPostTime, allowedBetIds: allowedBetIds ? allowedBetIds.length : 'all', previewId, hasToneConfig: !!toneConfig });
 
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis
@@ -642,9 +667,15 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         continue;
       }
 
-      // Format and send message
-      const template = getTemplate(toneConfig, betIndex);
-      const message = await formatBetMessage(bet, template, toneConfig, betIndex);
+      // Use preview message if available, otherwise generate via LLM
+      let message;
+      if (previewMessages?.has(bet.id)) {
+        message = previewMessages.get(bet.id);
+        logger.debug('[postBets] Using preview message for active bet', { betId: bet.id, groupId });
+      } else {
+        const template = getTemplate(toneConfig, betIndex);
+        message = await formatBetMessage(bet, template, toneConfig, betIndex);
+      }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
@@ -689,9 +720,15 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         continue;
       }
 
-      // Format and send message
-      const template = getTemplate(toneConfig, betIndex);
-      const message = await formatBetMessage(bet, template, toneConfig, betIndex);
+      // Use preview message if available, otherwise generate via LLM
+      let message;
+      if (previewMessages?.has(bet.id)) {
+        message = previewMessages.get(bet.id);
+        logger.debug('[postBets] Using preview message for new bet', { betId: bet.id, groupId });
+      } else {
+        const template = getTemplate(toneConfig, betIndex);
+        message = await formatBetMessage(bet, template, toneConfig, betIndex);
+      }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
@@ -730,6 +767,19 @@ async function runPostBets(skipConfirmation = false, options = {}) {
     sendFailed,
     totalSent: reposted + posted
   });
+
+  // Mark preview as confirmed after successful posting
+  if (previewId && (reposted + posted) > 0) {
+    const { error: confirmError } = await supabase
+      .from('post_previews')
+      .update({ status: 'confirmed' })
+      .eq('preview_id', previewId);
+    if (confirmError) {
+      logger.warn('[postBets] Failed to mark preview as confirmed', { previewId, error: confirmError.message });
+    } else {
+      logger.info('[postBets] Preview marked as confirmed', { previewId, groupId });
+    }
+  }
 
   // Step 5: Enviar warn para grupo admin (Story 14.3)
   try {

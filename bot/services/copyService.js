@@ -114,6 +114,7 @@ async function generateBetCopy(bet, toneConfig = null) {
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
       }
+      if (toneConfig.oddLabel && toneConfig.oddLabel !== '') parts.push(`Use "${toneConfig.oddLabel}" em vez de "Odd" para se referir as odds`);
       if (toneConfig.rawDescription) parts.push(`Descricao geral do tom: ${toneConfig.rawDescription}`);
       if (parts.length > 0) {
         fullSystemMessage += '\n\nCONFIGURACAO DE TOM DE VOZ:\n' + parts.join('\n');
@@ -135,7 +136,7 @@ DADOS DA APOSTA:
 - Jogo: ${bet.homeTeamName} x ${bet.awayTeamName}
 - Mercado: ${bet.betMarket}
 - Pick: ${bet.betPick || 'N/A'}
-- Odd: ${bet.odds?.toFixed?.(2) || 'N/A'}
+- ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed?.(2) || 'N/A'}
 - Kickoff: ${bet.kickoffTime || 'N/A'}
 - Link: ${bet.deepLink || 'N/A'}
 ${bet.reasoning ? `- Analise: ${bet.reasoning}` : ''}
