@@ -98,43 +98,52 @@ export const GET = createApiHandler(
     }
 
     // Counter queries — run in parallel with main query for global totals
-    let trialQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'trial');
+    // Exclude is_admin members from counters (admins counted separately)
+    let trialQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'trial').eq('is_admin', false);
     let ativoQuery = supabase.from('members').select('*', { count: 'exact', head: true })
       .eq('status', 'ativo')
+      .eq('is_admin', false)
       .or(`subscription_ends_at.is.null,subscription_ends_at.gt.${sevenDaysIso}`);
     let vencendoQuery = supabase.from('members').select('*', { count: 'exact', head: true })
       .eq('status', 'ativo')
+      .eq('is_admin', false)
       .gte('subscription_ends_at', nowIso)
       .lte('subscription_ends_at', sevenDaysIso);
+    let adminsQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('is_admin', true);
 
     if (groupFilter) {
       trialQuery = trialQuery.eq('group_id', groupFilter);
       ativoQuery = ativoQuery.eq('group_id', groupFilter);
       vencendoQuery = vencendoQuery.eq('group_id', groupFilter);
+      adminsQuery = adminsQuery.eq('group_id', groupFilter);
     } else if (groupIdParam) {
       trialQuery = trialQuery.eq('group_id', groupIdParam);
       ativoQuery = ativoQuery.eq('group_id', groupIdParam);
       vencendoQuery = vencendoQuery.eq('group_id', groupIdParam);
+      adminsQuery = adminsQuery.eq('group_id', groupIdParam);
     }
 
     if (channelFilter) {
       trialQuery = trialQuery.eq('channel', channelFilter);
       ativoQuery = ativoQuery.eq('channel', channelFilter);
       vencendoQuery = vencendoQuery.eq('channel', channelFilter);
+      adminsQuery = adminsQuery.eq('channel', channelFilter);
     }
 
-    const [mainResult, trialResult, ativoResult, vencendoResult] = await Promise.all([
+    const [mainResult, trialResult, ativoResult, vencendoResult, adminsResult] = await Promise.all([
       query.order('created_at', { ascending: false }).range(from, from + perPage - 1),
       trialQuery,
       ativoQuery,
       vencendoQuery,
+      adminsQuery,
     ]);
 
-    if (mainResult.error || trialResult.error || ativoResult.error || vencendoResult.error) {
+    if (mainResult.error || trialResult.error || ativoResult.error || vencendoResult.error || adminsResult.error) {
       return dbErrorResponse();
     }
 
     const total = mainResult.count ?? 0;
+    const adminsCount = adminsResult.count ?? 0;
     const totalPages = total > 0 ? Math.ceil(total / perPage) : 0;
 
     // Resolve cancelled_by UUIDs to emails when filtering by cancelado
@@ -174,10 +183,11 @@ export const GET = createApiHandler(
           total_pages: totalPages,
         },
         counters: {
-          total,
+          total: total - adminsCount,
           trial: trialResult.count ?? 0,
           ativo: ativoResult.count ?? 0,
           vencendo: vencendoResult.count ?? 0,
+          admins: adminsCount,
         },
       },
     });
