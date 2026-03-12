@@ -522,9 +522,9 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
 
-  // Load toneConfig: prefer botCtx (multi-tenant), fallback to DB query (singleton scheduler)
-  let toneConfig = botCtx?.groupConfig?.copyToneConfig || null;
-  if (!toneConfig && groupId) {
+  // Load toneConfig: ALWAYS from DB to ensure latest settings are used
+  let toneConfig = null;
+  if (groupId) {
     const { data: groupData, error: toneError } = await supabase
       .from('groups')
       .select('copy_tone_config')

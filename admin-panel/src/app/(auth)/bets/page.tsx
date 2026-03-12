@@ -5,9 +5,8 @@ import type { SuggestedBetListItem, BetPagination, BetCounters, OddsHistoryEntry
 import { BetTable } from '@/components/features/bets/BetTable';
 import { BetStatsBar } from '@/components/features/bets/BetStatsBar';
 import { BetFilters, type BetFilterValues } from '@/components/features/bets/BetFilters';
-import { OddsEditModal } from '@/components/features/bets/OddsEditModal';
+import { BetEditDrawer } from '@/components/features/bets/BetEditDrawer';
 import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
-import { LinkEditModal } from '@/components/features/bets/LinkEditModal';
 import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
 import { DistributeModal } from '@/components/features/bets/DistributeModal';
 import { BulkDistributeModal } from '@/components/features/bets/BulkDistributeModal';
@@ -59,14 +58,13 @@ export default function BetsPage() {
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // Modal state
-  const [editingBet, setEditingBet] = useState<SuggestedBetListItem | null>(null);
+  // Drawer state (replaces separate odds/link modals)
+  const [drawerBet, setDrawerBet] = useState<SuggestedBetListItem | null>(null);
   const [oddsHistory, setOddsHistory] = useState<OddsHistoryEntry[]>([]);
-  const [showBulkModal, setShowBulkModal] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Link modal state
-  const [linkEditBet, setLinkEditBet] = useState<SuggestedBetListItem | null>(null);
+  // Bulk modal state
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [showBulkLinks, setShowBulkLinks] = useState(false);
 
   // Distribute modal state
@@ -208,10 +206,16 @@ export default function BetsPage() {
     setSelectedIds(new Set());
   }
 
-  async function handleEditOdds(bet: SuggestedBetListItem) {
-    setEditingBet(bet);
+  // Open the drawer for a bet and load odds history
+  async function handleEditBet(bet: SuggestedBetListItem) {
+    setDrawerBet(bet);
     setHistoryLoading(true);
     setOddsHistory([]);
+
+    // Scroll to the bet row
+    setTimeout(() => {
+      document.getElementById(`bet-row-${bet.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
 
     try {
       const res = await fetch(`/api/bets/${bet.id}`);
@@ -226,7 +230,19 @@ export default function BetsPage() {
     }
   }
 
-  async function handleSaveOdds(betId: number, odds: number) {
+  // Optimistic update helper: update a bet in local state
+  function updateBetLocally(betId: number, updates: Partial<SuggestedBetListItem>) {
+    setBets(prev => prev.map(b =>
+      b.id === betId ? { ...b, ...updates } : b
+    ));
+    // Also update drawer bet if it's the one being edited
+    setDrawerBet(prev =>
+      prev && prev.id === betId ? { ...prev, ...updates } : prev
+    );
+  }
+
+  // Save odds with optimistic update (drawer stays open)
+  async function handleDrawerSaveOdds(betId: number, odds: number) {
     const res = await fetch(`/api/bets/${betId}/odds`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -238,6 +254,26 @@ export default function BetsPage() {
       throw new Error(json.error?.message ?? 'Erro ao salvar');
     }
 
+    const newStatus = json.data.bet?.bet_status ?? json.data.promoted ? 'ready' : undefined;
+    updateBetLocally(betId, {
+      odds,
+      ...(newStatus ? { bet_status: newStatus } : {}),
+    });
+
+    // Refresh counters in background
+    fetchCounters();
+
+    // Refresh odds history
+    try {
+      const histRes = await fetch(`/api/bets/${betId}`);
+      const histJson = await histRes.json();
+      if (histJson.success) {
+        setOddsHistory(histJson.data.odds_history);
+      }
+    } catch {
+      // best-effort
+    }
+
     const promoted = json.data.promoted;
     showToast(
       promoted
@@ -245,16 +281,10 @@ export default function BetsPage() {
         : `Odds atualizado para ${odds.toFixed(2)}`,
       'success',
     );
-
-    setEditingBet(null);
-    fetchBets(pagination.page);
   }
 
-  function handleEditLink(bet: SuggestedBetListItem) {
-    setLinkEditBet(bet);
-  }
-
-  async function handleSaveLink(betId: number, link: string | null) {
+  // Save link with optimistic update (drawer stays open)
+  async function handleDrawerSaveLink(betId: number, link: string | null) {
     const res = await fetch(`/api/bets/${betId}/link`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -266,6 +296,15 @@ export default function BetsPage() {
       throw new Error(json.error?.message ?? 'Erro ao salvar');
     }
 
+    const newStatus = json.data.bet?.bet_status ?? json.data.promoted ? 'ready' : undefined;
+    updateBetLocally(betId, {
+      deep_link: link,
+      ...(newStatus ? { bet_status: newStatus } : {}),
+    });
+
+    // Refresh counters in background
+    fetchCounters();
+
     const promoted = json.data.promoted;
     showToast(
       promoted
@@ -273,9 +312,33 @@ export default function BetsPage() {
         : link ? 'Link atualizado' : 'Link removido',
       'success',
     );
+  }
 
-    setLinkEditBet(null);
-    fetchBets(pagination.page);
+  // Fetch only counters (lightweight refresh after optimistic update)
+  async function fetchCounters() {
+    try {
+      const params = new URLSearchParams();
+      params.set('page', '1');
+      params.set('per_page', '1');
+      if (filters.status) params.set('status', filters.status);
+      if (filters.elegibilidade) params.set('elegibilidade', filters.elegibilidade);
+      if (filters.group_id) params.set('group_id', filters.group_id);
+      if (filters.has_odds) params.set('has_odds', filters.has_odds);
+      if (filters.has_link) params.set('has_link', filters.has_link);
+      if (filters.search) params.set('search', filters.search);
+      if (filters.future_only) params.set('future_only', filters.future_only);
+      if (filters.date_from) params.set('date_from', filters.date_from);
+      if (filters.date_to) params.set('date_to', filters.date_to);
+      if (filters.championship) params.set('championship', filters.championship);
+
+      const res = await fetch(`/api/bets?${params}`);
+      const json = await res.json();
+      if (json.success) {
+        setCounters(json.data.counters);
+      }
+    } catch {
+      // best-effort counter refresh
+    }
   }
 
   async function handleBulkLinksSave(link: string) {
@@ -442,23 +505,25 @@ export default function BetsPage() {
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           onPageChange={handlePageChange}
-          onEditOdds={handleEditOdds}
-          onEditLink={handleEditLink}
+          onEditOdds={handleEditBet}
+          onEditBet={handleEditBet}
           onDistribute={role === 'super_admin' ? setDistributeBet : undefined}
           onSort={handleSort}
           sortBy={sortBy}
           sortDir={sortDir}
+          activeBetId={drawerBet?.id ?? null}
         />
       )}
 
-      {/* Edit Modal */}
-      {editingBet && (
-        <OddsEditModal
-          bet={editingBet}
-          onClose={() => setEditingBet(null)}
-          onSave={handleSaveOdds}
+      {/* Edit Drawer (replaces separate OddsEditModal + LinkEditModal) */}
+      {drawerBet && (
+        <BetEditDrawer
+          bet={drawerBet}
+          onClose={() => setDrawerBet(null)}
+          onSaveOdds={handleDrawerSaveOdds}
+          onSaveLink={handleDrawerSaveLink}
           oddsHistory={oddsHistory}
-          loading={historyLoading}
+          historyLoading={historyLoading}
         />
       )}
 
@@ -468,15 +533,6 @@ export default function BetsPage() {
           selectedCount={selectedIds.size}
           onClose={() => setShowBulkModal(false)}
           onSave={handleBulkSave}
-        />
-      )}
-
-      {/* Link Edit Modal */}
-      {linkEditBet && (
-        <LinkEditModal
-          bet={linkEditBet}
-          onClose={() => setLinkEditBet(null)}
-          onSave={handleSaveLink}
         />
       )}
 

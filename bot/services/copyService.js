@@ -28,10 +28,22 @@ function getOpenAI() {
 }
 
 /**
+ * Simple string hash (djb2) for cache key differentiation
+ */
+function hashString(str) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
  * Get cache key for a bet
  */
 function getCacheKey(bet, toneConfig = null) {
-  const toneHash = toneConfig ? JSON.stringify(toneConfig).length : 0;
+  const toneHash = toneConfig ? hashString(JSON.stringify(toneConfig)) : '0';
   return `copy_${bet.id}_t${toneHash}`;
 }
 

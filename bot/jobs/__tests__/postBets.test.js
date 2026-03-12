@@ -531,9 +531,9 @@ describe('postBets', () => {
       );
     });
 
-    it('should NOT query DB for toneConfig when botCtx already provides it', async () => {
+    it('should ALWAYS query DB for toneConfig even when botCtx provides it', async () => {
       const botCtxTone = { tone: 'from-botCtx', examplePost: 'Via memory' };
-      setupDefaultSupabaseMock(sampleToneConfig); // DB has different config
+      setupDefaultSupabaseMock(sampleToneConfig); // DB has latest config
       const bet = makeBet({ reasoning: 'Good stats' });
       getFilaStatus.mockResolvedValue({
         success: true,
@@ -552,10 +552,10 @@ describe('postBets', () => {
         },
       });
 
-      // Should use botCtx toneConfig, not DB one
+      // Should use DB toneConfig (always fresh), not stale botCtx one
       expect(generateBetCopy).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'bet-1' }),
-        expect.objectContaining({ tone: 'from-botCtx' }),
+        expect.objectContaining({ tone: 'energético e direto' }),
       );
     });
 

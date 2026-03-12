@@ -15,10 +15,12 @@ interface BetTableProps {
   onPageChange: (page: number) => void;
   onEditOdds: (bet: SuggestedBetListItem) => void;
   onEditLink?: (bet: SuggestedBetListItem) => void;
+  onEditBet?: (bet: SuggestedBetListItem) => void;
   onDistribute?: (bet: SuggestedBetListItem) => void;
   onSort: (field: string) => void;
   sortBy: string;
   sortDir: string;
+  activeBetId?: number | null;
 }
 
 function formatKickoffDate(dateStr: string): string {
@@ -55,10 +57,12 @@ export function BetTable({
   onPageChange,
   onEditOdds,
   onEditLink,
+  onEditBet,
   onDistribute,
   onSort,
   sortBy,
   sortDir,
+  activeBetId,
 }: BetTableProps) {
   const isSuperAdmin = role === 'super_admin';
   const allSelected = bets.length > 0 && bets.every((b) => selectedIds.has(b.id));
@@ -184,8 +188,14 @@ export function BetTable({
               const categoryStyle = CATEGORY_STYLES[category] || CATEGORY_STYLES['Outros'];
               const pickDisplay = formatPickDisplay(bet.bet_market, bet.bet_pick);
 
+              const isActive = activeBetId === bet.id;
+
               return (
-                <tr key={bet.id} className={`hover:bg-gray-50 ${selectedIds.has(bet.id) ? 'bg-blue-50' : ''}`}>
+                <tr
+                  key={bet.id}
+                  id={`bet-row-${bet.id}`}
+                  className={`hover:bg-gray-50 ${isActive ? 'bg-amber-50 ring-2 ring-amber-300 ring-inset' : selectedIds.has(bet.id) ? 'bg-blue-50' : ''}`}
+                >
                   {isSuperAdmin && (
                     <td className="px-3 py-3">
                       <input
@@ -266,19 +276,31 @@ export function BetTable({
                   {isSuperAdmin && (
                     <td className="px-3 py-3">
                       <div className="flex gap-1">
-                        <button
-                          onClick={() => onEditOdds(bet)}
-                          className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
-                        >
-                          Editar Odds
-                        </button>
-                        {onEditLink && (
+                        {onEditBet && (
                           <button
-                            onClick={() => onEditLink(bet)}
-                            className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                            onClick={() => onEditBet(bet)}
+                            className={`rounded px-2 py-1 text-xs font-medium ${isActive ? 'bg-amber-100 text-amber-700' : 'text-blue-600 hover:bg-blue-50'}`}
                           >
-                            Editar Link
+                            Editar
                           </button>
+                        )}
+                        {!onEditBet && (
+                          <>
+                            <button
+                              onClick={() => onEditOdds(bet)}
+                              className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                            >
+                              Editar Odds
+                            </button>
+                            {onEditLink && (
+                              <button
+                                onClick={() => onEditLink(bet)}
+                                className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                              >
+                                Editar Link
+                              </button>
+                            )}
+                          </>
                         )}
                         {onDistribute && (
                           <button

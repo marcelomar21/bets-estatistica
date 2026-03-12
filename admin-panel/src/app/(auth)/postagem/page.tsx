@@ -439,6 +439,8 @@ export default function PostagemPage() {
           // Rollback optimistic update
           setPreviewBets(previousBets);
           showToast('Erro ao salvar edicao do preview no banco', 'error');
+        } else {
+          showToast('Edicao salva com sucesso', 'success');
         }
       } catch {
         setPreviewBets(previousBets);
