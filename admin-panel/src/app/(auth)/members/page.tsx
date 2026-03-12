@@ -21,6 +21,7 @@ interface MembersApiPayload {
     trial: number;
     ativo: number;
     vencendo: number;
+    admins: number;
   };
 }
 
@@ -36,6 +37,7 @@ const INITIAL_COUNTERS = {
   trial: 0,
   ativo: 0,
   vencendo: 0,
+  admins: 0,
 };
 
 export default function MembersPage() {
@@ -250,7 +252,7 @@ export default function MembersPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Membros</h1>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
           <div className="rounded-lg bg-white p-3 shadow">
             <p className="text-xs text-gray-500">Total</p>
             <p className="text-xl font-bold text-gray-900">{counters.total}</p>
@@ -266,6 +268,10 @@ export default function MembersPage() {
           <div className="rounded-lg bg-white p-3 shadow">
             <p className="text-xs text-gray-500">Vencendo em 7d</p>
             <p className="text-xl font-bold text-gray-900">{counters.vencendo}</p>
+          </div>
+          <div className="rounded-lg bg-purple-50 p-3 shadow">
+            <p className="text-xs text-purple-600">Admins</p>
+            <p className="text-xl font-bold text-purple-700">{counters.admins}</p>
           </div>
         </div>
       </div>

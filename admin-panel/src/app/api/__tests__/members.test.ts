@@ -104,7 +104,16 @@ describe('GET /api/members', () => {
         groups: { name: 'Grupo Alpha' },
       },
     ];
-    const supabase = createMembersSupabaseMock({ data: rows, error: null, count: 1 });
+    const zeroCounter = { data: null, error: null, count: 0 };
+    const supabase = createMembersSupabaseMock({
+      main: { data: rows, error: null, count: 1 },
+      counters: [
+        zeroCounter, // trial
+        { data: null, error: null, count: 1 }, // ativo
+        zeroCounter, // vencendo
+        zeroCounter, // admins
+      ],
+    });
     const context = createMockContext('super_admin', supabase);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -124,6 +133,7 @@ describe('GET /api/members', () => {
     expect(supabase.query.eq).not.toHaveBeenCalledWith('group_id', expect.any(String));
     expect(body.data.counters).toBeDefined();
     expect(body.data.counters.total).toBe(1);
+    expect(body.data.counters.admins).toBe(0);
   });
 
   it('retorna apenas membros do group_admin com filtro explícito por group_id', async () => {
@@ -372,11 +382,11 @@ describe('GET /api/members', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    // eq should be called with group_id multiple times (main query + 3 counter queries = 4 total)
+    // eq should be called with group_id multiple times (main query + 4 counter queries = 5 total)
     const eqCalls = supabase.query.eq.mock.calls.filter(
       (call: unknown[]) => call[0] === 'group_id' && call[1] === validGroupId,
     );
-    expect(eqCalls.length).toBe(4);
+    expect(eqCalls.length).toBe(5);
   });
 
   it('aplica filtro por canal whatsapp', async () => {
@@ -387,11 +397,11 @@ describe('GET /api/members', () => {
     const { GET } = await import('@/app/api/members/route');
     await GET(createMockRequest('http://localhost/api/members?channel=whatsapp'));
 
-    // eq should be called with channel for main query + 3 counter queries = 4 total
+    // eq should be called with channel for main query + 4 counter queries = 5 total
     const eqCalls = supabase.query.eq.mock.calls.filter(
       (call: unknown[]) => call[0] === 'channel' && call[1] === 'whatsapp',
     );
-    expect(eqCalls.length).toBe(4);
+    expect(eqCalls.length).toBe(5);
   });
 
   it('retorna 400 quando canal e invalido', async () => {
