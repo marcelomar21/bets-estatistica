@@ -23,6 +23,7 @@ export interface GroupEditFormData {
   telegram_group_id: number | null;
   telegram_admin_group_id: number | null;
   status: 'active' | 'paused' | 'inactive';
+  is_test: boolean;
   additional_invitee_ids: InviteeEntry[];
   posting_schedule: PostingSchedule;
 }
@@ -44,6 +45,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       ? (initialData.status as 'active' | 'paused' | 'inactive')
       : 'active',
   );
+  const [isTest, setIsTest] = useState(initialData.is_test || false);
   const [invitees, setInvitees] = useState<InviteeEntry[]>(initialData.additional_invitee_ids || []);
 
   // Story 5.5: Posting schedule state
@@ -83,6 +85,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       telegram_group_id: null,
       telegram_admin_group_id: null,
       status,
+      is_test: isTest,
       additional_invitee_ids: invitees.filter(i => i.value.trim() !== ''),
       posting_schedule: { enabled: postingEnabled, times: postingTimes },
     };
@@ -177,6 +180,24 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <input
+          id="isTest"
+          type="checkbox"
+          checked={isTest}
+          onChange={(e) => setIsTest(e.target.checked)}
+          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <div>
+          <label htmlFor="isTest" className="text-sm font-medium text-gray-700">
+            Grupo de teste
+          </label>
+          <p className="text-xs text-gray-500">
+            Grupos de teste nao recebem apostas na distribuicao automatica
+          </p>
+        </div>
       </div>
 
       <div>
