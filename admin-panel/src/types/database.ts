@@ -49,8 +49,8 @@ export type BotPoolListItem = Omit<BotPool, 'bot_token'> & {
 };
 
 export interface BotHealth {
-  group_id: string;
-  last_heartbeat: string;
+  group_id: string | null;
+  last_heartbeat: string | null;
   status: 'online' | 'offline';
   restart_requested: boolean;
   error_message: string | null;
@@ -115,10 +115,12 @@ export type NotificationType =
   | 'telegram_group_created'
   | 'telegram_group_failed'
   | 'telegram_notification_failed'
-  | 'mtproto_session_expired';
+  | 'mtproto_session_expired'
+  | 'new_trial'
+  | 'payment_received';
 export type NotificationSeverity = 'info' | 'warning' | 'error' | 'success';
 
-export type DashboardAlertType = Exclude<NotificationType, 'integration_error'>;
+export type DashboardAlertType = Exclude<NotificationType, 'integration_error' | 'new_trial' | 'payment_received'>;
 
 export interface DashboardAlert {
   type: DashboardAlertType;

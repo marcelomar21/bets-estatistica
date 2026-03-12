@@ -29,6 +29,7 @@ const {
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
 const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
+const { insertAdminNotification } = require('../services/notificationHelper');
 
 /**
  * Get the group display name from botCtx, with fallback.
@@ -410,6 +411,17 @@ async function handleInternalTrialStart(bot, chatId, telegramId, username, first
     source: 'internal_trial',
     trial_days: trialDays
   });
+
+  // Notify admin panel about new trial (fire-and-forget)
+  const groupName = getGroupName(effectiveBotCtx);
+  insertAdminNotification({
+    type: 'new_trial',
+    severity: 'info',
+    title: 'Novo Membro Trial',
+    message: `Novo membro trial "${username || telegramId}" no grupo "${groupName}"`,
+    groupId,
+    metadata: { member_id: member.id, telegram_username: username, source: 'internal_trial' },
+  }).catch(() => {});
 
   // Generate invite link and send welcome
   return await generateAndSendInvite(bot, chatId, firstName, member, botCtx);

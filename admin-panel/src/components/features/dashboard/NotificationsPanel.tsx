@@ -18,6 +18,8 @@ const typeIcons: Record<Notification['type'], string> = {
   telegram_group_failed: '\u274C',
   telegram_notification_failed: '\u26A0\uFE0F',
   mtproto_session_expired: '\u{1F510}',
+  new_trial: '\u{1F464}',
+  payment_received: '\u{1F4B0}',
 };
 
 const severityStyles: Record<Notification['severity'], string> = {

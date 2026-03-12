@@ -13,6 +13,7 @@ const {
   reactivateMember
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
+const { insertAdminNotification } = require('../services/notificationHelper');
 const { registerNotification } = require('../services/notificationService');
 
 // Story 4.2 requires a fixed 7-day MP trial period for registration/welcome messaging.
@@ -206,6 +207,16 @@ async function processNewMember(user, groupId = null) {
 
     // AC5: Send welcome message - Story 3.1: pass groupId for multi-tenant checkout URL
     await sendWelcomeMessage(telegramId, firstName, memberId, groupId);
+
+    // Notify admin panel about new trial (fire-and-forget)
+    insertAdminNotification({
+      type: 'new_trial',
+      severity: 'info',
+      title: 'Novo Membro Trial',
+      message: `Novo membro trial "${username || telegramId}"`,
+      groupId,
+      metadata: { member_id: memberId, telegram_username: username },
+    }).catch(() => {});
 
     logger.info('[membership:member-events] New trial member created', {
       memberId,

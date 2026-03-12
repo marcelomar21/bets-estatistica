@@ -121,8 +121,8 @@ const sampleBots = [
 ];
 
 const sampleBotHealth = [
-  { group_id: 'g1', status: 'online', last_heartbeat: '2026-02-08T10:00:00Z', error_message: null, groups: { name: 'Grupo Alpha' } },
-  { group_id: 'g2', status: 'offline', last_heartbeat: '2026-02-08T09:00:00Z', error_message: 'Connection lost', groups: { name: 'Grupo Beta' } },
+  { group_id: 'g1', status: 'online', last_heartbeat: new Date(Date.now() - 5 * 60 * 1000).toISOString(), error_message: null, groups: { name: 'Grupo Alpha' } },
+  { group_id: 'g2', status: 'offline', last_heartbeat: new Date(Date.now() - 60 * 60 * 1000).toISOString(), error_message: 'Connection lost', groups: { name: 'Grupo Beta' } },
 ];
 
 const sampleMembers = [
@@ -277,7 +277,7 @@ describe('GET /api/dashboard/stats', () => {
     expect(body.error.code).toBe('DB_ERROR');
   });
 
-  it('includes offline bots in alerts', async () => {
+  it('includes offline bots in alerts (explicit offline status)', async () => {
     const offlineHealth = [
       { group_id: 'g1', status: 'offline', last_heartbeat: '2026-02-08T09:00:00Z', error_message: 'Timeout', groups: { name: 'Grupo Alpha' } },
     ];
@@ -299,6 +299,82 @@ describe('GET /api/dashboard/stats', () => {
     expect(offlineAlerts).toHaveLength(1);
     expect(offlineAlerts[0].message).toContain('Timeout');
     expect(offlineAlerts[0].group_name).toBe('Grupo Alpha');
+  });
+
+  it('detects bot as offline when last_heartbeat > 30 min ago (stale heartbeat)', async () => {
+    const staleTime = new Date(Date.now() - 35 * 60 * 1000).toISOString(); // 35 min ago
+    const staleHealth = [
+      { group_id: 'g1', status: 'online', last_heartbeat: staleTime, error_message: null, groups: { name: 'Grupo Alpha' } },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: staleHealth, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const offlineAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'bot_offline');
+    expect(offlineAlerts).toHaveLength(1);
+    expect(offlineAlerts[0].group_name).toBe('Grupo Alpha');
+    // Should also be counted as offline in summary
+    expect(body.data.summary.bots.offline).toBe(1);
+    expect(body.data.summary.bots.online).toBe(0);
+  });
+
+  it('detects bot as offline when last_heartbeat is null (never checked in)', async () => {
+    const nullHeartbeat = [
+      { group_id: null, status: 'online', last_heartbeat: null, error_message: null, groups: null },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: nullHeartbeat, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const offlineAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'bot_offline');
+    expect(offlineAlerts).toHaveLength(1);
+    expect(body.data.summary.bots.offline).toBe(1);
+    expect(body.data.summary.bots.online).toBe(0);
+  });
+
+  it('considers bot online when last_heartbeat < 30 min ago', async () => {
+    const recentTime = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago
+    const recentHealth = [
+      { group_id: 'g1', status: 'online', last_heartbeat: recentTime, error_message: null, groups: { name: 'Grupo Alpha' } },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: recentHealth, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const offlineAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'bot_offline');
+    expect(offlineAlerts).toHaveLength(0);
+    expect(body.data.summary.bots.online).toBe(1);
+    expect(body.data.summary.bots.offline).toBe(0);
   });
 
   it('includes failed groups in alerts', async () => {

@@ -15,6 +15,8 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
 
+const { insertAdminNotification } = require('./notificationHelper');
+
 // Lazy load memberService to avoid circular dependency
 let _memberService = null;
 function getMemberService() {
@@ -700,6 +702,16 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
+    // Notify admin panel about payment (fire-and-forget)
+    insertAdminNotification({
+      type: 'payment_received',
+      severity: 'success',
+      title: 'Pagamento Confirmado',
+      message: `Pagamento confirmado para novo membro "${email}"`,
+      groupId,
+      metadata: { member_id: createResult.data.id, payment_id: paymentId, action: 'new_member' },
+    }).catch(() => {});
+
     // Story 17-1: Send DM confirmation for new member + WhatsApp invite if available
     if (activateResult.data.telegram_id) {
       try {
@@ -778,6 +790,16 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       groupId
     });
 
+    // Notify admin panel about conversion (fire-and-forget)
+    insertAdminNotification({
+      type: 'payment_received',
+      severity: 'success',
+      title: 'Pagamento Confirmado',
+      message: `Trial convertido: "${member.email || member.telegram_username || member.id}"`,
+      groupId: groupId || member.group_id,
+      metadata: { member_id: member.id, payment_id: paymentId, action: 'conversion' },
+    }).catch(() => {});
+
     // Story 17-1: Send DM confirmation per channel
     if (member.channel === 'whatsapp') {
       // WhatsApp member already in group (came from trial) — send confirmation DM
@@ -841,6 +863,16 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       paymentId,
       groupId
     });
+
+    // Notify admin panel about renewal (fire-and-forget)
+    insertAdminNotification({
+      type: 'payment_received',
+      severity: 'success',
+      title: 'Pagamento Confirmado',
+      message: `Assinatura renovada: "${member.email || member.telegram_username || member.id}"`,
+      groupId: groupId || member.group_id,
+      metadata: { member_id: member.id, payment_id: paymentId, action: 'renewal' },
+    }).catch(() => {});
 
     // Story 17-1: Send DM confirmation for renewal per channel
     if (member.channel === 'whatsapp') {
@@ -908,6 +940,16 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
       paymentId,
       groupId
     });
+
+    // Notify admin panel about recovery (fire-and-forget)
+    insertAdminNotification({
+      type: 'payment_received',
+      severity: 'success',
+      title: 'Pagamento Confirmado',
+      message: `Inadimplente recuperado: "${member.email || member.telegram_username || member.id}"`,
+      groupId: groupId || member.group_id,
+      metadata: { member_id: member.id, payment_id: paymentId, action: 'recovery' },
+    }).catch(() => {});
 
     // Story 17-1: Send DM confirmation for recovery per channel
     if (member.channel === 'whatsapp') {
