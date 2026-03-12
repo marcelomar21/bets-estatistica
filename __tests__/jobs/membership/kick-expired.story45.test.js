@@ -191,6 +191,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
       expect(eqCalls).toEqual(
         expect.arrayContaining([
           { col: 'status', val: 'inadimplente' },
+          { col: 'is_admin', val: false },
           { col: 'group_id', val: 'group-uuid-123' },
         ])
       );
@@ -199,17 +200,24 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
     it('should NOT filter by group_id when no groupId provided and config is null', async () => {
       mockConfig.membership.groupId = null;
 
+      let eqCount = 0;
       const mockChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+        eq: jest.fn().mockImplementation(function () {
+          eqCount++;
+          // .eq('status','inadimplente') then .eq('is_admin', false) — resolve at 2nd
+          if (eqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockChain;
+        }),
       };
       supabase.from.mockReturnValue(mockChain);
 
       const result = await getAllInadimplenteMembers();
 
       expect(result.success).toBe(true);
-      expect(mockChain.eq).toHaveBeenCalledTimes(1);
+      expect(mockChain.eq).toHaveBeenCalledTimes(2);
       expect(mockChain.eq).toHaveBeenCalledWith('status', 'inadimplente');
+      expect(mockChain.eq).toHaveBeenCalledWith('is_admin', false);
     });
   });
 
@@ -398,13 +406,13 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         single: jest.fn().mockResolvedValue({ data: mockGroup, error: null }),
       };
 
-      // getAllInadimplenteMembers (2 eq calls)
+      // getAllInadimplenteMembers (3 eq calls: status + is_admin + group_id)
       let eqCount = 0;
       const mockMembersChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn(function () {
           eqCount++;
-          if (eqCount >= 2) return Promise.resolve({ data: [], error: null });
+          if (eqCount >= 3) return Promise.resolve({ data: [], error: null });
           return this;
         }),
       };
@@ -452,7 +460,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn(function () {
           eqCount++;
-          if (eqCount >= 2) return Promise.resolve({ data: [mockMember], error: null });
+          if (eqCount >= 3) return Promise.resolve({ data: [mockMember], error: null });
           return this;
         }),
       };
@@ -500,7 +508,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn(function () {
           eqCount++;
-          if (eqCount >= 2) return Promise.resolve({ data: [mockMember], error: null });
+          if (eqCount >= 3) return Promise.resolve({ data: [mockMember], error: null });
           return this;
         }),
       };

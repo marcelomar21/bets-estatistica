@@ -109,11 +109,14 @@ describe('kick-expired job', () => {
         { id: 'member-2', telegram_id: 222, status: 'inadimplente' },
       ];
 
+      let eqCount = 0;
       const mockChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: mockMembers,
-          error: null,
+        eq: jest.fn().mockImplementation(function () {
+          eqCount++;
+          // .eq('status','inadimplente') then .eq('is_admin', false) — resolve at 2nd
+          if (eqCount >= 2) return Promise.resolve({ data: mockMembers, error: null });
+          return mockChain;
         }),
       };
       supabase.from.mockReturnValue(mockChain);
@@ -123,14 +126,17 @@ describe('kick-expired job', () => {
       expect(result.success).toBe(true);
       expect(result.data.members.length).toBe(2);
       expect(mockChain.eq).toHaveBeenCalledWith('status', 'inadimplente');
+      expect(mockChain.eq).toHaveBeenCalledWith('is_admin', false);
     });
 
     it('should return empty array when no inadimplentes', async () => {
+      let eqCount = 0;
       const mockChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: [],
-          error: null,
+        eq: jest.fn().mockImplementation(function () {
+          eqCount++;
+          if (eqCount >= 2) return Promise.resolve({ data: [], error: null });
+          return mockChain;
         }),
       };
       supabase.from.mockReturnValue(mockChain);
@@ -142,11 +148,13 @@ describe('kick-expired job', () => {
     });
 
     it('should handle database error', async () => {
+      let eqCount = 0;
       const mockChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: null,
-          error: { message: 'Connection failed' },
+        eq: jest.fn().mockImplementation(function () {
+          eqCount++;
+          if (eqCount >= 2) return Promise.resolve({ data: null, error: { message: 'Connection failed' } });
+          return mockChain;
         }),
       };
       supabase.from.mockReturnValue(mockChain);
@@ -534,13 +542,13 @@ describe('kick-expired job', () => {
         }),
       };
 
-      // getAllInadimplenteMembers (empty) - has 2 .eq() calls: status + group_id
+      // getAllInadimplenteMembers (empty) - has 3 .eq() calls: status + is_admin + group_id
       let inadEqCount = 0;
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockImplementation(() => {
           inadEqCount++;
-          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          if (inadEqCount >= 3) return Promise.resolve({ data: [], error: null });
           return mockInadimplenteChain;
         }),
       };
@@ -894,6 +902,7 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         { id: 'member-1', telegram_id: 111, status: 'trial', trial_ends_at: '2026-02-20T00:00:00Z' },
       ];
 
+      // Chain: .select().eq('status','trial').eq('is_admin',false).not().lte()
       const mockChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -910,6 +919,8 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
       expect(result.success).toBe(true);
       expect(result.data.members).toHaveLength(1);
       expect(supabase.from).toHaveBeenCalledWith('members');
+      expect(mockChain.eq).toHaveBeenCalledWith('status', 'trial');
+      expect(mockChain.eq).toHaveBeenCalledWith('is_admin', false);
     });
 
     it('should return empty array when no expired trials', async () => {
@@ -964,12 +975,14 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         }),
       };
 
-      // getAllInadimplenteMembers
+      // getAllInadimplenteMembers — 3 .eq() calls: status + is_admin + group_id
+      let inadEqCount2 = 0;
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({
-          data: [],
-          error: null,
+        eq: jest.fn().mockImplementation(function () {
+          inadEqCount2++;
+          if (inadEqCount2 >= 3) return Promise.resolve({ data: [], error: null });
+          return mockInadimplenteChain;
         }),
       };
 
@@ -1001,13 +1014,13 @@ describe('TRIAL_MODE trial expiration (Story 2-4)', () => {
         }),
       };
 
-      // getAllInadimplenteMembers (2 eq calls: status + group_id)
+      // getAllInadimplenteMembers (3 eq calls: status + is_admin + group_id)
       let inadEqCount = 0;
       const mockInadimplenteChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockImplementation(() => {
           inadEqCount++;
-          if (inadEqCount >= 2) return Promise.resolve({ data: [], error: null });
+          if (inadEqCount >= 3) return Promise.resolve({ data: [], error: null });
           return mockInadimplenteChain;
         }),
       };

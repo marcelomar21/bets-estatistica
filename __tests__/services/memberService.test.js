@@ -904,15 +904,22 @@ describe('memberService', () => {
       supabase.from.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          // Query para ativos convertidos
+          // Query 1: .select('id').eq('status','ativo').eq('is_admin',false).not(...)
           const notMock = jest.fn().mockResolvedValue({ data: activeConverted, error: null });
-          const eqMock = jest.fn().mockReturnValue({ not: notMock });
-          const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
+          const chain = {
+            eq: jest.fn().mockReturnThis(),
+            not: notMock,
+          };
+          const selectMock = jest.fn().mockReturnValue(chain);
           return { select: selectMock };
         } else {
-          // Query para todos que já fizeram trial
+          // Query 2: .select('id').eq('is_admin',false).not(...)
           const notMock = jest.fn().mockResolvedValue({ data: allTrials, error: null });
-          const selectMock = jest.fn().mockReturnValue({ not: notMock });
+          const chain = {
+            eq: jest.fn().mockReturnValue({ not: notMock }),
+            not: notMock,
+          };
+          const selectMock = jest.fn().mockReturnValue(chain);
           return { select: selectMock };
         }
       });
@@ -928,8 +935,11 @@ describe('memberService', () => {
     test('retorna 0% quando não há trials', async () => {
       supabase.from.mockImplementation(() => {
         const notMock = jest.fn().mockResolvedValue({ data: [], error: null });
-        const eqMock = jest.fn().mockReturnValue({ not: notMock });
-        const selectMock = jest.fn().mockReturnValue({ eq: eqMock, not: notMock });
+        const chain = {
+          eq: jest.fn().mockReturnThis(),
+          not: notMock,
+        };
+        const selectMock = jest.fn().mockReturnValue(chain);
         return { select: selectMock };
       });
 
@@ -940,11 +950,13 @@ describe('memberService', () => {
     });
 
     test('retorna DB_ERROR em erro de banco', async () => {
-      // Primeira query (.eq().not()) retorna erro
       supabase.from.mockImplementation(() => {
         const notMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } });
-        const eqMock = jest.fn().mockReturnValue({ not: notMock });
-        const selectMock = jest.fn().mockReturnValue({ eq: eqMock, not: notMock });
+        const chain = {
+          eq: jest.fn().mockReturnThis(),
+          not: notMock,
+        };
+        const selectMock = jest.fn().mockReturnValue(chain);
         return { select: selectMock };
       });
 
@@ -962,8 +974,10 @@ describe('memberService', () => {
     test('retorna contagem de novos membros nos últimos 7 dias', async () => {
       const newMembers = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }];
 
+      // Chain: .select('id').eq('is_admin', false).gte('created_at', ...)
       const gteMock = jest.fn().mockResolvedValue({ data: newMembers, error: null });
-      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const eqMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
       supabase.from.mockReturnValue({ select: selectMock });
 
       const result = await getNewMembersThisWeek();
@@ -974,7 +988,8 @@ describe('memberService', () => {
 
     test('retorna 0 quando não há novos membros', async () => {
       const gteMock = jest.fn().mockResolvedValue({ data: [], error: null });
-      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const eqMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
       supabase.from.mockReturnValue({ select: selectMock });
 
       const result = await getNewMembersThisWeek();
@@ -985,7 +1000,8 @@ describe('memberService', () => {
 
     test('retorna DB_ERROR em erro de banco', async () => {
       const gteMock = jest.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } });
-      const selectMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const eqMock = jest.fn().mockReturnValue({ gte: gteMock });
+      const selectMock = jest.fn().mockReturnValue({ eq: eqMock });
       supabase.from.mockReturnValue({ select: selectMock });
 
       const result = await getNewMembersThisWeek();
