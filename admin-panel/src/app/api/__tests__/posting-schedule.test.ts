@@ -28,6 +28,7 @@ function createMockSupabase(config: Record<string, any> = {}) {
     chain.insert = vi.fn(() => chain);
     chain.update = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
+    chain.neq = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);
     chain.gt = vi.fn(() => chain);
     chain.not = vi.fn(() => chain);

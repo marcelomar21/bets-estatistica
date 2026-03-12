@@ -102,10 +102,18 @@ export const POST = createApiHandler(
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json(
-        { success: false, error: { code: 'DUPLICATE', message: 'Usuário admin já existe com esse email' } },
-        { status: 409 },
-      );
+      // Check if the auth user actually exists (handles orphaned admin_users records)
+      const { data: authLookup } = await supabaseAdmin.auth.admin.getUserById(existing.id);
+      if (authLookup?.user) {
+        return NextResponse.json(
+          { success: false, error: { code: 'DUPLICATE', message: 'Usuário admin já existe com esse email' } },
+          { status: 409 },
+        );
+      }
+
+      // Orphaned record: admin_users row exists but auth user doesn't.
+      // Remove the orphaned row so we can re-create both cleanly.
+      await supabaseAdmin.from('admin_users').delete().eq('id', existing.id);
     }
 
     // Create user with password (no email sent)

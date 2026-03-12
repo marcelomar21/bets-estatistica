@@ -8,6 +8,7 @@ export default async function GroupsPage() {
   const { data: groups } = await supabase
     .from('groups')
     .select('id, name, status, telegram_group_id, telegram_admin_group_id, telegram_invite_link, checkout_url, created_at, bot_pool(bot_username)')
+    .neq('status', 'deleted')
     .order('created_at', { ascending: false });
 
   const typedGroups = (groups ?? []) as GroupListItem[];

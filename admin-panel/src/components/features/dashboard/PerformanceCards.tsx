@@ -78,7 +78,7 @@ export default function PerformanceCards({ periods, overallRate, postedRate, byG
               {period.total > 0 ? `${period.rate}%` : '—'}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              {period.wins}/{period.total} acertos
+              {period.total > 0 ? `${period.wins}/${period.total} acertos` : 'Aguardando resultados'}
             </p>
           </div>
         ))}

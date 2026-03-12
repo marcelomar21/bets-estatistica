@@ -48,6 +48,7 @@ export default function JobExecutionsPage() {
 
   const [jobNameFilter, setJobNameFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [hideEmpty, setHideEmpty] = useState(true);
 
   // Summary data
   const [summaryJobs, setSummaryJobs] = useState<JobSummary[]>([]);
@@ -89,6 +90,7 @@ export default function JobExecutionsPage() {
       params.set('per_page', '50');
       if (jobNameFilter) params.set('job_name', jobNameFilter);
       if (statusFilter) params.set('status', statusFilter);
+      if (hideEmpty) params.set('hide_empty', '1');
 
       const res = await fetch(`/api/job-executions?${params}`);
       if (!res.ok) {
@@ -110,7 +112,7 @@ export default function JobExecutionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [jobNameFilter, statusFilter]);
+  }, [jobNameFilter, statusFilter, hideEmpty]);
 
   useEffect(() => {
     fetchExecutions();
@@ -144,7 +146,7 @@ export default function JobExecutionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <label htmlFor="job-name-filter" className="text-sm font-medium text-gray-700">Job:</label>
           <select
@@ -172,6 +174,18 @@ export default function JobExecutionsPage() {
             <option value="failed">Failed</option>
             <option value="running">Running</option>
           </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            id="hide-empty"
+            type="checkbox"
+            checked={hideEmpty}
+            onChange={(e) => setHideEmpty(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="hide-empty" className="text-sm font-medium text-gray-700">
+            Ocultar execucoes vazias
+          </label>
         </div>
       </div>
 

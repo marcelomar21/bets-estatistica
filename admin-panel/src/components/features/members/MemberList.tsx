@@ -2,6 +2,23 @@ import type { MemberListItem } from '@/types/database';
 import { formatDate } from '@/lib/format-utils';
 import { getDisplayStatus, memberStatusConfig } from './member-utils';
 
+/**
+ * Format a WhatsApp JID (e.g. "+552114957422606@lid") into a readable form.
+ * Strips the @lid / @s.whatsapp.net suffix. If what remains looks like a phone
+ * number (digits with optional leading +), formats it with country code grouping.
+ */
+function formatWhatsAppId(raw: string): string {
+  if (!raw) return '-';
+  // Remove known suffixes
+  const clean = raw.replace(/@(lid|s\.whatsapp\.net|c\.us)$/i, '');
+  // If it looks like a phone number, add + prefix if missing and format
+  if (/^\+?\d{8,}$/.test(clean)) {
+    const digits = clean.startsWith('+') ? clean : `+${clean}`;
+    return digits;
+  }
+  return clean;
+}
+
 interface MemberListProps {
   members: MemberListItem[];
   role: 'super_admin' | 'group_admin';
@@ -83,7 +100,7 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, sh
                 </td>
                 <td className="px-4 py-3 text-sm font-mono text-gray-500">
                   {member.channel === 'whatsapp'
-                    ? (member.channel_user_id || '-')
+                    ? formatWhatsAppId(member.channel_user_id || '')
                     : (member.telegram_username ? `@${member.telegram_username}` : member.telegram_id ?? '-')}
                 </td>
                 <td className="px-4 py-3 text-sm">

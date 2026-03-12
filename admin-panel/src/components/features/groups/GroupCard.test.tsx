@@ -1,13 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { GroupCard } from './GroupCard';
 import type { GroupListItem } from '@/types/database';
 
-// Mock next/link
-vi.mock('next/link', () => ({
-  default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
-    <a href={href} {...props}>{children}</a>
-  ),
+// Mock next/navigation
+const pushMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: pushMock }),
 }));
 
 const baseGroup: GroupListItem = {
@@ -39,10 +38,12 @@ describe('GroupCard', () => {
     expect(screen.getByText(/15\/01\/2026/)).toBeInTheDocument();
   });
 
-  it('links to group detail page', () => {
+  it('navigates to group detail page on click', () => {
+    pushMock.mockClear();
     render(<GroupCard group={baseGroup} />);
-    const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', '/groups/uuid-1');
+    const card = screen.getByRole('link');
+    fireEvent.click(card);
+    expect(pushMock).toHaveBeenCalledWith('/groups/uuid-1');
   });
 
   it.each([

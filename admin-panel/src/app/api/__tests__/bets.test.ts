@@ -753,6 +753,7 @@ describe('POST /api/bets/[id]/distribute', () => {
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
+      chain.neq = vi.fn(() => chain);
       chain.update = vi.fn(() => chain);
       chain.insert = vi.fn(() => ({ data: null, error: null }));
       chain.single = vi.fn(() => {
@@ -947,6 +948,7 @@ describe('POST /api/bets/bulk/distribute', () => {
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
+      chain.neq = vi.fn(() => chain);
       chain.update = vi.fn(() => chain);
       chain.insert = vi.fn(() => ({ data: null, error: null }));
       chain.single = vi.fn(() => {

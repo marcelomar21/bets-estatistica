@@ -12,6 +12,7 @@ vi.mock('@/middleware/tenant', () => ({
 const mockCreateUser = vi.fn();
 const mockDeleteAuthUser = vi.fn();
 const mockUpdateUserById = vi.fn();
+const mockGetUserById = vi.fn();
 const mockAdminFrom = vi.fn();
 
 vi.mock('@/lib/supabase-admin', () => ({
@@ -21,6 +22,7 @@ vi.mock('@/lib/supabase-admin', () => ({
         createUser: mockCreateUser,
         deleteUser: mockDeleteAuthUser,
         updateUserById: mockUpdateUserById,
+        getUserById: mockGetUserById,
       },
     },
     from: mockAdminFrom,
@@ -215,6 +217,9 @@ describe('POST /api/admin-users', () => {
       }
       return createMockChain({ data: { id: 'existing' }, error: null });
     });
+
+    // Mock: auth user exists for the existing admin_users record
+    mockGetUserById.mockResolvedValue({ data: { user: { id: 'existing' } }, error: null });
 
     const { POST } = await import('../admin-users/route');
     const req = new NextRequest('http://localhost/api/admin-users', {
