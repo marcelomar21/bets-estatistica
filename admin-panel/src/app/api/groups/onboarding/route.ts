@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createApiHandler } from '@/middleware/api-handler';
 import { validateBotToken } from '@/lib/telegram';
 import { createSubscriptionPlan } from '@/lib/mercadopago';
-import { createBotService } from '@/lib/render';
+import { restartBotService, toBotApiGroupId } from '@/lib/render';
 import { logAudit } from '@/lib/audit';
 import { withMtprotoSession, createSupergroup, addBotAsAdmin, createInviteLink, verifyBotIsAdmin, classifyMtprotoError, MtprotoError } from '@/lib/mtproto';
 import { getBotConfig, sendFounderNotification, sendInvite } from '@/lib/super-admin-bot';
@@ -288,9 +288,11 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
 async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, context: TenantContext) {
   const { group_id } = data;
 
+  const unifiedServiceId = process.env.RENDER_UNIFIED_SERVICE_ID || 'srv-d6fliv6a2pns7382ckd0';
+
   const { data: group } = await context.supabase
     .from('groups')
-    .select('id, name, render_service_id, telegram_group_id, checkout_url')
+    .select('id, name, render_service_id, telegram_group_id, telegram_admin_group_id')
     .eq('id', group_id)
     .single();
 
@@ -312,7 +314,7 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
 
   const { data: bot } = await context.supabase
     .from('bot_pool')
-    .select('bot_token')
+    .select('id, bot_token')
     .eq('group_id', group_id)
     .single();
 
@@ -330,22 +332,30 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
     );
   }
 
-  const renderResult = await createBotService({
-    groupId: group_id,
-    botToken: bot.bot_token,
-    groupName: group.name,
-    telegramGroupId: group.telegram_group_id,
-    checkoutUrl: group.checkout_url,
-  });
-  if (!renderResult.success) {
+  // Activate the bot in bot_pool with the Telegram group IDs
+  const publicGroupId = toBotApiGroupId(group.telegram_group_id);
+  const adminGroupId = group.telegram_admin_group_id
+    ? toBotApiGroupId(group.telegram_admin_group_id)
+    : publicGroupId;
+
+  const { error: botUpdateError } = await context.supabase
+    .from('bot_pool')
+    .update({
+      is_active: true,
+      admin_group_id: adminGroupId,
+      public_group_id: publicGroupId,
+    })
+    .eq('id', bot.id);
+
+  if (botUpdateError) {
     await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
-    logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', renderResult.error);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', botUpdateError.message);
     return NextResponse.json(
       {
         success: false,
         error: {
           code: 'ONBOARDING_FAILED',
-          message: `Falha ao fazer deploy do bot: ${renderResult.error}`,
+          message: `Falha ao ativar bot: ${botUpdateError.message}`,
           step: 'deploying_bot',
           group_id,
         },
@@ -354,16 +364,36 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
     );
   }
 
+  // Restart unified bot service so it reloads all bots via initBots()
+  const restartResult = await restartBotService();
+  if (!restartResult.success) {
+    await context.supabase.from('groups').update({ status: 'failed' }).eq('id', group_id);
+    logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'error', restartResult.error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'ONBOARDING_FAILED',
+          message: `Falha ao reiniciar bot unificado: ${restartResult.error}`,
+          step: 'deploying_bot',
+          group_id,
+        },
+      },
+      { status: 500 },
+    );
+  }
+
+  // Save unified service ID as render_service_id for reference
   await context.supabase
     .from('groups')
-    .update({ render_service_id: renderResult.data.service_id })
+    .update({ render_service_id: unifiedServiceId })
     .eq('id', group_id);
 
   logOnboardingAudit(context.supabase, context.user.id, group_id, 'deploying_bot', 'success');
 
   return NextResponse.json({
     success: true,
-    data: { service_id: renderResult.data.service_id },
+    data: { service_id: unifiedServiceId },
   });
 }
 

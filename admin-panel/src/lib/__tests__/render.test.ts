@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createBotService } from '../render';
+import { createBotService, restartBotService, suspendBotService } from '../render';
 
 const mockFetch = vi.fn();
 globalThis.fetch = mockFetch;
@@ -12,7 +12,7 @@ const defaultOptions = {
   checkoutUrl: 'http://mp.com/checkout',
 };
 
-describe('createBotService', () => {
+describe('createBotService (deprecated)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.RENDER_API_KEY = 'test-key';
@@ -174,5 +174,170 @@ describe('createBotService', () => {
     const result = await createBotService(defaultOptions);
 
     expect(result).toEqual({ success: false, error: 'Network error' });
+  });
+});
+
+describe('restartBotService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.RENDER_API_KEY = 'test-key';
+    delete process.env.RENDER_UNIFIED_SERVICE_ID;
+  });
+
+  it('returns error when RENDER_API_KEY is not configured', async () => {
+    delete process.env.RENDER_API_KEY;
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: false, error: 'RENDER_API_KEY não configurado' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('calls deploy endpoint with default unified service ID', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.render.com/v1/services/srv-d6fliv6a2pns7382ckd0/deploys',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+
+    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toEqual({ clearCache: 'do_not_clear' });
+  });
+
+  it('uses RENDER_UNIFIED_SERVICE_ID env var when set', async () => {
+    process.env.RENDER_UNIFIED_SERVICE_ID = 'srv-custom-id';
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.render.com/v1/services/srv-custom-id/deploys',
+      expect.anything(),
+    );
+  });
+
+  it('returns error when Render API returns error', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ message: 'Deploy failed' }),
+    });
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: false, error: 'Deploy failed' });
+  });
+
+  it('returns generic error when Render API returns error without message', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+    });
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: false, error: 'Erro ao reiniciar bot unificado' });
+  });
+
+  it('returns error when fetch throws', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: false, error: 'Network error' });
+  });
+
+  it('returns generic error when fetch throws non-Error', async () => {
+    mockFetch.mockRejectedValue('unknown');
+
+    const result = await restartBotService();
+
+    expect(result).toEqual({ success: false, error: 'Erro ao conectar com Render' });
+  });
+});
+
+describe('suspendBotService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.RENDER_API_KEY = 'test-key';
+  });
+
+  it('returns error when RENDER_API_KEY is not configured', async () => {
+    delete process.env.RENDER_API_KEY;
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: false, error: 'RENDER_API_KEY não configurado' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('calls suspend endpoint for the given service ID', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({}) });
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: true });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.render.com/v1/services/srv-123/suspend',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-key',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+  });
+
+  it('returns error when Render API returns error', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({ message: 'Suspend failed' }),
+    });
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: false, error: 'Suspend failed' });
+  });
+
+  it('returns generic error when Render API returns error without message', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.resolve({}),
+    });
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: false, error: 'Erro ao suspender serviço' });
+  });
+
+  it('returns error when fetch throws', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: false, error: 'Network error' });
+  });
+
+  it('returns generic error when fetch throws non-Error', async () => {
+    mockFetch.mockRejectedValue('unknown');
+
+    const result = await suspendBotService('srv-123');
+
+    expect(result).toEqual({ success: false, error: 'Erro ao conectar com Render' });
   });
 });

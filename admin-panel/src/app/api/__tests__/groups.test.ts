@@ -28,6 +28,7 @@ function createMockQueryBuilder(overrides: {
   builder.insert = vi.fn(() => builder);
   builder.update = vi.fn(() => builder);
   builder.eq = vi.fn(() => builder);
+  builder.neq = vi.fn(() => builder);
   builder.from = vi.fn(() => builder);
 
   // Terminal methods return data
@@ -893,5 +894,179 @@ describe('PUT /api/groups/[groupId]', () => {
     expect(response.status).toBe(403);
     expect(body.success).toBe(false);
     expect(body.error.code).toBe('FORBIDDEN');
+  });
+});
+
+// ===========================
+// DELETE /api/groups/[groupId]
+// ===========================
+
+// Mock mercadopago and render modules for DELETE tests
+vi.mock('@/lib/mercadopago', () => ({
+  deactivateSubscriptionPlan: vi.fn(() => Promise.resolve({ success: true })),
+}));
+
+vi.mock('@/lib/render', () => ({
+  suspendBotService: vi.fn(() => Promise.resolve({ success: true })),
+}));
+
+vi.mock('@/lib/supabase-admin', () => ({
+  getSupabaseAdmin: vi.fn(),
+}));
+
+/**
+ * Creates a mock supabase client for DELETE tests.
+ * Routes from() calls to different chain builders based on table name.
+ */
+function createMockDeleteQueryBuilder(overrides: {
+  groupData?: Record<string, unknown> | null;
+  groupError?: { message: string; code?: string } | null;
+  adminUsers?: Array<{ id: string }> | null;
+  updateError?: { message: string; code?: string } | null;
+} = {}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function createChainBuilder(table: string): Record<string, any> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.insert = vi.fn(() => ({ data: null, error: null }));
+    chain.update = vi.fn(() => chain);
+    chain.delete = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.neq = vi.fn(() => chain);
+
+    chain.single = vi.fn(() => {
+      if (table === 'groups') {
+        // If update was called, this is the soft-delete update
+        if (chain.update.mock.calls.length > 0) {
+          return { data: null, error: overrides.updateError ?? null };
+        }
+        return {
+          data: overrides.groupData ?? null,
+          error: overrides.groupError ?? null,
+        };
+      }
+      return { data: null, error: null };
+    });
+
+    return chain;
+  }
+
+  const mockFrom = vi.fn((table: string) => createChainBuilder(table));
+  return { from: mockFrom };
+}
+
+function createMockAdminClient(adminUsers: Array<{ id: string }> | null = null) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function createAdminChain(): Record<string, any> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chain: Record<string, any> = {};
+    chain.select = vi.fn(() => chain);
+    chain.delete = vi.fn(() => chain);
+    chain.eq = vi.fn(() => ({
+      data: adminUsers,
+      error: null,
+    }));
+    return chain;
+  }
+
+  return {
+    from: vi.fn(() => createAdminChain()),
+    auth: {
+      admin: {
+        deleteUser: vi.fn(() => Promise.resolve({ data: null, error: null })),
+      },
+    },
+  };
+}
+
+describe('DELETE /api/groups/[groupId]', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('soft deletes a group successfully', async () => {
+    const groupData = {
+      id: 'group-uuid-1',
+      name: 'Grupo Teste',
+      status: 'active',
+      mp_plan_id: null,
+      render_service_id: null,
+    };
+    const qb = createMockDeleteQueryBuilder({ groupData });
+    const context = createMockContextWithSupabase('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const mockAdminClient = createMockAdminClient(null);
+    const { getSupabaseAdmin: mockGetAdmin } = await import('@/lib/supabase-admin');
+    vi.mocked(mockGetAdmin).mockReturnValue(mockAdminClient as never);
+
+    const { DELETE } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest('DELETE', 'http://localhost/api/groups/group-uuid-1');
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await DELETE(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true, data: { message: 'Grupo excluído com sucesso' } });
+  });
+
+  it('returns 403 for group_admin', async () => {
+    const context = createMockContext('group_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { DELETE } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest('DELETE', 'http://localhost/api/groups/group-uuid-1');
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await DELETE(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('returns 404 for non-existent group', async () => {
+    const qb = createMockDeleteQueryBuilder({ groupData: null });
+    const context = createMockContextWithSupabase('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { DELETE } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest('DELETE', 'http://localhost/api/groups/non-existent');
+    const routeCtx = createRouteContext({ groupId: 'non-existent' });
+
+    const response = await DELETE(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('returns 400 for already deleted group', async () => {
+    const groupData = {
+      id: 'group-uuid-1',
+      name: 'Grupo Teste',
+      status: 'deleted',
+      mp_plan_id: null,
+      render_service_id: null,
+    };
+    const qb = createMockDeleteQueryBuilder({ groupData });
+    const context = createMockContextWithSupabase('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { DELETE } = await import('@/app/api/groups/[groupId]/route');
+    const req = createMockRequest('DELETE', 'http://localhost/api/groups/group-uuid-1');
+    const routeCtx = createRouteContext({ groupId: 'group-uuid-1' });
+
+    const response = await DELETE(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('ALREADY_DELETED');
   });
 });
