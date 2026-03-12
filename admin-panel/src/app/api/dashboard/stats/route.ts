@@ -100,7 +100,7 @@ async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter
       .eq('id', groupFilter),
     supabase
       .from('members')
-      .select('id, status, subscription_ends_at')
+      .select('id, status, subscription_ends_at, is_admin')
       .eq('group_id', groupFilter),
   ]);
 
@@ -118,12 +118,13 @@ async function handleGroupAdmin(supabase: TenantContext['supabase'], groupFilter
   const now = new Date();
   const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const activeMembers = members.filter((m) => m.status === 'trial' || m.status === 'ativo');
+  const nonAdminMembers = members.filter((m) => !m.is_admin);
+  const activeMembers = nonAdminMembers.filter((m) => m.status === 'trial' || m.status === 'ativo');
   const memberSummary = {
     total: activeMembers.length,
-    trial: members.filter((m) => m.status === 'trial').length,
-    ativo: members.filter((m) => m.status === 'ativo').length,
-    vencendo: members.filter((m) =>
+    trial: nonAdminMembers.filter((m) => m.status === 'trial').length,
+    ativo: nonAdminMembers.filter((m) => m.status === 'ativo').length,
+    vencendo: nonAdminMembers.filter((m) =>
       m.status === 'ativo' && m.subscription_ends_at &&
       new Date(m.subscription_ends_at) <= sevenDays &&
       new Date(m.subscription_ends_at) > now,
@@ -189,7 +190,7 @@ export const GET = createApiHandler(async (req, context) => {
       .select('group_id, status, last_heartbeat, error_message, groups(name)'),
     supabase
       .from('members')
-      .select('id, group_id, status'),
+      .select('id, group_id, status, is_admin'),
     supabase
       .from('audit_log')
       .select('table_name, record_id, action, changes, created_at')
@@ -212,9 +213,10 @@ export const GET = createApiHandler(async (req, context) => {
   const botHealth = botHealthResult.data ?? [];
   const members = membersResult.data ?? [];
 
-  // Build group cards with active member counts
+  // Build group cards with active member counts (exclude admins from stats)
   const groupIds = new Set(groups.map((g) => g.id));
-  const activeMembers = members.filter((m) => (m.status === 'trial' || m.status === 'ativo') && (!channelFilter || groupIds.has(m.group_id)));
+  const nonAdminMembers = members.filter((m) => !m.is_admin);
+  const activeMembers = nonAdminMembers.filter((m) => (m.status === 'trial' || m.status === 'ativo') && (!channelFilter || groupIds.has(m.group_id)));
 
   const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
 

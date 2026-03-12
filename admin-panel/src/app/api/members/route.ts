@@ -54,7 +54,7 @@ export const GET = createApiHandler(
     const nowIso = new Date().toISOString();
     const sevenDaysIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const baseCols = 'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id';
+    const baseCols = 'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin';
     const cancelCols = statusFilter === 'cancelado' ? ', cancellation_reason, cancelled_by, kicked_at' : '';
     const groupCols = role === 'super_admin' ? ', groups(name)' : '';
     const select = baseCols + cancelCols + groupCols;

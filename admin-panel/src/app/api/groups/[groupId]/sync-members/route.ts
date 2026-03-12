@@ -68,17 +68,18 @@ export const POST = createApiHandler(
     for (const member of humans) {
       const telegramId = member.userId;
       const username = member.username || null;
+      const isAdmin = member.isAdmin;
 
       // Check if member exists in DB for this group
       const { data: existing } = await context.supabase
         .from('members')
-        .select('id, joined_group_at')
+        .select('id, joined_group_at, is_admin')
         .eq('telegram_id', telegramId)
         .eq('group_id', groupId)
         .maybeSingle();
 
       if (!existing) {
-        // INSERT new member
+        // INSERT new member (auto-detect admin from Telegram role)
         const { error: insertError } = await context.supabase
           .from('members')
           .insert({
@@ -86,6 +87,7 @@ export const POST = createApiHandler(
             telegram_username: username,
             group_id: groupId,
             status: 'ativo',
+            is_admin: isAdmin,
             joined_group_at: new Date().toISOString(),
           });
 
@@ -95,14 +97,17 @@ export const POST = createApiHandler(
         } else {
           created.push({ telegram_id: telegramId, username });
         }
-      } else if (!existing.joined_group_at) {
-        // UPDATE joined_group_at
+      } else if (!existing.joined_group_at || (isAdmin && !existing.is_admin)) {
+        // UPDATE joined_group_at and/or is_admin flag
+        const updates: Record<string, unknown> = {
+          telegram_username: username,
+        };
+        if (!existing.joined_group_at) updates.joined_group_at = new Date().toISOString();
+        if (isAdmin && !existing.is_admin) updates.is_admin = true;
+
         const { error: updateError } = await context.supabase
           .from('members')
-          .update({
-            joined_group_at: new Date().toISOString(),
-            telegram_username: username,
-          })
+          .update(updates)
           .eq('id', existing.id);
 
         if (updateError) {

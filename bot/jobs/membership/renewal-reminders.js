@@ -46,6 +46,7 @@ async function getMembersNeedingRenewalReminder() {
       .from('members')
       .select('*')
       .eq('status', 'ativo')
+      .eq('is_admin', false)
       .in('payment_method', CONFIG.MANUAL_PAYMENT_METHODS)
       .not('subscription_ends_at', 'is', null);
 
