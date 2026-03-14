@@ -338,21 +338,14 @@ describe('agentCore - structured output', () => {
         )
         .mockResolvedValueOnce(makeTextResponse('done'));
 
-      // Phase 2: both retries produce analysis
-      mockStructuredInvoke
-        .mockResolvedValueOnce({
-          raw: makeRawMessage(JSON.stringify(VALID_STRUCTURED)),
-          parsed: VALID_STRUCTURED,
-        })
-        .mockResolvedValueOnce({
+      // Phase 2: all 3 retries produce analysis
+      for (let i = 0; i < 3; i++) {
+        mockStructuredInvoke.mockResolvedValueOnce({
           raw: makeRawMessage(JSON.stringify(VALID_STRUCTURED)),
           parsed: VALID_STRUCTURED,
         });
-
-      // Consistency LLM rejects both times
-      mockConsistencyInvoke
-        .mockResolvedValueOnce({ consistent: false, reason: 'Conflito detectado' })
-        .mockResolvedValueOnce({ consistent: false, reason: 'Conflito detectado' });
+        mockConsistencyInvoke.mockResolvedValueOnce({ consistent: false, reason: 'Conflito detectado' });
+      }
 
       await expect(
         runAgent({
@@ -362,8 +355,43 @@ describe('agentCore - structured output', () => {
         }),
       ).rejects.toThrow('Agente não produziu análise estruturada válida após retries.');
 
+      expect(mockStructuredInvoke).toHaveBeenCalledTimes(3);
+      expect(mockConsistencyInvoke).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('runAgent - Zod validation retry', () => {
+    test('retries when llmStructured.invoke throws Zod validation error', async () => {
+      // Phase 1: tools OK
+      mockToolInvoke
+        .mockResolvedValueOnce(
+          makeToolCallResponse([
+            { id: 'call_1', name: 'match_detail_raw', args: { match_id: 123 } },
+            { id: 'call_2', name: 'team_lastx_raw', args: { team_id: 10 } },
+          ]),
+        )
+        .mockResolvedValueOnce(makeTextResponse('done'));
+
+      // Phase 2: first attempt throws Zod error (safe_bet with vitória), second succeeds
+      const zodError = new Error('Zod validation failed');
+      zodError.issues = [
+        { message: 'Safe bet não pode tratar de vitória/handicap.', path: ['safe_bets', 0, 'title'] },
+      ];
+      mockStructuredInvoke
+        .mockRejectedValueOnce(zodError)
+        .mockResolvedValueOnce({
+          raw: makeRawMessage(JSON.stringify(VALID_STRUCTURED)),
+          parsed: VALID_STRUCTURED,
+        });
+
+      const result = await runAgent({
+        matchId: 123,
+        contextoJogo: 'Contexto de teste',
+        matchRow: { home_team_name: 'Time A', away_team_name: 'Time B' },
+      });
+
       expect(mockStructuredInvoke).toHaveBeenCalledTimes(2);
-      expect(mockConsistencyInvoke).toHaveBeenCalledTimes(2);
+      expect(result.structuredAnalysis).toEqual(VALID_STRUCTURED);
     });
   });
 

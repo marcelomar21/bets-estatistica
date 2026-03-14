@@ -8,7 +8,7 @@ const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
 
 const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
-const MAX_STRUCTURED_RETRIES = 2;
+const MAX_STRUCTURED_RETRIES = 3;
 const TABLE_SCHEMA_HINT = `
 Tabelas e colunas disponíveis para consultas SQL:
 - league_matches(match_id, season_id, home_team_id, away_team_id, home_team_name, away_team_name, home_score, away_score, status, game_week, round_id, date_unix, kickoff_time, venue, raw_match, created_at, updated_at)
@@ -892,8 +892,9 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
 
   for (let attempt = 0; attempt < MAX_STRUCTURED_RETRIES; attempt++) {
     infoLog(`Structured output tentativa ${attempt + 1}/${MAX_STRUCTURED_RETRIES} (match ${matchId})...`);
-    const { raw, parsed } = await llmStructured.invoke(conversation);
+    let raw, parsed;
     try {
+      ({ raw, parsed } = await llmStructured.invoke(conversation));
       await ensureAnalysisConsistency(parsed);
       finalMessage = raw;
       finalStructuredAnalysis = parsed;
@@ -902,11 +903,16 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
       );
       break;
     } catch (err) {
-      infoLog(`Inconsistência na tentativa ${attempt + 1}: ${err.message}`);
-      conversation.push(raw);
+      const errorMsg = err.issues
+        ? err.issues.map((i) => i.message).join('; ')
+        : err.message;
+      infoLog(`Erro na tentativa ${attempt + 1}: ${errorMsg}`);
+      if (raw) {
+        conversation.push(raw);
+      }
       conversation.push(
         new HumanMessage(
-          `As apostas ficaram incoerentes (${err.message}). Corrija mantendo coerência entre linhas seguras e de valor.`,
+          `A resposta teve problemas de validação (${errorMsg}). Corrija: safe_bets NÃO podem falar de vitória/handicap — use apenas gols, cartões, escanteios ou extra. Mantenha coerência entre linhas seguras e de valor.`,
         ),
       );
     }
