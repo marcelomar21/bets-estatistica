@@ -13,6 +13,7 @@ const {
   reactivateMember
 } = require('../services/memberService');
 const { getSuccessRateForDays } = require('../services/metricsService');
+const { formatFullDateBR } = require('../../lib/utils');
 const { insertAdminNotification } = require('../services/notificationHelper');
 const { registerNotification } = require('../services/notificationService');
 
@@ -574,11 +575,7 @@ async function sendPaymentConfirmation(telegramId, memberId, subscriptionEndsAt,
 
   // Format date in Brazilian format (DD/MM/AAAA)
   const endDate = new Date(subscriptionEndsAt);
-  const formattedDate = endDate.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+  const formattedDate = formatFullDateBR(endDate) || 'N/A';
 
   const message = `
 ✅ *Pagamento confirmado!*

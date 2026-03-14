@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { GameAnalysisListItem } from '@/types/database';
+import { formatDateTime } from '@/lib/format-utils';
 
 interface AnalysisRow {
   id: number;
@@ -79,15 +80,6 @@ export default function AnalysesPage() {
     }
   }
 
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
 
   return (
     <div className="space-y-6">
@@ -176,7 +168,7 @@ export default function AnalysesPage() {
                     {a.league_matches.home_team_name} vs {a.league_matches.away_team_name}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                    {formatDate(a.league_matches.kickoff_time)}
+                    {formatDateTime(a.league_matches.kickoff_time)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm">
                     {a.pdf_storage_path ? (
@@ -190,7 +182,7 @@ export default function AnalysesPage() {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                    {formatDate(a.created_at)}
+                    {formatDateTime(a.created_at)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-right text-sm">
                     {a.pdf_storage_path ? (

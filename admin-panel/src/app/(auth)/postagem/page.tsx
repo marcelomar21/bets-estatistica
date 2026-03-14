@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PostingQueueTable } from '@/components/features/posting/PostingQueueTable';
 import type { QueueBet } from '@/components/features/posting/PostingQueueTable';
+import { formatDateTimeShort } from '@/lib/format-utils';
 
 interface QueueData {
   readyCount: number;
@@ -50,15 +51,6 @@ type PreviewPhase = 'idle' | 'loading' | 'reviewing' | 'sending' | 'polling' | '
 const POLL_INTERVAL_MS = 5_000;
 const POLL_TIMEOUT_MS = 60_000;
 
-function formatKickoffShort(isoString: string) {
-  return new Date(isoString).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  });
-}
 
 export default function PostagemPage() {
   const [role, setRole] = useState<'super_admin' | 'group_admin'>('group_admin');
@@ -840,7 +832,7 @@ export default function PostagemPage() {
                           {bet.betInfo.homeTeam} x {bet.betInfo.awayTeam}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {formatKickoffShort(bet.betInfo.kickoffTime)} &middot; {bet.betInfo.market}: {bet.betInfo.pick} &middot; Odd: {bet.betInfo.odds}
+                          {formatDateTimeShort(bet.betInfo.kickoffTime)} &middot; {bet.betInfo.market}: {bet.betInfo.pick} &middot; Odd: {bet.betInfo.odds}
                         </p>
                       </div>
                     </div>

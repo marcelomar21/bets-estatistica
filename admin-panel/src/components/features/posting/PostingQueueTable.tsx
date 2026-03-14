@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
+import { formatDateTime } from '@/lib/format-utils';
 
 interface QueueBet {
   id: number;
@@ -58,17 +59,6 @@ function getStatusBadge(bet: QueueBet) {
     return { label: 'pronta', className: 'bg-green-100 text-green-800' };
   }
   return { label: 'odds baixa', className: 'bg-orange-100 text-orange-800' };
-}
-
-function formatKickoffDate(isoString: string) {
-  return new Date(isoString).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  });
 }
 
 function getHitRateStyle(rate: number): string {
@@ -275,7 +265,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                  {formatKickoffDate(bet.match.kickoff_time)}
+                  {formatDateTime(bet.match.kickoff_time)}
                 </td>
                 {onScheduleBet && (
                   <td className="px-4 py-3">

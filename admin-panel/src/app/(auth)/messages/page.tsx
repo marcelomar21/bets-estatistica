@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { ScheduledMessageListItem, MessageStatus, MediaType } from '@/types/database';
 import { FileUpload } from '@/components/features/messages/FileUpload';
 import { MessagePreview, MediaPreviewModal } from '@/components/features/messages/MessagePreview';
+import { formatDateTime } from '@/lib/format-utils';
 
 const STATUS_STYLES: Record<MessageStatus, { label: string; className: string }> = {
   pending: { label: 'Pendente', className: 'bg-yellow-100 text-yellow-800' },
@@ -248,15 +249,6 @@ export default function MessagesPage() {
     }
   }
 
-  function formatDateTime(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
 
   return (
     <div className="space-y-6">

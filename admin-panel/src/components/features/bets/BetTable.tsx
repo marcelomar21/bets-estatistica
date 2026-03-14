@@ -5,6 +5,7 @@ import type { SuggestedBetListItem, BetPagination } from '@/types/database';
 import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
+import { formatDateTime, formatDateTimeShort } from '@/lib/format-utils';
 
 interface BetTableProps {
   bets: SuggestedBetListItem[];
@@ -21,25 +22,6 @@ interface BetTableProps {
   sortBy: string;
   sortDir: string;
   activeBetId?: number | null;
-}
-
-function formatKickoffDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatCreatedDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function getHitRateStyle(rate: number): string {
@@ -214,7 +196,7 @@ export function BetTable({
                     {match ? `${match.home_team_name} vs ${match.away_team_name}` : '-'}
                   </td>
                   <td className="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">
-                    {match ? formatKickoffDate(match.kickoff_time) : '-'}
+                    {match ? formatDateTime(match.kickoff_time) : '-'}
                   </td>
                   <td className="px-3 py-3 text-sm text-gray-600 max-w-[180px] truncate" title={match?.league_seasons?.league_name ?? ''}>
                     {match?.league_seasons?.league_name ?? '—'}
@@ -271,7 +253,7 @@ export function BetTable({
                     </span>
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
-                    {formatCreatedDate(bet.created_at)}
+                    {formatDateTimeShort(bet.created_at)}
                   </td>
                   {isSuperAdmin && (
                     <td className="px-3 py-3">

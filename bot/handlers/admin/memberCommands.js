@@ -5,6 +5,7 @@
 const logger = require('../../../lib/logger');
 const { getMemberStats, calculateMRR, calculateConversionRate, getNewMembersThisWeek, getMemberDetails, getNotificationHistory, addManualTrialMember, extendMembership, getTrialDays, setTrialDays } = require('../../services/memberService');
 const { addPendingRemoval, REMOVAL_TIMEOUT_MS } = require('./removalState');
+const { formatFullDateBR } = require('../../../lib/utils');
 
 // Regex patterns
 const MEMBROS_PATTERN = /^\/membros$/i;
@@ -112,7 +113,7 @@ async function handleMembroCommand(bot, msg, identifier) {
     const notifications = notifResult.success ? notifResult.data : [];
 
     // Format dates
-    const formatDate = (date) => date ? new Date(date).toLocaleDateString('pt-BR') : 'N/A';
+    const formatDate = (date) => date ? formatFullDateBR(date) || 'N/A' : 'N/A';
 
     // Calculate days remaining
     let daysRemaining = 'N/A';
@@ -137,7 +138,7 @@ async function handleMembroCommand(bot, msg, identifier) {
     if (notifications.length > 0) {
       notifText = '\n\n📨 *Últimas notificações:*\n';
       notifText += notifications.map(n => {
-        const date = new Date(n.created_at).toLocaleDateString('pt-BR');
+        const date = formatFullDateBR(n.created_at);
         return `• ${date}: ${n.notification_type}`;
       }).join('\n');
     } else {
@@ -317,7 +318,7 @@ async function handleAddTrialCommand(bot, msg, identifier) {
 
     const member = result.data;
     const trialEnd = new Date(member.trial_ends_at);
-    const trialEndStr = trialEnd.toLocaleDateString('pt-BR');
+    const trialEndStr = formatFullDateBR(trialEnd) || 'N/A';
 
     const actionText = result.isNew ? 'adicionado' : 'reativado';
     const displayName = member.telegram_username ? `@${member.telegram_username}` : `ID ${member.telegram_id}`;
@@ -385,7 +386,7 @@ async function handleRemoverMembroCommand(bot, msg, identifier, motivo) {
     }
 
     // Format dates
-    const joinDate = member.created_at ? new Date(member.created_at).toLocaleDateString('pt-BR') : 'N/A';
+    const joinDate = member.created_at ? formatFullDateBR(member.created_at) || 'N/A' : 'N/A';
     const displayName = member.telegram_username ? `@${member.telegram_username}` : `ID ${member.telegram_id}`;
 
     // Create unique callback data ID
@@ -496,9 +497,9 @@ async function handleEstenderCommand(bot, msg, identifier, days) {
       currentEndDate = member.subscription_ends_at ? new Date(member.subscription_ends_at) : new Date();
     }
 
-    const currentEndStr = currentEndDate ? currentEndDate.toLocaleDateString('pt-BR') : 'N/A';
+    const currentEndStr = currentEndDate ? formatFullDateBR(currentEndDate) || 'N/A' : 'N/A';
     const newEndDate = currentEndDate ? new Date(currentEndDate.getTime() + days * 24 * 60 * 60 * 1000) : null;
-    const newEndStr = newEndDate ? newEndDate.toLocaleDateString('pt-BR') : 'N/A';
+    const newEndStr = newEndDate ? formatFullDateBR(newEndDate) || 'N/A' : 'N/A';
 
     // Extend membership
     const extendResult = await extendMembership(member.id, days, operatorUsername);

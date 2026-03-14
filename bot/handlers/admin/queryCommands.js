@@ -9,6 +9,7 @@ const { getBetById, getOverviewStats, getBetsReadyForPosting, getActiveBetsForRe
 const { generateBetCopy, clearBetCache } = require('../../services/copyService');
 const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats } = require('../../services/metricsService');
 const { getLatestExecutions, formatResult } = require('../../services/jobExecutionService');
+const { formatDateBR, formatDateTimeBR, formatTime } = require('../../../lib/utils');
 
 // Regex patterns
 const STATUS_PATTERN = /^\/status$/i;
@@ -61,11 +62,7 @@ async function handleStatusCommand(bot, msg) {
 
   for (const exec of executions) {
     const startedAt = new Date(exec.started_at);
-    const timeStr = startedAt.toLocaleTimeString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const timeStr = formatTime(startedAt);
 
     let statusIcon;
     let resultStr = '';
@@ -175,8 +172,8 @@ async function handleOverviewCommand(bot, msg) {
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
     const timeUntil = diffHours > 0 ? `${diffHours}h ${diffMins}m` : `${diffMins}m`;
-    const dateStr = kickoff.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-    const timeStr = kickoff.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = formatDateBR(kickoff);
+    const timeStr = formatTime(kickoff);
     nextGameText = `#${stats.nextGame.id} ${stats.nextGame.homeTeam} x ${stats.nextGame.awayTeam}\n📅 ${dateStr} às ${timeStr} (em ${timeUntil})`;
   }
 
@@ -186,8 +183,8 @@ async function handleOverviewCommand(bot, msg) {
     const postDate = new Date(stats.lastPosting);
     const now = new Date();
     const isToday = postDate.toDateString() === now.toDateString();
-    const timeStr = postDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    lastPostingText = isToday ? `Hoje às ${timeStr}` : postDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) + ` às ${timeStr}`;
+    const postTimeStr = formatTime(postDate);
+    lastPostingText = isToday ? `Hoje às ${postTimeStr}` : formatDateBR(postDate) + ` às ${postTimeStr}`;
   }
 
   // Format success rate
@@ -408,14 +405,7 @@ async function handleSimularCommand(bot, msg, arg) {
         logger.debug('[admin:query] Failed to generate copy for preview', { betId: bet.id });
       }
 
-      const kickoffDate = new Date(bet.kickoffTime);
-      const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      const kickoffStr = formatDateTimeBR(bet.kickoffTime);
 
       lines.push('');
       lines.push(`⚽ *${bet.homeTeamName} x ${bet.awayTeamName}*`);
@@ -510,11 +500,7 @@ function formatDayLabelForHistory(day) {
  * Formata item do historico (Story 14.9, AC3)
  */
 function formatHistoryItem(item) {
-  const time = new Date(item.createdAt).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo'
-  });
+  const time = formatTime(item.createdAt);
 
   const match = item.homeTeamName && item.awayTeamName
     ? `${item.homeTeamName} x ${item.awayTeamName}`

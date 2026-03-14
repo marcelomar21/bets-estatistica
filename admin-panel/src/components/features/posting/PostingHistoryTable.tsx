@@ -2,6 +2,7 @@
 
 import { BetResultBadge } from './BetResultBadge';
 import type { BetResult } from './BetResultBadge';
+import { formatDateTimeShort } from '@/lib/format-utils';
 
 export interface HistoryBet {
   id: number;
@@ -41,15 +42,9 @@ interface PostingHistoryTableProps {
   emptyMessage?: string;
 }
 
-function formatDateTime(isoString: string | null) {
+function formatDateTimeOrDash(isoString: string | null) {
   if (!isoString) return '—';
-  return new Date(isoString).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  });
+  return formatDateTimeShort(isoString);
 }
 
 function getPostingStatus(bet: HistoryBet): { label: string; className: string } {
@@ -178,7 +173,7 @@ export function PostingHistoryTable({
                     {match.home_team_name} vs {match.away_team_name}
                   </div>
                   <div className="text-xs text-gray-500">
-                    {formatDateTime(match.kickoff_time)}
+                    {formatDateTimeOrDash(match.kickoff_time)}
                   </div>
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
@@ -197,7 +192,7 @@ export function PostingHistoryTable({
                   {bet.groups?.name ?? '—'}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                  {formatDateTime(bet.telegram_posted_at)}
+                  {formatDateTimeOrDash(bet.telegram_posted_at)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.className}`}>

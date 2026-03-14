@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDateTime } from '@/lib/format-utils';
 
 interface MessagePreviewProps {
   messageText: string;
@@ -53,13 +54,7 @@ export function MessagePreview({
   const isValidDate = !isNaN(parsedDate.getTime());
 
   const formattedDate = isValidDate
-    ? parsedDate.toLocaleDateString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+    ? formatDateTime(scheduledAt)
     : '—';
 
   // Create object URL for image preview with proper cleanup
