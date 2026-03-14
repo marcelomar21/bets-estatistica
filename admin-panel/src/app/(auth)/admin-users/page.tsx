@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { SuperAdminGuard } from '@/components/guards/SuperAdminGuard';
+import { formatDate } from '@/lib/format-utils';
 
 interface AdminUser {
   id: string;
@@ -238,7 +239,7 @@ function AdminUsersContent() {
                       {user.groups?.name || (user.group_id ? user.group_id.slice(0, 8) + '...' : '—')}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
-                      {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                      {formatDate(user.created_at)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-3">

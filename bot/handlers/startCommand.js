@@ -27,6 +27,7 @@ const {
   getTrialDays,
   createTrialMember
 } = require('../services/memberService');
+const { formatFullDateBR } = require('../../lib/utils');
 const { getSuccessRateForDays } = require('../services/metricsService');
 const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
 const { insertAdminNotification } = require('../services/notificationHelper');
@@ -281,7 +282,7 @@ Continue aproveitando nossas apostas! 🎯
       `.trim();
     } else {
       const subscriptionEnds = member.subscription_ends_at
-        ? new Date(member.subscription_ends_at).toLocaleDateString('pt-BR')
+        ? formatFullDateBR(member.subscription_ends_at) || 'N/A'
         : 'N/A';
 
       statusMessage = `
@@ -768,7 +769,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   if (trialMode === 'internal' && isTrialMember) {
     // Internal trial: show expiration date and checkout link
     const trialEndsAt = member.trial_ends_at
-      ? new Date(member.trial_ends_at).toLocaleDateString('pt-BR')
+      ? formatFullDateBR(member.trial_ends_at) || '—'
       : '—';
 
     const priceLineInternalTrial = subscriptionPrice
@@ -1051,7 +1052,7 @@ Envie /start para começar seu trial gratuito!
     }
     case 'ativo': {
       const subscriptionEnds = member.subscription_ends_at
-        ? new Date(member.subscription_ends_at).toLocaleDateString('pt-BR')
+        ? formatFullDateBR(member.subscription_ends_at) || 'N/A'
         : 'N/A';
       statusEmoji = '✅';
       statusText = 'Assinante ativo';
@@ -1081,7 +1082,7 @@ ${statusEmoji} *Seu Status em ${getGroupName(botCtx)}*
 ${extraInfo}
 
 👤 Telegram ID: \`${telegramId}\`
-📆 Membro desde: ${new Date(member.created_at).toLocaleDateString('pt-BR')}
+📆 Membro desde: ${formatFullDateBR(member.created_at) || 'N/A'}
   `.trim();
 
   await bot.sendMessage(chatId, statusMessage, { parse_mode: 'Markdown' });

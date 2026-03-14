@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { SuggestedBetListItem, OddsHistoryEntry } from '@/types/database';
+import { formatDateTimeShort } from '@/lib/format-utils';
 
 interface OddsEditModalProps {
   bet: SuggestedBetListItem;
@@ -129,12 +130,7 @@ export function OddsEditModal({ bet, onClose, onSave, oddsHistory, loading }: Od
                       <td className="py-1 font-medium">{entry.new_value}</td>
                       <td className="py-1 text-gray-500">{entry.job_name}</td>
                       <td className="py-1 text-gray-400">
-                        {new Date(entry.created_at).toLocaleDateString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {formatDateTimeShort(entry.created_at)}
                       </td>
                     </tr>
                   ))}

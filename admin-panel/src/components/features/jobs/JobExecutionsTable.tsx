@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDateTimeWithSeconds } from '@/lib/format-utils';
+
 export interface JobExecution {
   id: string;
   job_name: string;
@@ -16,16 +18,6 @@ interface JobExecutionsTableProps {
   emptyMessage?: string;
 }
 
-function formatDateTime(isoString: string) {
-  return new Date(isoString).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  });
-}
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return '—';
@@ -128,7 +120,7 @@ export function JobExecutionsTable({
                 {exec.job_name}
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                {formatDateTime(exec.started_at)}
+                {formatDateTimeWithSeconds(exec.started_at)}
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                 {formatDuration(exec.duration_ms)}

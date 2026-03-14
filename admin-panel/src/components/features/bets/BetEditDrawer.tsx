@@ -5,6 +5,7 @@ import type { SuggestedBetListItem, OddsHistoryEntry } from '@/types/database';
 import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
+import { formatDateTime, formatDateTimeShort } from '@/lib/format-utils';
 
 interface BetEditDrawerProps {
   bet: SuggestedBetListItem;
@@ -13,16 +14,6 @@ interface BetEditDrawerProps {
   onSaveLink: (betId: number, link: string | null) => Promise<void>;
   oddsHistory: OddsHistoryEntry[];
   historyLoading: boolean;
-}
-
-function formatKickoffDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function validateUrl(url: string): string | null {
@@ -176,7 +167,7 @@ export function BetEditDrawer({
                   {match.home_team_name} vs {match.away_team_name}
                 </p>
                 <p className="text-xs text-gray-500">
-                  {formatKickoffDate(match.kickoff_time)}
+                  {formatDateTime(match.kickoff_time)}
                   {match.league_seasons?.league_name && ` \u2022 ${match.league_seasons.league_name}`}
                 </p>
               </>
@@ -314,12 +305,7 @@ export function BetEditDrawer({
                         <td className="py-1 font-medium">{entry.new_value}</td>
                         <td className="py-1 text-gray-500">{entry.job_name}</td>
                         <td className="py-1 text-gray-400">
-                          {new Date(entry.created_at).toLocaleDateString('pt-BR', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {formatDateTimeShort(entry.created_at)}
                         </td>
                       </tr>
                     ))}

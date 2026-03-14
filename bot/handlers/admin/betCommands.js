@@ -7,7 +7,7 @@
  */
 const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
-const { isValidBookmakerUrl } = require('../../../lib/utils');
+const { isValidBookmakerUrl, formatTime } = require('../../../lib/utils');
 const { getBetById, updateBetLink, updateBetOdds, getAvailableBets, promoverAposta, removerAposta, getFilaStatus } = require('../../services/betService');
 const { getAllPairStats, categorizeMarket } = require('../../services/metricsService');
 const { formatBetListWithDays, paginateResults, formatPaginationFooter } = require('../../utils/formatters');
@@ -191,11 +191,7 @@ async function handleApostasCommand(bot, msg, page = 1) {
   // Story 14.5: Add pair stats display with market/league rate
   const formatBetForList = (bet, pairStats) => {
     const kickoff = new Date(bet.kickoffTime);
-    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
+    const timeStr = formatTime(kickoff);
 
     const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ *SEM ODD*';
     const linkDisplay = bet.hasLink ? '🔗' : '❌';
@@ -448,11 +444,7 @@ Filtra apostas por critério específico.
   // Story 14.5: Format single bet for day grouping
   const formatBetForFilter = (bet) => {
     const kickoff = new Date(bet.kickoffTime);
-    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
+    const timeStr = formatTime(kickoff);
 
     const oddsDisplay = bet.odds ? `💰 ${bet.odds.toFixed(2)}` : '⚠️ SEM ODD';
     const linkDisplay = bet.deepLink ? '🔗' : '❌';
@@ -651,11 +643,7 @@ async function handleFilaCommand(bot, msg, page = 1) {
   // Story 14.5: Format single bet for queue with day grouping
   const formatBetForQueue = (bet) => {
     const kickoff = new Date(bet.kickoffTime);
-    const timeStr = kickoff.toLocaleTimeString('pt-BR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    });
+    const timeStr = formatTime(kickoff);
     const statusFlag = bet.betStatus === 'posted' ? '📤' : '🆕';
     const promoFlag = bet.promovidaManual ? ' ⚡' : '';
     const oddsDisplay = bet.odds ? bet.odds.toFixed(2) : 'N/A';
