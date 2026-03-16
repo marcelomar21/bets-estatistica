@@ -460,9 +460,26 @@ function pickPostTime(availableTimes, timeCounts) {
 
 /**
  * Main job entry point: distribute bets via round-robin
+ * Uses a lock to prevent concurrent executions from multiple schedulers.
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
+let isDistributionInProgress = false;
+
 async function runDistributeBets() {
+  if (isDistributionInProgress) {
+    logger.info('[bets:distribute] Skipping — distribution already in progress');
+    return { success: true, data: { skipped: true, reason: 'already_in_progress' } };
+  }
+
+  isDistributionInProgress = true;
+  try {
+    return await _runDistributeBetsInternal();
+  } finally {
+    isDistributionInProgress = false;
+  }
+}
+
+async function _runDistributeBetsInternal() {
   const startTime = Date.now();
   logger.info('[bets:distribute] Iniciando distribuição de apostas');
 
