@@ -71,10 +71,7 @@ describe('createSubscriptionPlan', () => {
     expect(body.auto_recurring.frequency_type).toBe('months');
     expect(body.auto_recurring.transaction_amount).toBe(49.9);
     expect(body.auto_recurring.currency_id).toBe('BRL');
-    expect(body.auto_recurring.free_trial).toEqual({
-      frequency: 7,
-      frequency_type: 'days',
-    });
+    expect(body.auto_recurring.free_trial).toBeUndefined();
     expect(body.back_url).toBe('https://admin.example.com/groups/group-uuid');
   });
 

@@ -107,10 +107,6 @@ export async function createSubscriptionPlan(
             frequency_type: 'months',
             transaction_amount: price,
             currency_id: 'BRL',
-            free_trial: {
-              frequency: 7,
-              frequency_type: 'days',
-            },
           },
           external_reference: groupId,
           back_url: `${appUrl}/groups/${groupId}`,

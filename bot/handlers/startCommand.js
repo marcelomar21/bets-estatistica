@@ -24,13 +24,53 @@ const {
   reactivateMember,
   getTrialDaysRemaining,
   linkTelegramId,
-  getTrialDays,
   createTrialMember
 } = require('../services/memberService');
 const { formatFullDateBR } = require('../../lib/utils');
 const { getSuccessRateForDays } = require('../services/metricsService');
 const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
 const { insertAdminNotification } = require('../services/notificationHelper');
+
+/**
+ * Default welcome message template with placeholders.
+ * Used when groups.welcome_message_template is NULL.
+ */
+const DEFAULT_WELCOME_TEMPLATE = [
+  '🎉 Bem-vindo ao *{grupo}*, {nome}!',
+  '',
+  'Seu trial de *{dias_trial} dias* começa agora!',
+  '📅 *Válido até:* {data_expiracao}',
+  '',
+  '📊 *O que você recebe:*',
+  '• 3 sugestões de apostas diárias',
+  '• Análise estatística completa',
+  '• Taxa de acerto histórica: *{taxa_acerto}%*',
+  '',
+  '💰 {linha_preco}',
+  '',
+  '👇 *Clique no botão abaixo para entrar no grupo:*',
+].join('\n');
+
+/**
+ * Render a welcome message template by replacing placeholders with actual values.
+ * @param {string} template - Template with {placeholder} tokens
+ * @param {object} vars - Values to substitute
+ * @returns {string}
+ */
+function renderWelcomeTemplate(template, vars) {
+  const priceLine = vars.preco
+    ? `Para continuar após o trial, assine por apenas *${vars.preco}*.`
+    : 'Para continuar após o trial, consulte o operador.';
+
+  return template
+    .replace(/\{nome\}/g, vars.nome || 'apostador')
+    .replace(/\{grupo\}/g, vars.grupo || '')
+    .replace(/\{dias_trial\}/g, String(vars.dias_trial || 7))
+    .replace(/\{data_expiracao\}/g, vars.data_expiracao || '—')
+    .replace(/\{taxa_acerto\}/g, vars.taxa_acerto || '0')
+    .replace(/\{preco\}/g, vars.preco || '')
+    .replace(/\{linha_preco\}/g, priceLine);
+}
 
 /**
  * Get the group display name from botCtx, with fallback.
@@ -376,9 +416,9 @@ async function handleInternalTrialStart(bot, chatId, telegramId, username, first
   // Use group UUID (not Telegram chat ID) for members table
   const groupId = effectiveBotCtx?.groupId;
 
-  // Get trial duration
-  const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+  // Get trial duration from group config (per-group setting)
+  const groupConfig = effectiveBotCtx?.groupConfig;
+  const trialDays = groupConfig?.trialDays || 7;
 
   // Create trial member (no email required)
   const createResult = await createTrialMember({
@@ -652,21 +692,20 @@ Seu email ${email} foi vinculado a este Telegram.
   const checkoutUrl = groupConfig?.checkoutUrl || null;
   const subscriptionPrice = groupConfig?.subscriptionPrice || null;
 
-  // Get trial days from system_config (database)
-  const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+  // F2/F9: Use per-group trial days instead of global system_config
+  const trialDays = groupConfig?.trialDays || 7;
 
   let paymentMessage;
   let replyMarkup = null;
 
   if (checkoutUrl) {
     const priceLineEmail = subscriptionPrice ? `\n💰 *Valor:* ${subscriptionPrice}` : '';
+    // F10: Removed "dias grátis" messaging since MP plans no longer include free_trial
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
 
 Para ter acesso ao grupo, você precisa assinar primeiro.
 ${priceLineEmail}
-🎁 *Inclui ${trialDays} dias grátis para testar!*
 
 👇 *Clique no botão abaixo para assinar:*
     `.trim();
@@ -705,10 +744,9 @@ Envie /start novamente e informe o mesmo email que usou no checkout.
 async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = null) {
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
   const groupId = effectiveBotCtx?.publicGroupId;
-  // Get trial days from system_config (database)
-  const trialDaysResult = await getTrialDays();
-  const trialDays = trialDaysResult.success ? trialDaysResult.data.days : 7;
+  // Get trial days from group config (per-group setting)
   const groupConfig = effectiveBotCtx?.groupConfig || null;
+  const trialDays = groupConfig?.trialDays || 7;
   const operatorUsername = groupConfig?.operatorUsername || 'operador';
   const subscriptionPrice = groupConfig?.subscriptionPrice || null;
 
@@ -772,24 +810,16 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
       ? formatFullDateBR(member.trial_ends_at) || '—'
       : '—';
 
-    const priceLineInternalTrial = subscriptionPrice
-      ? `\n💰 Para continuar após o trial, assine por apenas *${subscriptionPrice}*.`
-      : '\n💰 Para continuar após o trial, consulte o operador.';
+    const template = groupConfig?.welcomeMessageTemplate || DEFAULT_WELCOME_TEMPLATE;
 
-    welcomeMessage = `
-🎉 Bem-vindo ao *${getGroupName(botCtx)}*, ${firstName || 'apostador'}!
-
-Seu trial de *${trialDays} dias* começa agora!
-📅 *Válido até:* ${trialEndsAt}
-
-📊 *O que você recebe:*
-• 3 sugestões de apostas diárias
-• Análise estatística completa
-• Taxa de acerto histórica: *${successRateText}%*
-${priceLineInternalTrial}
-
-👇 *Clique no botão abaixo para entrar no grupo:*
-    `.trim();
+    welcomeMessage = renderWelcomeTemplate(template, {
+      nome: firstName || 'apostador',
+      grupo: getGroupName(botCtx),
+      dias_trial: trialDays,
+      data_expiracao: trialEndsAt,
+      taxa_acerto: successRateText,
+      preco: subscriptionPrice || '',
+    });
 
     inlineKeyboard = [
       [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
@@ -823,12 +853,36 @@ ${priceLineMp}
   }
 
   // Send with inline button(s)
-  await bot.sendMessage(chatId, welcomeMessage, {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: inlineKeyboard
-    }
-  });
+  // F5: Try/catch for template rendering — if custom template breaks Telegram Markdown,
+  // fallback to default template to avoid breaking onboarding for all new members
+  try {
+    await bot.sendMessage(chatId, welcomeMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
+    });
+  } catch (sendErr) {
+    logger.warn('[membership:start-command] Welcome message failed, retrying with default template', {
+      memberId: member.id,
+      error: sendErr.message,
+    });
+    // Retry with default template (guaranteed to be valid Markdown)
+    const fallbackMessage = renderWelcomeTemplate(DEFAULT_WELCOME_TEMPLATE, {
+      nome: firstName || 'apostador',
+      grupo: getGroupName(botCtx),
+      dias_trial: trialDays,
+      data_expiracao: member.trial_ends_at ? formatFullDateBR(member.trial_ends_at) || '—' : '—',
+      taxa_acerto: successRateText,
+      preco: subscriptionPrice || '',
+    });
+    await bot.sendMessage(chatId, fallbackMessage, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: inlineKeyboard
+      }
+    });
+  }
 
   // Record welcome notification
   await recordNotification(member.id, 'welcome', chatId.toString());
@@ -1115,5 +1169,10 @@ module.exports = {
   handleEmailInput,
   shouldHandleAsEmailInput,
   getConversationState,
-  handleTermsAcceptCallback
+  handleTermsAcceptCallback,
+  // F17: Exported for testing
+  _internal: {
+    renderWelcomeTemplate,
+    DEFAULT_WELCOME_TEMPLATE,
+  },
 };
