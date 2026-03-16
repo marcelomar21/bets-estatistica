@@ -41,56 +41,67 @@ interface PerformanceCardsProps {
   byGroup?: GroupAccuracy[];
 }
 
-export default function PerformanceCards({ periods, overallRate, postedRate, byGroup }: PerformanceCardsProps) {
+function PeriodStat({ label, period }: { label: string; period: AccuracyPeriod }) {
+  const hasData = period.total > 0;
   return (
     <div>
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-sm font-semibold ${hasData ? rateColor(period.rate, period.total) : 'text-gray-400'}`}>
+        {hasData ? `${period.rate}%` : '—'}
+      </p>
+    </div>
+  );
+}
+
+export default function PerformanceCards({ periods, overallRate, postedRate, byGroup }: PerformanceCardsProps) {
+  const hasOverall = overallRate && overallRate.total > 0;
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-5">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Performance</h2>
         <Link href="/analytics" className="text-sm text-blue-600 hover:text-blue-800">
-          Ver detalhes →
+          Ver detalhes &rarr;
         </Link>
       </div>
-      <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {overallRate && overallRate.total > 0 && (
-          <div className="rounded-lg border bg-blue-50 border-blue-200 p-4">
-            <p className="text-sm font-medium text-gray-700">Taxa Geral</p>
-            <p className="text-2xl font-bold mt-1 text-blue-700">{overallRate.rate}%</p>
-            <p className="text-xs text-gray-500 mt-1">{overallRate.wins}/{overallRate.total} acertos</p>
-          </div>
-        )}
-        {postedRate && postedRate.total > 0 && (
-          <div className={`rounded-lg border p-4 ${rateBg(postedRate.rate, postedRate.total)}`}>
-            <p className="text-sm font-medium text-gray-700">Taxa das Postadas</p>
-            <p className={`text-2xl font-bold mt-1 ${rateColor(postedRate.rate, postedRate.total)}`}>{postedRate.rate}%</p>
-            <p className="text-xs text-gray-500 mt-1">{postedRate.wins}/{postedRate.total} acertos</p>
-          </div>
-        )}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {[
-          { label: 'Taxa Total', period: periods.allTime },
-          { label: 'Últimos 7 dias', period: periods.last7d },
-          { label: 'Últimos 30 dias', period: periods.last30d },
-        ].map(({ label, period }) => (
-          <div key={label} className={`rounded-lg border p-4 ${rateBg(period.rate, period.total)}`}>
-            <p className="text-sm font-medium text-gray-700">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${rateColor(period.rate, period.total)}`}>
-              {period.total > 0 ? `${period.rate}%` : '—'}
+
+      <div className="flex items-start justify-between gap-6">
+        {/* Hero: Taxa Geral */}
+        {hasOverall && (
+          <div>
+            <p className={`text-4xl font-bold ${rateColor(overallRate.rate, overallRate.total)}`}>
+              {overallRate.rate}%
             </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {period.total > 0 ? `${period.wins}/${period.total} acertos` : 'Aguardando resultados'}
+            <p className="text-sm text-gray-500 mt-1">
+              {overallRate.wins}/{overallRate.total} acertos
             </p>
           </div>
-        ))}
-      </div>
-      {byGroup && byGroup.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {byGroup.map((g) => (
-            <div key={g.group_id} className={`rounded-lg border p-3 ${rateBg(g.rate, g.total)}`}>
-              <p className="text-xs font-medium text-gray-700 truncate">{g.group_name}</p>
-              <p className={`text-lg font-bold ${rateColor(g.rate, g.total)}`}>{g.rate}%</p>
-              <p className="text-xs text-gray-500">{g.wins}/{g.total}</p>
+        )}
+
+        {/* Secondary stats */}
+        <div className="flex gap-6">
+          {postedRate && postedRate.total > 0 && (
+            <div>
+              <p className="text-xs text-gray-500">Postadas</p>
+              <p className={`text-sm font-semibold ${rateColor(postedRate.rate, postedRate.total)}`}>
+                {postedRate.rate}%
+              </p>
             </div>
+          )}
+          <PeriodStat label="7 dias" period={periods.last7d} />
+          <PeriodStat label="30 dias" period={periods.last30d} />
+        </div>
+      </div>
+
+      {/* Per-group accuracy inline */}
+      {byGroup && byGroup.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1">
+          {byGroup.map((g) => (
+            <span key={g.group_id} className="text-sm text-gray-600">
+              {g.group_name}{' '}
+              <span className={`font-semibold ${rateColor(g.rate, g.total)}`}>{g.rate}%</span>
+              <span className="text-gray-400 text-xs ml-0.5">({g.wins}/{g.total})</span>
+            </span>
           ))}
         </div>
       )}
