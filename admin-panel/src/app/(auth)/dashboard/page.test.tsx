@@ -416,9 +416,9 @@ describe('DashboardPage', () => {
     expect(screen.getByText('30 dias')).toBeInTheDocument();
     expect(screen.getByText(/60(\.0)?%/)).toBeInTheDocument();
 
-    // Group accuracy inline
-    expect(screen.getByText(/65(\.0)?%/)).toBeInTheDocument();
-    expect(screen.getByText(/50(\.0)?%/)).toBeInTheDocument();
+    // Group accuracy ticker (duplicated for seamless loop)
+    expect(screen.getAllByText(/65(\.0)?%/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/50(\.0)?%/).length).toBeGreaterThanOrEqual(1);
 
     // "Ver detalhes" link to analytics page
     const detailsLinks = screen.getAllByText(/Ver detalhes/);

@@ -175,7 +175,8 @@ export const GET = createApiHandler(async (req, context) => {
   let groupsQuery = supabase
     .from('groups')
     .select('id, name, status, channels, created_at')
-    .neq('status', 'deleted');
+    .neq('status', 'deleted')
+    .neq('is_test', true);
   if (channelFilter) {
     groupsQuery = groupsQuery.contains('channels', [channelFilter]);
   }

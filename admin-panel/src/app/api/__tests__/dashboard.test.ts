@@ -75,10 +75,14 @@ function createDashboardMock(overrides: {
         ...tableData,
         order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
       })),
-      neq: vi.fn(() => ({
-        ...tableData,
-        contains: vi.fn(() => tableData),
-      })),
+      neq: vi.fn(function neqFn() {
+        const neqResult = {
+          ...tableData,
+          neq: vi.fn(function neqFn2() { return { ...tableData, neq: neqFn, contains: vi.fn(() => tableData) }; }),
+          contains: vi.fn(() => tableData),
+        };
+        return neqResult;
+      }),
       gte: vi.fn(() => ({
         ...tableData,
         order: vi.fn(() => ({ ...tableData, limit: vi.fn(() => tableData) })),
