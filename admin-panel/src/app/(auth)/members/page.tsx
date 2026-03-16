@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type { MemberListItem } from '@/types/database';
 import { MemberList } from '@/components/features/members/MemberList';
 import { CancelMemberModal } from '@/components/features/members/CancelMemberModal';
@@ -52,7 +52,7 @@ export default function MembersPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('todos');
   const [searchInput, setSearchInput] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
-  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; bot_pool?: { bot_username: string }[] | null }>>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>('');
   const [cancelTarget, setCancelTarget] = useState<MemberListItem | null>(null);
@@ -124,7 +124,7 @@ export default function MembersPage() {
   }, []);
 
   useEffect(() => {
-    if (!roleResolved || role !== 'super_admin') return;
+    if (!roleResolved) return;
     let cancelled = false;
 
     async function fetchGroups() {
@@ -171,8 +171,40 @@ export default function MembersPage() {
     }));
   }
 
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [toggleAdminLoading, setToggleAdminLoading] = useState(false);
   const [reactivateLoading, setReactivateLoading] = useState(false);
+
+  useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
+
+  // Derive bot invite link from groups data
+  // group_admin always has exactly 1 group (enforced by API groupFilter)
+  // bot_pool[0] picks the primary bot — groups currently have at most 1 bot
+  const botInviteLink = (() => {
+    if (role === 'group_admin' && groups.length > 0) {
+      const username = groups[0]?.bot_pool?.[0]?.bot_username;
+      return username ? `https://t.me/${username}?start=subscribe` : null;
+    }
+    if (role === 'super_admin' && selectedGroupId) {
+      const group = groups.find((g) => g.id === selectedGroupId);
+      const username = group?.bot_pool?.[0]?.bot_username;
+      return username ? `https://t.me/${username}?start=subscribe` : null;
+    }
+    return null;
+  })();
+
+  async function copyBotLink() {
+    if (!botInviteLink) return;
+    try {
+      await navigator.clipboard.writeText(botInviteLink);
+      setCopied(true);
+      clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard not available (e.g. insecure context)
+    }
+  }
 
   async function handleToggleAdmin(member: MemberListItem) {
     if (toggleAdminLoading) return;
@@ -362,6 +394,22 @@ export default function MembersPage() {
           </button>
         </div>
       </form>
+
+      {botInviteLink && (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <svg className="h-5 w-5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+          <span className="flex-1 truncate text-sm text-blue-700" data-testid="bot-invite-link">{botInviteLink}</span>
+          <button
+            type="button"
+            onClick={copyBotLink}
+            className="shrink-0 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+          >
+            {copied ? 'Copiado!' : 'Copiar'}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

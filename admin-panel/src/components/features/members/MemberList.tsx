@@ -86,6 +86,7 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, on
             const displayStatus = getDisplayStatus({
               status: member.status,
               subscription_ends_at: member.subscription_ends_at,
+              is_admin: member.is_admin,
             });
             const statusBadge = memberStatusConfig[displayStatus];
             const canCancel = member.status === 'trial' || member.status === 'ativo';
@@ -118,7 +119,7 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, on
                   {formatDate(member.created_at)}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">
-                  {member.subscription_ends_at ? formatDate(member.subscription_ends_at) : '-'}
+                  {member.is_admin ? '-' : (member.subscription_ends_at ? formatDate(member.subscription_ends_at) : '-')}
                 </td>
                 {showCancellationDetails && (
                   <>

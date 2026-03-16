@@ -66,6 +66,33 @@ describe('MemberList', () => {
     expect(screen.getByText('Trial')).toBeInTheDocument();
   });
 
+  it('exibe "-" na coluna Vencimento para membro admin', () => {
+    const adminMember: MemberListItem[] = [
+      {
+        id: 3,
+        telegram_id: 1003,
+        telegram_username: 'admin_user',
+        channel: 'telegram',
+        channel_user_id: null,
+        status: 'ativo',
+        subscription_ends_at: '2026-01-01T00:00:00Z',
+        created_at: '2026-02-01T00:00:00Z',
+        group_id: 'group-1',
+        groups: { name: 'Grupo Alpha' },
+        is_admin: true,
+      },
+    ];
+    render(<MemberList members={adminMember} role="group_admin" />);
+
+    expect(screen.getByText('@admin_user')).toBeInTheDocument();
+    expect(screen.getByText('Admin')).toBeInTheDocument();
+    // The expiration column should show '-' for admin, not the formatted date
+    const row = screen.getByText('@admin_user').closest('tr')!;
+    const cells = row.querySelectorAll('td');
+    // Vencimento is the 5th column (index 4)
+    expect(cells[4].textContent).toBe('-');
+  });
+
   it('renderiza estado vazio quando não há membros', () => {
     render(<MemberList members={[]} role="group_admin" />);
 

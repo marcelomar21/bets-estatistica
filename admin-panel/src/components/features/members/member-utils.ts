@@ -19,9 +19,11 @@ export const memberStatusConfig: Record<MemberDisplayStatus, { label: string; cl
   cancelado: { label: 'Cancelado', className: 'bg-gray-100 text-gray-800' },
 };
 
-type DisplayStatusInput = Pick<Member, 'status' | 'subscription_ends_at'>;
+type DisplayStatusInput = Pick<Member, 'status' | 'subscription_ends_at'> & { is_admin?: boolean };
 
 export function getDisplayStatus(member: DisplayStatusInput): MemberDisplayStatus {
+  if (member.is_admin) return member.status;
+
   if (member.status === 'ativo' && member.subscription_ends_at) {
     const now = new Date();
     const endsAt = new Date(member.subscription_ends_at);
