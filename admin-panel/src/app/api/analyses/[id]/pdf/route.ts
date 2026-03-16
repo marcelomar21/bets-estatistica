@@ -32,17 +32,35 @@ export const GET = createApiHandler(
       );
     }
 
-    // Group admin check: verify this analysis belongs to a match in their group
+    // Group admin check: verify this analysis's league is enabled for their group
     if (groupFilter) {
-      const { data: bet } = await supabase
-        .from('suggested_bets')
-        .select('id')
+      // Get the match's league name via league_matches → league_seasons
+      const { data: match } = await supabase
+        .from('league_matches')
+        .select('season_id, league_seasons!inner(league_name)')
         .eq('match_id', analysis.match_id)
-        .eq('group_id', groupFilter)
-        .limit(1)
         .single();
 
-      if (!bet) {
+      if (!match) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Acesso negado' } },
+          { status: 403 },
+        );
+      }
+
+      const leagueName = (match.league_seasons as unknown as { league_name: string }).league_name;
+
+      // Check if this league is explicitly disabled for the group
+      const { data: pref } = await supabase
+        .from('group_league_preferences')
+        .select('enabled')
+        .eq('group_id', groupFilter)
+        .eq('league_name', leagueName)
+        .maybeSingle();
+
+      // If preference exists and is disabled → deny access
+      // If no preference or enabled=true → allow (default: all enabled)
+      if (pref && !pref.enabled) {
         return NextResponse.json(
           { success: false, error: { code: 'FORBIDDEN', message: 'Acesso negado' } },
           { status: 403 },
