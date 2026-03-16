@@ -114,9 +114,9 @@ describe('NotificationsPanel', () => {
 
   it('shows "Marcar lida" button only for unread notifications', () => {
     const notifications: Notification[] = [
-      makeNotification({ id: 'u1', read: false }),
-      makeNotification({ id: 'u2', read: false }),
-      makeNotification({ id: 'r1', read: true }),
+      makeNotification({ id: 'u1', group_id: 'g1', read: false }),
+      makeNotification({ id: 'u2', group_id: 'g2', read: false }),
+      makeNotification({ id: 'r1', group_id: 'g3', type: 'group_paused', read: true }),
     ];
 
     render(

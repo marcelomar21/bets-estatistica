@@ -24,13 +24,13 @@ async function persistNotifications(
 ) {
   if (alerts.length === 0) return;
 
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
 
   // Fetch recent notifications for deduplication
   const { data: recent, error: dedupError } = await supabase
     .from('notifications')
     .select('type, group_id')
-    .gte('created_at', oneHourAgo);
+    .gte('created_at', sixHoursAgo);
 
   if (dedupError) {
     console.warn('[notifications] Failed to fetch recent for dedup, skipping insert:', dedupError.message);
