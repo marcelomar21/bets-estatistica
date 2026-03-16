@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * POST /api/members/[id]/reactivate
@@ -74,31 +75,33 @@ export const POST = createApiHandler(
     }
 
     // Unban from Telegram group (best-effort)
-    const { data: botData } = await supabase
-      .from('bot_pool')
-      .select('bot_token, public_group_id')
-      .eq('group_id', member.group_id)
-      .eq('is_active', true)
-      .single();
+    // Uses service_role client to bypass bot_pool RLS (restricted to super_admin)
+    if (member.telegram_id && member.group_id) {
+      try {
+        const { data: botData } = await getSupabaseAdmin()
+          .from('bot_pool')
+          .select('bot_token, public_group_id')
+          .eq('group_id', member.group_id)
+          .eq('is_active', true)
+          .single();
 
-    if (botData?.bot_token && member.telegram_id) {
-      const botToken = botData.bot_token;
-      const publicGroupId = botData.public_group_id;
-
-      if (publicGroupId) {
-        try {
-          await fetch(`https://api.telegram.org/bot${botToken}/unbanChatMember`, {
+        if (botData?.bot_token && botData.public_group_id) {
+          const res = await fetch(`https://api.telegram.org/bot${botData.bot_token}/unbanChatMember`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: publicGroupId,
+              chat_id: botData.public_group_id,
               user_id: member.telegram_id,
               only_if_banned: true,
             }),
           });
-        } catch {
-          // Best-effort — don't block reactivation
+          if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            console.warn('[reactivate] Telegram unbanChatMember failed:', body);
+          }
         }
+      } catch (err) {
+        console.warn('[reactivate] Telegram unbanChatMember error:', err instanceof Error ? err.message : err);
       }
     }
 

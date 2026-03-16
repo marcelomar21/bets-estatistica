@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 /**
  * PATCH /api/members/[id]/toggle-admin
@@ -21,7 +22,7 @@ export const PATCH = createApiHandler(
     // Fetch member with group filter (RLS enforcement)
     let query = supabase
       .from('members')
-      .select('id, is_admin, group_id')
+      .select('id, is_admin, group_id, telegram_id')
       .eq('id', memberId);
 
     if (groupFilter) {
@@ -49,6 +50,44 @@ export const PATCH = createApiHandler(
         { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
         { status: 500 },
       );
+    }
+
+    // Telegram promote/demote (best-effort)
+    if (member.telegram_id && member.group_id) {
+      try {
+        const { data: botData } = await getSupabaseAdmin()
+          .from('bot_pool')
+          .select('bot_token, public_group_id')
+          .eq('group_id', member.group_id)
+          .eq('is_active', true)
+          .single();
+
+        if (botData?.bot_token && botData.public_group_id) {
+          const res = await fetch(
+            `https://api.telegram.org/bot${botData.bot_token}/promoteChatMember`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: botData.public_group_id,
+                user_id: member.telegram_id,
+                can_manage_chat: newValue,
+                can_delete_messages: newValue,
+                can_restrict_members: newValue,
+                can_invite_users: newValue,
+                can_pin_messages: newValue,
+                can_manage_video_chats: newValue,
+              }),
+            },
+          );
+          if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            console.warn('[toggle-admin] Telegram promoteChatMember failed:', body);
+          }
+        }
+      } catch (err) {
+        console.warn('[toggle-admin] Telegram promoteChatMember error:', err instanceof Error ? err.message : err);
+      }
     }
 
     // Audit log (best-effort)

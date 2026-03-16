@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 const CANCELLABLE_STATUSES = new Set(['trial', 'ativo']);
 
@@ -107,53 +108,69 @@ export const POST = createApiHandler(
     }
 
     // Get bot token and group info for Telegram operations (best-effort)
-    const { data: botData } = await supabase
-      .from('bot_pool')
-      .select('bot_token, public_group_id, groups(checkout_url)')
-      .eq('group_id', member.group_id)
-      .eq('is_active', true)
-      .single();
-
-    if (botData?.bot_token && member.telegram_id) {
-      const botToken = botData.bot_token;
-      const publicGroupId = botData.public_group_id;
-      const groupsData = botData.groups as unknown as { checkout_url: string | null } | { checkout_url: string | null }[] | null;
-      const checkoutUrl = (Array.isArray(groupsData) ? groupsData[0]?.checkout_url : groupsData?.checkout_url) || '';
-
-      // Ban member from group (best-effort)
-      if (publicGroupId) {
-        const banUntil = Math.floor(Date.now() / 1000) + 86400; // 24h
-        try {
-          await fetch(`https://api.telegram.org/bot${botToken}/banChatMember`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: publicGroupId,
-              user_id: member.telegram_id,
-              until_date: banUntil,
-            }),
-          });
-        } catch {
-          // Best-effort — don't block cancellation
-        }
-      }
-
-      // Send farewell DM (best-effort)
-      const farewellText = checkoutUrl
-        ? `Sua assinatura foi cancelada.\n\nPara reativar: ${checkoutUrl}`
-        : 'Sua assinatura foi cancelada.';
-
+    // Uses service_role client to bypass bot_pool RLS (restricted to super_admin)
+    // Entire block is try/catch to avoid 500 after successful DB update
+    if (member.telegram_id && member.group_id) {
       try {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: member.telegram_id,
-            text: farewellText,
-          }),
-        });
-      } catch {
-        // Best-effort
+        const { data: botData } = await getSupabaseAdmin()
+          .from('bot_pool')
+          .select('bot_token, public_group_id, groups(checkout_url)')
+          .eq('group_id', member.group_id)
+          .eq('is_active', true)
+          .single();
+
+        if (botData?.bot_token) {
+          const botToken = botData.bot_token;
+          const publicGroupId = botData.public_group_id;
+          const groupsData = botData.groups as unknown as { checkout_url: string | null } | { checkout_url: string | null }[] | null;
+          const checkoutUrl = (Array.isArray(groupsData) ? groupsData[0]?.checkout_url : groupsData?.checkout_url) || '';
+
+          // Ban member from group (best-effort)
+          if (publicGroupId) {
+            const banUntil = Math.floor(Date.now() / 1000) + 86400; // 24h
+            try {
+              const res = await fetch(`https://api.telegram.org/bot${botToken}/banChatMember`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: publicGroupId,
+                  user_id: member.telegram_id,
+                  until_date: banUntil,
+                }),
+              });
+              if (!res.ok) {
+                const resBody = await res.json().catch(() => null);
+                console.warn('[cancel] Telegram banChatMember failed:', resBody);
+              }
+            } catch (err) {
+              console.warn('[cancel] Telegram banChatMember error:', err instanceof Error ? err.message : err);
+            }
+          }
+
+          // Send farewell DM (best-effort)
+          const farewellText = checkoutUrl
+            ? `Sua assinatura foi cancelada.\n\nPara reativar: ${checkoutUrl}`
+            : 'Sua assinatura foi cancelada.';
+
+          try {
+            const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: member.telegram_id,
+                text: farewellText,
+              }),
+            });
+            if (!res.ok) {
+              const resBody = await res.json().catch(() => null);
+              console.warn('[cancel] Telegram sendMessage failed:', resBody);
+            }
+          } catch (err) {
+            console.warn('[cancel] Telegram sendMessage error:', err instanceof Error ? err.message : err);
+          }
+        }
+      } catch (err) {
+        console.warn('[cancel] Telegram operations failed:', err instanceof Error ? err.message : err);
       }
     }
 

@@ -8,6 +8,12 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+// Mock supabase-admin (service_role client for bot_pool queries)
+const mockAdminFrom = vi.fn();
+vi.mock('@/lib/supabase-admin', () => ({
+  getSupabaseAdmin: () => ({ from: mockAdminFrom }),
+}));
+
 // Save/restore global fetch
 const originalFetch = global.fetch;
 
@@ -84,6 +90,17 @@ function createTableMock(tableResponses: Record<string, {
   return { from, eqCalls };
 }
 
+function setupAdminBotPoolMock(botData: typeof sampleBotData | null = sampleBotData) {
+  const chain: Record<string, unknown> = {};
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.single = vi.fn().mockResolvedValue({
+    data: botData,
+    error: botData ? null : { message: 'not found' },
+  });
+  mockAdminFrom.mockReturnValue(chain);
+}
+
 function createMockContext(
   role: 'super_admin' | 'group_admin' = 'super_admin',
   supabaseMock?: { from: ReturnType<typeof vi.fn> },
@@ -110,9 +127,9 @@ describe('POST /api/members/[id]/cancel', () => {
   it('cancels a member with valid reason', async () => {
     const mock = createTableMock({
       members: { singleData: sampleMember },
-      bot_pool: { singleData: sampleBotData },
       audit_log: {},
     });
+    setupAdminBotPoolMock();
     const ctx = createMockContext('super_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
 
@@ -220,9 +237,9 @@ describe('POST /api/members/[id]/cancel', () => {
   it('applies group filter for group_admin', async () => {
     const mock = createTableMock({
       members: { singleData: sampleMember },
-      bot_pool: { singleData: sampleBotData },
       audit_log: {},
     });
+    setupAdminBotPoolMock();
     const ctx = createMockContext('group_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
 
@@ -235,5 +252,62 @@ describe('POST /api/members/[id]/cancel', () => {
       ([col, val]) => col === 'group_id' && val === 'group-uuid-1'
     );
     expect(hasGroupFilter).toBe(true);
+  });
+
+  it('group_admin can trigger Telegram ban via admin client', async () => {
+    const mock = createTableMock({
+      members: { singleData: sampleMember },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { POST } = await import('../members/[id]/cancel/route');
+    const req = createMockRequest('POST', 'http://localhost/api/members/42/cancel', { reason: 'Membro inativo' });
+    const res = await POST(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    // Verify banChatMember was called via global.fetch
+    const fetchCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const banCall = fetchCalls.find(
+      ([url]: [string]) => typeof url === 'string' && url.includes('/banChatMember'),
+    );
+    expect(banCall).toBeDefined();
+    const banBody = JSON.parse(banCall![1].body);
+    expect(banBody.chat_id).toBe('-1001234567890');
+    expect(banBody.user_id).toBe(123456789);
+  });
+
+  it('logs warning when Telegram ban fails', async () => {
+    const mock = createTableMock({
+      members: { singleData: sampleMember },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const { POST } = await import('../members/[id]/cancel/route');
+    const req = createMockRequest('POST', 'http://localhost/api/members/42/cancel', { reason: 'Membro inativo' });
+    const res = await POST(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    // API should still succeed (best-effort Telegram)
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    // console.warn should have been called
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[cancel] Telegram banChatMember error:',
+      'Network error',
+    );
+    warnSpy.mockRestore();
   });
 });
