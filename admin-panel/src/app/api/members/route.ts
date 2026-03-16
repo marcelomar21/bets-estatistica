@@ -183,7 +183,7 @@ export const GET = createApiHandler(
           total_pages: totalPages,
         },
         counters: {
-          total: total - adminsCount,
+          total,
           trial: trialResult.count ?? 0,
           ativo: ativoResult.count ?? 0,
           vencendo: vencendoResult.count ?? 0,
