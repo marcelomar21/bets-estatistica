@@ -145,14 +145,13 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
-    // Verify stat cards render — check by title presence
-    expect(screen.getByText('Membros Ativos')).toBeInTheDocument();
-    expect(screen.getByText('Bots em Uso')).toBeInTheDocument();
-    expect(screen.getByText('Bots Online')).toBeInTheDocument();
-    // Verify group cards (name also appears in accuracy mini-cards)
+    // Verify inline context shows group/member counts
+    expect(screen.getByText(/2 ativos/)).toBeInTheDocument();
+    expect(screen.getByText(/25 membros/)).toBeInTheDocument();
+    // Verify group cards
     expect(screen.getAllByText('Grupo Alpha').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Grupo Beta').length).toBeGreaterThanOrEqual(1);
   });
@@ -171,7 +170,7 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Group Admin Dashboard Mock')).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('Grupos Ativos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Grupo Alpha')).not.toBeInTheDocument();
 
     const calledUrls = fetchSpy.mock.calls.map((call) => {
       const input = call[0];
@@ -245,7 +244,7 @@ describe('DashboardPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Tentar Novamente' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     // At least 2 stats calls (initial fail + retry) plus notification calls
@@ -301,7 +300,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     // Verify both endpoints were called
@@ -321,7 +320,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     // Verify the NotificationsPanel heading appears
@@ -339,7 +338,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     // Unread notification (n1) should be visible with a "Marcar lida" button
@@ -368,7 +367,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     // Should have unread notifications and "Marcar todas como lidas" button
@@ -405,32 +404,26 @@ describe('DashboardPage', () => {
       expect(screen.getByText('Performance')).toBeInTheDocument();
     });
 
-    // Overall rate card + Posted rate card
-    expect(screen.getByText('Taxa Geral')).toBeInTheDocument();
-    expect(screen.getByText('Taxa das Postadas')).toBeInTheDocument();
-    expect(screen.getByText('62.5%')).toBeInTheDocument();
-    expect(screen.getByText('30/48 acertos')).toBeInTheDocument();
+    // Hero rate (overall)
+    expect(screen.getByText(/59\.4%/)).toBeInTheDocument();
+    expect(screen.getByText('38/64 acertos')).toBeInTheDocument();
 
-    // Period cards
-    expect(screen.getByText('Taxa Total')).toBeInTheDocument();
-    // 59.4% appears in both the overall rate card and Taxa Total period card
-    expect(screen.getAllByText(/59\.4%/).length).toBeGreaterThanOrEqual(2);
-    // "38/64 acertos" also appears in both the overall rate card and period card
-    expect(screen.getAllByText('38/64 acertos').length).toBeGreaterThanOrEqual(1);
-
-    expect(screen.getByText(/ltimos 7 dias/)).toBeInTheDocument();
+    // Secondary stats: Postadas, 7 dias, 30 dias
+    expect(screen.getByText('Postadas')).toBeInTheDocument();
+    expect(screen.getByText(/62\.5%/)).toBeInTheDocument();
+    expect(screen.getByText('7 dias')).toBeInTheDocument();
     expect(screen.getByText(/55\.6%/)).toBeInTheDocument();
-
-    expect(screen.getByText(/ltimos 30 dias/)).toBeInTheDocument();
+    expect(screen.getByText('30 dias')).toBeInTheDocument();
     expect(screen.getByText(/60(\.0)?%/)).toBeInTheDocument();
 
-    // Group mini-cards
-    expect(screen.getByText('65%')).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
+    // Group accuracy inline
+    expect(screen.getByText(/65(\.0)?%/)).toBeInTheDocument();
+    expect(screen.getByText(/50(\.0)?%/)).toBeInTheDocument();
 
     // "Ver detalhes" link to analytics page
-    const detailsLink = screen.getByText(/Ver detalhes/);
-    expect(detailsLink.closest('a')).toHaveAttribute('href', '/analytics');
+    const detailsLinks = screen.getAllByText(/Ver detalhes/);
+    const analyticsLink = detailsLinks.find(el => el.closest('a')?.getAttribute('href') === '/analytics');
+    expect(analyticsLink).toBeDefined();
   });
 
   it('shows empty state when accuracy has zero bets', async () => {
@@ -469,7 +462,7 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Grupos Ativos')).toBeInTheDocument();
+      expect(screen.getByText('Grupos')).toBeInTheDocument();
     });
 
     const calledUrls = fetchSpy.mock.calls.map((call) => {

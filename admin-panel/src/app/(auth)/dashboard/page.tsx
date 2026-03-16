@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { DashboardData, Notification } from '@/types/database';
 import Link from 'next/link';
-import StatCard from '@/components/features/dashboard/StatCard';
 import GroupSummaryCard from '@/components/features/dashboard/GroupSummaryCard';
 import NotificationsPanel from '@/components/features/dashboard/NotificationsPanel';
 import PerformanceCards from '@/components/features/dashboard/PerformanceCards';
@@ -285,49 +284,42 @@ export default function DashboardPage() {
           </div>
         ) : null}
 
-        {/* Summary stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="Grupos Ativos" value={data.summary.groups.active} subtitle={`${data.summary.groups.total} total`} icon="👥" />
-          <StatCard title="Membros Ativos" value={data.summary.members.total} icon="👤" />
-          <StatCard title="Bots em Uso" value={data.summary.bots.in_use} subtitle={`${data.summary.bots.total} total`} icon="🤖" />
-          <StatCard title="Bots Online" value={data.summary.bots.online} subtitle={data.summary.bots.offline > 0 ? `${data.summary.bots.offline} offline` : undefined} icon="📡" />
-        </div>
-
-        {/* Job health card */}
+        {/* Job health bar */}
         {jobHealth && (
           <Link href="/job-executions" className="block">
-            <div className={`rounded-lg shadow p-4 flex items-center justify-between transition-colors ${
+            <div className={`rounded-lg p-3 flex items-center justify-between transition-colors ${
               jobHealth.status === 'degraded'
                 ? 'bg-red-50 border border-red-200 hover:bg-red-100'
                 : 'bg-green-50 border border-green-200 hover:bg-green-100'
             }`}>
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{jobHealth.status === 'degraded' ? '🔴' : '🟢'}</span>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">
-                    Jobs: {jobHealth.status === 'healthy' ? 'Saudável' : 'Degradado'}
-                  </p>
+              <div className="flex items-center gap-2">
+                <span className={`inline-block w-2 h-2 rounded-full ${jobHealth.status === 'degraded' ? 'bg-red-500' : 'bg-green-500'}`} />
+                <p className="text-sm text-gray-700">
+                  Jobs: {jobHealth.status === 'healthy' ? 'Saudável' : 'Degradado'}
                   {jobHealth.status === 'degraded' && jobHealth.last_error && (
-                    <p className="text-xs text-red-600 mt-0.5">
-                      Falha em {jobHealth.last_error.job_name}: {jobHealth.last_error.error_message ?? 'Erro desconhecido'}
-                    </p>
+                    <span className="text-red-600 ml-1">
+                      — {jobHealth.last_error.job_name}: {jobHealth.last_error.error_message ?? 'Erro desconhecido'}
+                    </span>
                   )}
                   {jobHealth.status === 'healthy' && (
-                    <p className="text-xs text-green-700 mt-0.5">
-                      {jobHealth.total_jobs} jobs monitorados — todos OK
-                    </p>
+                    <span className="text-gray-500 ml-1">— {jobHealth.total_jobs} monitorados</span>
                   )}
-                </div>
+                </p>
               </div>
-              <span className="text-sm text-gray-500">Ver detalhes →</span>
+              <span className="text-xs text-gray-400">detalhes &rarr;</span>
             </div>
           </Link>
         )}
 
-        {/* Group cards */}
+        {/* Groups section with inline context */}
         {data.groups.length > 0 && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Grupos</h2>
+            <div className="flex items-baseline gap-2 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Grupos</h2>
+              <span className="text-sm text-gray-400">
+                {data.summary.groups.active} ativos &middot; {data.summary.members.total} membros
+              </span>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {data.groups.map((group) => (
                 <GroupSummaryCard key={group.id} group={group} />
