@@ -93,21 +93,21 @@ export default function GroupAdminDashboard() {
     }
   }, []);
 
-  const handleMarkAsRead = useCallback(async (id: string) => {
-    // Optimistic update via functional updaters (avoids stale closure on rapid clicks)
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    setUnreadCount(prev => Math.max(0, prev - 1));
+  const handleMarkAsRead = useCallback(async (ids: string[]) => {
+    const idSet = new Set(ids);
+    setNotifications(prev => prev.map(n => idSet.has(n.id) ? { ...n, read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - ids.length));
     try {
-      const res = await fetch(`/api/notifications/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ read: true }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await Promise.all(ids.map(id =>
+        fetch(`/api/notifications/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ read: true }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ));
     } catch {
-      // Rollback on failure
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
-      setUnreadCount(prev => prev + 1);
+      setNotifications(prev => prev.map(n => idSet.has(n.id) ? { ...n, read: false } : n));
+      setUnreadCount(prev => prev + ids.length);
     }
   }, []);
 

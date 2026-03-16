@@ -5,11 +5,11 @@ import { formatDateTime } from '@/lib/format-utils';
 interface NotificationsPanelProps {
   notifications: Notification[];
   unreadCount: number;
-  onMarkAsRead: (id: string) => void;
+  onMarkAsRead: (ids: string[]) => void;
   onMarkAllRead: () => void;
 }
 
-type GroupedNotification = Notification & { count: number };
+type GroupedNotification = Notification & { count: number; ids: string[] };
 
 const typeIcons: Record<Notification['type'], string> = {
   bot_offline: '\u{1F534}',
@@ -48,9 +48,10 @@ export default function NotificationsPanel({
       const key = `${n.type}::${n.group_id ?? ''}`;
       const existing = grouped.get(key);
       if (!existing) {
-        grouped.set(key, { ...n, count: 1 });
+        grouped.set(key, { ...n, count: 1, ids: [n.id] });
       } else {
         existing.count += 1;
+        existing.ids.push(n.id);
       }
     }
     return [...grouped.values()];
@@ -111,7 +112,7 @@ export default function NotificationsPanel({
                 {!notification.read && (
                   <button
                     type="button"
-                    onClick={() => onMarkAsRead(notification.id)}
+                    onClick={() => onMarkAsRead(notification.ids)}
                     className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-700 font-medium mt-0.5"
                     title="Marcar como lida"
                     aria-label={`Marcar como lida: ${notification.title}`}
