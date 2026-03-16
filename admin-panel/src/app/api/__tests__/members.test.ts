@@ -136,6 +136,23 @@ describe('GET /api/members', () => {
     expect(body.data.counters.admins).toBe(0);
   });
 
+  it('counters.total equals pagination.total (both include admins)', async () => {
+    const rows = [
+      { id: 1, telegram_id: 1001, telegram_username: 'member1', status: 'ativo', subscription_ends_at: null, created_at: '2026-02-08T00:00:00Z', group_id: 'g1' },
+    ];
+    const supabase = createMembersSupabaseMock({ data: rows, error: null, count: 10 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    const response = await GET(createMockRequest('http://localhost/api/members'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    // Both total values must be equal — no subtraction of admins
+    expect(body.data.counters.total).toBe(body.data.pagination.total);
+  });
+
   it('retorna apenas membros do group_admin com filtro explícito por group_id', async () => {
     const rows = [
       {

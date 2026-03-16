@@ -98,15 +98,12 @@ export const GET = createApiHandler(
     }
 
     // Counter queries — run in parallel with main query for global totals
-    // Exclude is_admin members from counters (admins counted separately)
-    let trialQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'trial').eq('is_admin', false);
+    let trialQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'trial');
     let ativoQuery = supabase.from('members').select('*', { count: 'exact', head: true })
       .eq('status', 'ativo')
-      .eq('is_admin', false)
       .or(`subscription_ends_at.is.null,subscription_ends_at.gt.${sevenDaysIso}`);
     let vencendoQuery = supabase.from('members').select('*', { count: 'exact', head: true })
       .eq('status', 'ativo')
-      .eq('is_admin', false)
       .gte('subscription_ends_at', nowIso)
       .lte('subscription_ends_at', sevenDaysIso);
     let adminsQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('is_admin', true);
