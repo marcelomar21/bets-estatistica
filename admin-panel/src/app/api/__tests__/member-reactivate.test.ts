@@ -8,6 +8,12 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+// Mock supabase-admin (service_role client for bot_pool queries)
+const mockAdminFrom = vi.fn();
+vi.mock('@/lib/supabase-admin', () => ({
+  getSupabaseAdmin: () => ({ from: mockAdminFrom }),
+}));
+
 // Save/restore global fetch
 const originalFetch = global.fetch;
 
@@ -71,6 +77,17 @@ function createTableMock(tableResponses: Record<string, {
   return { from, eqCalls };
 }
 
+function setupAdminBotPoolMock(botData: typeof sampleBotData | null = sampleBotData) {
+  const chain: Record<string, unknown> = {};
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.single = vi.fn().mockResolvedValue({
+    data: botData,
+    error: botData ? null : { message: 'not found' },
+  });
+  mockAdminFrom.mockReturnValue(chain);
+}
+
 function createMockContext(
   role: 'super_admin' | 'group_admin' = 'super_admin',
   supabaseMock?: { from: ReturnType<typeof vi.fn> },
@@ -97,9 +114,9 @@ describe('POST /api/members/[id]/reactivate', () => {
   it('reactivates a cancelled member', async () => {
     const mock = createTableMock({
       members: { singleData: sampleCancelledMember },
-      bot_pool: { singleData: sampleBotData },
       audit_log: {},
     });
+    setupAdminBotPoolMock();
     const ctx = createMockContext('super_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
 
@@ -213,9 +230,9 @@ describe('POST /api/members/[id]/reactivate', () => {
   it('applies group filter for group_admin', async () => {
     const mock = createTableMock({
       members: { singleData: sampleCancelledMember },
-      bot_pool: { singleData: sampleBotData },
       audit_log: {},
     });
+    setupAdminBotPoolMock();
     const ctx = createMockContext('group_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
 
@@ -232,9 +249,9 @@ describe('POST /api/members/[id]/reactivate', () => {
   it('calls Telegram unbanChatMember on success', async () => {
     const mock = createTableMock({
       members: { singleData: sampleCancelledMember },
-      bot_pool: { singleData: sampleBotData },
       audit_log: {},
     });
+    setupAdminBotPoolMock();
     const ctx = createMockContext('super_admin', mock);
     mockWithTenant.mockResolvedValue({ success: true, context: ctx });
 
