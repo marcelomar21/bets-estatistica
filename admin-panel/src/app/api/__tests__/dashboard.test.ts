@@ -350,6 +350,30 @@ describe('GET /api/dashboard/stats', () => {
     expect(offlineAlerts).toHaveLength(0);
   });
 
+  it('detects bot as offline when group_id is valid but last_heartbeat is null', async () => {
+    const nullHeartbeatValidGroup = [
+      { group_id: 'g1', status: 'online', last_heartbeat: null, error_message: null, groups: { name: 'Grupo Alpha' } },
+    ];
+    const mock = createDashboardMock({
+      groups: { data: [sampleGroups[0]], error: null },
+      bot_health: { data: nullHeartbeatValidGroup, error: null },
+    });
+    const context = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/dashboard/stats/route');
+    const req = createMockRequest('GET', 'http://localhost/api/dashboard/stats');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    const offlineAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'bot_offline');
+    expect(offlineAlerts).toHaveLength(1);
+    expect(offlineAlerts[0].group_name).toBe('Grupo Alpha');
+    expect(body.data.summary.bots.offline).toBe(1);
+  });
+
   it('considers bot online when last_heartbeat < 30 min ago', async () => {
     const recentTime = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago
     const recentHealth = [
