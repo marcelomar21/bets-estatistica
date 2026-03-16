@@ -53,6 +53,49 @@ function PeriodStat({ label, period }: { label: string; period: AccuracyPeriod }
   );
 }
 
+function GroupTickerItem({ g }: { g: GroupAccuracy }) {
+  const hasData = g.total > 0;
+  return (
+    <span className="inline-flex items-center gap-1.5 text-sm whitespace-nowrap px-3 py-1 rounded-full bg-gray-50 border border-gray-100">
+      <span className="text-gray-700 font-medium">{g.group_name}</span>
+      <span className={`font-semibold ${hasData ? rateColor(g.rate, g.total) : 'text-gray-400'}`}>
+        {hasData ? `${g.rate}%` : '—'}
+      </span>
+      {hasData && <span className="text-gray-400 text-xs">({g.wins}/{g.total})</span>}
+    </span>
+  );
+}
+
+function GroupTicker({ groups }: { groups: GroupAccuracy[] }) {
+  const duration = Math.max(groups.length * 3, 10);
+
+  return (
+    <div className="mt-4 pt-3 border-t border-gray-100 overflow-hidden relative">
+      {/* Fade edges */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white to-transparent z-10" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent z-10" />
+
+      <div
+        className="flex animate-ticker hover:[animation-play-state:paused]"
+        style={{ animationDuration: `${duration}s` }}
+      >
+        {/* First copy — fills viewport, items spread evenly */}
+        <div className="flex shrink-0 min-w-full justify-around">
+          {groups.map((g) => (
+            <GroupTickerItem key={g.group_id} g={g} />
+          ))}
+        </div>
+        {/* Second copy — starts off-screen right for seamless loop */}
+        <div className="flex shrink-0 min-w-full justify-around">
+          {groups.map((g) => (
+            <GroupTickerItem key={`${g.group_id}-dup`} g={g} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PerformanceCards({ periods, overallRate, postedRate, byGroup }: PerformanceCardsProps) {
   const hasOverall = overallRate && overallRate.total > 0;
 
@@ -93,17 +136,9 @@ export default function PerformanceCards({ periods, overallRate, postedRate, byG
         </div>
       </div>
 
-      {/* Per-group accuracy inline */}
+      {/* Per-group accuracy ticker */}
       {byGroup && byGroup.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1">
-          {byGroup.map((g) => (
-            <span key={g.group_id} className="text-sm text-gray-600">
-              {g.group_name}{' '}
-              <span className={`font-semibold ${rateColor(g.rate, g.total)}`}>{g.rate}%</span>
-              <span className="text-gray-400 text-xs ml-0.5">({g.wins}/{g.total})</span>
-            </span>
-          ))}
-        </div>
+        <GroupTicker groups={byGroup} />
       )}
     </div>
   );

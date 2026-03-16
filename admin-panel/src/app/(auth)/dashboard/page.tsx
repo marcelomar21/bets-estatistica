@@ -276,7 +276,13 @@ export default function DashboardPage() {
       <div className="space-y-8">
         {/* Performance / Accuracy */}
         {accuracy && accuracy.total.total > 0 ? (
-          <PerformanceCards periods={accuracy.periods} overallRate={accuracy.total} postedRate={accuracy.postedOnly} byGroup={accuracy.byGroup} />
+          <PerformanceCards periods={accuracy.periods} overallRate={accuracy.total} postedRate={accuracy.postedOnly} byGroup={
+            // Merge all dashboard groups with accuracy data so every group appears in the ticker
+            data.groups.map((g) => {
+              const acc = accuracy.byGroup.find((a) => a.group_id === g.id);
+              return acc ?? { group_id: g.id, group_name: g.name, rate: 0, wins: 0, total: 0 };
+            })
+          } />
         ) : accuracy && accuracy.total.total === 0 ? (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Performance</h2>
