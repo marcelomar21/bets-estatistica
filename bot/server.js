@@ -419,8 +419,23 @@ async function setupScheduler() {
     const { runTrialReminders } = require('./jobs/membership/trial-reminders');
     const { runReconciliation } = require('./jobs/membership/reconciliation');
     const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
-    // distribute-bets: handled by per-group dynamic schedulers (server.scheduler.js)
-    // Removed central cron to avoid 4x duplicate executions at same timestamp
+    const { runDistributeBets } = require('./jobs/distributeBets');
+
+    // Distribute bets (round-robin) - every 15 minutes
+    cron.schedule('*/15 * * * *', async () => {
+      logger.info('[scheduler] Running distribute-bets (central)');
+      try {
+        await withExecutionLogging('distribute-bets', async () => {
+          const result = await runDistributeBets();
+          if (!result?.success) {
+            throw new Error(result?.error?.message || 'distribute-bets failed');
+          }
+          return result;
+        });
+      } catch (err) {
+        logger.error('[scheduler] distribute-bets failed', { error: err.message });
+      }
+    }, { timezone: TZ });
 
     // Track results - every hour between 13h and 23h (São Paulo time)
     cron.schedule('0 13-23 * * *', async () => {
