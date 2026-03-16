@@ -949,32 +949,33 @@ export default function PostagemPage() {
                 ({postableBets.length} aposta{postableBets.length !== 1 ? 's' : ''} {postableBets.length !== 1 ? 'elegiveis' : 'elegivel'})
               </span>
             </h2>
-            <div className="flex items-center gap-3">
-              {/* Bulk schedule toolbar */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="time"
-                  value={bulkScheduleTime}
-                  onChange={(e) => setBulkScheduleTime(e.target.value)}
-                  className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+            {postableBets.length > 0 && (
+              <div className="flex items-center gap-3">
+                {/* Bulk schedule toolbar */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="time"
+                    value={bulkScheduleTime}
+                    onChange={(e) => setBulkScheduleTime(e.target.value)}
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={handleBulkSchedule}
+                    disabled={!bulkScheduleTime || bulkScheduling}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {bulkScheduling ? '...' : 'Aplicar a todas'}
+                  </button>
+                </div>
                 <button
-                  onClick={handleBulkSchedule}
-                  disabled={!bulkScheduleTime || postableBets.length === 0 || bulkScheduling}
-                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => handlePreparePreview()}
+                  title={`Preparar postagem de ${postableBets.length} aposta(s)`}
+                  className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
                 >
-                  {bulkScheduling ? '...' : 'Aplicar a todas'}
+                  Preparar Postagem
                 </button>
               </div>
-              <button
-                onClick={() => handlePreparePreview()}
-                disabled={postableBets.length === 0}
-                title={postableBets.length === 0 ? 'Nenhuma aposta pronta' : `Preparar postagem de ${postableBets.length} aposta(s)`}
-                className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Preparar Postagem
-              </button>
-            </div>
+            )}
           </div>
           <PostingQueueTable
             bets={postableBets}
