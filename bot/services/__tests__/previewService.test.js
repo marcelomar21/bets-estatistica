@@ -20,12 +20,17 @@ jest.mock('../../../lib/supabase', () => ({
 
 jest.mock('../copyService', () => ({
   generateBetCopy: jest.fn().mockResolvedValue({ success: false }),
-  clearBetCache: jest.fn(),
+}));
+
+jest.mock('../betService', () => ({
+  updateGeneratedCopy: jest.fn().mockResolvedValue(),
 }));
 
 jest.mock('../../jobs/postBets', () => ({
   formatBetMessage: jest.fn((_bet, _tpl) => 'formatted message'),
   getRandomTemplate: jest.fn(() => 'template'),
+  getTemplate: jest.fn(() => ({ header: '🎯 TEST', footer: '🍀 GL' })),
+  getOrGenerateMessage: jest.fn((_bet, _tc, _idx) => 'generated message'),
 }));
 
 const GROUP_ID = 'group-uuid-123';
@@ -39,6 +44,7 @@ const RAW_BET = {
   deep_link: 'https://bet.com/link',
   reasoning: 'Strong form',
   promovida_manual: false,
+  generated_copy: null,
   league_matches: {
     home_team_name: 'Time A',
     away_team_name: 'Time B',
@@ -77,11 +83,15 @@ describe('previewService', () => {
     }));
     jest.mock('../copyService', () => ({
       generateBetCopy: jest.fn().mockResolvedValue({ success: false }),
-      clearBetCache: jest.fn(),
+    }));
+    jest.mock('../betService', () => ({
+      updateGeneratedCopy: jest.fn().mockResolvedValue(),
     }));
     jest.mock('../../jobs/postBets', () => ({
       formatBetMessage: jest.fn((_bet, _tpl) => 'formatted message'),
       getRandomTemplate: jest.fn(() => 'template'),
+      getTemplate: jest.fn(() => ({ header: '🎯 TEST', footer: '🍀 GL' })),
+      getOrGenerateMessage: jest.fn((_bet, _tc, _idx) => 'generated message'),
     }));
     generatePreview = require('../previewService').generatePreview;
   });

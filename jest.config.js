@@ -2,7 +2,7 @@
 require('dotenv').config({ quiet: true });
 
 // Skip integration tests when no database available (CI environment)
-const testPathIgnorePatterns = ['/node_modules/'];
+const testPathIgnorePatterns = ['/node_modules/', '/.claude/worktrees/'];
 if (!process.env.SUPABASE_URL) {
   testPathIgnorePatterns.push('schema-validation.test.js');
 }

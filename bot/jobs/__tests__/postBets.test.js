@@ -83,6 +83,7 @@ jest.mock('../../services/betService', () => ({
   markBetAsPosted: jest.fn().mockResolvedValue({ success: true }),
   registrarPostagem: jest.fn().mockResolvedValue({ success: true }),
   getAvailableBets: jest.fn().mockResolvedValue({ success: true, data: [] }),
+  updateGeneratedCopy: jest.fn().mockResolvedValue(),
 }));
 
 jest.mock('../../services/copyService', () => ({
@@ -96,9 +97,9 @@ jest.mock('../jobWarn', () => ({
   sendPostWarn: jest.fn().mockResolvedValue(true),
 }));
 
-const { runPostBets, validateBetForPosting } = require('../postBets');
+const { runPostBets, validateBetForPosting, getOrGenerateMessage } = require('../postBets');
 const { sendToPublic, sendToAdmin } = require('../../telegram');
-const { getFilaStatus, markBetAsPosted, registrarPostagem } = require('../../services/betService');
+const { getFilaStatus, markBetAsPosted, registrarPostagem, updateGeneratedCopy } = require('../../services/betService');
 const { generateBetCopy } = require('../../services/copyService');
 
 // Helper: create a bet fixture
@@ -113,6 +114,7 @@ function makeBet(overrides = {}) {
     deepLink: 'https://bet365.com/deep/123',
     reasoning: 'Good stats',
     promovidaManual: false,
+    generatedCopy: null,
     ...overrides,
   };
 }
@@ -815,6 +817,89 @@ describe('postBets', () => {
       const template = { header: '🎯 TEST', footer: '🍀 GL' };
       const msg = await formatBetMessage(bet, template, tc, 0);
       expect(msg).toContain('Legacy CTA');
+    });
+  });
+
+  // ---- getOrGenerateMessage (copy persistence) ----
+
+  describe('getOrGenerateMessage', () => {
+    it('should return persisted generatedCopy in full-message mode', async () => {
+      const bet = makeBet({ generatedCopy: 'Persisted copy text' });
+      const fullMsgTone = { examplePost: '🔥 Example post...' };
+      const result = await getOrGenerateMessage(bet, fullMsgTone, 0);
+      expect(result).toBe('Persisted copy text');
+      expect(generateBetCopy).not.toHaveBeenCalled();
+      expect(updateGeneratedCopy).not.toHaveBeenCalled();
+    });
+
+    it('should NOT use persisted copy in template mode (cycling headers)', async () => {
+      const bet = makeBet({ generatedCopy: 'Stale template copy' });
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '- Fresh bullets' },
+      });
+      // null toneConfig = template mode
+      const result = await getOrGenerateMessage(bet, null, 0);
+      // Should regenerate, not use persisted copy
+      expect(result).not.toBe('Stale template copy');
+      expect(result).toBeDefined();
+      // Template mode should NOT persist
+      expect(updateGeneratedCopy).not.toHaveBeenCalled();
+    });
+
+    it('should generate and persist in full-message mode when generatedCopy is null', async () => {
+      const bet = makeBet({ generatedCopy: null });
+      const fullMsgTone = { examplePosts: ['🔥 Example...'] };
+      generateBetCopy.mockResolvedValue({
+        success: true,
+        data: { copy: '🔥 Generated full message', fullMessage: true },
+      });
+      const result = await getOrGenerateMessage(bet, fullMsgTone, 0);
+      expect(result).toBeDefined();
+      expect(updateGeneratedCopy).toHaveBeenCalledWith('bet-1', expect.any(String));
+    });
+
+    it('should prioritize previewMessages over generatedCopy in runPostBets', async () => {
+      const bet = makeBet({ id: 42, generatedCopy: 'Persisted copy' });
+      // Setup preview mock that returns a draft
+      mockSupabaseFrom.mockImplementation((table) => {
+        if (table === 'post_previews') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            single: jest.fn().mockResolvedValue({
+              data: { bets: [{ betId: 42, preview: 'Admin edited preview' }], status: 'draft' },
+              error: null,
+            }),
+            update: jest.fn(() => ({ eq: jest.fn().mockResolvedValue({ error: null }) })),
+          };
+        }
+        let selectedField = null;
+        const chain = {
+          select: jest.fn((field) => { selectedField = field; return chain; }),
+          eq: jest.fn().mockReturnThis(),
+          single: jest.fn(() => {
+            if (selectedField === 'copy_tone_config') {
+              return Promise.resolve({ data: { copy_tone_config: null }, error: null });
+            }
+            return Promise.resolve({
+              data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
+              error: null,
+            });
+          }),
+        };
+        return chain;
+      });
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      await runPostBets(true, { previewId: 'prev_has_edit' });
+
+      // Should use the admin-edited preview, not the persisted generatedCopy
+      expect(sendToPublic).toHaveBeenCalledWith('Admin edited preview', null);
     });
   });
 });

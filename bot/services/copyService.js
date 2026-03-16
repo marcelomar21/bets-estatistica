@@ -1,7 +1,10 @@
 /**
- * Copy Service - Extrai dados do reasoning em formato bullet points
+ * Copy Service - Generates bet copy via LLM
  *
  * Story 10.1: Copy Dinâmico com LLM
+ *
+ * Persistence is handled by the caller (getOrGenerateMessage in postBets.js).
+ * This service is responsible ONLY for calling the LLM and returning the result.
  */
 require('dotenv').config();
 
@@ -9,14 +12,6 @@ const { ChatOpenAI } = require('@langchain/openai');
 const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const logger = require('../../lib/logger');
 
-// In-memory cache for generated copies
-const copyCache = new Map();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_MAX_SIZE = 200;
-
-/**
- * Initialize OpenAI client
- */
 const { config } = require('../../lib/config');
 
 function getOpenAI() {
@@ -28,60 +23,9 @@ function getOpenAI() {
 }
 
 /**
- * Simple string hash (djb2) for cache key differentiation
- */
-function hashString(str) {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash).toString(36);
-}
-
-/**
- * Get cache key for a bet
- */
-function getCacheKey(bet, toneConfig = null) {
-  const toneHash = toneConfig ? hashString(JSON.stringify(toneConfig)) : '0';
-  return `copy_${bet.id}_t${toneHash}`;
-}
-
-/**
- * Get from cache if valid
- */
-function getFromCache(key) {
-  const cached = copyCache.get(key);
-  if (!cached) return null;
-
-  if (Date.now() - cached.timestamp > CACHE_TTL_MS) {
-    copyCache.delete(key);
-    return null;
-  }
-
-  return cached.data;
-}
-
-/**
- * Set cache with size limit
- */
-function setCache(key, data) {
-  // Clean up if too large
-  if (copyCache.size >= CACHE_MAX_SIZE) {
-    const oldest = [...copyCache.entries()]
-      .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
-    if (oldest) copyCache.delete(oldest[0]);
-  }
-
-  copyCache.set(key, {
-    data,
-    timestamp: Date.now(),
-  });
-}
-
-/**
  * Generate engaging copy for a bet using LLM
  * @param {object} bet - Bet object with homeTeamName, awayTeamName, betMarket, betPick, odds, reasoning
+ * @param {object|null} toneConfig - Tone configuration
  * @returns {Promise<{success: boolean, data?: {copy: string}, error?: object}>}
  */
 async function generateBetCopy(bet, toneConfig = null) {
@@ -90,15 +34,6 @@ async function generateBetCopy(bet, toneConfig = null) {
       success: false,
       error: { code: 'INVALID_BET', message: 'No bet provided' }
     };
-  }
-
-  // Check cache first
-  const cacheKey = getCacheKey(bet, toneConfig);
-  const cached = getFromCache(cacheKey);
-  if (cached) {
-    logger.debug('Copy from cache', { betId: bet.id });
-    const isFullMessage = !!(toneConfig?.examplePost || toneConfig?.examplePosts?.length > 0);
-    return { success: true, data: { copy: cached, fullMessage: isFullMessage, fromCache: true } };
   }
 
   try {
@@ -170,8 +105,6 @@ Regras:
       const chain = chatPrompt.pipe(llmFull);
       const response = await chain.invoke({});
       const fullCopy = response.content.trim();
-
-      setCache(cacheKey, fullCopy);
 
       logger.info('Generated full message copy', {
         betId: bet.id,
@@ -263,9 +196,6 @@ Responda APENAS com os bullets, sem texto adicional.`;
 
     const finalCopy = bullets || copy;
 
-    // Cache the result
-    setCache(cacheKey, finalCopy);
-
     logger.info('Generated bet copy', {
       betId: bet.id,
       copyLength: finalCopy.length,
@@ -286,48 +216,6 @@ Responda APENAS com os bullets, sem texto adicional.`;
   }
 }
 
-/**
- * Clear copy cache
- */
-function clearCache() {
-  copyCache.clear();
-  logger.info('Copy cache cleared');
-}
-
-/**
- * Clear cache for specific bet (Story 12.6: /simular novo)
- * @param {number} betId - Bet ID to clear from cache
- */
-function clearBetCache(betId) {
-  // Clear all cache entries for this bet (any tone variant)
-  const prefix = `copy_${betId}_t`;
-  let deleted = false;
-  for (const key of [...copyCache.keys()]) {
-    if (key.startsWith(prefix)) {
-      copyCache.delete(key);
-      deleted = true;
-    }
-  }
-  if (deleted) {
-    logger.debug('Cleared cache for bet', { betId });
-  }
-  return deleted;
-}
-
-/**
- * Get cache stats
- */
-function getCacheStats() {
-  return {
-    size: copyCache.size,
-    maxSize: CACHE_MAX_SIZE,
-    ttlMs: CACHE_TTL_MS,
-  };
-}
-
 module.exports = {
   generateBetCopy,
-  clearCache,
-  clearBetCache,
-  getCacheStats,
 };

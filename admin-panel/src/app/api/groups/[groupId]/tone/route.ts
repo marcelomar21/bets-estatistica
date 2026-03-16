@@ -220,6 +220,18 @@ export const PUT = createApiHandler(
       .select('id, name, copy_tone_config')
       .single();
 
+    if (!error) {
+      // Invalidate persisted generated_copy for ALL bets of this group
+      // (including posted) so reposted bets also regenerate with new tone
+      const { error: clearError } = await supabase
+        .from('suggested_bets')
+        .update({ generated_copy: null })
+        .eq('group_id', groupId);
+      if (clearError) {
+        console.warn('[tone] Failed to clear generated_copy on tone change', { groupId, error: clearError.message });
+      }
+    }
+
     if (error) {
       const isNotFound = error.code === 'PGRST116' || String(error.message).includes('0 rows');
       if (isNotFound) {

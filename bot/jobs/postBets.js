@@ -17,8 +17,9 @@ const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
 const { sendToPublic, sendToAdmin, getBot, getDefaultBotCtx } = require('../telegram');
 const { sendMessage: channelSendMessage } = require('../../lib/channelAdapter');
-const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets } = require('../services/betService');
+const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets, updateGeneratedCopy } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
+const { sanitizeTelegramMarkdown, enforceOddLabel } = require('../lib/telegramMarkdown');
 const { sendPostWarn } = require('./jobWarn');
 
 // Store pending confirmations (in-memory)
@@ -200,8 +201,10 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
       const copyResult = await generateBetCopy(bet, toneConfig);
       if (copyResult.success && copyResult.data?.copy) {
         if (copyResult.data.fullMessage) {
-          // Full message mode: return LLM-generated message as-is
-          return copyResult.data.copy;
+          // Full message mode: enforce oddLabel + sanitize before returning
+          let fullMsg = copyResult.data.copy;
+          fullMsg = enforceOddLabel(fullMsg, toneConfig?.oddLabel);
+          return sanitizeTelegramMarkdown(fullMsg);
         }
         parts.push('');
         parts.push(copyResult.data.copy);
@@ -212,7 +215,7 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
           ? bet.reasoning.substring(0, 197) + '...'
           : bet.reasoning;
         parts.push('');
-        parts.push(`_${truncated}_`);
+        parts.push(sanitizeTelegramMarkdown(`_${truncated}_`));
       }
     } catch (err) {
       logger.warn('Failed to extract data bullets', { betId: bet.id, groupId: getLogGroupId(), error: err.message });
@@ -221,7 +224,7 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
           ? bet.reasoning.substring(0, 197) + '...'
           : bet.reasoning;
         parts.push('');
-        parts.push(`_${truncated}_`);
+        parts.push(sanitizeTelegramMarkdown(`_${truncated}_`));
       }
     }
   }
@@ -241,7 +244,7 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
   parts.push('');
   parts.push(template.footer);
 
-  return parts.join('\n');
+  return sanitizeTelegramMarkdown(parts.join('\n'));
 }
 
 /**
@@ -270,6 +273,40 @@ function formatBetPreview(bet, type, toneConfig = null) {
     `   💰 ${oddLabel}: ${bet.odds?.toFixed(2) || 'N/A'}`,
     `   🔗 ${bet.deepLink ? '✅' : '❌ SEM LINK'}`,
   ].join('\n');
+}
+
+/**
+ * Get or generate the message for a bet.
+ * Hierarchy: persisted generated_copy > generate via LLM and persist.
+ *
+ * @param {object} bet - Bet object (must include generatedCopy field)
+ * @param {object|null} toneConfig - Tone configuration
+ * @param {number} betIndex - Index for template cycling
+ * @returns {Promise<string>}
+ */
+async function getOrGenerateMessage(bet, toneConfig, betIndex) {
+  // Only persist/reuse in full-message mode (LLM generates entire post).
+  // Template mode uses position-dependent headers/footers that must cycle per betIndex.
+  const isFullMessageMode = !!(toneConfig?.examplePost || toneConfig?.examplePosts?.length > 0);
+
+  // 1. Use persisted copy if available (full-message mode only)
+  if (isFullMessageMode && bet.generatedCopy) {
+    logger.debug('[postBets] Using persisted generated_copy', { betId: bet.id });
+    return bet.generatedCopy;
+  }
+
+  // 2. Generate via formatBetMessage (which already applies oddLabel + sanitize — Task 6)
+  const template = getTemplate(toneConfig, betIndex);
+  const message = await formatBetMessage(bet, template, toneConfig, betIndex);
+
+  // 3. Persist only full-message mode (fire-and-forget, catch to avoid unhandled rejection)
+  if (isFullMessageMode) {
+    updateGeneratedCopy(bet.id, message).catch(err => {
+      logger.warn('[postBets] Failed to persist generated_copy', { betId: bet.id, error: err.message });
+    });
+  }
+
+  return message;
 }
 
 /**
@@ -667,14 +704,13 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         continue;
       }
 
-      // Use preview message if available, otherwise generate via LLM
+      // Use preview message if available, otherwise use persisted/generated copy
       let message;
       if (previewMessages?.has(bet.id)) {
         message = previewMessages.get(bet.id);
         logger.debug('[postBets] Using preview message for active bet', { betId: bet.id, groupId });
       } else {
-        const template = getTemplate(toneConfig, betIndex);
-        message = await formatBetMessage(bet, template, toneConfig, betIndex);
+        message = await getOrGenerateMessage(bet, toneConfig, betIndex);
       }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
@@ -720,14 +756,13 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         continue;
       }
 
-      // Use preview message if available, otherwise generate via LLM
+      // Use preview message if available, otherwise use persisted/generated copy
       let message;
       if (previewMessages?.has(bet.id)) {
         message = previewMessages.get(bet.id);
         logger.debug('[postBets] Using preview message for new bet', { betId: bet.id, groupId });
       } else {
-        const template = getTemplate(toneConfig, betIndex);
-        message = await formatBetMessage(bet, template, toneConfig, betIndex);
+        message = await getOrGenerateMessage(bet, toneConfig, betIndex);
       }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
@@ -841,4 +876,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { runPostBets, formatBetMessage, formatBetPreview, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations, getRandomTemplate, getTemplate };
+module.exports = { runPostBets, formatBetMessage, formatBetPreview, validateBetForPosting, handlePostConfirmation, hasPendingConfirmation, getPendingConfirmationInfo, cancelAllPendingConfirmations, getRandomTemplate, getTemplate, getOrGenerateMessage };
