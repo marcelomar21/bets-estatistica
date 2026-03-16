@@ -104,8 +104,8 @@ function mockFetchByUrl({
       return Promise.resolve(createJsonResponse({
         success: true,
         data: [
-          { id: 'group-1', name: 'Grupo Alpha', status: 'active' },
-          { id: 'group-2', name: 'Grupo Beta', status: 'active' },
+          { id: 'group-1', name: 'Grupo Alpha', status: 'active', bot_pool: [{ bot_username: 'gurubet_bot' }] },
+          { id: 'group-2', name: 'Grupo Beta', status: 'active', bot_pool: [{ bot_username: 'beta_bot' }] },
         ],
       }));
     }
@@ -318,6 +318,71 @@ describe('/members page', () => {
     });
 
     expect(screen.queryByLabelText('Grupo')).not.toBeInTheDocument();
+  });
+
+  it('group_admin com bot configurado exibe card com link do bot', async () => {
+    mockFetchByUrl({ role: 'group_admin' });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('@alice')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('bot-invite-link')).toHaveTextContent('https://t.me/gurubet_bot?start=subscribe');
+    });
+  });
+
+  it('super_admin sem grupo selecionado NAO exibe card de link do bot', async () => {
+    mockFetchByUrl({ role: 'super_admin' });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('@alice')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('bot-invite-link')).not.toBeInTheDocument();
+  });
+
+  it('botao Copiar chama clipboard e exibe Copiado!', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText: writeTextMock } });
+
+    mockFetchByUrl({ role: 'group_admin' });
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('bot-invite-link')).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Copiar' }));
+
+    expect(writeTextMock).toHaveBeenCalledWith('https://t.me/gurubet_bot?start=subscribe');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Copiado!' })).toBeInTheDocument();
+    });
+  });
+
+  it('super_admin com grupo selecionado exibe card com link do bot', async () => {
+    mockFetchByUrl({ role: 'super_admin' });
+
+    render(<MembersPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('@alice')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Grupo')).toBeInTheDocument();
+    });
+
+    await userEvent.selectOptions(screen.getByLabelText('Grupo'), 'group-1');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('bot-invite-link')).toHaveTextContent('https://t.me/gurubet_bot?start=subscribe');
+    });
   });
 
   it('selecionar grupo atualiza lista de membros com group_id param e reseta paginacao', async () => {

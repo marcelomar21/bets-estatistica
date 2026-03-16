@@ -51,6 +51,40 @@ describe('member-utils', () => {
     expect(displayStatus).toBe('ativo');
   });
 
+  it('retorna ativo para admin mesmo com vencimento expirado', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-09T00:00:00Z'));
+
+    const displayStatus = getDisplayStatus({
+      status: 'ativo',
+      subscription_ends_at: '2026-02-01T00:00:00Z',
+      is_admin: true,
+    });
+
+    expect(displayStatus).toBe('ativo');
+  });
+
+  it('retorna ativo para admin mesmo com vencimento em 3 dias', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-09T00:00:00Z'));
+
+    const displayStatus = getDisplayStatus({
+      status: 'ativo',
+      subscription_ends_at: '2026-02-12T00:00:00Z',
+      is_admin: true,
+    });
+
+    expect(displayStatus).toBe('ativo');
+  });
+
+  it('retorna cancelado para admin com status cancelado', () => {
+    expect(getDisplayStatus({ status: 'cancelado', subscription_ends_at: null, is_admin: true })).toBe('cancelado');
+  });
+
+  it('retorna removido para admin com status removido', () => {
+    expect(getDisplayStatus({ status: 'removido', subscription_ends_at: null, is_admin: true })).toBe('removido');
+  });
+
   it('mantém status originais para trial, inadimplente e removido', () => {
     expect(getDisplayStatus({ status: 'trial', subscription_ends_at: null })).toBe('trial');
     expect(getDisplayStatus({ status: 'inadimplente', subscription_ends_at: null })).toBe('inadimplente');
