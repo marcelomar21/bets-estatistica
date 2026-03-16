@@ -44,8 +44,10 @@ function createMockContext(
 // Helper: query builder for GET /api/analyses
 // ============================================================
 function createAnalysesQueryBuilder(options: {
-  betsData?: { match_id: number }[];
-  betsError?: { message: string } | null;
+  disabledPrefsData?: { league_name: string }[];
+  disabledPrefsError?: { message: string } | null;
+  activeLeaguesData?: { league_name: string }[];
+  activeLeaguesError?: { message: string } | null;
   analysesData?: unknown[];
   analysesError?: { message: string } | null;
 } = {}) {
@@ -54,14 +56,36 @@ function createAnalysesQueryBuilder(options: {
   const mockFrom = vi.fn((_table: string) => {
     fromCallIndex++;
 
-    if (fromCallIndex === 1 && options.betsData !== undefined) {
-      // First call is suggested_bets for groupFilter
+    // For group_admin: 1st call = group_league_preferences, 2nd = league_seasons (if disabled exist), then game_analysis
+    // For super_admin: 1st call = game_analysis
+
+    if (_table === 'group_league_preferences') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      // Terminal: last .eq() returns data
+      let eqCount = 0;
+      chain.eq = vi.fn(() => {
+        eqCount++;
+        if (eqCount >= 2) {
+          return {
+            data: options.disabledPrefsData ?? [],
+            error: options.disabledPrefsError ?? null,
+          };
+        }
+        return chain;
+      });
+      return chain;
+    }
+
+    if (_table === 'league_seasons') {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => ({
-        data: options.betsData ?? null,
-        error: options.betsError ?? null,
+        data: options.activeLeaguesData ?? [],
+        error: options.activeLeaguesError ?? null,
       }));
       return chain;
     }
@@ -90,27 +114,33 @@ function createAnalysesQueryBuilder(options: {
 function createPdfQueryBuilder(options: {
   analysis?: { id: number; match_id: number; pdf_storage_path: string | null } | null;
   fetchError?: { message: string } | null;
-  betData?: { id: number } | null;
-  betError?: { message: string } | null;
+  matchData?: { season_id: number; league_seasons: { league_name: string } } | null;
+  prefData?: { enabled: boolean } | null;
 } = {}) {
-  let fromCallIndex = 0;
-
   const mockFrom = vi.fn((_table: string) => {
-    fromCallIndex++;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: Record<string, any> = {};
     chain.select = vi.fn(() => chain);
     chain.eq = vi.fn(() => chain);
     chain.limit = vi.fn(() => chain);
-    chain.single = vi.fn(() => {
-      if (fromCallIndex === 1) {
-        // game_analysis fetch
-        return { data: options.analysis ?? null, error: options.fetchError ?? null };
-      }
-      // suggested_bets check for group admin
-      return { data: options.betData ?? null, error: options.betError ?? null };
-    });
+
+    if (_table === 'game_analysis') {
+      chain.single = vi.fn(() => ({
+        data: options.analysis ?? null,
+        error: options.fetchError ?? null,
+      }));
+    } else if (_table === 'league_matches') {
+      chain.single = vi.fn(() => ({
+        data: options.matchData ?? null,
+        error: null,
+      }));
+    } else if (_table === 'group_league_preferences') {
+      chain.maybeSingle = vi.fn(() => ({
+        data: options.prefData ?? null,
+        error: null,
+      }));
+    }
+
     return chain;
   });
 
@@ -135,7 +165,12 @@ describe('GET /api/analyses', () => {
         pdf_uploaded_at: '2026-02-25T10:00:00Z',
         created_at: '2026-02-25T09:00:00Z',
         updated_at: '2026-02-25T10:00:00Z',
-        league_matches: { home_team_name: 'Flamengo', away_team_name: 'Palmeiras', kickoff_time: '2026-02-25T20:00:00Z' },
+        league_matches: {
+          home_team_name: 'Flamengo',
+          away_team_name: 'Palmeiras',
+          kickoff_time: '2026-02-25T20:00:00Z',
+          league_seasons: { league_name: 'Brazil Serie A' },
+        },
       },
     ];
     const qb = createAnalysesQueryBuilder({ analysesData });
@@ -154,12 +189,20 @@ describe('GET /api/analyses', () => {
     expect(body.data[0].league_matches.home_team_name).toBe('Flamengo');
   });
 
-  it('filters by groupFilter for group admin', async () => {
-    const betsData = [{ match_id: 100 }, { match_id: 200 }];
+  it('returns all analyses when group admin has no disabled leagues', async () => {
     const analysesData = [
-      { id: 1, match_id: 100, league_matches: { home_team_name: 'TeamA', away_team_name: 'TeamB', kickoff_time: '2026-02-25T20:00:00Z' } },
+      {
+        id: 1,
+        match_id: 100,
+        league_matches: {
+          home_team_name: 'TeamA',
+          away_team_name: 'TeamB',
+          kickoff_time: '2026-02-25T20:00:00Z',
+          league_seasons: { league_name: 'Brazil Serie A' },
+        },
+      },
     ];
-    const qb = createAnalysesQueryBuilder({ betsData, analysesData });
+    const qb = createAnalysesQueryBuilder({ disabledPrefsData: [], analysesData });
     const context = createMockContext('group_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -172,12 +215,61 @@ describe('GET /api/analyses', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data).toHaveLength(1);
-    // Verify suggested_bets was queried first
-    expect(qb.from).toHaveBeenCalledWith('suggested_bets');
+    // group_league_preferences was queried but league_seasons was NOT (no disabled leagues)
+    expect(qb.from).toHaveBeenCalledWith('group_league_preferences');
+    expect(qb.from).not.toHaveBeenCalledWith('league_seasons');
   });
 
-  it('returns empty data when group admin has no bets', async () => {
-    const qb = createAnalysesQueryBuilder({ betsData: [] });
+  it('filters by enabled leagues when group admin has disabled leagues', async () => {
+    const analysesData = [
+      {
+        id: 1,
+        match_id: 100,
+        league_matches: {
+          home_team_name: 'TeamA',
+          away_team_name: 'TeamB',
+          kickoff_time: '2026-02-25T20:00:00Z',
+          league_seasons: { league_name: 'Brazil Serie A' },
+        },
+      },
+    ];
+    const qb = createAnalysesQueryBuilder({
+      disabledPrefsData: [{ league_name: 'England Premier League' }],
+      activeLeaguesData: [
+        { league_name: 'Brazil Serie A' },
+        { league_name: 'England Premier League' },
+        { league_name: 'Spain La Liga' },
+      ],
+      analysesData,
+    });
+    const context = createMockContext('group_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/analyses/route');
+    const req = createMockRequest('GET', 'http://localhost/api/analyses');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    // Verify both tables were queried
+    expect(qb.from).toHaveBeenCalledWith('group_league_preferences');
+    expect(qb.from).toHaveBeenCalledWith('league_seasons');
+    expect(qb.from).toHaveBeenCalledWith('game_analysis');
+  });
+
+  it('returns empty data when all leagues are disabled for group admin', async () => {
+    const qb = createAnalysesQueryBuilder({
+      disabledPrefsData: [
+        { league_name: 'Brazil Serie A' },
+        { league_name: 'England Premier League' },
+      ],
+      activeLeaguesData: [
+        { league_name: 'Brazil Serie A' },
+        { league_name: 'England Premier League' },
+      ],
+    });
     const context = createMockContext('group_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
@@ -191,7 +283,7 @@ describe('GET /api/analyses', () => {
     expect(body.success).toBe(true);
     expect(body.data).toEqual([]);
     // game_analysis should NOT have been queried
-    expect(qb.from).toHaveBeenCalledTimes(1);
+    expect(qb.from).not.toHaveBeenCalledWith('game_analysis');
   });
 
   it('applies date filter', async () => {
@@ -207,7 +299,6 @@ describe('GET /api/analyses', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    // Verify gte and lt were called on the chain
     const chain = qb.from.mock.results[0].value;
     expect(chain.gte).toHaveBeenCalledWith('league_matches.kickoff_time', '2026-02-25T00:00:00');
     expect(chain.lt).toHaveBeenCalledWith('league_matches.kickoff_time', '2026-02-25T23:59:59');
@@ -249,20 +340,23 @@ describe('GET /api/analyses', () => {
     expect(body.error.code).toBe('DB_ERROR');
   });
 
-  it('returns 500 when suggested_bets query fails for group admin', async () => {
-    const qb = createAnalysesQueryBuilder({ betsData: undefined, betsError: { message: 'db error' } });
-    // Manually configure for group admin with bets error
-    let fromCallIndex = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  it('returns 500 when group_league_preferences query fails', async () => {
+    const qb = createAnalysesQueryBuilder({
+      disabledPrefsError: { message: 'db error' },
+    });
+    // Override: make the eq chain return error
+    let eqCount = 0;
     const mockFrom = vi.fn((_table: string) => {
-      fromCallIndex++;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
-      chain.eq = vi.fn(() => ({
-        data: null,
-        error: { message: 'db error' },
-      }));
+      chain.eq = vi.fn(() => {
+        eqCount++;
+        if (eqCount >= 2) {
+          return { data: null, error: { message: 'db error' } };
+        }
+        return chain;
+      });
       return chain;
     });
     const customQb = { from: mockFrom };
@@ -367,10 +461,80 @@ describe('GET /api/analyses/[id]/pdf', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('returns 403 for group admin without access', async () => {
+  it('allows group admin access when league is enabled (no preference = default enabled)', async () => {
     const qb = createPdfQueryBuilder({
       analysis: { id: 1, match_id: 100, pdf_storage_path: '100/analysis.pdf' },
-      betData: null,
+      matchData: { season_id: 1, league_seasons: { league_name: 'Brazil Serie A' } },
+      prefData: null, // No preference → default enabled
+    });
+    const context = createMockContext('group_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://storage.supabase.co/signed/100/analysis.pdf?token=abc' },
+      error: null,
+    });
+
+    const { GET } = await import('@/app/api/analyses/[id]/pdf/route');
+    const req = createMockRequest('GET', 'http://localhost/api/analyses/1/pdf');
+    const routeContext = createRouteContext({ id: '1' });
+
+    const response = await GET(req, routeContext);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.data.url).toContain('signed');
+  });
+
+  it('allows group admin access when league is explicitly enabled', async () => {
+    const qb = createPdfQueryBuilder({
+      analysis: { id: 1, match_id: 100, pdf_storage_path: '100/analysis.pdf' },
+      matchData: { season_id: 1, league_seasons: { league_name: 'Brazil Serie A' } },
+      prefData: { enabled: true },
+    });
+    const context = createMockContext('group_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+    mockCreateSignedUrl.mockResolvedValue({
+      data: { signedUrl: 'https://storage.supabase.co/signed/100/analysis.pdf?token=abc' },
+      error: null,
+    });
+
+    const { GET } = await import('@/app/api/analyses/[id]/pdf/route');
+    const req = createMockRequest('GET', 'http://localhost/api/analyses/1/pdf');
+    const routeContext = createRouteContext({ id: '1' });
+
+    const response = await GET(req, routeContext);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.success).toBe(true);
+  });
+
+  it('returns 403 for group admin when league is disabled', async () => {
+    const qb = createPdfQueryBuilder({
+      analysis: { id: 1, match_id: 100, pdf_storage_path: '100/analysis.pdf' },
+      matchData: { season_id: 1, league_seasons: { league_name: 'England Premier League' } },
+      prefData: { enabled: false },
+    });
+    const context = createMockContext('group_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/analyses/[id]/pdf/route');
+    const req = createMockRequest('GET', 'http://localhost/api/analyses/1/pdf');
+    const routeContext = createRouteContext({ id: '1' });
+
+    const response = await GET(req, routeContext);
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('returns 403 when match not found in league_matches', async () => {
+    const qb = createPdfQueryBuilder({
+      analysis: { id: 1, match_id: 100, pdf_storage_path: '100/analysis.pdf' },
+      matchData: null, // match not found
     });
     const context = createMockContext('group_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
