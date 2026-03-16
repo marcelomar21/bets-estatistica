@@ -109,14 +109,14 @@ describe('NotificationsPanel', () => {
     await userEvent.click(markReadButtons[0]);
 
     expect(onMarkAsRead).toHaveBeenCalledTimes(1);
-    expect(onMarkAsRead).toHaveBeenCalledWith('abc-123');
+    expect(onMarkAsRead).toHaveBeenCalledWith(['abc-123']);
   });
 
   it('shows "Marcar lida" button only for unread notifications', () => {
     const notifications: Notification[] = [
-      makeNotification({ id: 'u1', read: false }),
-      makeNotification({ id: 'u2', read: false }),
-      makeNotification({ id: 'r1', read: true }),
+      makeNotification({ id: 'u1', group_id: 'g1', read: false }),
+      makeNotification({ id: 'u2', group_id: 'g2', read: false }),
+      makeNotification({ id: 'r1', group_id: 'g3', type: 'group_paused', read: true }),
     ];
 
     render(
@@ -285,6 +285,54 @@ describe('NotificationsPanel', () => {
       const listItem = screen.getByText('Bot Offline').closest('li');
       expect(listItem).toHaveClass('border-red-200');
       expect(listItem).toHaveClass('bg-red-50');
+    });
+  });
+
+  describe('grouping', () => {
+    it('groups notifications by type+group_id and shows count badge', () => {
+      const notifications: Notification[] = [
+        makeNotification({ id: 'n1', type: 'bot_offline', group_id: 'g1', title: 'Bot Offline', read: false }),
+        makeNotification({ id: 'n2', type: 'bot_offline', group_id: 'g1', title: 'Bot Offline', read: false }),
+        makeNotification({ id: 'n3', type: 'bot_offline', group_id: 'g1', title: 'Bot Offline', read: false }),
+        makeNotification({ id: 'n4', type: 'new_trial', group_id: 'g1', title: 'Novo Trial', read: false }),
+      ];
+
+      render(
+        <NotificationsPanel
+          notifications={notifications}
+          unreadCount={4}
+          onMarkAsRead={vi.fn()}
+          onMarkAllRead={vi.fn()}
+        />
+      );
+
+      // Should render 2 items (bot_offline grouped + new_trial separate)
+      const listItems = screen.getAllByRole('listitem');
+      expect(listItems).toHaveLength(2);
+
+      // Bot Offline should have "3x" badge
+      expect(screen.getByText('3x')).toBeInTheDocument();
+    });
+
+    it('mark-as-read on grouped notification passes all IDs', async () => {
+      const onMarkAsRead = vi.fn();
+      const notifications: Notification[] = [
+        makeNotification({ id: 'a1', type: 'bot_offline', group_id: 'g1', read: false }),
+        makeNotification({ id: 'a2', type: 'bot_offline', group_id: 'g1', read: false }),
+      ];
+
+      render(
+        <NotificationsPanel
+          notifications={notifications}
+          unreadCount={2}
+          onMarkAsRead={onMarkAsRead}
+          onMarkAllRead={vi.fn()}
+        />
+      );
+
+      await userEvent.click(screen.getByText('Marcar lida'));
+
+      expect(onMarkAsRead).toHaveBeenCalledWith(['a1', 'a2']);
     });
   });
 });

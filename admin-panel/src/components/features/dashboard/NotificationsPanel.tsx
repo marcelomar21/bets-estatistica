@@ -1,12 +1,15 @@
+import { useMemo } from 'react';
 import type { Notification } from '@/types/database';
 import { formatDateTime } from '@/lib/format-utils';
 
 interface NotificationsPanelProps {
   notifications: Notification[];
   unreadCount: number;
-  onMarkAsRead: (id: string) => void;
+  onMarkAsRead: (ids: string[]) => void;
   onMarkAllRead: () => void;
 }
+
+type GroupedNotification = Notification & { count: number; ids: string[] };
 
 const typeIcons: Record<Notification['type'], string> = {
   bot_offline: '\u{1F534}',
@@ -39,6 +42,21 @@ export default function NotificationsPanel({
   onMarkAsRead,
   onMarkAllRead,
 }: NotificationsPanelProps) {
+  const groupedNotifications = useMemo(() => {
+    const grouped = new Map<string, GroupedNotification>();
+    for (const n of notifications) {
+      const key = `${n.type}::${n.group_id ?? ''}`;
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { ...n, count: 1, ids: [n.id] });
+      } else {
+        existing.count += 1;
+        existing.ids.push(n.id);
+      }
+    }
+    return [...grouped.values()];
+  }, [notifications]);
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-4">
@@ -70,7 +88,7 @@ export default function NotificationsPanel({
         <p className="text-sm text-gray-500">Nenhuma notificação</p>
       ) : (
         <ul className="space-y-3">
-          {notifications.map((notification) => {
+          {groupedNotifications.map((notification) => {
             const icon = typeIcons[notification.type] ?? typeIcons.bot_offline;
             const severityClass = typeStyleOverrides[notification.type] ?? severityStyles[notification.severity] ?? severityStyles.info;
             return (
@@ -82,14 +100,19 @@ export default function NotificationsPanel({
               >
                 <span className="text-lg flex-shrink-0">{icon}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-sm text-gray-900">{notification.title}</p>
+                  <p className="font-semibold text-sm text-gray-900">
+                    {notification.title}
+                    {notification.count > 1 && (
+                      <span className="ml-1.5 text-xs font-normal bg-gray-200 text-gray-600 rounded-full px-1.5 py-0.5">{notification.count}x</span>
+                    )}
+                  </p>
                   <p className="text-sm text-gray-700">{notification.message}</p>
                   <p className="text-xs text-gray-500 mt-1">{formatDateTime(notification.created_at)}</p>
                 </div>
                 {!notification.read && (
                   <button
                     type="button"
-                    onClick={() => onMarkAsRead(notification.id)}
+                    onClick={() => onMarkAsRead(notification.ids)}
                     className="flex-shrink-0 text-xs text-gray-500 hover:text-gray-700 font-medium mt-0.5"
                     title="Marcar como lida"
                     aria-label={`Marcar como lida: ${notification.title}`}
