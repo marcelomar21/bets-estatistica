@@ -30,6 +30,9 @@ const sampleMember = {
   is_admin: false,
   group_id: 'group-uuid-1',
   telegram_id: 123456789,
+  status: 'trial',
+  mp_subscription_id: null,
+  subscription_ends_at: null,
 };
 
 const sampleBotData = {
@@ -44,6 +47,7 @@ function createTableMock(tableResponses: Record<string, {
   insertError?: unknown;
 }>) {
   const eqCalls: Array<[string, unknown]> = [];
+  const updatePayloads: unknown[] = [];
 
   const from = vi.fn().mockImplementation((tableName: string) => {
     const response = tableResponses[tableName] || {};
@@ -58,9 +62,13 @@ function createTableMock(tableResponses: Record<string, {
       data: response.singleData ?? null,
       error: response.singleError ?? null,
     });
-    chain.update = vi.fn().mockImplementation(() => {
+    chain.update = vi.fn().mockImplementation((payload: unknown) => {
+      updatePayloads.push(payload);
       const updateChain: Record<string, unknown> = {};
-      updateChain.eq = vi.fn().mockReturnValue(updateChain);
+      updateChain.eq = vi.fn().mockImplementation((col: string, val: unknown) => {
+        eqCalls.push([col, val]);
+        return updateChain;
+      });
       updateChain.maybeSingle = vi.fn().mockResolvedValue({
         data: response.updateError ? null : { id: 1 },
         error: response.updateError ?? null,
@@ -72,7 +80,7 @@ function createTableMock(tableResponses: Record<string, {
     return chain;
   });
 
-  return { from, eqCalls };
+  return { from, eqCalls, updatePayloads };
 }
 
 function setupAdminBotPoolMock(botData: typeof sampleBotData | null = sampleBotData) {
@@ -108,6 +116,8 @@ describe('PATCH /api/members/[id]/toggle-admin', () => {
   afterEach(() => {
     global.fetch = originalFetch;
   });
+
+  // --- Telegram promote/demote tests ---
 
   it('promotes member to admin in Telegram', async () => {
     const mock = createTableMock({
@@ -146,7 +156,7 @@ describe('PATCH /api/members/[id]/toggle-admin', () => {
 
   it('demotes member from admin in Telegram', async () => {
     const mock = createTableMock({
-      members: { singleData: { ...sampleMember, is_admin: true } },
+      members: { singleData: { ...sampleMember, is_admin: true, status: 'ativo', mp_subscription_id: 'sub-1', subscription_ends_at: new Date(Date.now() + 86400000).toISOString() } },
       audit_log: {},
     });
     setupAdminBotPoolMock();
@@ -196,7 +206,6 @@ describe('PATCH /api/members/[id]/toggle-admin', () => {
       ([url]: [string]) => typeof url === 'string' && url.includes('/promoteChatMember'),
     );
     expect(promoteCall).toBeUndefined();
-    // Admin bot_pool should not have been queried
     expect(mockAdminFrom).not.toHaveBeenCalled();
   });
 
@@ -256,6 +265,165 @@ describe('PATCH /api/members/[id]/toggle-admin', () => {
     expect(mockAdminFrom).toHaveBeenCalledWith('bot_pool');
   });
 
+  // --- Status management tests ---
+
+  it('toggle ON com membro trial → status muda para ativo', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, is_admin: false, status: 'trial' },
+      },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.data.is_admin).toBe(true);
+    expect(body.data.status).toBe('ativo');
+
+    // Verify update payload includes status = 'ativo'
+    expect(mock.updatePayloads).toHaveLength(1);
+    expect(mock.updatePayloads[0]).toMatchObject({ is_admin: true, status: 'ativo' });
+  });
+
+  it('toggle ON com membro ja ativo → status nao muda', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, is_admin: false, status: 'ativo', mp_subscription_id: 'sub-123', subscription_ends_at: new Date(Date.now() + 86400000).toISOString() },
+      },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.data.is_admin).toBe(true);
+    expect(body.data.status).toBe('ativo');
+
+    // Verify update payload does NOT include status
+    expect(mock.updatePayloads).toHaveLength(1);
+    expect(mock.updatePayloads[0]).toEqual({ is_admin: true });
+  });
+
+  it('toggle OFF com membro ativo sem assinatura → status muda para trial com trial dates', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, is_admin: true, status: 'ativo' },
+      },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const before = new Date();
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+    const after = new Date();
+
+    expect(res.status).toBe(200);
+    expect(body.data.is_admin).toBe(false);
+    expect(body.data.status).toBe('trial');
+
+    // Verify update payload includes trial dates
+    expect(mock.updatePayloads).toHaveLength(1);
+    const payload = mock.updatePayloads[0] as Record<string, unknown>;
+    expect(payload.status).toBe('trial');
+    expect(payload.trial_started_at).toBeDefined();
+    expect(payload.trial_ends_at).toBeDefined();
+
+    // Verify trial_started_at is within test execution window
+    const trialStart = new Date(payload.trial_started_at as string);
+    expect(trialStart.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(trialStart.getTime()).toBeLessThanOrEqual(after.getTime());
+
+    // Verify trial_ends_at is 7 days after trial_started_at
+    const trialEnd = new Date(payload.trial_ends_at as string);
+    const diffDays = (trialEnd.getTime() - trialStart.getTime()) / (1000 * 60 * 60 * 24);
+    expect(diffDays).toBe(7);
+  });
+
+  it('toggle OFF com membro ativo com assinatura ativa → status permanece ativo', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, is_admin: true, status: 'ativo', mp_subscription_id: 'sub-123', subscription_ends_at: new Date(Date.now() + 86400000).toISOString() },
+      },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.data.is_admin).toBe(false);
+    expect(body.data.status).toBe('ativo');
+
+    // Verify update payload does NOT change status
+    expect(mock.updatePayloads).toHaveLength(1);
+    expect(mock.updatePayloads[0]).toEqual({ is_admin: false });
+  });
+
+  // --- Guard tests ---
+
+  it('rejeita toggle ON para membro removido', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, status: 'removido' },
+      },
+    });
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(mock.updatePayloads).toHaveLength(0);
+  });
+
+  it('rejeita toggle ON para membro cancelado', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, status: 'cancelado' },
+      },
+    });
+    const ctx = createMockContext('super_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(mock.updatePayloads).toHaveLength(0);
+  });
+
+  // --- Validation + multi-tenant tests ---
+
   it('rejects invalid member ID', async () => {
     const mock = createTableMock({});
     const ctx = createMockContext('super_admin', mock);
@@ -284,5 +452,31 @@ describe('PATCH /api/members/[id]/toggle-admin', () => {
 
     expect(res.status).toBe(404);
     expect(body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('aplica group filter no SELECT e UPDATE para group_admin', async () => {
+    const mock = createTableMock({
+      members: {
+        singleData: { ...sampleMember, status: 'trial' },
+      },
+      audit_log: {},
+    });
+    setupAdminBotPoolMock();
+    const ctx = createMockContext('group_admin', mock);
+    mockWithTenant.mockResolvedValue({ success: true, context: ctx });
+
+    const { PATCH } = await import('../members/[id]/toggle-admin/route');
+    const req = createMockRequest('PATCH', 'http://localhost/api/members/42/toggle-admin');
+    const res = await PATCH(req, createRouteContext({ id: '42' }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+
+    // Verify group_id filter was applied at least twice (SELECT + UPDATE)
+    const groupFilterCalls = mock.eqCalls.filter(
+      ([col, val]) => col === 'group_id' && val === 'group-uuid-1'
+    );
+    expect(groupFilterCalls.length).toBeGreaterThanOrEqual(2);
   });
 });

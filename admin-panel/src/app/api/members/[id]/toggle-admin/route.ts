@@ -22,7 +22,7 @@ export const PATCH = createApiHandler(
     // Fetch member with group filter (RLS enforcement)
     let query = supabase
       .from('members')
-      .select('id, is_admin, group_id, telegram_id')
+      .select('id, is_admin, group_id, telegram_id, status, mp_subscription_id, subscription_ends_at')
       .eq('id', memberId);
 
     if (groupFilter) {
@@ -40,10 +40,50 @@ export const PATCH = createApiHandler(
 
     const newValue = !member.is_admin;
 
-    const { error: updateError } = await supabase
+    // Não permitir ativar admin em membro removido ou cancelado
+    if (newValue === true && (member.status === 'removido' || member.status === 'cancelado')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: `Nao e possivel tornar admin um membro com status '${member.status}'` } },
+        { status: 400 },
+      );
+    }
+
+    const updateData: Record<string, unknown> = { is_admin: newValue };
+
+    if (newValue === true && member.status === 'trial') {
+      // Admin ativado: promover trial → ativo
+      updateData.status = 'ativo';
+    }
+
+    if (newValue === false && member.status === 'ativo') {
+      const now = new Date();
+      const hasActiveSubscription =
+        member.mp_subscription_id != null &&
+        member.subscription_ends_at != null &&
+        new Date(member.subscription_ends_at) > now;
+
+      if (!hasActiveSubscription) {
+        // Sem assinatura: reverter para trial com 7 dias frescos
+        const trialEnd = new Date(now);
+        trialEnd.setDate(trialEnd.getDate() + 7);
+
+        updateData.status = 'trial';
+        updateData.trial_started_at = now.toISOString();
+        updateData.trial_ends_at = trialEnd.toISOString();
+      }
+      // Com assinatura ativa: manter ativo (não faz nada)
+    }
+
+    let updateQuery = supabase
       .from('members')
-      .update({ is_admin: newValue })
+      .update(updateData)
       .eq('id', memberId);
+
+    if (groupFilter) {
+      updateQuery = updateQuery.eq('group_id', groupFilter);
+    }
+
+    const { error: updateError } = await updateQuery;
 
     if (updateError) {
       return NextResponse.json(
@@ -101,6 +141,10 @@ export const PATCH = createApiHandler(
           changes: {
             member_id: memberId,
             is_admin: newValue,
+            ...(updateData.status !== undefined && {
+              status_changed: true,
+              new_status: updateData.status,
+            }),
           },
         });
       } catch {
@@ -110,7 +154,7 @@ export const PATCH = createApiHandler(
 
     return NextResponse.json({
       success: true,
-      data: { id: memberId, is_admin: newValue },
+      data: { id: memberId, is_admin: newValue, status: (updateData.status as string) ?? member.status },
     });
   },
   { allowedRoles: ['super_admin', 'group_admin'] },
