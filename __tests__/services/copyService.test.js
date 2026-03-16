@@ -1,6 +1,9 @@
 /**
  * Tests for copyService.js
  * Story 11.3: Criar testes unitários críticos
+ *
+ * Cache was removed — persistence is now in generated_copy column.
+ * These tests validate LLM generation only.
  */
 
 // Mock dotenv
@@ -37,17 +40,11 @@ jest.mock('../../lib/logger', () => ({
   debug: jest.fn(),
 }));
 
-const {
-  generateBetCopy,
-  clearCache,
-  clearBetCache,
-  getCacheStats,
-} = require('../../bot/services/copyService');
+const { generateBetCopy } = require('../../bot/services/copyService');
 
 describe('copyService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    clearCache(); // Clear cache before each test
   });
 
   describe('generateBetCopy', () => {
@@ -88,24 +85,15 @@ describe('copyService', () => {
       expect(result.data.fromCache).toBe(false);
     });
 
-    test('retorna copy do cache na segunda chamada', async () => {
-      mockInvoke.mockResolvedValueOnce({
-        content: '• Estatística: 80% de acerto\n• Dado importante aqui',
-      });
+    test('calls LLM every time (no cache)', async () => {
+      mockInvoke
+        .mockResolvedValueOnce({ content: '• Estatística: 80% de acerto\n• Dado importante aqui' })
+        .mockResolvedValueOnce({ content: '• Estatística: 80% de acerto\n• Dado importante aqui' });
 
-      // First call - goes to LLM
-      const result1 = await generateBetCopy(validBet);
-      expect(result1.success).toBe(true);
-      expect(result1.data.fromCache).toBe(false);
+      await generateBetCopy(validBet);
+      await generateBetCopy(validBet);
 
-      // Second call - should come from cache
-      const result2 = await generateBetCopy(validBet);
-      expect(result2.success).toBe(true);
-      expect(result2.data.fromCache).toBe(true);
-      expect(result2.data.copy).toBe(result1.data.copy);
-
-      // LLM should only be called once
-      expect(mockInvoke).toHaveBeenCalledTimes(1);
+      expect(mockInvoke).toHaveBeenCalledTimes(2);
     });
 
     test('retorna erro quando LLM retorna texto sem bullets', async () => {
@@ -184,79 +172,6 @@ describe('copyService', () => {
       const result = await generateBetCopy(betSemReasoning);
 
       expect(result.success).toBe(true);
-    });
-  });
-
-  describe('clearCache', () => {
-    test('limpa todo o cache', async () => {
-      mockInvoke.mockResolvedValue({
-        content: '• Dado para cache: 50%',
-      });
-
-      // Generate some cached copies
-      await generateBetCopy({ id: 1, homeTeamName: 'A', awayTeamName: 'B', betMarket: 'Test' });
-      await generateBetCopy({ id: 2, homeTeamName: 'C', awayTeamName: 'D', betMarket: 'Test' });
-
-      const statsBefore = getCacheStats();
-      expect(statsBefore.size).toBe(2);
-
-      clearCache();
-
-      const statsAfter = getCacheStats();
-      expect(statsAfter.size).toBe(0);
-    });
-  });
-
-  describe('clearBetCache', () => {
-    test('limpa cache de aposta específica', async () => {
-      mockInvoke.mockResolvedValue({
-        content: '• Dado para cache específico: 75%',
-      });
-
-      // Generate cached copy
-      const bet = { id: 123, homeTeamName: 'A', awayTeamName: 'B', betMarket: 'Test' };
-      await generateBetCopy(bet);
-
-      const statsBefore = getCacheStats();
-      expect(statsBefore.size).toBe(1);
-
-      const deleted = clearBetCache(123);
-      expect(deleted).toBe(true);
-
-      const statsAfter = getCacheStats();
-      expect(statsAfter.size).toBe(0);
-    });
-
-    test('retorna false quando bet não está no cache', () => {
-      const deleted = clearBetCache(999);
-      expect(deleted).toBe(false);
-    });
-  });
-
-  describe('getCacheStats', () => {
-    test('retorna estatísticas corretas do cache', () => {
-      const stats = getCacheStats();
-
-      expect(stats).toHaveProperty('size');
-      expect(stats).toHaveProperty('maxSize');
-      expect(stats).toHaveProperty('ttlMs');
-      expect(typeof stats.size).toBe('number');
-      expect(stats.maxSize).toBe(200);
-      expect(stats.ttlMs).toBe(24 * 60 * 60 * 1000); // 24 hours
-    });
-
-    test('reflete tamanho atual do cache', async () => {
-      mockInvoke.mockResolvedValue({
-        content: '• Estatística para teste: 90%',
-      });
-
-      expect(getCacheStats().size).toBe(0);
-
-      await generateBetCopy({ id: 1, homeTeamName: 'A', awayTeamName: 'B', betMarket: 'Test' });
-      expect(getCacheStats().size).toBe(1);
-
-      await generateBetCopy({ id: 2, homeTeamName: 'C', awayTeamName: 'D', betMarket: 'Test' });
-      expect(getCacheStats().size).toBe(2);
     });
   });
 });

@@ -1316,6 +1316,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         elegibilidade,
         promovida_manual,
         post_at,
+        generated_copy,
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -1352,6 +1353,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       deepLink: bet.deep_link,
       promovidaManual: bet.promovida_manual,
       postAt: bet.post_at || null,
+      generatedCopy: bet.generated_copy || null,
       homeTeamName: bet.league_matches.home_team_name,
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
@@ -1376,6 +1378,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           elegibilidade,
           promovida_manual,
           post_at,
+          generated_copy,
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -1417,6 +1420,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           deepLink: bet.deep_link,
           promovidaManual: bet.promovida_manual,
           postAt: bet.post_at || null,
+          generatedCopy: bet.generated_copy || null,
           homeTeamName: bet.league_matches.home_team_name,
           awayTeamName: bet.league_matches.away_team_name,
           kickoffTime: bet.league_matches.kickoff_time,
@@ -1756,6 +1760,37 @@ async function swapPostedBet(oldBetId, newBetId) {
   }
 }
 
+/**
+ * Persist generated copy for a bet (fire-and-forget)
+ * @param {number} betId
+ * @param {string|null} copy - The sanitized copy to persist, or null to clear
+ */
+async function updateGeneratedCopy(betId, copy) {
+  const { error } = await supabase
+    .from('suggested_bets')
+    .update({ generated_copy: copy })
+    .eq('id', betId);
+  if (error) {
+    logger.warn('[betService] Failed to persist generated_copy', { betId, error: error.message });
+  }
+}
+
+/**
+ * Clear generated_copy for all non-posted bets of a group
+ * Called when tone config changes to force regeneration.
+ * @param {string} groupId
+ */
+async function clearGeneratedCopyByGroup(groupId) {
+  // Clears ALL bets (including posted) so reposted bets also regenerate with new tone
+  const { error } = await supabase
+    .from('suggested_bets')
+    .update({ generated_copy: null })
+    .eq('group_id', groupId);
+  if (error) {
+    logger.warn('[betService] Failed to clear generated_copy', { groupId, error: error.message });
+  }
+}
+
 module.exports = {
   // Query functions
   getEligibleBets,
@@ -1791,4 +1826,8 @@ module.exports = {
 
   // Create functions
   createManualBet,
+
+  // Generated copy persistence
+  updateGeneratedCopy,
+  clearGeneratedCopyByGroup,
 };

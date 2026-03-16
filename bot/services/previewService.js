@@ -16,8 +16,9 @@
  */
 const logger = require('../../lib/logger');
 const { supabase } = require('../../lib/supabase');
-const { generateBetCopy, clearBetCache } = require('./copyService');
-const { formatBetMessage, getRandomTemplate, getTemplate } = require('../jobs/postBets');
+const { generateBetCopy } = require('./copyService');
+const { updateGeneratedCopy } = require('./betService');
+const { formatBetMessage, getRandomTemplate, getTemplate, getOrGenerateMessage } = require('../jobs/postBets');
 
 /**
  * Load copy_tone_config directly from DB (not from botCtx in memory)
@@ -49,7 +50,7 @@ async function fetchSampleBets(groupId) {
   const { data: futureBets } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('group_id', groupId)
@@ -66,7 +67,7 @@ async function fetchSampleBets(groupId) {
   const { data: recentBets, error } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('group_id', groupId)
@@ -94,6 +95,7 @@ function mapBet(raw) {
     deepLink: raw.deep_link,
     reasoning: raw.reasoning,
     promovidaManual: raw.promovida_manual,
+    generatedCopy: raw.generated_copy || null,
     homeTeamName: raw.league_matches.home_team_name,
     awayTeamName: raw.league_matches.away_team_name,
     kickoffTime: raw.league_matches.kickoff_time,
@@ -109,7 +111,7 @@ function mapBet(raw) {
  *
  * When toneConfig is empty/null, falls back to formatBetMessage (static template).
  */
-async function formatPreviewMessage(bet, toneConfig) {
+async function formatPreviewMessage(bet, toneConfig, { forceRegenerate = false } = {}) {
   const template = getTemplate(toneConfig, 0);
   const hasToneConfig = toneConfig && (
     toneConfig.examplePost ||
@@ -126,22 +128,16 @@ async function formatPreviewMessage(bet, toneConfig) {
     return formatBetMessage(bet, template, toneConfig);
   }
 
-  // Clear cache for this bet so the preview always reflects the latest tone config
-  clearBetCache(bet.id);
+  // Tone test (forceRegenerate): clear persisted copy to force fresh LLM generation
+  if (forceRegenerate) {
+    await updateGeneratedCopy(bet.id, null);
+    // Clear the in-memory field so getOrGenerateMessage re-generates
+    bet = { ...bet, generatedCopy: null };
+  }
 
   if (toneConfig.examplePost || toneConfig.examplePosts?.length > 0) {
-    // Full-message mode: LLM generates the entire post
-    try {
-      const copyResult = await generateBetCopy(bet, toneConfig);
-      if (copyResult.success && copyResult.data?.fullMessage) {
-        return copyResult.data.copy;
-      }
-      logger.warn('[previewService] generateBetCopy failed, falling back', { betId: bet.id, error: copyResult.error });
-    } catch (err) {
-      logger.error('[previewService] generateBetCopy threw', { betId: bet.id, error: err.message });
-    }
-    // Fallback to formatBetMessage if LLM failed
-    return formatBetMessage(bet, template, toneConfig);
+    // Full-message mode: use getOrGenerateMessage (persisted or fresh)
+    return getOrGenerateMessage(bet, toneConfig, 0);
   }
 
   // No examplePost but has tone fields: use formatBetMessage's template structure
@@ -149,7 +145,7 @@ async function formatPreviewMessage(bet, toneConfig) {
   if (!bet.reasoning) {
     const enrichedBet = {
       ...bet,
-      reasoning: `Jogo entre ${bet.homeTeamName} e ${bet.awayTeamName}. Mercado: ${bet.betMarket}. Odd: ${bet.odds?.toFixed?.(2) || 'N/A'}.`,
+      reasoning: `Jogo entre ${bet.homeTeamName} e ${bet.awayTeamName}. Mercado: ${bet.betMarket}. ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed?.(2) || 'N/A'}.`,
     };
     return formatBetMessage(enrichedBet, template, toneConfig);
   }
@@ -167,7 +163,7 @@ async function fetchBetById(groupId, betId) {
   const { data, error } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('group_id', groupId)
@@ -202,7 +198,7 @@ async function generatePreview(groupId, betId = null, betIds = null) {
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
-        id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+        id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
         league_matches!inner ( home_team_name, away_team_name, kickoff_time )
       `)
       .eq('group_id', groupId)
@@ -235,6 +231,8 @@ async function generatePreview(groupId, betId = null, betIds = null) {
   const bets = rawBets.map(mapBet);
 
   // 3. Generate previews in parallel (LLM calls are independent)
+  // forceRegenerate: true for tone test (no betIds), false for posting queue preview
+  const forceRegenerate = !betIds || betIds.length === 0;
   const previews = await Promise.all(bets.map(async (bet) => {
     const betInfo = {
       homeTeam: bet.homeTeamName,
@@ -246,13 +244,13 @@ async function generatePreview(groupId, betId = null, betIds = null) {
       deepLink: bet.deepLink,
     };
     try {
-      const preview = await formatPreviewMessage(bet, toneConfig);
+      const preview = await formatPreviewMessage(bet, toneConfig, { forceRegenerate });
       return { betId: bet.id, preview, betInfo };
     } catch (err) {
       logger.error('[previewService] Failed to format bet', { betId: bet.id, groupId, error: err.message });
       return {
         betId: bet.id,
-        preview: `🎯 ${bet.homeTeamName} x ${bet.awayTeamName}\n📊 ${bet.betMarket}\n💰 Odd: ${bet.odds?.toFixed(2) || 'N/A'}\n🔗 ${bet.deepLink || ''}`,
+        preview: `🎯 ${bet.homeTeamName} x ${bet.awayTeamName}\n📊 ${bet.betMarket}\n💰 ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed(2) || 'N/A'}\n🔗 ${bet.deepLink || ''}`,
         betInfo,
       };
     }

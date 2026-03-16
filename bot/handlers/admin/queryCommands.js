@@ -6,7 +6,8 @@ const { config } = require('../../../lib/config');
 const logger = require('../../../lib/logger');
 const { supabase } = require('../../../lib/supabase');
 const { getBetById, getOverviewStats, getBetsReadyForPosting, getActiveBetsForRepost, getOddsHistory } = require('../../services/betService');
-const { generateBetCopy, clearBetCache } = require('../../services/copyService');
+const { generateBetCopy } = require('../../services/copyService');
+const { updateGeneratedCopy } = require('../../services/betService');
 const { getSuccessRateForDays, getSuccessRateStats, getDetailedStats } = require('../../services/metricsService');
 const { getLatestExecutions, formatResult } = require('../../services/jobExecutionService');
 const { formatDateBR, formatDateTimeBR, formatTime } = require('../../../lib/utils');
@@ -360,10 +361,10 @@ async function handleSimularCommand(bot, msg, arg) {
       return;
     }
 
-    // If "novo", clear cache for these bets
+    // If "novo", clear persisted copy to force regeneration
     if (isNovo) {
-      betsToPreview.forEach(bet => clearBetCache(bet.id));
-      logger.info('[admin:query] Cleared cache for preview bets', { count: betsToPreview.length });
+      await Promise.all(betsToPreview.map(bet => updateGeneratedCopy(bet.id, null)));
+      logger.info('[admin:query] Cleared generated_copy for preview bets', { count: betsToPreview.length });
     }
 
     // Get success rate
@@ -400,6 +401,10 @@ async function handleSimularCommand(bot, msg, arg) {
         const copyResult = await generateBetCopy(bet, toneConfig);
         if (copyResult.success && copyResult.data?.copy) {
           copyText = copyResult.data.copy;
+          // Persist the regenerated copy so it's not wasted
+          if (isNovo || !bet.generatedCopy) {
+            updateGeneratedCopy(bet.id, copyResult.data.fullMessage ? copyText : null).catch(() => {});
+          }
         }
       } catch (e) {
         logger.debug('[admin:query] Failed to generate copy for preview', { betId: bet.id });
@@ -412,7 +417,8 @@ async function handleSimularCommand(bot, msg, arg) {
       lines.push(`🗓 ${kickoffStr}`);
       lines.push('');
       lines.push(`📊 *${bet.betMarket}*: ${bet.betPick || ''}`);
-      lines.push(`💰 Odd: *${bet.odds?.toFixed(2) || bet.oddsAtPost?.toFixed(2) || 'N/A'}*`);
+      const oddLabel = toneConfig?.oddLabel || 'Odd';
+      lines.push(`💰 ${oddLabel}: *${bet.odds?.toFixed(2) || bet.oddsAtPost?.toFixed(2) || 'N/A'}*`);
       lines.push('');
       lines.push(`📝 _${copyText}_`);
 

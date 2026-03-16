@@ -17,6 +17,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { config } = require('../lib/config');
 const logger = require('../lib/logger');
+const { sanitizeTelegramMarkdown } = require('./lib/telegramMarkdown');
 
 // ==========================================
 // Legacy singleton state (backward-compat)
@@ -309,9 +310,13 @@ async function sendToPublic(text, botCtxOrOptions, options) {
   }
 
   try {
+    // Safety net: redundant with formatBetMessage sanitization, but catches any
+    // code path that sends to public without going through the posting pipeline.
+    // sanitizeTelegramMarkdown is idempotent so double application is harmless.
+    const sanitizedText = sanitizeTelegramMarkdown(text);
     const message = await targetBot.sendMessage(
       targetChatId,
-      text,
+      sanitizedText,
       { parse_mode: 'Markdown', disable_web_page_preview: false, ...sendOptions }
     );
 
