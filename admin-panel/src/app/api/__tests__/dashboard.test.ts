@@ -328,7 +328,7 @@ describe('GET /api/dashboard/stats', () => {
     expect(body.data.summary.bots.online).toBe(0);
   });
 
-  it('detects bot as offline when last_heartbeat is null (never checked in)', async () => {
+  it('skips orphan bot_health entries with null group_id', async () => {
     const nullHeartbeat = [
       { group_id: null, status: 'online', last_heartbeat: null, error_message: null, groups: null },
     ];
@@ -347,9 +347,7 @@ describe('GET /api/dashboard/stats', () => {
 
     expect(response.status).toBe(200);
     const offlineAlerts = body.data.alerts.filter((a: { type: string }) => a.type === 'bot_offline');
-    expect(offlineAlerts).toHaveLength(1);
-    expect(body.data.summary.bots.offline).toBe(1);
-    expect(body.data.summary.bots.online).toBe(0);
+    expect(offlineAlerts).toHaveLength(0);
   });
 
   it('considers bot online when last_heartbeat < 30 min ago', async () => {

@@ -269,6 +269,7 @@ export const GET = createApiHandler(async (req, context) => {
 
   // Bots offline — by explicit status OR stale heartbeat (> 30 min)
   for (const h of botHealth) {
+    if (!h.group_id) continue; // skip orphan entries without group
     const isStaleHeartbeat = !h.last_heartbeat ||
       (Date.now() - new Date(h.last_heartbeat).getTime()) > OFFLINE_THRESHOLD_MS;
     const isOffline = h.status === 'offline' || isStaleHeartbeat;
