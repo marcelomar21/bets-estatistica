@@ -83,8 +83,8 @@ describe('memberService', () => {
       expect(VALID_TRANSITIONS.trial).toEqual(['ativo', 'removido', 'cancelado']);
     });
 
-    test('ativo pode ir para inadimplente, removido ou cancelado', () => {
-      expect(VALID_TRANSITIONS.ativo).toEqual(['inadimplente', 'removido', 'cancelado']);
+    test('ativo pode ir para trial, inadimplente, removido ou cancelado', () => {
+      expect(VALID_TRANSITIONS.ativo).toEqual(['trial', 'inadimplente', 'removido', 'cancelado']);
     });
 
     test('inadimplente pode ir para ativo ou removido', () => {
@@ -142,8 +142,8 @@ describe('memberService', () => {
       expect(canTransition('trial', 'inadimplente')).toBe(false);
     });
 
-    test('ativo → trial retorna false (transição inválida)', () => {
-      expect(canTransition('ativo', 'trial')).toBe(false);
+    test('ativo → trial retorna true (demoção de admin)', () => {
+      expect(canTransition('ativo', 'trial')).toBe(true);
     });
 
     // Mesmo status

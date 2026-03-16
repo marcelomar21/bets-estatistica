@@ -16,14 +16,16 @@ const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido', 'cancelad
 /**
  * State Machine: Valid transitions between member statuses
  *
- * trial ──────► ativo ──────► inadimplente
+ * trial ◄─────► ativo ──────► inadimplente
  *   │             │                │
  *   │             │                ▼
  *   └─────────────┴──────────► removido
+ *
+ * Extras: trial/ativo → cancelado, cancelado → ativo
  */
 const VALID_TRANSITIONS = {
   trial: ['ativo', 'removido', 'cancelado'],
-  ativo: ['inadimplente', 'removido', 'cancelado'],
+  ativo: ['trial', 'inadimplente', 'removido', 'cancelado'],
   inadimplente: ['ativo', 'removido'],
   removido: [],    // Estado final - sem transições permitidas
   cancelado: ['ativo'],   // Reativação pelo operador
