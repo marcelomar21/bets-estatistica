@@ -258,9 +258,9 @@ describe('notificationService', () => {
       expect(result).toBeNull();
     });
 
-    it('should return group-specific price when provided', () => {
-      const result = getSubscriptionPrice({ subscriptionPrice: 'R$79/mes' });
-      expect(result).toBe('R$79/mes');
+    it('should return formatted BRL price when provided as number', () => {
+      const result = getSubscriptionPrice({ subscriptionPrice: 79 });
+      expect(result).toBe('R$ 79,00');
     });
 
     it('should return null when groupConfig has no subscriptionPrice', () => {
@@ -272,7 +272,7 @@ describe('notificationService', () => {
   describe('formatTrialReminder', () => {
     it('should format reminder for 3 days remaining', () => {
       const member = { telegram_username: 'testuser' };
-      const groupConfig = { operatorUsername: 'operador_test', subscriptionPrice: 'R$50/mes' };
+      const groupConfig = { operatorUsername: 'operador_test', subscriptionPrice: 50 };
       const message = formatTrialReminder(member, 3, 'https://pay.cakto.com.br/checkout/123', 75.5, groupConfig);
 
       expect(message).toContain('*3 dias*');

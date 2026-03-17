@@ -23,7 +23,7 @@ jest.mock('../../lib/config', () => ({
       trialDays: 7,
       checkoutUrl: 'https://test.checkout.com',
       operatorUsername: 'testoperator',
-      subscriptionPrice: 'R$50/MÊS',
+      subscriptionPrice: 50,
     },
   },
 }));

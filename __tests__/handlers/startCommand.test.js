@@ -33,7 +33,7 @@ jest.mock('../../lib/config', () => ({
       affiliateTrialDays: 2, // Story 18.1: 2 days for affiliates
       checkoutUrl: 'https://checkout.example.com',
       operatorUsername: 'testoperator',
-      subscriptionPrice: 'R$50/mês'
+      subscriptionPrice: 50
     }
   }
 }));

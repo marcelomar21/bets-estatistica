@@ -57,7 +57,7 @@ jest.mock('../../../bot/telegram', () => ({
         name: 'Test Group',
         checkoutUrl: 'https://pay.test.com/group1',
         operatorUsername: 'operator1',
-        subscriptionPrice: 'R$50/mes',
+        subscriptionPrice: 50,
       },
     }],
   ])),
@@ -190,7 +190,7 @@ describe('trial-reminders job', () => {
     const mockGroupConfig = {
       checkoutUrl: 'https://pay.test.com/group1',
       operatorUsername: 'operator1',
-      subscriptionPrice: 'R$50/mes',
+      subscriptionPrice: 50,
     };
 
     it('should skip member without telegram_id', async () => {

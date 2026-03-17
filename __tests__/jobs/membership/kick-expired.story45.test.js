@@ -47,7 +47,7 @@ jest.mock('../../../lib/config', () => {
   mockConfig = {
     membership: {
       checkoutUrl: 'https://checkout-fallback.example.com',
-      subscriptionPrice: 'R$50/mes',
+      subscriptionPrice: 50,
       gracePeriodDays: 2,
       groupId: null,
     },
@@ -122,7 +122,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
           name: 'Grupo VIP',
           checkoutUrl: 'https://mp.com/checkout/group123',
           operatorUsername: 'operador_test',
-          subscriptionPrice: 'R$50/mes',
+          subscriptionPrice: 50,
         },
       }],
     ]));
@@ -238,7 +238,7 @@ describe('Story 4.5: kick-expired multi-tenant', () => {
         name: 'Grupo VIP',
         checkoutUrl: 'https://mp.com/checkout/group123',
         operatorUsername: 'operador_test',
-        subscriptionPrice: 'R$50/mes',
+        subscriptionPrice: 50,
       },
     };
 

@@ -32,7 +32,7 @@ jest.mock('../../telegram', () => ({
     answerCallbackQuery: mockAnswerCallbackQuery,
     editMessageText: mockEditMessageText,
   }),
-  getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890', groupId: 'test-group-uuid' }),
+  getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890', groupId: 'test-group-uuid', groupConfig: { trialDays: 7 } }),
 }));
 
 const mockGetMemberByTelegramId = jest.fn();
@@ -77,7 +77,7 @@ jest.mock('../../../lib/config', () => ({
       groupId: '-1001234567890',
       checkoutUrl: 'https://checkout.mp/test',
       operatorUsername: 'admin',
-      subscriptionPrice: 'R$50/mês',
+      subscriptionPrice: 50,
     },
   },
 }));
@@ -349,9 +349,8 @@ describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
   });
 
   describe('TRIAL_MODE configurable trial days (AC #4)', () => {
-    it('uses trial days from system_config', async () => {
+    it('uses trial days from groupConfig', async () => {
       mockGetConfig.mockResolvedValue('internal');
-      mockGetTrialDays.mockResolvedValue({ success: true, data: { days: 14, source: 'system_config' } });
       mockGetMemberByTelegramId.mockResolvedValue({
         success: false,
         error: { code: 'MEMBER_NOT_FOUND' },
@@ -368,9 +367,10 @@ describe('Story 2-2: TRIAL_MODE branching in handleStartCommand', () => {
 
       await handleStartCommand(createMsg());
 
+      // Trial days come from groupConfig.trialDays (7 in mock), not getTrialDays()
       expect(mockCreateTrialMember).toHaveBeenCalledWith(
         expect.any(Object),
-        14
+        7
       );
     });
   });
