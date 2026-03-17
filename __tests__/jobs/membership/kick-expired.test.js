@@ -48,7 +48,7 @@ jest.mock('../../../bot/telegram', () => ({
         name: 'Test Group',
         checkoutUrl: 'https://checkout.example.com',
         operatorUsername: 'operador_test',
-        subscriptionPrice: 'R$50/mes',
+        subscriptionPrice: 50,
       },
     }],
   ])),
@@ -58,7 +58,7 @@ jest.mock('../../../lib/config', () => ({
   config: {
     membership: {
       checkoutUrl: 'https://checkout.example.com',
-      subscriptionPrice: 'R$50/mes',
+      subscriptionPrice: 50,
       gracePeriodDays: 2,
     },
     telegram: {
@@ -240,7 +240,7 @@ describe('kick-expired job', () => {
       telegram_group_id: '-100123456789',
       checkout_url: 'https://checkout.example.com',
       operator_username: 'operador_test',
-      subscription_price: 'R$50/mes',
+      subscription_price: 50,
     };
     const testBotCtx = {
       bot: mockBotInstance,
@@ -250,7 +250,7 @@ describe('kick-expired job', () => {
         name: 'Test Group',
         checkoutUrl: 'https://checkout.example.com',
         operatorUsername: 'operador_test',
-        subscriptionPrice: 'R$50/mes',
+        subscriptionPrice: 50,
       },
     };
 
@@ -641,13 +641,13 @@ describe('formatFarewellMessage', () => {
   it('should format trial_expired message correctly', () => {
     const member = { id: 'member-1', telegram_username: 'testuser' };
     const checkoutUrl = 'https://checkout.example.com';
-    const groupConfig = { subscriptionPrice: 'R$50/mes' };
+    const groupConfig = { subscriptionPrice: 50 };
 
     const message = formatFarewellMessage(member, 'trial_expired', checkoutUrl, groupConfig);
 
     expect(message).toContain('trial terminou');
     expect(message).toContain('Sentiremos sua falta');
-    expect(message).toContain('ASSINAR POR R$50/MES');
+    expect(message).toContain('ASSINAR POR R$ 50,00');
     expect(message).toContain(checkoutUrl);
     expect(message).toContain('24h para reativar');
   });
