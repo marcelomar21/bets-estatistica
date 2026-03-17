@@ -136,6 +136,8 @@ async function initBots(supabaseClient) {
         checkout_url,
         operator_username,
         subscription_price,
+        trial_days,
+        welcome_message_template,
         status,
         channels,
         whatsapp_group_jid
@@ -164,7 +166,9 @@ async function initBots(supabaseClient) {
         copyToneConfig: row.groups.copy_tone_config || {},
         checkoutUrl: row.groups.checkout_url || null,
         operatorUsername: row.groups.operator_username || null,
-        subscriptionPrice: row.groups.subscription_price || null,
+        subscriptionPrice: row.groups.subscription_price ?? null,
+        trialDays: row.groups.trial_days || 7,
+        welcomeMessageTemplate: row.groups.welcome_message_template || null,
       };
 
       const ctx = {

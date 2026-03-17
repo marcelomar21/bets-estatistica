@@ -16,12 +16,19 @@ const { getSuccessRateForDays } = require('../services/metricsService');
 const { formatFullDateBR } = require('../../lib/utils');
 const { insertAdminNotification } = require('../services/notificationHelper');
 const { registerNotification } = require('../services/notificationService');
+const { formatBRL } = require('../lib/formatPrice');
 
 // Story 4.2 requires a fixed 7-day MP trial period for registration/welcome messaging.
 const MP_TRIAL_DAYS = 7;
 
+/**
+ * Get raw subscription price number from group config.
+ * Callers must use formatBRL() before interpolating in messages.
+ * @param {object} [groupConfig]
+ * @returns {number|null}
+ */
 function getSubscriptionPrice(groupConfig = null) {
-  return groupConfig?.subscriptionPrice || null;
+  return groupConfig?.subscriptionPrice ?? null;
 }
 
 /**
@@ -312,7 +319,7 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
   const subscriptionPrice = getSubscriptionPrice(groupConfig);
   const operatorUsername = groupConfig?.operatorUsername || config.membership?.operatorUsername || 'operador';
   const groupName = groupConfig?.name || 'o grupo';
-  const priceLabel = subscriptionPrice || 'consulte o operador';
+  const priceLabel = formatBRL(subscriptionPrice) || 'consulte o operador';
 
   // Format message (4.3)
   const paymentCta = checkoutUrl
@@ -320,7 +327,7 @@ async function sendWelcomeMessage(telegramId, firstName, memberId, groupId = nul
     : `💳 Para assinar, fale com @${operatorUsername}`;
 
   const trialSuffix = subscriptionPrice
-    ? `continue por apenas *${subscriptionPrice}*.`
+    ? `continue por apenas *${formatBRL(subscriptionPrice)}*.`
     : `fale com @${operatorUsername} para assinar.`;
 
   const message = `
@@ -499,7 +506,7 @@ async function sendPaymentRequiredMessage(telegramId, memberId = null, groupId =
   const subscriptionPrice = getSubscriptionPrice(groupConfig);
 
   // Issue #3: Handle missing checkout URL gracefully
-  const priceLabel = subscriptionPrice || 'consulte o operador';
+  const priceLabel = formatBRL(subscriptionPrice) || 'consulte o operador';
   let message;
   if (checkoutUrl) {
     message = `

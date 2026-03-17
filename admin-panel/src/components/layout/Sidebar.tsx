@@ -26,6 +26,8 @@ const modules: NavModule[] = [
       { name: 'Dashboard', href: '/dashboard', icon: '📊' },
       { name: 'Membros', href: '/members', icon: '👤' },
       { name: 'Mensagens', href: '/messages', icon: '✉️' },
+      { name: 'Onboarding', href: '/onboarding', icon: '🎉' },
+      { name: 'Configurações', href: '/community-settings', icon: '⚙️' },
     ],
   },
   {

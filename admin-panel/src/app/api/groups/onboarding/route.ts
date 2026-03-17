@@ -255,7 +255,7 @@ async function handleConfiguringMp(data: z.infer<typeof configuringMpSchema>, co
 
   const { error: savePlanError } = await context.supabase
     .from('groups')
-    .update({ mp_plan_id: mpResult.data.planId, checkout_url: mpResult.data.checkoutUrl })
+    .update({ mp_plan_id: mpResult.data.planId, checkout_url: mpResult.data.checkoutUrl, subscription_price: price })
     .eq('id', group_id);
 
   if (savePlanError) {
