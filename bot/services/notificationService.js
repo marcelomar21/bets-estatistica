@@ -25,6 +25,7 @@
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { getBot } = require('../telegram');
+const { formatBRL } = require('../lib/formatPrice');
 // NOTE: config import removed — global config.membership.* fallbacks eliminated for multi-tenant safety.
 // Group-specific config must be passed explicitly via groupConfig parameter.
 
@@ -242,14 +243,18 @@ function getOperatorUsername(groupConfig = null) {
 }
 
 /**
- * Get subscription price text from group-specific config
+ * Get subscription price formatted as BRL from group-specific config.
  * Returns null if no groupConfig with subscriptionPrice is provided.
  * Global config fallback removed for multi-tenant safety.
- * @param {object} [groupConfig] - Optional group config with subscriptionPrice
- * @returns {string|null} - Price text (e.g., "R$50/mes") or null if not configured
+ *
+ * WARNING: Returns a **formatted string** (e.g., "R$ 49,90"), NOT a raw number.
+ * Do NOT pass the result to formatBRL() again — it will return null.
+ *
+ * @param {object} [groupConfig] - Optional group config with subscriptionPrice (number)
+ * @returns {string|null} - Formatted price (e.g., "R$ 49,90") or null if not configured
  */
 function getSubscriptionPrice(groupConfig = null) {
-  return groupConfig?.subscriptionPrice || null;
+  return formatBRL(groupConfig?.subscriptionPrice ?? null) || null;
 }
 
 /**
@@ -265,7 +270,7 @@ function formatTrialReminder(member, daysRemaining, checkoutUrl, successRate = n
   const operatorUsername = getOperatorUsername(groupConfig);
   const price = getSubscriptionPrice(groupConfig);
   const rateText = successRate ? `*${successRate.toFixed(1)}%*` : '_calculando_';
-  const priceLabel = price ? `POR ${price.toUpperCase()}` : 'AGORA';
+  const priceLabel = price ? `POR ${price}` : 'AGORA';
   const priceInline = price || 'um valor acessivel';
 
   if (daysRemaining === 1) {
@@ -317,7 +322,7 @@ Duvidas? Fale com @${operatorUsername}`;
  */
 function formatFarewellMessage(member, reason, checkoutUrl, groupConfig = null) {
   const price = getSubscriptionPrice(groupConfig);
-  const priceLabel = price ? `POR ${price.toUpperCase()}` : 'AGORA';
+  const priceLabel = price ? `POR ${price}` : 'AGORA';
 
   if (reason === 'trial_expired') {
     return `Seu trial terminou

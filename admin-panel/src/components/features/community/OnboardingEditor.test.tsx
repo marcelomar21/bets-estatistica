@@ -10,7 +10,7 @@ const baseProps = {
   initialTemplate: null,
   groupName: 'Guru da Bet',
   trialDays: 7,
-  subscriptionPrice: 'R$ 49,90/mês',
+  subscriptionPrice: 49.9 as number | null,
 };
 
 describe('OnboardingEditor', () => {
@@ -46,19 +46,22 @@ describe('OnboardingEditor', () => {
     expect(textarea.value).toContain('{nome}');
   });
 
-  it('shows preview with replaced placeholders', () => {
+  it('shows preview with replaced placeholders and formatted price', () => {
     render(<OnboardingEditor {...baseProps} />);
 
     const previewBtn = screen.getByRole('button', { name: 'Preview' });
     fireEvent.click(previewBtn);
 
-    // Preview should show rendered content (use getAllByText since legend table also has these values)
+    // Preview should show rendered content
     expect(screen.getAllByText(/João/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText(/Guru da Bet/).length).toBeGreaterThanOrEqual(1);
-    // Verify the preview container has the expected content
+    // Verify the preview container has formatted BRL price
     const previewContainer = document.querySelector('.bg-\\[\\#1e2b3a\\]');
     expect(previewContainer?.textContent).toContain('João');
     expect(previewContainer?.textContent).toContain('7 dias');
+    // Price should be formatted as BRL (R$ 49,90)
+    expect(previewContainer?.textContent).toContain('R$');
+    expect(previewContainer?.textContent).toContain('49,90');
   });
 
   it('renders bold markdown in preview as strong tags', () => {
@@ -117,10 +120,18 @@ describe('OnboardingEditor', () => {
     expect(screen.getByRole('button', { name: '💳 ASSINAR AGORA' })).toBeDisabled();
   });
 
-  it('displays placeholder legend with group-specific values', () => {
+  it('displays placeholder legend with formatted BRL price', () => {
     render(<OnboardingEditor {...baseProps} />);
 
     expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
-    expect(screen.getByText('R$ 49,90/mês')).toBeInTheDocument();
+    // Price appears in both {preco} and {linha_preco} rows, so use getAllByText
+    expect(screen.getAllByText(/R\$\s49,90/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows fallback when subscriptionPrice is null', () => {
+    render(<OnboardingEditor {...baseProps} subscriptionPrice={null} />);
+
+    // Legend should show 'R$ XX,XX' as fallback
+    expect(screen.getByText('R$ XX,XX')).toBeInTheDocument();
   });
 });

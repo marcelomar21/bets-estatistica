@@ -30,6 +30,7 @@ const { formatFullDateBR } = require('../../lib/utils');
 const { getSuccessRateForDays } = require('../services/metricsService');
 const { acceptTerms, hasAcceptedVersion } = require('../services/termsService');
 const { insertAdminNotification } = require('../services/notificationHelper');
+const { formatBRL } = require('../lib/formatPrice');
 
 /**
  * Default welcome message template with placeholders.
@@ -690,7 +691,7 @@ Seu email ${email} foi vinculado a este Telegram.
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
   const groupConfig = effectiveBotCtx?.groupConfig || null;
   const checkoutUrl = groupConfig?.checkoutUrl || null;
-  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
+  const subscriptionPrice = groupConfig?.subscriptionPrice ?? null;
 
   // F2/F9: Use per-group trial days instead of global system_config
   const trialDays = groupConfig?.trialDays || 7;
@@ -699,7 +700,7 @@ Seu email ${email} foi vinculado a este Telegram.
   let replyMarkup = null;
 
   if (checkoutUrl) {
-    const priceLineEmail = subscriptionPrice ? `\n💰 *Valor:* ${subscriptionPrice}` : '';
+    const priceLineEmail = subscriptionPrice ? `\n💰 *Valor:* ${formatBRL(subscriptionPrice)}` : '';
     // F10: Removed "dias grátis" messaging since MP plans no longer include free_trial
     paymentMessage = `
 ❌ Não encontramos uma assinatura com o email *${email}*.
@@ -748,7 +749,7 @@ async function generateAndSendInvite(bot, chatId, firstName, member, botCtx = nu
   const groupConfig = effectiveBotCtx?.groupConfig || null;
   const trialDays = groupConfig?.trialDays || 7;
   const operatorUsername = groupConfig?.operatorUsername || 'operador';
-  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
+  const subscriptionPrice = groupConfig?.subscriptionPrice ?? null;
 
   // Generate unique invite link
   let inviteLink;
@@ -818,7 +819,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
       dias_trial: trialDays,
       data_expiracao: trialEndsAt,
       taxa_acerto: successRateText,
-      preco: subscriptionPrice || '',
+      preco: formatBRL(subscriptionPrice) || '',
     });
 
     inlineKeyboard = [
@@ -830,7 +831,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   } else {
     // Mercadopago flow: original welcome message
     const priceLineMp = subscriptionPrice
-      ? `\n💰 Após o trial, continue por apenas *${subscriptionPrice}*.`
+      ? `\n💰 Após o trial, continue por apenas *${formatBRL(subscriptionPrice)}*.`
       : '\n💰 Após o trial, consulte o operador para assinar.';
 
     welcomeMessage = `
@@ -874,7 +875,7 @@ ${priceLineMp}
       dias_trial: trialDays,
       data_expiracao: member.trial_ends_at ? formatFullDateBR(member.trial_ends_at) || '—' : '—',
       taxa_acerto: successRateText,
-      preco: subscriptionPrice || '',
+      preco: formatBRL(subscriptionPrice) || '',
     });
     await bot.sendMessage(chatId, fallbackMessage, {
       parse_mode: 'Markdown',
@@ -897,14 +898,14 @@ async function sendPaymentRequired(bot, chatId, firstName, member, botCtx = null
   const groupConfig = botCtx?.groupConfig || null;
   const checkoutUrl = groupConfig?.checkoutUrl || null;
   const operatorUsername = groupConfig?.operatorUsername || 'operador';
-  const subscriptionPrice = groupConfig?.subscriptionPrice || null;
+  const subscriptionPrice = groupConfig?.subscriptionPrice ?? null;
 
   let message;
   let replyMarkup = null;
 
   if (checkoutUrl) {
     const priceLinePayment = subscriptionPrice
-      ? `assine por apenas *${subscriptionPrice}*`
+      ? `assine por apenas *${formatBRL(subscriptionPrice)}*`
       : 'assine para continuar';
     message = `
 Olá, ${firstName}! 👋
@@ -923,7 +924,7 @@ Para continuar recebendo nossas apostas com análise estatística, ${priceLinePa
     };
   } else {
     const priceInfoContact = subscriptionPrice
-      ? ` por *${subscriptionPrice}*`
+      ? ` por *${formatBRL(subscriptionPrice)}*`
       : '';
     message = `
 Olá, ${firstName}! 👋

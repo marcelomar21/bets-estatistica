@@ -11,7 +11,7 @@ interface GroupOption {
 
 interface SettingsData {
   trial_days: number;
-  subscription_price: string | null;
+  subscription_price: number | null;
   welcome_message_template: string | null;
 }
 

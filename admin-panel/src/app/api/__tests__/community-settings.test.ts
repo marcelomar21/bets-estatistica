@@ -8,6 +8,12 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+// Mock mercadopago
+const mockUpdateSubscriptionPlanPrice = vi.fn();
+vi.mock('@/lib/mercadopago', () => ({
+  updateSubscriptionPlanPrice: (...args: unknown[]) => mockUpdateSubscriptionPlanPrice(...args),
+}));
+
 // Helper to create route context with params (Next.js 16 Promise-based params)
 function createRouteContext(params: Record<string, string>) {
   return { params: Promise.resolve(params) };
@@ -96,8 +102,9 @@ describe('community-settings API route', () => {
     it('returns settings for the group', async () => {
       const settingsData = {
         trial_days: 5,
-        subscription_price: 'R$ 49,90/mês',
+        subscription_price: 49.9,
         welcome_message_template: null,
+        mp_plan_id: 'plan-123',
       };
 
       const { from } = createMockQueryBuilder({ currentData: settingsData });
@@ -112,7 +119,9 @@ describe('community-settings API route', () => {
 
       expect(json.success).toBe(true);
       expect(json.data.trial_days).toBe(5);
-      expect(json.data.subscription_price).toBe('R$ 49,90/mês');
+      expect(json.data.subscription_price).toBe(49.9);
+      // mp_plan_id should be stripped from response
+      expect(json.data.mp_plan_id).toBeUndefined();
     });
 
     it('returns 403 when group_admin tries to access another group', async () => {
@@ -172,7 +181,7 @@ describe('community-settings API route', () => {
       expect(json.success).toBe(false);
     });
 
-    it('validates subscription_price max length', async () => {
+    it('validates subscription_price must be number (rejects string)', async () => {
       const { from } = createMockQueryBuilder();
       mockWithTenant.mockResolvedValue({
         success: true,
@@ -181,7 +190,7 @@ describe('community-settings API route', () => {
 
       const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
         method: 'PUT',
-        body: JSON.stringify({ subscription_price: 'x'.repeat(51) }),
+        body: JSON.stringify({ subscription_price: 'R$ 49,90' }),
         headers: { 'Content-Type': 'application/json' },
       });
       const res = await PUT(req, createRouteContext({ groupId: 'group-1' }));
@@ -191,15 +200,33 @@ describe('community-settings API route', () => {
       expect(json.success).toBe(false);
     });
 
-    it('updates and returns success', async () => {
+    it('validates subscription_price min (rejects 0)', async () => {
+      const { from } = createMockQueryBuilder();
+      mockWithTenant.mockResolvedValue({
+        success: true,
+        context: createSuperAdminContext({ from }),
+      });
+
+      const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
+        method: 'PUT',
+        body: JSON.stringify({ subscription_price: 0 }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const res = await PUT(req, createRouteContext({ groupId: 'group-1' }));
+
+      expect(res.status).toBe(400);
+    });
+
+    it('updates and returns success with numeric price', async () => {
       const updatedData = {
         trial_days: 5,
-        subscription_price: 'R$ 39,90/mês',
+        subscription_price: 39.9,
         welcome_message_template: null,
+        mp_plan_id: null,
       };
 
       const { from } = createMockQueryBuilder({
-        currentData: { trial_days: 7, subscription_price: 'R$ 49,90/mês', welcome_message_template: null },
+        currentData: { trial_days: 7, subscription_price: 49.9, welcome_message_template: null, mp_plan_id: null },
         updatedData,
       });
       mockWithTenant.mockResolvedValue({
@@ -209,7 +236,7 @@ describe('community-settings API route', () => {
 
       const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
         method: 'PUT',
-        body: JSON.stringify({ trial_days: 5, subscription_price: 'R$ 39,90/mês' }),
+        body: JSON.stringify({ trial_days: 5, subscription_price: 39.9 }),
         headers: { 'Content-Type': 'application/json' },
       });
       const res = await PUT(req, createRouteContext({ groupId: 'group-1' }));
@@ -217,6 +244,74 @@ describe('community-settings API route', () => {
 
       expect(json.success).toBe(true);
       expect(json.data.trial_days).toBe(5);
+      // mp_plan_id should not be in response
+      expect(json.data.mp_plan_id).toBeUndefined();
+    });
+
+    it('calls updateSubscriptionPlanPrice when price changes and mp_plan_id exists', async () => {
+      mockUpdateSubscriptionPlanPrice.mockResolvedValue({ success: true });
+
+      const { from } = createMockQueryBuilder({
+        currentData: { trial_days: 7, subscription_price: 49.9, welcome_message_template: null, mp_plan_id: 'plan-abc' },
+        updatedData: { trial_days: 7, subscription_price: 39.9, welcome_message_template: null, mp_plan_id: 'plan-abc' },
+      });
+      mockWithTenant.mockResolvedValue({
+        success: true,
+        context: createSuperAdminContext({ from }),
+      });
+
+      const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
+        method: 'PUT',
+        body: JSON.stringify({ subscription_price: 39.9 }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      await PUT(req, createRouteContext({ groupId: 'group-1' }));
+
+      expect(mockUpdateSubscriptionPlanPrice).toHaveBeenCalledWith('plan-abc', 39.9);
+    });
+
+    it('does not call MP when mp_plan_id is null', async () => {
+      const { from } = createMockQueryBuilder({
+        currentData: { trial_days: 7, subscription_price: 49.9, welcome_message_template: null, mp_plan_id: null },
+        updatedData: { trial_days: 7, subscription_price: 39.9, welcome_message_template: null, mp_plan_id: null },
+      });
+      mockWithTenant.mockResolvedValue({
+        success: true,
+        context: createSuperAdminContext({ from }),
+      });
+
+      const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
+        method: 'PUT',
+        body: JSON.stringify({ subscription_price: 39.9 }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      await PUT(req, createRouteContext({ groupId: 'group-1' }));
+
+      expect(mockUpdateSubscriptionPlanPrice).not.toHaveBeenCalled();
+    });
+
+    it('returns warning when MP sync fails but DB was updated', async () => {
+      mockUpdateSubscriptionPlanPrice.mockResolvedValue({ success: false, error: 'MP timeout' });
+
+      const { from } = createMockQueryBuilder({
+        currentData: { trial_days: 7, subscription_price: 49.9, welcome_message_template: null, mp_plan_id: 'plan-abc' },
+        updatedData: { trial_days: 7, subscription_price: 39.9, welcome_message_template: null, mp_plan_id: 'plan-abc' },
+      });
+      mockWithTenant.mockResolvedValue({
+        success: true,
+        context: createSuperAdminContext({ from }),
+      });
+
+      const req = new NextRequest('http://localhost/api/groups/group-1/community-settings', {
+        method: 'PUT',
+        body: JSON.stringify({ subscription_price: 39.9 }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const res = await PUT(req, createRouteContext({ groupId: 'group-1' }));
+      const json = await res.json();
+
+      expect(json.success).toBe(true);
+      expect(json.warning).toContain('MP timeout');
     });
 
     it('registers audit_log on update', async () => {

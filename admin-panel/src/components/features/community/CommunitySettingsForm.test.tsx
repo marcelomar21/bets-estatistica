@@ -8,7 +8,7 @@ globalThis.fetch = mockFetch;
 const baseProps = {
   groupId: 'group-1',
   initialTrialDays: 7,
-  initialPrice: 'R$ 49,90/mês',
+  initialPrice: 49.9 as number | null,
 };
 
 describe('CommunitySettingsForm', () => {
@@ -20,10 +20,17 @@ describe('CommunitySettingsForm', () => {
     render(<CommunitySettingsForm {...baseProps} />);
 
     const trialInput = screen.getByLabelText('Dias de trial') as HTMLInputElement;
-    const priceInput = screen.getByLabelText('Preço da assinatura') as HTMLInputElement;
+    const priceInput = screen.getByLabelText('Preço da assinatura (R$)') as HTMLInputElement;
 
     expect(trialInput.value).toBe('7');
-    expect(priceInput.value).toBe('R$ 49,90/mês');
+    expect(priceInput.value).toBe('49.9');
+  });
+
+  it('shows formatted BRL preview when price is set', () => {
+    render(<CommunitySettingsForm {...baseProps} />);
+
+    // Intl.NumberFormat uses non-breaking space (\u00a0) between R$ and value
+    expect(screen.getByText(/R\$\s49,90/)).toBeInTheDocument();
   });
 
   it('disables save button when no changes', () => {
@@ -55,7 +62,7 @@ describe('CommunitySettingsForm', () => {
     expect(trialInput.value).toBe('30');
   });
 
-  it('calls PUT with updated data when save is clicked', async () => {
+  it('calls PUT with numeric price when save is clicked', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ success: true, data: {} }),
@@ -63,8 +70,8 @@ describe('CommunitySettingsForm', () => {
 
     render(<CommunitySettingsForm {...baseProps} />);
 
-    const trialInput = screen.getByLabelText('Dias de trial');
-    fireEvent.change(trialInput, { target: { value: '5' } });
+    const priceInput = screen.getByLabelText('Preço da assinatura (R$)');
+    fireEvent.change(priceInput, { target: { value: '39.90' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
@@ -78,9 +85,10 @@ describe('CommunitySettingsForm', () => {
     });
 
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.trial_days).toBe(5);
-    // F18: Only changed fields are sent — subscription_price was not changed
-    expect(body.subscription_price).toBeUndefined();
+    expect(body.subscription_price).toBe(39.9);
+    expect(typeof body.subscription_price).toBe('number');
+    // F18: Only changed fields are sent
+    expect(body.trial_days).toBeUndefined();
   });
 
   it('shows success toast after save', async () => {
@@ -118,7 +126,23 @@ describe('CommunitySettingsForm', () => {
   it('renders with null initial price', () => {
     render(<CommunitySettingsForm {...baseProps} initialPrice={null} />);
 
-    const priceInput = screen.getByLabelText('Preço da assinatura') as HTMLInputElement;
+    const priceInput = screen.getByLabelText('Preço da assinatura (R$)') as HTMLInputElement;
     expect(priceInput.value).toBe('');
+  });
+
+  it('shows warning toast when MP sync fails', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ success: true, data: {}, warning: 'MP sync failed' }),
+    });
+
+    render(<CommunitySettingsForm {...baseProps} />);
+
+    fireEvent.change(screen.getByLabelText('Preço da assinatura (R$)'), { target: { value: '39.90' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('MP sync failed')).toBeInTheDocument();
+    });
   });
 });

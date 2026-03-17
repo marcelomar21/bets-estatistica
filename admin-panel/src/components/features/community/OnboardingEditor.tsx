@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { formatBRL } from '@/lib/format';
 
 const DEFAULT_WELCOME_TEMPLATE = [
   '🎉 Bem-vindo ao *{grupo}*, {nome}!',
@@ -56,7 +57,7 @@ interface OnboardingEditorProps {
   initialTemplate: string | null;
   groupName: string;
   trialDays: number;
-  subscriptionPrice: string | null;
+  subscriptionPrice: number | null;
 }
 
 export default function OnboardingEditor({
@@ -96,13 +97,16 @@ export default function OnboardingEditor({
     });
   }, [template]);
 
+  const formattedPrice = formatBRL(subscriptionPrice);
+
   const getPreviewHtml = useCallback(() => {
     const expirationDate = new Date();
     expirationDate.setDate(expirationDate.getDate() + trialDays);
     const formattedDate = expirationDate.toLocaleDateString('pt-BR');
 
-    const priceLine = subscriptionPrice
-      ? `Para continuar após o trial, assine por apenas *${subscriptionPrice}*.`
+    const priceDisplay = formattedPrice || 'R$ XX,XX';
+    const priceLine = formattedPrice
+      ? `Para continuar após o trial, assine por apenas *${formattedPrice}*.`
       : 'Para continuar após o trial, consulte o operador.';
 
     const rendered = template
@@ -111,11 +115,11 @@ export default function OnboardingEditor({
       .replace(/\{dias_trial\}/g, String(trialDays))
       .replace(/\{data_expiracao\}/g, formattedDate)
       .replace(/\{taxa_acerto\}/g, '66.6')
-      .replace(/\{preco\}/g, subscriptionPrice || 'R$ XX,XX')
+      .replace(/\{preco\}/g, priceDisplay)
       .replace(/\{linha_preco\}/g, priceLine);
 
     return telegramMarkdownToHtml(rendered);
-  }, [template, groupName, trialDays, subscriptionPrice]);
+  }, [template, groupName, trialDays, formattedPrice]);
 
   async function handleSave() {
     setSaving(true);
@@ -223,8 +227,8 @@ export default function OnboardingEditor({
                     {p.tag === '{grupo}' ? (groupName || '(nome do grupo)') :
                      p.tag === '{dias_trial}' ? String(trialDays) :
                      p.tag === '{data_expiracao}' ? new Date(Date.now() + trialDays * 86400000).toLocaleDateString('pt-BR') :
-                     p.tag === '{preco}' ? (subscriptionPrice || 'R$ XX,XX') :
-                     p.tag === '{linha_preco}' ? (subscriptionPrice ? `Para continuar... *${subscriptionPrice}*` : 'Consulte o operador') :
+                     p.tag === '{preco}' ? (formattedPrice || 'R$ XX,XX') :
+                     p.tag === '{linha_preco}' ? (formattedPrice ? `Para continuar... *${formattedPrice}*` : 'Consulte o operador') :
                      p.example}
                   </td>
                 </tr>

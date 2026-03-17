@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
+import { updateSubscriptionPlanPrice } from '@/lib/mercadopago';
 
 type RouteContext = { params: Promise<{ groupId: string }> };
 
-const SETTINGS_SELECT_FIELDS = 'trial_days, subscription_price, welcome_message_template';
+const SETTINGS_SELECT_FIELDS = 'trial_days, subscription_price, welcome_message_template, mp_plan_id';
 
 const updateSettingsSchema = z.object({
   trial_days: z.number().int().min(1, 'Trial deve ser no mínimo 1 dia').max(30, 'Trial deve ser no máximo 30 dias').optional(),
-  subscription_price: z.string().max(50, 'Preço deve ter no máximo 50 caracteres').nullable().optional(),
+  subscription_price: z.number().min(1, 'Preço deve ser no mínimo R$ 1,00').max(99999.99, 'Preço deve ser no máximo R$ 99.999,99').nullable().optional(),
   welcome_message_template: z.string().max(2000, 'Template deve ter no máximo 2000 caracteres').nullable().optional(),
 });
 
@@ -43,7 +44,9 @@ export const GET = createApiHandler(
       );
     }
 
-    return NextResponse.json({ success: true, data: settings });
+    // Strip mp_plan_id from response (internal field)
+    const { mp_plan_id: _mp, ...settingsResponse } = settings as Record<string, unknown>;
+    return NextResponse.json({ success: true, data: settingsResponse });
   },
   { allowedRoles: ['super_admin', 'group_admin'] },
 );
@@ -85,7 +88,7 @@ export const PUT = createApiHandler(
     // community settings and the audit log is best-effort (non-blocking).
     const { data: currentGroup } = await context.supabase
       .from('groups')
-      .select('trial_days, subscription_price, welcome_message_template')
+      .select('trial_days, subscription_price, welcome_message_template, mp_plan_id')
       .eq('id', groupId)
       .single();
 
@@ -108,6 +111,26 @@ export const PUT = createApiHandler(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found or update failed' } },
         { status: 404 },
       );
+    }
+
+    // MP sync — if price changed (or force_mp_sync) and group has mp_plan_id, update the MP plan
+    const forceMpSync = req.nextUrl.searchParams.get('force_mp_sync') === '1';
+    let mpWarning: string | undefined;
+    if (
+      parsed.data.subscription_price !== undefined &&
+      parsed.data.subscription_price !== null &&
+      currentGroup &&
+      currentGroup.mp_plan_id &&
+      (forceMpSync || Number(parsed.data.subscription_price) !== Number(currentGroup.subscription_price))
+    ) {
+      const mpResult = await updateSubscriptionPlanPrice(
+        currentGroup.mp_plan_id as string,
+        parsed.data.subscription_price,
+      );
+      if (!mpResult.success) {
+        console.warn('[community-settings] MP price sync failed', groupId, mpResult.error);
+        mpWarning = `Preço atualizado no banco, mas falhou ao sincronizar com Mercado Pago: ${mpResult.error}`;
+      }
     }
 
     // Audit log — non-blocking
@@ -139,7 +162,13 @@ export const PUT = createApiHandler(
       }
     }
 
-    return NextResponse.json({ success: true, data: updated });
+    // Strip mp_plan_id from response (internal field)
+    const { mp_plan_id: _mp, ...responseData } = updated as Record<string, unknown>;
+    return NextResponse.json({
+      success: true,
+      data: responseData,
+      ...(mpWarning ? { warning: mpWarning } : {}),
+    });
   },
   { allowedRoles: ['super_admin', 'group_admin'] },
 );

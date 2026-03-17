@@ -166,7 +166,7 @@ async function initBots(supabaseClient) {
         copyToneConfig: row.groups.copy_tone_config || {},
         checkoutUrl: row.groups.checkout_url || null,
         operatorUsername: row.groups.operator_username || null,
-        subscriptionPrice: row.groups.subscription_price || null,
+        subscriptionPrice: row.groups.subscription_price ?? null,
         trialDays: row.groups.trial_days || 7,
         welcomeMessageTemplate: row.groups.welcome_message_template || null,
       };
