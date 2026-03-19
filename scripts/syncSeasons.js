@@ -173,15 +173,10 @@ async function countSeasonMatches(seasonId) {
   const client = await pool.connect();
   try {
     const result = await client.query(
-      `SELECT COUNT(*) as count,
-              COUNT(*) FILTER (WHERE kickoff_time IS NULL AND status != 'complete') as placeholders
-       FROM league_matches WHERE season_id = $1`,
+      'SELECT COUNT(*) as count FROM league_matches WHERE season_id = $1',
       [seasonId]
     );
-    return {
-      count: parseInt(result.rows[0].count, 10),
-      placeholders: parseInt(result.rows[0].placeholders, 10),
-    };
+    return { count: parseInt(result.rows[0].count, 10) };
   } finally {
     client.release();
   }
@@ -318,28 +313,21 @@ async function main() {
     // 4. Buscar e salvar jogos de cada temporada (só se não existir)
     console.log('\n📥 Verificando jogos das temporadas...');
     let totalMatches = 0;
-    let skipped = 0;
     let errors = 0;
 
     for (const season of activeSeasons) {
       try {
-        const { count: existing, placeholders } = await countSeasonMatches(season.season_id);
-        if (existing > 0 && placeholders === 0) {
-          console.log(`   ⏭️  ${season.league_name} ${season.year}: ${existing} jogos já no banco`);
-          totalMatches += existing;
-          skipped++;
-          continue;
-        }
-
-        if (existing > 0 && placeholders > 0) {
-          console.log(`   🔄 ${season.league_name} ${season.year}: ${existing} jogos, ${placeholders} com data placeholder — re-buscando...`);
-        } else {
-          console.log(`   📡 Buscando: ${season.league_name} ${season.year}...`);
-        }
+        const { count: existing } = await countSeasonMatches(season.season_id);
+        console.log(`   📡 ${season.league_name} ${season.year}: ${existing} jogos no banco — buscando API...`);
         const matches = await fetchSeasonMatches(season.season_id, `${season.league_name} ${season.year}`);
         const saved = await upsertMatches(season.season_id, matches);
         totalMatches += saved;
-        console.log(`      ✅ ${saved} jogos atualizados no banco`);
+        const newMatches = saved - existing;
+        if (newMatches > 0) {
+          console.log(`      ✅ ${saved} jogos (${newMatches} novos)`);
+        } else {
+          console.log(`      ✅ ${saved} jogos (sem novos)`);
+        }
       } catch (err) {
         errors++;
         const msg = err.response?.data?.message || err.message;
@@ -351,7 +339,6 @@ async function main() {
     console.log(`🎉 Sincronização concluída!`);
     console.log(`   • ${activeSeasons.length} temporadas`);
     console.log(`   • ${totalMatches} jogos no total`);
-    if (skipped > 0) console.log(`   • ⏭️  ${skipped} temporadas já populadas (puladas)`);
     if (errors > 0) console.log(`   • ⚠️  ${errors} temporadas com erro`);
     console.log('═'.repeat(60));
 
