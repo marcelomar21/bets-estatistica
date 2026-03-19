@@ -50,6 +50,7 @@ const TARGET_LEAGUES = [
   'brazil paulista a1',
   'brazil paranaense 1',
   'brazil copa do nordeste',
+  'brazil copa do brasil',
   // South America - Continental
   'south america copa libertadores',
 ];
