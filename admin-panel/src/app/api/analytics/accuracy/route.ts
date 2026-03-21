@@ -83,16 +83,30 @@ export const GET = createApiHandler(
       query = query.lte('result_updated_at', `${dateTo}T23:59:59`);
     }
 
-    const { data, error } = await query;
+    // Paginate to fetch ALL rows (Supabase default limit is 1000)
+    const PAGE_SIZE = 1000;
+    let allData: unknown[] = [];
+    let offset = 0;
+    let hasMore = true;
 
-    if (error) {
-      return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao consultar analytics' } },
-        { status: 500 },
-      );
+    while (hasMore) {
+      const pageQuery = query.range(offset, offset + PAGE_SIZE - 1);
+      const { data: pageData, error: pageError } = await pageQuery;
+
+      if (pageError) {
+        return NextResponse.json(
+          { success: false, error: { code: 'DB_ERROR', message: 'Erro ao consultar analytics' } },
+          { status: 500 },
+        );
+      }
+
+      if (!pageData || pageData.length === 0) break;
+      allData = allData.concat(pageData);
+      hasMore = pageData.length === PAGE_SIZE;
+      offset += PAGE_SIZE;
     }
 
-    const bets = (data ?? []) as unknown as RawBet[];
+    const bets = allData as unknown as RawBet[];
 
     // Filter by market category if requested
     const filteredBets = marketParam
