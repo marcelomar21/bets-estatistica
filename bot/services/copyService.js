@@ -13,6 +13,7 @@ const { ChatPromptTemplate } = require('@langchain/core/prompts');
 const logger = require('../../lib/logger');
 
 const { config } = require('../../lib/config');
+const { formatDateTimeBR } = require('../../lib/utils');
 
 function getOpenAI() {
   return new ChatOpenAI({
@@ -84,7 +85,7 @@ DADOS DA APOSTA:
 - Mercado: ${bet.betMarket}
 - Pick: ${bet.betPick || 'N/A'}
 - ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed?.(2) || 'N/A'}
-- Kickoff: ${bet.kickoffTime || 'N/A'}
+- Kickoff: ${bet.kickoffTime ? (formatDateTimeBR(bet.kickoffTime) || 'N/A') : 'N/A'}
 - Link: ${bet.deepLink || 'N/A'}
 ${bet.reasoning ? `- Analise: ${bet.reasoning}` : ''}
 
