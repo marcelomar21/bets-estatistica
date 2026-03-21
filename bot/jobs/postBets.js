@@ -20,6 +20,7 @@ const { sendMessage: channelSendMessage } = require('../../lib/channelAdapter');
 const { getFilaStatus, markBetAsPosted, registrarPostagem, getAvailableBets, updateGeneratedCopy } = require('../services/betService');
 const { generateBetCopy } = require('../services/copyService');
 const { sanitizeTelegramMarkdown, enforceOddLabel } = require('../lib/telegramMarkdown');
+const { formatDateTimeBR } = require('../../lib/utils');
 const { sendPostWarn } = require('./jobWarn');
 
 // Store pending confirmations (in-memory)
@@ -175,14 +176,7 @@ function getPeriod() {
  * @returns {Promise<string>}
  */
 async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) {
-  const kickoffDate = new Date(bet.kickoffTime);
-  const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const kickoffStr = formatDateTimeBR(bet.kickoffTime) || 'N/A';
 
   // Build message parts
   const parts = [
@@ -254,14 +248,7 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
  * @returns {string}
  */
 function formatBetPreview(bet, type, toneConfig = null) {
-  const kickoffDate = new Date(bet.kickoffTime);
-  const kickoffStr = kickoffDate.toLocaleString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const kickoffStr = formatDateTimeBR(bet.kickoffTime) || 'N/A';
 
   const typeLabel = type === 'repost' ? '🔄' : '🆕';
   const oddLabel = toneConfig?.oddLabel || 'Odd';

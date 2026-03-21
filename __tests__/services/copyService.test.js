@@ -173,5 +173,33 @@ describe('copyService', () => {
 
       expect(result.success).toBe(true);
     });
+
+    test('full-message mode passa kickoffTime formatado em BRT para LLM', async () => {
+      const { ChatPromptTemplate } = require('@langchain/core/prompts');
+
+      mockInvoke.mockResolvedValueOnce({
+        content: '🎯 Flamengo x Palmeiras\n📅 21/03 17:00\n📊 Over 2.5\n💰 Odd: 1.85',
+      });
+
+      const betWithKickoff = {
+        ...validBet,
+        kickoffTime: '2026-03-21T20:00:00.000Z', // 20:00 UTC = 17:00 BRT
+        deepLink: 'https://bet.link/123',
+      };
+
+      const toneConfig = {
+        examplePost: '🎯 Time A x Time B\n📅 21/03 15:00\n📊 Mercado\n💰 Odd: 1.50',
+      };
+
+      await generateBetCopy(betWithKickoff, toneConfig);
+
+      // Verify the prompt sent to LLM contains BRT-formatted time, not raw UTC
+      const fromMessagesCall = ChatPromptTemplate.fromMessages.mock.calls;
+      const lastCall = fromMessagesCall[fromMessagesCall.length - 1];
+      const humanMessage = lastCall[0].find(([role]) => role === 'human')[1];
+
+      expect(humanMessage).toContain('21/03 17:00');
+      expect(humanMessage).not.toContain('2026-03-21T20:00:00');
+    });
   });
 });
