@@ -48,9 +48,15 @@ function createSupabaseMock(bets: typeof sampleBets = sampleBets) {
   chain.gte = vi.fn().mockReturnValue(chain);
   chain.lte = vi.fn().mockReturnValue(chain);
 
-  // The final resolution of the chain
-  chain.then = vi.fn().mockImplementation((resolve: (value: unknown) => void) => {
-    resolve({ data: bets, error: null });
+  // range() returns a thenable that resolves with data (first call returns all bets, subsequent calls return empty)
+  let rangeCallCount = 0;
+  chain.range = vi.fn().mockImplementation(() => {
+    const callIndex = rangeCallCount++;
+    return {
+      then: vi.fn().mockImplementation((resolve: (value: unknown) => void) => {
+        resolve({ data: callIndex === 0 ? bets : [], error: null });
+      }),
+    };
   });
 
   const from = vi.fn().mockReturnValue(chain);
@@ -231,8 +237,10 @@ describe('GET /api/analytics/accuracy', () => {
     chain.in = vi.fn().mockReturnValue(chain);
     chain.gte = vi.fn().mockReturnValue(chain);
     chain.lte = vi.fn().mockReturnValue(chain);
-    chain.then = vi.fn().mockImplementation((resolve: (value: unknown) => void) => {
-      resolve({ data: null, error: { message: 'DB connection failed' } });
+    chain.range = vi.fn().mockReturnValue({
+      then: vi.fn().mockImplementation((resolve: (value: unknown) => void) => {
+        resolve({ data: null, error: { message: 'DB connection failed' } });
+      }),
     });
     const from = vi.fn().mockReturnValue(chain);
 
