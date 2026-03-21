@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { SuggestedBetListItem } from '@/types/database';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface LinkEditModalProps {
   bet: SuggestedBetListItem;
@@ -10,6 +11,7 @@ interface LinkEditModalProps {
 }
 
 export function LinkEditModal({ bet, onClose, onSave }: LinkEditModalProps) {
+  const { resolve } = useTeamDisplayNames();
   const [linkInput, setLinkInput] = useState(bet.deep_link ?? '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -78,7 +80,7 @@ export function LinkEditModal({ bet, onClose, onSave }: LinkEditModalProps) {
         {matchInfo && (
           <div className="mb-4 rounded-md bg-gray-50 p-3">
             <p className="text-sm font-medium text-gray-900">
-              {matchInfo.home_team_name} vs {matchInfo.away_team_name}
+              {resolve(matchInfo.home_team_name)} vs {resolve(matchInfo.away_team_name)}
             </p>
             <p className="text-xs text-gray-500">
               {bet.bet_market} - {bet.bet_pick}

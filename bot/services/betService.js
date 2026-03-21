@@ -4,6 +4,7 @@
 const { supabase } = require('../../lib/supabase');
 const { config } = require('../../lib/config');
 const logger = require('../../lib/logger');
+const { resolveTeamNames, ensureCache } = require('../../lib/teamDisplayNames');
 
 /**
  * Get eligible bets for posting (Story 6.3: ≤2 days, eligible, odds >= 1.60)
@@ -77,6 +78,13 @@ async function getEligibleBets(limit = 10) {
       kickoffTime: bet.league_matches.kickoff_time,
       matchStatus: bet.league_matches.status,
     }));
+
+    // F14: Preload cache once, then resolve all bets synchronously from map
+    const cache = await ensureCache();
+    for (const bet of bets) {
+      bet.homeTeamName = cache.get(bet.homeTeamName) || bet.homeTeamName;
+      bet.awayTeamName = cache.get(bet.awayTeamName) || bet.awayTeamName;
+    }
 
     logger.info('Fetched eligible bets', { count: bets.length });
     return { success: true, data: bets };
@@ -164,6 +172,13 @@ async function getBetsReadyForPosting() {
       awayTeamName: bet.league_matches.away_team_name,
       kickoffTime: bet.league_matches.kickoff_time,
     }));
+
+    // F14: Preload cache once, then resolve all bets synchronously from map
+    const cache = await ensureCache();
+    for (const bet of bets) {
+      bet.homeTeamName = cache.get(bet.homeTeamName) || bet.homeTeamName;
+      bet.awayTeamName = cache.get(bet.awayTeamName) || bet.awayTeamName;
+    }
 
     logger.info('Ready bets found', {
       total: data?.length || 0,

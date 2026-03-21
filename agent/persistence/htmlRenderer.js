@@ -1,4 +1,5 @@
 const { extractSections } = require('./analysisParser');
+const { resolveTeamNames } = require('../../lib/teamDisplayNames');
 
 const escapeHtml = (value = '') =>
   String(value)
@@ -133,7 +134,7 @@ const renderBetSection = (title, bets = []) => {
   </section>`;
 };
 
-const renderHtmlReport = (payload) => {
+const renderHtmlReport = async (payload) => {
   const match = payload.context?.match_row || {};
   const detailSummary = payload.context?.detail_summary || null;
   const {
@@ -152,7 +153,8 @@ const renderHtmlReport = (payload) => {
       : normalizeLegacyBets(payload.output?.oportunidades);
   const analysisHtml = paragraphsFromText(parsedAnalysis || payload.output?.analise_texto);
 
-  const title = `${match.home_team_name || 'Time da casa'} x ${match.away_team_name || 'Time visitante'}`;
+  const resolved = await resolveTeamNames(match.home_team_name, match.away_team_name);
+  const title = `${resolved.home || 'Time da casa'} x ${resolved.away || 'Time visitante'}`;
   const competition = match.competition_name || match.league_name || 'Competição indefinida';
 
   return `<!DOCTYPE html>

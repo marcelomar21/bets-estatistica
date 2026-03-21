@@ -6,6 +6,7 @@ import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
 import { formatDateTime, formatDateTimeShort } from '@/lib/format-utils';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface BetTableProps {
   bets: SuggestedBetListItem[];
@@ -46,6 +47,7 @@ export function BetTable({
   sortDir,
   activeBetId,
 }: BetTableProps) {
+  const { resolve } = useTeamDisplayNames();
   const isSuperAdmin = role === 'super_admin';
   const allSelected = bets.length > 0 && bets.every((b) => selectedIds.has(b.id));
   const [showHitRateTooltip, setShowHitRateTooltip] = useState(false);
@@ -193,7 +195,7 @@ export function BetTable({
                     {bet.id}
                   </td>
                   <td className="px-3 py-3 text-sm font-medium text-gray-900">
-                    {match ? `${match.home_team_name} vs ${match.away_team_name}` : '-'}
+                    {match ? `${resolve(match.home_team_name)} vs ${resolve(match.away_team_name)}` : '-'}
                   </td>
                   <td className="px-3 py-3 text-sm text-gray-600 whitespace-nowrap">
                     {match ? formatDateTime(match.kickoff_time) : '-'}

@@ -29,7 +29,7 @@ const generateReportForMatch = async ({ payload }) => {
     throw new Error('É necessário fornecer o payload da análise.');
   }
 
-  const html = renderHtmlReport(payload);
+  const html = await renderHtmlReport(payload);
   const pdfBuffer = await generatePdfFromHtml(html);
 
   return { html, pdfBuffer };

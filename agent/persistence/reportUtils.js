@@ -1,4 +1,5 @@
 const { buildReportBaseName } = require('../shared/naming');
+const { resolveTeamNames } = require('../../lib/teamDisplayNames');
 
 const validateAnalysisPayload = (payload) => {
   if (!payload || typeof payload !== 'object') {
@@ -16,13 +17,14 @@ const validateAnalysisPayload = (payload) => {
   return payload;
 };
 
-const deriveReportBaseName = (payload) => {
+const deriveReportBaseName = async (payload) => {
   const match = payload.context?.match_row || {};
+  const resolved = await resolveTeamNames(match.home_team_name, match.away_team_name);
   return buildReportBaseName({
     generatedAt: payload.generated_at,
     competitionName: match.competition_name || match.league_name || 'competicao',
-    homeName: match.home_team_name,
-    awayName: match.away_team_name,
+    homeName: resolved.home,
+    awayName: resolved.away,
   });
 };
 

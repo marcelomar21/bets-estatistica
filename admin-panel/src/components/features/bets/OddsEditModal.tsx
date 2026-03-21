@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { SuggestedBetListItem, OddsHistoryEntry } from '@/types/database';
 import { formatDateTimeShort } from '@/lib/format-utils';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface OddsEditModalProps {
   bet: SuggestedBetListItem;
@@ -13,6 +14,7 @@ interface OddsEditModalProps {
 }
 
 export function OddsEditModal({ bet, onClose, onSave, oddsHistory, loading }: OddsEditModalProps) {
+  const { resolve } = useTeamDisplayNames();
   const [oddsInput, setOddsInput] = useState(bet.odds?.toString() ?? '');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -57,7 +59,7 @@ export function OddsEditModal({ bet, onClose, onSave, oddsHistory, loading }: Od
         {matchInfo && (
           <div className="mb-4 rounded-md bg-gray-50 p-3">
             <p className="text-sm font-medium text-gray-900">
-              {matchInfo.home_team_name} vs {matchInfo.away_team_name}
+              {resolve(matchInfo.home_team_name)} vs {resolve(matchInfo.away_team_name)}
             </p>
             <p className="text-xs text-gray-500">
               {bet.bet_market} - {bet.bet_pick}

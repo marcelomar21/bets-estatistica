@@ -147,7 +147,7 @@ const saveOutputs = async (matchId, payload) => {
   // Story 6.1: Generate PDF and upload to Supabase Storage
   let pdfUploaded = false;
   try {
-    const html = renderHtmlReport(payload);
+    const html = await renderHtmlReport(payload);
     const pdfBuffer = await generatePdfFromHtml(html);
 
     const uploadResult = await uploadPdfToStorage(matchId, pdfBuffer);
