@@ -97,7 +97,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
           type="text"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Buscar por time ou mercado..."
+          placeholder="Buscar por time..."
           className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
         />
         <button

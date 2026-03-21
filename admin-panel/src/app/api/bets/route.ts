@@ -139,8 +139,11 @@ export const GET = createApiHandler(
       query = query.is('deep_link', null);
     }
     if (search) {
+      // PostgREST does not support mixing foreign table and parent table columns
+      // in a single .or(). Use referencedTable for team name search on league_matches.
       query = query.or(
-        `league_matches.home_team_name.ilike.%${search}%,league_matches.away_team_name.ilike.%${search}%,bet_market.ilike.%${search}%`,
+        `home_team_name.ilike.%${search}%,away_team_name.ilike.%${search}%`,
+        { referencedTable: 'league_matches' },
       );
     }
     if (championship) {

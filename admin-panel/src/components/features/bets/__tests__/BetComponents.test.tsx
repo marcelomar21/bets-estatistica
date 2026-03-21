@@ -140,7 +140,7 @@ describe('BetFilters', () => {
 
   it('renders search input and button', () => {
     render(<BetFilters filters={defaultFilters} onFilterChange={vi.fn()} />);
-    expect(screen.getByPlaceholderText(/Buscar por time ou mercado/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Buscar por time/i)).toBeInTheDocument();
     expect(screen.getByText('Buscar')).toBeInTheDocument();
   });
 
