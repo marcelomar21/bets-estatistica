@@ -6,6 +6,7 @@ import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
 import { formatDateTime, formatDateTimeShort } from '@/lib/format-utils';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface BetEditDrawerProps {
   bet: SuggestedBetListItem;
@@ -39,6 +40,7 @@ export function BetEditDrawer({
   oddsHistory,
   historyLoading,
 }: BetEditDrawerProps) {
+  const { resolve } = useTeamDisplayNames();
   const match = bet.league_matches;
   const category = categorizeMarket(bet.bet_market);
   const categoryStyle = CATEGORY_STYLES[category] || CATEGORY_STYLES['Outros'];
@@ -164,7 +166,7 @@ export function BetEditDrawer({
             {match && (
               <>
                 <p className="text-sm font-semibold text-gray-900">
-                  {match.home_team_name} vs {match.away_team_name}
+                  {resolve(match.home_team_name)} vs {resolve(match.away_team_name)}
                 </p>
                 <p className="text-xs text-gray-500">
                   {formatDateTime(match.kickoff_time)}

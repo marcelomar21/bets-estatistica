@@ -3,6 +3,7 @@
 import { BetResultBadge } from './BetResultBadge';
 import type { BetResult } from './BetResultBadge';
 import { formatDateTimeShort } from '@/lib/format-utils';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 export interface HistoryBet {
   id: number;
@@ -104,6 +105,7 @@ export function PostingHistoryTable({
   onEditResult,
   emptyMessage = 'Nenhuma postagem encontrada',
 }: PostingHistoryTableProps) {
+  const { resolve } = useTeamDisplayNames();
   if (bets.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500">
@@ -170,7 +172,7 @@ export function PostingHistoryTable({
               <tr key={bet.id} className={getRowClassName(bet)}>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <div className="text-sm font-medium text-gray-900">
-                    {match.home_team_name} vs {match.away_team_name}
+                    {resolve(match.home_team_name)} vs {resolve(match.away_team_name)}
                   </div>
                   <div className="text-xs text-gray-500">
                     {formatDateTimeOrDash(match.kickoff_time)}

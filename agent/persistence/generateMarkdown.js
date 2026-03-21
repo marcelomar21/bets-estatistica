@@ -1,3 +1,5 @@
+const { resolveTeamNames } = require('../../lib/teamDisplayNames');
+
 const formatDateTime = (value) => {
   if (!value) return 'Data não disponível';
   const date = new Date(value);
@@ -45,14 +47,15 @@ const renderBetSection = (title, bets = []) => {
   return `## ${title}\n${bets.map(renderBet).join('\n\n')}\n`;
 };
 
-const generateMarkdown = (analysisPayload) => {
+const generateMarkdown = async (analysisPayload) => {
   if (!analysisPayload?.output) {
     throw new Error('Payload intermediário inválido: objeto output ausente.');
   }
 
   const match = analysisPayload.context?.match_row || {};
-  const home = match.home_team_name || 'Time da casa';
-  const away = match.away_team_name || 'Time visitante';
+  const resolved = await resolveTeamNames(match.home_team_name, match.away_team_name);
+  const home = resolved.home || 'Time da casa';
+  const away = resolved.away || 'Time visitante';
   const competition = match.competition_name || match.league_name || 'Competição não informada';
 
   const headerLines = [

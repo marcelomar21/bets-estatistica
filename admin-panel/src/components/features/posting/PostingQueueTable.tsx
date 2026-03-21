@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
 import { formatDateTime } from '@/lib/format-utils';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface QueueBet {
   id: number;
@@ -117,6 +118,7 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
 }
 
 export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, onPreview, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
+  const { resolve } = useTeamDisplayNames();
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [promotingId, setPromotingId] = useState<number | null>(null);
@@ -211,9 +213,9 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                   {bet.id}
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-900">
-                  <span className="font-medium">{bet.match.home_team_name}</span>
+                  <span className="font-medium">{resolve(bet.match.home_team_name)}</span>
                   {' x '}
-                  <span className="font-medium">{bet.match.away_team_name}</span>
+                  <span className="font-medium">{resolve(bet.match.away_team_name)}</span>
                 </td>
                 <td className="px-4 py-3">
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${categoryStyle}`}>

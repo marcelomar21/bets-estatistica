@@ -53,6 +53,7 @@ const modules: NavModule[] = [
       { name: 'WhatsApp', href: '/whatsapp-pool', icon: '📲', roles: ['super_admin'] },
       { name: 'Telegram', href: '/settings/telegram', icon: '📱', roles: ['super_admin'] },
       { name: 'Admin Users', href: '/admin-users', icon: '🔑', roles: ['super_admin'] },
+      { name: 'Nomes de Times', href: '/team-names', icon: '🏟️', roles: ['super_admin'] },
     ],
   },
 ];

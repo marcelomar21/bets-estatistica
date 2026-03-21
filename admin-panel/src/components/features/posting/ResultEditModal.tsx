@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { BetResultBadge } from './BetResultBadge';
 import type { BetResult } from './BetResultBadge';
+import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface ResultEditBet {
   id: number;
@@ -39,6 +40,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function ResultEditModal({ bet, onClose, onSave }: ResultEditModalProps) {
+  const { resolve } = useTeamDisplayNames();
   const [selectedResult, setSelectedResult] = useState(bet.bet_result ?? '');
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
@@ -85,7 +87,7 @@ export function ResultEditModal({ bet, onClose, onSave }: ResultEditModalProps) 
         {/* Match info */}
         <div className="mb-4 rounded-md bg-gray-50 p-3">
           <p className="text-sm font-medium text-gray-900">
-            {match.home_team_name} vs {match.away_team_name}
+            {resolve(match.home_team_name)} vs {resolve(match.away_team_name)}
           </p>
           <p className="text-xs text-gray-500">
             {bet.bet_market} — {bet.bet_pick}
