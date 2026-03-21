@@ -318,10 +318,10 @@ async function evaluateWithConsensus(matchInfo, bets, matchData) {
   // Create 3 LLM chains with distinct providers
   const providers = [];
 
-  // Provider A: OpenAI (GPT-5.1-mini)
+  // Provider A: OpenAI (GPT-5.4-mini)
   if (config.apis.openaiApiKey) {
     try {
-      const modelA = process.env.EVALUATOR_MODEL_OPENAI || 'gpt-5.1-mini';
+      const modelA = process.env.EVALUATOR_MODEL_OPENAI || 'gpt-5.4-mini';
       const llmA = new ChatOpenAI({ apiKey: config.apis.openaiApiKey, model: modelA, temperature: 0 });
       providers.push({ name: 'openai', chain: prompt.pipe(llmA.withStructuredOutput(evaluationResponseSchema)) });
     } catch (err) {
