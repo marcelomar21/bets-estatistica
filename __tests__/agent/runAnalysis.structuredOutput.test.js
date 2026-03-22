@@ -68,8 +68,19 @@ const mockLastxTool = {
   })),
 };
 
+const mockCalculatorTool = {
+  name: 'calculator',
+  invoke: jest.fn().mockResolvedValue(JSON.stringify({
+    operation: 'average',
+    values_count: 10,
+    result: 3.9,
+    detail: 'Média de 10 valores',
+    label: 'test',
+  })),
+};
+
 jest.mock('../../agent/tools', () => ({
-  createAnalysisTools: jest.fn().mockResolvedValue([mockMatchDetailTool, mockLastxTool]),
+  createAnalysisTools: jest.fn().mockResolvedValue([mockMatchDetailTool, mockLastxTool, mockCalculatorTool]),
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -398,7 +409,7 @@ describe('agentCore - structured output', () => {
   describe('runAgent - no successful tool calls', () => {
     test('throws when tools are never executed successfully', async () => {
       // Model keeps responding with text, never calls tools, exhausting MAX_AGENT_STEPS
-      const steps = Number(process.env.AGENT_MAX_STEPS || 6);
+      const steps = Number(process.env.AGENT_MAX_STEPS || 8);
       for (let i = 0; i < steps; i++) {
         mockToolInvoke.mockResolvedValueOnce(makeTextResponse('Sem ferramentas'));
       }
