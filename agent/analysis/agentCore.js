@@ -7,7 +7,8 @@ const { config } = require('../../lib/config');
 const { systemPrompt, humanTemplate } = require('./prompt');
 const { createAnalysisTools } = require('../tools');
 
-const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 6);
+// 8 steps (was 6): acomoda chamadas extras à calculator tool sem estourar o loop
+const MAX_AGENT_STEPS = Number(process.env.AGENT_MAX_STEPS || 8);
 const MAX_STRUCTURED_RETRIES = 3;
 const TABLE_SCHEMA_HINT = `
 Tabelas e colunas disponíveis para consultas SQL:
@@ -242,7 +243,7 @@ const ensureAnalysisConsistency = async (structured) => {
   try {
     const llm = new ChatOpenAI({
       apiKey: ensureApiKey(),
-      model: config.llm.lightModel,
+      model: config.llm.heavyModel,
       timeout: 30000,
     });
     const structuredLlm = llm.withStructuredOutput(consistencyResultSchema);
@@ -730,6 +731,8 @@ const extractMessageText = (content) => {
 const TOOL_NAMES = {
   MATCH_DETAIL: 'match_detail_raw',
   LASTX: 'team_lastx_raw',
+  // CALCULATOR: enforcement via prompt, não via boolean tracking (pode ser chamada múltiplas vezes)
+  CALCULATOR: 'calculator',
 };
 
 const parseJsonField = (value) => {
@@ -864,8 +867,10 @@ const runAgent = async ({ matchId, contextoJogo, matchRow }) => {
         continue;
       }
       try {
-        JSON.parse(output);
-        hasSuccessfulToolCall = true;
+        const parsed = JSON.parse(output);
+        if (!parsed?.error) {
+          hasSuccessfulToolCall = true;
+        }
       } catch {
         infoLog(`Ferramenta ${call.name} retornou payload não JSON (tamanho=${output?.length ?? 0}).`);
       }

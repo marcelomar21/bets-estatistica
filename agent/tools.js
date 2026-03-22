@@ -252,13 +252,121 @@ const createLastxTool = async () => {
   });
 };
 
+const calculatorSchema = z.object({
+  operation: z
+    .enum(['average', 'sum', 'percentage_over', 'percentage_under', 'count', 'min', 'max', 'median'])
+    .describe('Operação matemática a executar.'),
+  values: z
+    .array(z.number())
+    .min(1, 'Pelo menos 1 valor é obrigatório.')
+    .max(1000, 'Máximo de 1000 valores por chamada.')
+    .describe('Array de números para o cálculo.'),
+  threshold: z
+    .number()
+    .optional()
+    .describe('Limiar para percentage_over (>=) e percentage_under (<=). Obrigatório para essas operações.'),
+  label: z
+    .string()
+    .optional()
+    .describe('Rótulo descritivo para o cálculo (ex: "cartões dos últimos 10 jogos").'),
+});
+
+const computeCalculation = ({ operation, values, threshold, label }) => {
+  const n = values.length;
+
+  if ((operation === 'percentage_over' || operation === 'percentage_under') && threshold == null) {
+    return { error: `threshold é obrigatório para operação ${operation}` };
+  }
+
+  let result;
+  let detail;
+
+  switch (operation) {
+    case 'average': {
+      result = values.reduce((a, b) => a + b, 0) / n;
+      result = Math.round(result * 100) / 100;
+      detail = `Média de ${n} valores`;
+      break;
+    }
+    case 'sum': {
+      result = values.reduce((a, b) => a + b, 0);
+      result = Math.round(result * 100) / 100;
+      detail = `Soma de ${n} valores`;
+      break;
+    }
+    case 'percentage_over': {
+      const count = values.filter((v) => v >= threshold).length;
+      result = Math.round((count / n) * 10000) / 100;
+      detail = `${count} de ${n} valores >= ${threshold}`;
+      break;
+    }
+    case 'percentage_under': {
+      const count = values.filter((v) => v <= threshold).length;
+      result = Math.round((count / n) * 10000) / 100;
+      detail = `${count} de ${n} valores <= ${threshold}`;
+      break;
+    }
+    case 'count': {
+      result = n;
+      detail = `Total de ${n} elementos`;
+      break;
+    }
+    case 'min': {
+      result = values.reduce((a, b) => (b < a ? b : a), values[0]);
+      detail = `Menor valor entre ${n} elementos`;
+      break;
+    }
+    case 'max': {
+      result = values.reduce((a, b) => (b > a ? b : a), values[0]);
+      detail = `Maior valor entre ${n} elementos`;
+      break;
+    }
+    case 'median': {
+      const sorted = [...values].sort((a, b) => a - b);
+      if (n % 2 === 0) {
+        result = (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+      } else {
+        result = sorted[Math.floor(n / 2)];
+      }
+      result = Math.round(result * 100) / 100;
+      detail = `Mediana de ${n} valores`;
+      break;
+    }
+    default:
+      return { error: `Operação desconhecida: ${operation}` };
+  }
+
+  const response = { operation, values_count: n, result, detail };
+  if (threshold != null) response.threshold = threshold;
+  if (label != null) response.label = label;
+  return response;
+};
+
+const createCalculatorTool = async () => {
+  const DynamicStructuredTool = await loadToolClass();
+
+  return new DynamicStructuredTool({
+    name: 'calculator',
+    description:
+      'Calculadora de estatísticas pura. Recebe um array de valores numéricos e executa operações como média, soma, porcentagem acima/abaixo de um limiar, contagem, mínimo, máximo e mediana. Use para calcular linhas de aposta com precisão em vez de estimar mentalmente.',
+    schema: calculatorSchema,
+    func: async (args) => JSON.stringify(computeCalculation(args)),
+  });
+};
+
 const createAnalysisTools = async () => {
-  const [matchDetailTool, lastxTool] = await Promise.all([createMatchDetailTool(), createLastxTool()]);
-  return [matchDetailTool, lastxTool];
+  const [matchDetailTool, lastxTool, calculatorTool] = await Promise.all([
+    createMatchDetailTool(),
+    createLastxTool(),
+    createCalculatorTool(),
+  ]);
+  return [matchDetailTool, lastxTool, calculatorTool];
 };
 
 module.exports = {
   createAnalysisTools,
+  calculatorSchema,
+  computeCalculation,
 };
 
 
