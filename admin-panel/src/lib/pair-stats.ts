@@ -10,22 +10,37 @@ export interface PairStatsEntry {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchPairStats(supabase: any): Promise<Record<string, PairStatsEntry>> {
-  const { data, error } = await supabase
-    .from('suggested_bets')
-    .select(`
-      bet_market,
-      bet_result,
-      league_matches!inner (
-        league_seasons!inner (league_name, country)
-      )
-    `)
-    .in('bet_result', ['success', 'failure']);
+  // Paginate to fetch ALL rows (Supabase default limit is 1000)
+  const PAGE_SIZE = 1000;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let allData: any[] = [];
+  let offset = 0;
+  let hasMore = true;
 
-  if (error || !data) return {};
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        bet_market,
+        bet_result,
+        league_matches!inner (
+          league_seasons!inner (league_name, country)
+        )
+      `)
+      .in('bet_result', ['success', 'failure'])
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (error || !data) break;
+    allData = allData.concat(data);
+    hasMore = data.length === PAGE_SIZE;
+    offset += PAGE_SIZE;
+  }
+
+  if (allData.length === 0) return {};
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const pairs: Record<string, { wins: number; total: number }> = {};
-  for (const bet of data) {
+  for (const bet of allData) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const leagueInfo = (bet as any).league_matches?.league_seasons;
     if (!leagueInfo?.country || !leagueInfo?.league_name) continue;
