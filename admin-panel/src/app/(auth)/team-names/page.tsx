@@ -190,14 +190,14 @@ export default function TeamNamesPage() {
           placeholder="Buscar por nome..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-64"
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 w-64"
         />
         <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
           <input
             type="checkbox"
             checked={modifiedOnly}
             onChange={(e) => setModifiedOnly(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600"
+            className="h-4 w-4 rounded border-gray-300 text-orange-700"
           />
           Mostrar apenas editados
         </label>
@@ -260,18 +260,18 @@ export default function TeamNamesPage() {
                           maxLength={200}
                           disabled={saving}
                           autoFocus
-                          className="rounded border border-blue-300 px-2 py-1 text-sm w-full focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                          className="rounded border border-orange-300 px-2 py-1 text-sm w-full focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                         />
                       ) : (
                         <button
                           onClick={() => startEditing(team)}
-                          className="group flex items-center gap-2 text-left hover:text-blue-600 cursor-pointer w-full rounded px-1.5 py-0.5 -mx-1.5 hover:bg-blue-50 transition-colors"
+                          className="group flex items-center gap-2 text-left hover:text-orange-700 cursor-pointer w-full rounded px-1.5 py-0.5 -mx-1.5 hover:bg-orange-50 transition-colors"
                           title="Clique para editar"
                         >
-                          <span className={isOverride ? 'font-medium text-blue-700' : 'text-gray-900'}>
+                          <span className={isOverride ? 'font-medium text-orange-700' : 'text-gray-900'}>
                             {team.display_name}
                           </span>
-                          <svg className="h-3.5 w-3.5 text-gray-300 group-hover:text-blue-500 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                          <svg className="h-3.5 w-3.5 text-gray-300 group-hover:text-orange-500 transition-colors shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" />
                           </svg>
                         </button>
@@ -279,7 +279,7 @@ export default function TeamNamesPage() {
                     </td>
                     <td className="px-4 py-3">
                       {isOverride && (
-                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
                           editado
                         </span>
                       )}

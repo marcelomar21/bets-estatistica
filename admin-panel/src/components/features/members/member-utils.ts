@@ -10,7 +10,7 @@ export type MemberDisplayStatus =
   | 'cancelado';
 
 export const memberStatusConfig: Record<MemberDisplayStatus, { label: string; className: string }> = {
-  trial: { label: 'Trial', className: 'bg-blue-100 text-blue-800' },
+  trial: { label: 'Trial', className: 'bg-cyan-100 text-cyan-800' },
   ativo: { label: 'Ativo', className: 'bg-green-100 text-green-800' },
   vencendo: { label: 'Vencendo', className: 'bg-yellow-100 text-yellow-800' },
   inadimplente: { label: 'Inadimplente', className: 'bg-red-100 text-red-800' },

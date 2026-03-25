@@ -114,7 +114,7 @@ export function PostingScheduleSection({
             aria-checked={postingEnabled}
             onClick={handleToggle}
             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              postingEnabled ? 'bg-blue-600' : 'bg-gray-200'
+              postingEnabled ? 'bg-orange-600' : 'bg-gray-200'
             }`}
           >
             <span
@@ -140,7 +140,7 @@ export function PostingScheduleSection({
                 type="time"
                 value={time}
                 onChange={(e) => handleTimeChange(index, e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
               {postingTimes.length > 1 && (
                 <button
@@ -157,7 +157,7 @@ export function PostingScheduleSection({
             <button
               type="button"
               onClick={handleAddTime}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-orange-700 hover:text-orange-800"
             >
               + Adicionar Horario
             </button>
@@ -183,7 +183,7 @@ export function PostingScheduleSection({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="mt-4 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mt-4 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? 'Salvando...' : 'Salvar Configuracao'}
         </button>

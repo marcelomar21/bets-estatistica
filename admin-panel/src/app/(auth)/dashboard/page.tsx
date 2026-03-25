@@ -247,7 +247,7 @@ export default function DashboardPage() {
           <p className="text-red-600 mb-4">{error}</p>
           <button
             onClick={() => { fetchDashboard(); fetchNotifications(); fetchJobHealth(); fetchAccuracy(); }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
           >
             Tentar Novamente
           </button>
@@ -265,7 +265,7 @@ export default function DashboardPage() {
         <select
           value={channelFilter}
           onChange={(e) => setChannelFilter(e.target.value)}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 shadow-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
         >
           <option value="">Todos os Canais</option>
           <option value="telegram">Telegram</option>

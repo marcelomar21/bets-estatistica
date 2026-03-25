@@ -126,7 +126,7 @@ export default function CommunitySettingsPage() {
             id="group-select"
             value={groupId || ''}
             onChange={(e) => setGroupId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>

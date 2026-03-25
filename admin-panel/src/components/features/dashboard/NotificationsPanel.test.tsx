@@ -212,7 +212,7 @@ describe('NotificationsPanel', () => {
   });
 
   describe('severity styling', () => {
-    it('group_failed notification gets orange styling (type override)', () => {
+    it('group_failed notification gets amber styling (type override)', () => {
       const notifications: Notification[] = [
         makeNotification({
           id: 'sf1',
@@ -233,8 +233,8 @@ describe('NotificationsPanel', () => {
       );
 
       const listItem = screen.getByText('Grupo Falhou').closest('li');
-      expect(listItem).toHaveClass('border-orange-200');
-      expect(listItem).toHaveClass('bg-orange-50');
+      expect(listItem).toHaveClass('border-amber-200');
+      expect(listItem).toHaveClass('bg-amber-50');
     });
 
     it('onboarding_completed notification gets green styling', () => {

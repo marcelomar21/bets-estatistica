@@ -220,7 +220,7 @@ function WhatsAppPoolContent() {
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
           >
             Adicionar Numero
           </button>
@@ -238,7 +238,7 @@ function WhatsAppPoolContent() {
           <p className="text-sm text-gray-500">Disponiveis</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm">
-          <p className="text-2xl font-bold text-blue-600">{summary.active + summary.backup}</p>
+          <p className="text-2xl font-bold text-orange-700">{summary.active + summary.backup}</p>
           <p className="text-sm text-gray-500">Em Uso</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm">
@@ -262,14 +262,14 @@ function WhatsAppPoolContent() {
                 value={formPhone}
                 onChange={(e) => setFormPhone(e.target.value)}
                 placeholder="+5511999887766"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 disabled={formLoading}
               />
             </div>
             <button
               type="submit"
               disabled={formLoading || !formPhone.trim()}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
             >
               {formLoading ? 'Adicionando...' : 'Adicionar'}
             </button>
@@ -326,7 +326,7 @@ function WhatsAppPoolContent() {
           {!showForm && (
             <button
               onClick={() => setShowForm(true)}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
             >
               Adicionar primeiro numero
             </button>
@@ -437,7 +437,7 @@ function WhatsAppPoolContent() {
               </div>
             ) : qrLoading && !qrImageUrl ? (
               <div className="flex flex-col items-center py-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-orange-600" />
                 <p className="mt-3 text-sm text-gray-500">Aguardando QR code...</p>
               </div>
             ) : qrImageUrl ? (
@@ -446,11 +446,11 @@ function WhatsAppPoolContent() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={qrImageUrl} alt="QR Code WhatsApp" width={280} height={280} />
                 </div>
-                <div className="mt-4 rounded-md bg-blue-50 p-3 text-center">
-                  <p className="text-xs text-blue-800 font-medium">
+                <div className="mt-4 rounded-md bg-orange-50 p-3 text-center">
+                  <p className="text-xs text-orange-800 font-medium">
                     Abra o WhatsApp no celular
                   </p>
-                  <p className="text-xs text-blue-700 mt-1">
+                  <p className="text-xs text-orange-700 mt-1">
                     Menu &gt; Aparelhos Conectados &gt; Conectar
                   </p>
                 </div>
@@ -460,7 +460,7 @@ function WhatsAppPoolContent() {
               </div>
             ) : (
               <div className="flex flex-col items-center py-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-orange-600" />
                 <p className="mt-3 text-sm text-gray-500">Aguardando QR code...</p>
                 <p className="mt-1 text-xs text-gray-400">Isso pode levar alguns segundos</p>
               </div>

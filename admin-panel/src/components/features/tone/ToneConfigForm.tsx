@@ -423,7 +423,7 @@ export default function ToneConfigForm({
           {showBackLink && (
             <Link
               href={effectiveGroupId ? `/groups/${effectiveGroupId}` : '/groups'}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-orange-700 hover:text-orange-800"
             >
               &larr; {effectiveGroupId ? 'Voltar para Grupo' : 'Voltar para Grupos'}
             </Link>
@@ -441,7 +441,7 @@ export default function ToneConfigForm({
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
@@ -455,14 +455,14 @@ export default function ToneConfigForm({
       {/* Loading */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       )}
 
       {/* No group selected */}
       {!loading && !effectiveGroupId && groupsLoaded && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm text-blue-800">
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+          <p className="text-sm text-orange-800">
             Selecione um grupo para configurar o tom de voz.
           </p>
         </div>
@@ -482,7 +482,7 @@ export default function ToneConfigForm({
               onChange={(e) => setRawDescription(e.target.value)}
               placeholder="Informal, sem usar a palavra 'aposta', chamar o publico de 'galera'. Tom confiante mas nao arrogante."
               rows={5}
-              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+              className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 resize-y"
             />
             <p className="mt-1 text-xs text-gray-400">
               Descricao em texto livre. O bot usara isso como guia principal de comunicacao.
@@ -536,7 +536,7 @@ export default function ToneConfigForm({
                   value={oddLabel}
                   onChange={(e) => setOddLabel(e.target.value.slice(0, 30))}
                   placeholder="Odd"
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <p className="mt-1 text-xs text-gray-400">
                   Substitui o label &ldquo;Odd&rdquo; nas mensagens. Ex: &ldquo;Cotacao&rdquo;, &ldquo;Cota&rdquo;.
@@ -578,7 +578,7 @@ export default function ToneConfigForm({
                   value={persona}
                   onChange={(e) => setPersona(e.target.value)}
                   placeholder='Ex: "Guru da Bet"'
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <p className="mt-1 text-xs text-gray-400">Nome ou personagem que o bot assume.</p>
               </div>
@@ -594,7 +594,7 @@ export default function ToneConfigForm({
                   value={tone}
                   onChange={(e) => setTone(e.target.value)}
                   placeholder='Ex: "profissional"'
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <p className="mt-1 text-xs text-gray-400">Estilo de comunicacao (profissional, informal, humoristico, etc).</p>
               </div>
@@ -604,7 +604,7 @@ export default function ToneConfigForm({
                 <label htmlFor="forbiddenWords" className="block text-sm font-medium text-gray-700 mb-1">
                   Palavras Proibidas
                 </label>
-                <div className="rounded-md border border-gray-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                <div className="rounded-md border border-gray-300 focus-within:border-orange-500 focus-within:ring-1 focus-within:ring-orange-500">
                   <div className="flex flex-wrap gap-1.5 p-2">
                     {forbiddenWords.map((word) => (
                       <span
@@ -644,7 +644,7 @@ export default function ToneConfigForm({
                 <label htmlFor="suggestedWords" className="block text-sm font-medium text-gray-700 mb-1">
                   Palavras Sugeridas
                 </label>
-                <div className="rounded-md border border-gray-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                <div className="rounded-md border border-gray-300 focus-within:border-orange-500 focus-within:ring-1 focus-within:ring-orange-500">
                   <div className="flex flex-wrap gap-1.5 p-2">
                     {suggestedWords.map((word) => (
                       <span
@@ -690,7 +690,7 @@ export default function ToneConfigForm({
                   onChange={(e) => setCustomRulesText(e.target.value)}
                   placeholder={"Sempre mencionar o horario do jogo\nUsar emojis com moderacao\nNunca prometer resultado"}
                   rows={4}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 resize-y"
                 />
                 <p className="mt-1 text-xs text-gray-400">Uma regra por linha. Max 20 regras.</p>
               </div>
@@ -720,7 +720,7 @@ export default function ToneConfigForm({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
             >
               {saving ? 'Salvando...' : 'Salvar'}
             </button>

@@ -89,7 +89,7 @@ export function FileUpload({ onFileSelected, disabled, error: externalError }: F
           onClick={() => !disabled && inputRef.current?.click()}
           className={`
             border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors
-            ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+            ${isDragging ? 'border-orange-500 bg-orange-50' : 'border-gray-300 hover:border-gray-400'}
             ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
           `}
         >

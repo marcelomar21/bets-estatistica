@@ -132,7 +132,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           minLength={2}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
         />
       </div>
 
@@ -145,7 +145,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           type="text"
           value={telegramGroupId}
           onChange={(e) => setTelegramGroupId(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           placeholder="Ex: -1001234567890"
         />
       </div>
@@ -159,7 +159,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           type="text"
           value={telegramAdminGroupId}
           onChange={(e) => setTelegramAdminGroupId(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           placeholder="Ex: -1009876543210"
         />
       </div>
@@ -172,7 +172,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           id="status"
           value={status}
           onChange={(e) => setStatus(e.target.value as 'active' | 'paused' | 'inactive')}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
         >
           {editableStatuses.map((s) => (
             <option key={s} value={s}>
@@ -188,7 +188,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           type="checkbox"
           checked={isTest}
           onChange={(e) => setIsTest(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          className="h-4 w-4 rounded border-gray-300 text-orange-700 focus:ring-orange-500"
         />
         <div>
           <label htmlFor="isTest" className="text-sm font-medium text-gray-700">
@@ -214,7 +214,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
                   updated[index] = { ...updated[index], type: e.target.value as 'telegram' | 'email' };
                   setInvitees(updated);
                 }}
-                className="rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               >
                 <option value="telegram">Telegram</option>
                 <option value="email">Email</option>
@@ -228,7 +228,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
                   setInvitees(updated);
                 }}
                 placeholder={invitee.type === 'telegram' ? 'Chat ID (ex: 123456789)' : 'email@exemplo.com'}
-                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
               <button
                 type="button"
@@ -242,7 +242,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
           <button
             type="button"
             onClick={() => setInvitees([...invitees, { type: 'telegram', value: '' }])}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-orange-700 hover:text-orange-800"
           >
             + Adicionar Convidado
           </button>
@@ -266,7 +266,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Salvando...' : 'Salvar Alteracoes'}
         </button>

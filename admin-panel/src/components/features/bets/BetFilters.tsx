@@ -98,11 +98,11 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Buscar por time..."
-          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
         />
         <button
           type="submit"
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
         >
           Buscar
         </button>
@@ -112,7 +112,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
         <select
           value={filters.status}
           onChange={(e) => handleChange('status', e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
         >
           {BET_STATUS_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -122,7 +122,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
         <select
           value={filters.elegibilidade}
           onChange={(e) => handleChange('elegibilidade', e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
         >
           {ELEGIBILIDADE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -133,7 +133,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
           <select
             value={filters.group_id}
             onChange={(e) => handleChange('group_id', e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
           >
             <option value="">Todos os Grupos</option>
             <option value="__pool__">Nao distribuidas (Pool)</option>
@@ -147,7 +147,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
           <select
             value={filters.championship}
             onChange={(e) => handleChange('championship', e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
           >
             <option value="">Todos os Campeonatos</option>
             {championships.map((c) => (
@@ -159,7 +159,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
         <select
           value={filters.has_odds}
           onChange={(e) => handleChange('has_odds', e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
         >
           <option value="" disabled>Odds</option>
           {ODDS_LINK_OPTIONS.map((opt) => (
@@ -170,7 +170,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
         <select
           value={filters.has_link}
           onChange={(e) => handleChange('has_link', e.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
         >
           <option value="" disabled>Link</option>
           {ODDS_LINK_OPTIONS.map((opt) => (
@@ -186,7 +186,7 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
             type="checkbox"
             checked={filters.future_only === 'true' && !hasDateFilter}
             onChange={handleToggleFutureOnly}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600"
+            className="h-4 w-4 rounded border-gray-300 text-orange-700"
           />
           Apenas jogos futuros
         </label>
@@ -197,14 +197,14 @@ export function BetFilters({ filters, onFilterChange, groups, showGroupFilter, c
             type="date"
             value={filters.date_from}
             onChange={(e) => onFilterChange({ ...filters, date_from: e.target.value, future_only: 'false' })}
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
           />
           <label className="text-xs text-gray-500">Ate:</label>
           <input
             type="date"
             value={filters.date_to}
             onChange={(e) => onFilterChange({ ...filters, date_to: e.target.value, future_only: 'false' })}
-            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
           />
         </div>
 

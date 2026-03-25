@@ -182,7 +182,7 @@ export default function OnboardingEditor({
           onChange={(e) => setTemplate(e.target.value)}
           rows={14}
           maxLength={2000}
-          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 resize-y"
         />
         <p className="mt-1 text-xs text-gray-400">
           {template.length}/2000 caracteres. Use *texto* para negrito, _texto_ para itálico.
@@ -200,7 +200,7 @@ export default function OnboardingEditor({
               key={p.tag}
               type="button"
               onClick={() => insertPlaceholder(p.tag)}
-              className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-mono border border-blue-200 hover:bg-blue-100 transition-colors"
+              className="px-3 py-1 rounded-full bg-orange-50 text-orange-700 text-xs font-mono border border-orange-200 hover:bg-orange-100 transition-colors"
               title={p.description}
             >
               {p.tag}
@@ -221,7 +221,7 @@ export default function OnboardingEditor({
             <tbody>
               {PLACEHOLDERS.map((p) => (
                 <tr key={p.tag} className="border-b border-gray-100">
-                  <td className="py-1.5 pr-4 font-mono text-blue-600">{p.tag}</td>
+                  <td className="py-1.5 pr-4 font-mono text-orange-700">{p.tag}</td>
                   <td className="py-1.5 pr-4">{p.description}</td>
                   <td className="py-1.5">
                     {p.tag === '{grupo}' ? (groupName || '(nome do grupo)') :
@@ -251,7 +251,7 @@ export default function OnboardingEditor({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 rounded-md bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 transition-colors"
         >
           {saving ? 'Salvando...' : 'Salvar'}
         </button>

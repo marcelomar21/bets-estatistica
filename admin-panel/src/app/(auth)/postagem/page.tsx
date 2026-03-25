@@ -631,7 +631,7 @@ export default function PostagemPage() {
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
             disabled={isPreviewActive}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 disabled:opacity-50"
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
@@ -670,7 +670,7 @@ export default function PostagemPage() {
             </div>
             <div className="rounded-md bg-orange-50 p-3 text-center">
               <div className="text-2xl font-bold text-orange-700">{queueData.pendingOddsCount}</div>
-              <div className="text-xs text-orange-600">sem odds</div>
+              <div className="text-xs text-orange-700">sem odds</div>
             </div>
           </div>
         </div>
@@ -696,7 +696,7 @@ export default function PostagemPage() {
       {/* Loading */}
       {loading && !queueData && !isPreviewActive && (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       )}
 
@@ -706,10 +706,10 @@ export default function PostagemPage() {
 
       {/* Loading preview */}
       {previewPhase === 'loading' && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-8 text-center">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-blue-300 border-t-blue-600" />
-          <p className="mt-3 text-sm font-medium text-blue-800">Gerando previews...</p>
-          <p className="mt-1 text-xs text-blue-600">Preparando mensagens para revisao</p>
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-8 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-orange-300 border-t-orange-600" />
+          <p className="mt-3 text-sm font-medium text-orange-800">Gerando previews...</p>
+          <p className="mt-1 text-xs text-orange-700">Preparando mensagens para revisao</p>
         </div>
       )}
 
@@ -717,11 +717,11 @@ export default function PostagemPage() {
       {isPreviewActive && previewPhase !== 'loading' && (
         <div className="space-y-4">
           {/* Top bar — counter + actions */}
-          <div className="rounded-lg border border-blue-200 bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-orange-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
-                  <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100">
+                  <svg className="h-4 w-4 text-orange-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
@@ -824,7 +824,7 @@ export default function PostagemPage() {
                   {/* Card header */}
                   <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-orange-100 text-xs font-semibold text-orange-700">
                         {idx + 1}
                       </span>
                       <div>
@@ -861,7 +861,7 @@ export default function PostagemPage() {
                             {editingPreviewIdx !== idx && (
                               <button
                                 onClick={() => handleEditPreview(idx)}
-                                className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                className="rounded px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
                                 title="Editar texto"
                               >
                                 Editar
@@ -898,7 +898,7 @@ export default function PostagemPage() {
                           value={editingPreviewText}
                           onChange={(e) => setEditingPreviewText(e.target.value)}
                           rows={6}
-                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-mono focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                           autoFocus
                         />
                         <div className="flex gap-2 justify-end">
@@ -910,7 +910,7 @@ export default function PostagemPage() {
                           </button>
                           <button
                             onClick={() => handleSavePreviewEdit(idx)}
-                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                            className="rounded-md bg-orange-600 px-3 py-1 text-xs font-medium text-white hover:bg-orange-700"
                           >
                             Salvar
                           </button>
@@ -957,7 +957,7 @@ export default function PostagemPage() {
                     type="time"
                     value={bulkScheduleTime}
                     onChange={(e) => setBulkScheduleTime(e.target.value)}
-                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   />
                   <button
                     onClick={handleBulkSchedule}
@@ -1011,8 +1011,8 @@ export default function PostagemPage() {
 
       {/* No group selected */}
       {role === 'super_admin' && !selectedGroupId && groupsLoaded && !isPreviewActive && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm text-blue-800">
+        <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+          <p className="text-sm text-orange-800">
             Selecione um grupo para visualizar a fila de postagem.
           </p>
         </div>
@@ -1037,7 +1037,7 @@ export default function PostagemPage() {
               value={oddsInput}
               onChange={(e) => setOddsInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSaveOdds()}
-              className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="Ex: 1.85"
               autoFocus
             />
@@ -1057,7 +1057,7 @@ export default function PostagemPage() {
               <button
                 onClick={handleSaveOdds}
                 disabled={modalSaving}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
               >
                 {modalSaving ? 'Salvando...' : 'Salvar'}
               </button>
@@ -1083,7 +1083,7 @@ export default function PostagemPage() {
               value={linkInput}
               onChange={(e) => setLinkInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSaveLink()}
-              className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="mt-3 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="https://..."
               autoFocus
             />
@@ -1103,7 +1103,7 @@ export default function PostagemPage() {
               <button
                 onClick={handleSaveLink}
                 disabled={modalSaving}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
               >
                 {modalSaving ? 'Salvando...' : 'Salvar'}
               </button>

@@ -124,7 +124,7 @@ function BotsContent() {
         {!showForm && (
           <button
             onClick={() => setShowForm(true)}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
           >
             Adicionar Bot
           </button>
@@ -138,7 +138,7 @@ function BotsContent() {
           <p className="text-sm text-gray-500">Disponíveis</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm">
-          <p className="text-2xl font-bold text-blue-600">{summary.in_use}</p>
+          <p className="text-2xl font-bold text-orange-700">{summary.in_use}</p>
           <p className="text-sm text-gray-500">Em Uso</p>
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-4 text-center shadow-sm">
@@ -169,7 +169,7 @@ function BotsContent() {
           {!showForm && (
             <button
               onClick={() => setShowForm(true)}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
             >
               Adicionar primeiro bot
             </button>

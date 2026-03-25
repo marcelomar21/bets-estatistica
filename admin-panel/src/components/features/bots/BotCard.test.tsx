@@ -33,7 +33,7 @@ describe('BotCard', () => {
     expect(badge.className).toContain('text-green-800');
   });
 
-  it('renders in_use bot with blue badge and group name', () => {
+  it('renders in_use bot with orange badge and group name', () => {
     render(<BotCard bot={inUseBot} />);
 
     expect(screen.getByText('@used_bot')).toBeInTheDocument();
@@ -41,8 +41,8 @@ describe('BotCard', () => {
     expect(screen.getByText('Grupo: Grupo Influencer')).toBeInTheDocument();
 
     const badge = screen.getByText('Em Uso');
-    expect(badge.className).toContain('bg-blue-100');
-    expect(badge.className).toContain('text-blue-800');
+    expect(badge.className).toContain('bg-orange-100');
+    expect(badge.className).toContain('text-orange-800');
   });
 
   it('renders formatted creation date', () => {

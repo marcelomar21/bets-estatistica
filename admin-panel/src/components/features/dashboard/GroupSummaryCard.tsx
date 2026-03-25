@@ -5,7 +5,7 @@ const statusConfig: Record<DashboardGroupCard['status'], { label: string; classN
   active: { label: 'Ativo', className: 'bg-green-100 text-green-800' },
   paused: { label: 'Pausado', className: 'bg-yellow-100 text-yellow-800' },
   inactive: { label: 'Inativo', className: 'bg-gray-100 text-gray-800' },
-  creating: { label: 'Criando', className: 'bg-blue-100 text-blue-800' },
+  creating: { label: 'Criando', className: 'bg-purple-100 text-purple-800' },
   failed: { label: 'Falhou', className: 'bg-red-100 text-red-800' },
   deleted: { label: 'Excluído', className: 'bg-red-100 text-red-800' },
 };
@@ -32,7 +32,7 @@ export default function GroupSummaryCard({ group }: GroupSummaryCardProps) {
           </p>
           <div className="flex gap-1">
             {group.channels?.includes('telegram') && (
-              <span className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700">TG</span>
+              <span className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-sky-100 text-sky-700">TG</span>
             )}
             {group.channels?.includes('whatsapp') && (
               <span className="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700">WA</span>

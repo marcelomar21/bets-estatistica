@@ -115,7 +115,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full px-3 pr-10 py-2 text-gray-900 bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
+              className="w-full px-3 pr-10 py-2 text-gray-900 bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent placeholder:text-gray-400"
               placeholder="admin@example.com"
             />
           </div>
@@ -135,7 +135,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                className="w-full px-3 pr-10 py-2 text-gray-900 bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder:text-gray-400"
+                className="w-full px-3 pr-10 py-2 text-gray-900 bg-white border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent placeholder:text-gray-400"
                 placeholder="••••••••"
               />
             </div>
@@ -144,7 +144,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full py-2 px-4 bg-orange-600 text-white font-medium rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading
               ? (mode === 'login' ? 'Entrando...' : 'Enviando...')
@@ -158,7 +158,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setMode('reset'); setError(''); setSuccess(''); }}
-              className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              className="text-sm text-orange-700 hover:text-orange-800 transition-colors"
             >
               Esqueci minha senha
             </button>
@@ -166,7 +166,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setMode('login'); setError(''); setSuccess(''); }}
-              className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
+              className="text-sm text-orange-700 hover:text-orange-800 transition-colors"
             >
               Voltar ao login
             </button>

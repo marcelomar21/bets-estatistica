@@ -189,7 +189,7 @@ export function BetEditDrawer({
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-800">Odds</h3>
               {bet.odds != null && (
-                <span className={`text-sm font-medium ${bet.odds < MIN_ODDS ? 'text-orange-600' : 'text-green-700'}`}>
+                <span className={`text-sm font-medium ${bet.odds < MIN_ODDS ? 'text-orange-700' : 'text-green-700'}`}>
                   Atual: {bet.odds.toFixed(2)}
                 </span>
               )}
@@ -206,19 +206,19 @@ export function BetEditDrawer({
                 placeholder="Ex: 1.85"
                 value={oddsInput}
                 onChange={(e) => setOddsInput(e.target.value)}
-                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                 disabled={oddsSaving}
               />
               <button
                 type="submit"
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                 disabled={oddsSaving}
               >
                 {oddsSaving ? '...' : 'Salvar'}
               </button>
             </form>
             {showOddsWarning && (
-              <p className="text-xs text-orange-600">
+              <p className="text-xs text-orange-700">
                 Odds abaixo de {MIN_ODDS}. A aposta nao sera promovida automaticamente.
               </p>
             )}
@@ -235,7 +235,7 @@ export function BetEditDrawer({
                   href={bet.deep_link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline truncate max-w-[180px]"
+                  className="text-xs text-orange-700 hover:underline truncate max-w-[180px]"
                   title={bet.deep_link}
                 >
                   Abrir link atual
@@ -250,7 +250,7 @@ export function BetEditDrawer({
                 placeholder="https://..."
                 value={linkInput}
                 onChange={(e) => setLinkInput(e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                 disabled={linkSaving}
               />
               <div className="flex items-center justify-between">
@@ -271,7 +271,7 @@ export function BetEditDrawer({
                 </div>
                 <button
                   type="submit"
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                   disabled={linkSaving}
                 >
                   {linkSaving ? '...' : 'Salvar'}
@@ -285,7 +285,7 @@ export function BetEditDrawer({
           {/* Odds History */}
           {historyLoading ? (
             <div className="flex justify-center py-4">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-orange-600" />
             </div>
           ) : oddsHistory.length > 0 ? (
             <div className="rounded-lg border p-4">

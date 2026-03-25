@@ -90,7 +90,7 @@ export function BetTable({
         <span className="inline-flex items-center gap-1">
           {children}
           {isActive && (
-            <span className="text-blue-600">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+            <span className="text-orange-700">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
           )}
         </span>
       </th>
@@ -117,7 +117,7 @@ export function BetTable({
                     type="checkbox"
                     checked={allSelected}
                     onChange={toggleAll}
-                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                    className="h-4 w-4 rounded border-gray-300 text-orange-700"
                     aria-label="Selecionar todas"
                   />
                 </th>
@@ -135,7 +135,7 @@ export function BetTable({
                 <span className="inline-flex items-center gap-1">
                   Taxa Hist.
                   {sortBy === 'hit_rate' && (
-                    <span className="text-blue-600">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+                    <span className="text-orange-700">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
                   )}
                   <button
                     type="button"
@@ -178,7 +178,7 @@ export function BetTable({
                 <tr
                   key={bet.id}
                   id={`bet-row-${bet.id}`}
-                  className={`hover:bg-gray-50 ${isActive ? 'bg-amber-50 ring-2 ring-amber-300 ring-inset' : selectedIds.has(bet.id) ? 'bg-blue-50' : ''}`}
+                  className={`hover:bg-gray-50 ${isActive ? 'bg-amber-50 ring-2 ring-amber-300 ring-inset' : selectedIds.has(bet.id) ? 'bg-orange-50' : ''}`}
                 >
                   {isSuperAdmin && (
                     <td className="px-3 py-3">
@@ -186,7 +186,7 @@ export function BetTable({
                         type="checkbox"
                         checked={selectedIds.has(bet.id)}
                         onChange={() => toggleOne(bet.id)}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                        className="h-4 w-4 rounded border-gray-300 text-orange-700"
                         aria-label={`Selecionar aposta ${bet.id}`}
                       />
                     </td>
@@ -222,7 +222,7 @@ export function BetTable({
                   </td>
                   <td className="px-3 py-3 text-sm">
                     {bet.odds != null ? (
-                      <span className={`font-medium ${bet.odds < 1.60 ? 'text-orange-600' : 'text-gray-900'}`}>
+                      <span className={`font-medium ${bet.odds < 1.60 ? 'text-orange-700' : 'text-gray-900'}`}>
                         {bet.odds.toFixed(2)}
                       </span>
                     ) : (
@@ -235,7 +235,7 @@ export function BetTable({
                         href={bet.deep_link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800"
+                        className="text-orange-700 hover:text-orange-800"
                         title={bet.deep_link}
                       >
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
@@ -263,7 +263,7 @@ export function BetTable({
                         {onEditBet && (
                           <button
                             onClick={() => onEditBet(bet)}
-                            className={`rounded px-2 py-1 text-xs font-medium ${isActive ? 'bg-amber-100 text-amber-700' : 'text-blue-600 hover:bg-blue-50'}`}
+                            className={`rounded px-2 py-1 text-xs font-medium ${isActive ? 'bg-amber-100 text-amber-700' : 'text-orange-700 hover:bg-orange-50'}`}
                           >
                             Editar
                           </button>
@@ -272,14 +272,14 @@ export function BetTable({
                           <>
                             <button
                               onClick={() => onEditOdds(bet)}
-                              className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                              className="rounded px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
                             >
                               Editar Odds
                             </button>
                             {onEditLink && (
                               <button
                                 onClick={() => onEditLink(bet)}
-                                className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                                className="rounded px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
                               >
                                 Editar Link
                               </button>

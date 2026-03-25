@@ -256,7 +256,7 @@ export default function MessagesPage() {
         <h1 className="text-2xl font-bold text-gray-900">Mensagens</h1>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
         >
           {showForm ? 'Fechar' : 'Nova Mensagem'}
         </button>
@@ -276,7 +276,7 @@ export default function MessagesPage() {
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 rows={4}
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                 placeholder="Suporta Markdown do Telegram (*negrito*, _italico_, etc.)"
                 disabled={submitting}
               />
@@ -292,7 +292,7 @@ export default function MessagesPage() {
                   type="date"
                   value={scheduledDate}
                   onChange={(e) => setScheduledDate(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                   disabled={submitting}
                 />
               </div>
@@ -305,7 +305,7 @@ export default function MessagesPage() {
                   type="time"
                   value={scheduledTime}
                   onChange={(e) => setScheduledTime(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                   disabled={submitting}
                 />
               </div>
@@ -320,7 +320,7 @@ export default function MessagesPage() {
                   id="group-select"
                   value={selectedGroupId}
                   onChange={(e) => setSelectedGroupId(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
                   disabled={submitting}
                 >
                   <option value="">Selecione um grupo...</option>
@@ -357,14 +357,14 @@ export default function MessagesPage() {
               <button
                 type="button"
                 onClick={handlePreview}
-                className="rounded-md border border-blue-300 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                className="rounded-md border border-orange-300 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50"
                 disabled={submitting}
               >
                 Preview
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                 disabled={submitting}
               >
                 {submitting ? 'Agendando...' : 'Agendar'}
@@ -380,7 +380,7 @@ export default function MessagesPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       ) : messages.length === 0 ? (
         <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
@@ -413,7 +413,7 @@ export default function MessagesPage() {
                       {msg.media_type ? (
                         <button
                           onClick={() => handleMediaClick(msg.id)}
-                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                          className="text-orange-700 hover:text-orange-800 hover:underline"
                         >
                           {msg.media_type === 'pdf' ? 'PDF' : 'Imagem'}
                         </button>

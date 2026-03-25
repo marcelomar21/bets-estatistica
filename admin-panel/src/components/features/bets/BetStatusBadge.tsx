@@ -7,7 +7,7 @@ const statusConfig: Record<BetStatus, { label: string; className: string }> = {
   pending_link: { label: 'Sem Link', className: 'bg-yellow-100 text-yellow-800' },
   pending_odds: { label: 'Sem Odds', className: 'bg-orange-100 text-orange-800' },
   ready: { label: 'Pronta', className: 'bg-green-100 text-green-800' },
-  posted: { label: 'Postada', className: 'bg-blue-100 text-blue-800' },
+  posted: { label: 'Postada', className: 'bg-emerald-100 text-emerald-800' },
 };
 
 interface BetStatusBadgeProps {

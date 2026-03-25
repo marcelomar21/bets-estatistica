@@ -191,7 +191,7 @@ function AdminUsersContent() {
             setShowCreatePassword(false);
             setShowCreate(true);
           }}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
         >
           Criar Admin User
         </button>
@@ -245,7 +245,7 @@ function AdminUsersContent() {
                       <div className="inline-flex items-center gap-3">
                         <button
                           onClick={() => openResetModal(user)}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                          className="text-xs font-medium text-orange-700 hover:text-orange-800"
                         >
                           Redefinir Senha
                         </button>
@@ -297,7 +297,7 @@ function AdminUsersContent() {
                   required
                   value={createEmail}
                   onChange={(e) => setCreateEmail(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   placeholder="email@exemplo.com"
                 />
               </div>
@@ -310,7 +310,7 @@ function AdminUsersContent() {
                     minLength={6}
                     value={createPassword}
                     onChange={(e) => setCreatePassword(e.target.value)}
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-20 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-20 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                     placeholder="Mínimo 6 caracteres"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
@@ -325,7 +325,7 @@ function AdminUsersContent() {
                     <button
                       type="button"
                       onClick={() => setCreatePassword(generatePassword())}
-                      className="text-xs text-blue-600 hover:text-blue-800"
+                      className="text-xs text-orange-700 hover:text-orange-800"
                       title="Gerar nova senha"
                     >
                       🔄
@@ -338,7 +338,7 @@ function AdminUsersContent() {
                 <select
                   value={createRole}
                   onChange={(e) => setCreateRole(e.target.value as 'super_admin' | 'group_admin')}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 >
                   <option value="group_admin">Group Admin</option>
                   <option value="super_admin">Super Admin</option>
@@ -351,7 +351,7 @@ function AdminUsersContent() {
                     required
                     value={createGroupId}
                     onChange={(e) => setCreateGroupId(e.target.value)}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   >
                     <option value="">Selecione um grupo</option>
                     {groups.map((g) => (
@@ -371,7 +371,7 @@ function AdminUsersContent() {
                 <button
                   type="submit"
                   disabled={creating}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                 >
                   {creating ? 'Criando...' : 'Criar Usuário'}
                 </button>
@@ -397,7 +397,7 @@ function AdminUsersContent() {
                     minLength={6}
                     value={resetPassword}
                     onChange={(e) => setResetPassword(e.target.value)}
-                    className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-20 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="block w-full rounded-md border border-gray-300 px-3 py-2 pr-20 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                     placeholder="Mínimo 6 caracteres"
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-2">
@@ -412,7 +412,7 @@ function AdminUsersContent() {
                     <button
                       type="button"
                       onClick={() => setResetPassword(generatePassword())}
-                      className="text-xs text-blue-600 hover:text-blue-800"
+                      className="text-xs text-orange-700 hover:text-orange-800"
                       title="Gerar nova senha"
                     >
                       🔄
@@ -431,7 +431,7 @@ function AdminUsersContent() {
                 <button
                   type="submit"
                   disabled={resetting}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                 >
                   {resetting ? 'Redefinindo...' : 'Redefinir Senha'}
                 </button>
@@ -468,7 +468,7 @@ function AdminUsersContent() {
               </button>
               <button
                 onClick={() => { setSuccessModal(null); setCopied(false); }}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
               >
                 Fechar
               </button>

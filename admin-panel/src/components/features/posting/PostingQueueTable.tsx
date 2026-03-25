@@ -55,7 +55,7 @@ function getStatusBadge(bet: QueueBet) {
     return { label: 'faltando odds', className: 'bg-orange-100 text-orange-800' };
   }
   if (bet.promovida_manual) {
-    return { label: 'promovida', className: 'bg-blue-100 text-blue-800' };
+    return { label: 'promovida', className: 'bg-indigo-100 text-indigo-800' };
   }
   if (bet.odds >= 1.60) {
     return { label: 'pronta', className: 'bg-green-100 text-green-800' };
@@ -160,7 +160,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
         <span className="inline-flex items-center gap-1">
           {children}
           {isActive && (
-            <span className="text-blue-600">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
+            <span className="text-orange-700">{sortDir === 'asc' ? '\u2191' : '\u2193'}</span>
           )}
         </span>
       </th>
@@ -175,7 +175,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
         </svg>
         <p className="mt-3 text-sm font-medium text-gray-900">{emptyMessage ?? 'Nenhuma aposta na fila'}</p>
         <p className="mt-1 text-sm text-gray-500">As apostas aparecem aqui automaticamente quando tiverem odds e link.</p>
-        <Link href="/bets" className="mt-3 inline-block text-sm font-medium text-blue-600 hover:text-blue-800">Ver apostas &rarr;</Link>
+        <Link href="/bets" className="mt-3 inline-block text-sm font-medium text-orange-700 hover:text-orange-800">Ver apostas &rarr;</Link>
       </div>
     );
   }
@@ -236,7 +236,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                 </td>
                 <td className="px-4 py-3 text-sm">
                   {bet.odds !== null ? (
-                    <span className={`font-medium ${bet.odds < 1.60 ? 'text-orange-600' : 'text-gray-900'}`}>
+                    <span className={`font-medium ${bet.odds < 1.60 ? 'text-orange-700' : 'text-gray-900'}`}>
                       {bet.odds.toFixed(2)}
                     </span>
                   ) : (
@@ -281,7 +281,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                       type="time"
                       value={bet.post_at ?? ''}
                       onChange={(e) => onScheduleBet(bet.id, e.target.value || null)}
-                      className="rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="rounded border border-gray-300 px-2 py-1 text-xs focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                     />
                   </td>
                 )}
@@ -310,7 +310,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                     {onEditOdds && bet.odds === null && (
                       <button
                         onClick={() => onEditOdds(bet)}
-                        className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        className="rounded px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
                       >
                         Odds
                       </button>
@@ -318,7 +318,7 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
                     {onEditLink && !bet.has_link && (
                       <button
                         onClick={() => onEditLink(bet)}
-                        className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        className="rounded px-2 py-1 text-xs font-medium text-orange-700 hover:bg-orange-50"
                       >
                         Link
                       </button>

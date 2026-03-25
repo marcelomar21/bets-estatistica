@@ -42,7 +42,7 @@ export default async function GroupDetailPage({
       <div className="mb-6">
         <Link
           href="/groups"
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-orange-700 hover:text-orange-800"
         >
           &larr; Voltar para Grupos
         </Link>
@@ -86,7 +86,7 @@ export default async function GroupDetailPage({
                   href={typedGroup.checkout_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline"
+                  className="text-orange-700 hover:text-orange-800 underline"
                 >
                   {typedGroup.checkout_url}
                 </a>
@@ -101,7 +101,7 @@ export default async function GroupDetailPage({
                 <span
                   key={ch}
                   className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    ch === 'telegram' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                    ch === 'telegram' ? 'bg-sky-100 text-sky-800' : 'bg-green-100 text-green-800'
                   }`}
                 >
                   {ch === 'telegram' ? 'Telegram' : 'WhatsApp'}
@@ -136,7 +136,7 @@ export default async function GroupDetailPage({
         <div className="mt-6 pt-6 border-t border-gray-200 flex items-center gap-3">
           <Link
             href={`/groups/${typedGroup.id}/edit`}
-            className="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="inline-block rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
           >
             Editar
           </Link>

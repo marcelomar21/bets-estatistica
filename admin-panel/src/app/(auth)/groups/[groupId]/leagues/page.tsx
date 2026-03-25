@@ -105,7 +105,7 @@ export default function LeaguePreferencesPage() {
       <div>
         <Link
           href={`/groups/${groupId}`}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-orange-700 hover:text-orange-800"
         >
           &larr; Voltar para Grupo
         </Link>
@@ -118,7 +118,7 @@ export default function LeaguePreferencesPage() {
       {/* Loading */}
       {loading && (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       )}
 
@@ -135,7 +135,7 @@ export default function LeaguePreferencesPage() {
               <button
                 type="button"
                 onClick={() => handleToggleAll(true)}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                className="text-xs text-orange-700 hover:text-orange-800 font-medium"
               >
                 Ativar todas
               </button>
@@ -168,8 +168,8 @@ export default function LeaguePreferencesPage() {
                       role="switch"
                       aria-checked={league.enabled}
                       onClick={() => handleToggle(league.league_name)}
-                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                        league.enabled ? 'bg-blue-600' : 'bg-gray-200'
+                      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                        league.enabled ? 'bg-orange-600' : 'bg-gray-200'
                       }`}
                     >
                       <span
@@ -185,8 +185,8 @@ export default function LeaguePreferencesPage() {
           ))}
 
           {leagues.length === 0 && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-              <p className="text-sm text-blue-800">
+            <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+              <p className="text-sm text-orange-800">
                 Nenhum campeonato ativo encontrado no sistema.
               </p>
             </div>
@@ -198,7 +198,7 @@ export default function LeaguePreferencesPage() {
               type="button"
               onClick={handleSave}
               disabled={saving || !dirty}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
             >
               {saving ? 'Salvando...' : 'Salvar Preferências'}
             </button>

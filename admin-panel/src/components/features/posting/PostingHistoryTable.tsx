@@ -52,7 +52,7 @@ function getPostingStatus(bet: HistoryBet): { label: string; className: string }
   if (bet.bet_status === 'posted' && bet.telegram_posted_at) {
     return {
       label: 'Postada',
-      className: 'bg-blue-100 text-blue-800',
+      className: 'bg-emerald-100 text-emerald-800',
     };
   }
 
@@ -208,7 +208,7 @@ export function PostingHistoryTable({
                       <button
                         type="button"
                         onClick={() => onEditResult(bet)}
-                        className="text-gray-400 hover:text-blue-600"
+                        className="text-gray-400 hover:text-orange-700"
                         title="Editar resultado"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">

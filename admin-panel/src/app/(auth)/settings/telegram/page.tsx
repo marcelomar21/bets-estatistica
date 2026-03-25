@@ -227,12 +227,12 @@ function TelegramSettingsContent() {
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value)}
                   placeholder="+5511999999999"
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
                 <button
                   onClick={handleSendCode}
                   disabled={!phoneNumber}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                 >
                   Enviar Código
                 </button>
@@ -242,7 +242,7 @@ function TelegramSettingsContent() {
         )}
 
         {setupPhase === 'sending_code' && (
-          <p className="text-sm text-blue-600">Enviando código para {phoneNumber}...</p>
+          <p className="text-sm text-orange-700">Enviando código para {phoneNumber}...</p>
         )}
 
         {setupPhase === 'awaiting_code' && (
@@ -257,7 +257,7 @@ function TelegramSettingsContent() {
                 value={verifyCode}
                 onChange={(e) => setVerifyCode(e.target.value)}
                 placeholder="12345"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
             </div>
             {needs2fa && (
@@ -271,7 +271,7 @@ function TelegramSettingsContent() {
                   value={twoFaPassword}
                   onChange={(e) => setTwoFaPassword(e.target.value)}
                   placeholder="Senha do Two-Factor Authentication"
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                 />
               </div>
             )}
@@ -294,7 +294,7 @@ function TelegramSettingsContent() {
         )}
 
         {setupPhase === 'verifying' && (
-          <p className="text-sm text-blue-600">Verificando código...</p>
+          <p className="text-sm text-orange-700">Verificando código...</p>
         )}
 
         {sessionError && (
@@ -366,7 +366,7 @@ function TelegramSettingsContent() {
               value={botToken}
               onChange={(e) => setBotToken(e.target.value)}
               placeholder="123456789:ABCdefGhIJKlmNopQRStuvWXYZ"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
             />
           </div>
           <div>
@@ -379,14 +379,14 @@ function TelegramSettingsContent() {
               value={founderChatIds}
               onChange={(e) => setFounderChatIds(e.target.value)}
               placeholder="123456789, 987654321"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
             />
           </div>
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={savingBot || !botToken}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
             >
               {savingBot ? 'Salvando...' : 'Salvar Configuração'}
             </button>
@@ -426,7 +426,7 @@ function TelegramSettingsContent() {
         </p>
         <a
           href="/groups"
-          className="mt-3 inline-block text-sm text-blue-600 hover:text-blue-800 underline"
+          className="mt-3 inline-block text-sm text-orange-700 hover:text-orange-800 underline"
         >
           Ir para Grupos
         </a>

@@ -176,7 +176,7 @@ export default function PostingHistoryPage() {
         </div>
         <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-500">Taxa de Acerto</p>
-          <p className="text-2xl font-bold text-blue-600">{counters.hit_rate}%</p>
+          <p className="text-2xl font-bold text-orange-700">{counters.hit_rate}%</p>
         </div>
       </div>
 

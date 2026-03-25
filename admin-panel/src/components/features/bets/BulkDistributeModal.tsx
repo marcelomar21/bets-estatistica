@@ -58,7 +58,7 @@ export function BulkDistributeModal({ selectedCount, groups, onClose, onSave }: 
               id="bulk-group-select"
               value={selectedGroupId}
               onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
               disabled={saving}
             >
               <option value="">Selecione um grupo...</option>

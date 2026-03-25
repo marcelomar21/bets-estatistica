@@ -88,7 +88,7 @@ export default function GroupEditPage() {
         <p className="text-gray-600 mb-6">O grupo que voce esta tentando editar nao existe ou foi removido.</p>
         <Link
           href="/groups"
-          className="text-blue-600 hover:text-blue-800"
+          className="text-orange-700 hover:text-orange-800"
         >
           &larr; Voltar para Grupos
         </Link>
@@ -105,7 +105,7 @@ export default function GroupEditPage() {
       <div className="mb-6">
         <Link
           href={`/groups/${groupId}`}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="text-sm text-orange-700 hover:text-orange-800"
         >
           &larr; Voltar para Detalhes
         </Link>

@@ -177,7 +177,7 @@ export default function AnalyticsPageWrapper() {
   return (
     <Suspense fallback={
       <div className="flex justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
       </div>
     }>
       <AnalyticsPage />
@@ -347,7 +347,7 @@ function AnalyticsPage() {
             id="period"
             value={periodPreset}
             onChange={(e) => handlePeriodChange(e.target.value as PeriodPreset)}
-            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
           >
             <option value="">Todos</option>
             <option value="7d">Ultimos 7 dias</option>
@@ -368,7 +368,7 @@ function AnalyticsPage() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => handleCustomDateChange(e.target.value, dateTo)}
-                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
               />
             </div>
             <div>
@@ -380,7 +380,7 @@ function AnalyticsPage() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => handleCustomDateChange(dateFrom, e.target.value)}
-                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
               />
             </div>
           </>
@@ -394,7 +394,7 @@ function AnalyticsPage() {
             id="market-filter"
             value={market}
             onChange={(e) => handleMarketChange(e.target.value)}
-            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
           >
             <option value="">Todos</option>
             {MARKET_OPTIONS.map((m) => (
@@ -411,7 +411,7 @@ function AnalyticsPage() {
             id="posting-filter"
             value={postingFilter}
             onChange={(e) => handlePostingFilterChange(e.target.value)}
-            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
           >
             <option value="">Todas</option>
             <option value="posted">Postadas</option>
@@ -428,7 +428,7 @@ function AnalyticsPage() {
               id="group-filter"
               value={groupId}
               onChange={(e) => handleGroupChange(e.target.value)}
-              className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
             >
               <option value="">Todos</option>
               {groups.map((g) => (
@@ -454,7 +454,7 @@ function AnalyticsPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       ) : !data ? (
         <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-500">
@@ -464,9 +464,9 @@ function AnalyticsPage() {
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            <div className="rounded-lg border p-6 bg-blue-50 border-blue-200">
+            <div className="rounded-lg border p-6 bg-orange-50 border-orange-200">
               <p className="text-sm font-medium text-gray-500">Taxa Geral</p>
-              <p className="mt-1 text-3xl font-bold text-blue-700">
+              <p className="mt-1 text-3xl font-bold text-orange-700">
                 {data.total.rate}%
               </p>
               <p className="mt-1 text-sm text-gray-500">

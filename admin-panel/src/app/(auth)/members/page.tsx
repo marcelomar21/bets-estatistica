@@ -388,7 +388,7 @@ export default function MembersPage() {
 
           <button
             type="submit"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
           >
             Buscar
           </button>
@@ -396,15 +396,15 @@ export default function MembersPage() {
       </form>
 
       {botInviteLink && (
-        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-          <svg className="h-5 w-5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+          <svg className="h-5 w-5 shrink-0 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
           </svg>
-          <span className="flex-1 truncate text-sm text-blue-700" data-testid="bot-invite-link">{botInviteLink}</span>
+          <span className="flex-1 truncate text-sm text-orange-700" data-testid="bot-invite-link">{botInviteLink}</span>
           <button
             type="button"
             onClick={copyBotLink}
-            className="shrink-0 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+            className="shrink-0 rounded-md border border-orange-300 bg-white px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-50"
           >
             {copied ? 'Copiado!' : 'Copiar'}
           </button>

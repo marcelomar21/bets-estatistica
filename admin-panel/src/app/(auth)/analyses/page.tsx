@@ -98,7 +98,7 @@ export default function AnalysesPage() {
             type="date"
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
           />
         </div>
         <div>
@@ -111,7 +111,7 @@ export default function AnalysesPage() {
             placeholder="Ex: Flamengo"
             value={teamFilter}
             onChange={(e) => setTeamFilter(e.target.value)}
-            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            className="mt-1 block rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:ring-orange-500"
           />
         </div>
         {(dateFilter || teamFilter) && (
@@ -133,7 +133,7 @@ export default function AnalysesPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       ) : analyses.length === 0 ? (
         <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-500">
@@ -189,7 +189,7 @@ export default function AnalysesPage() {
                       <button
                         onClick={() => handleOpenPdf(a.id)}
                         disabled={pdfLoading === a.id}
-                        className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        className="rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                       >
                         {pdfLoading === a.id ? 'Abrindo...' : 'Ver PDF'}
                       </button>

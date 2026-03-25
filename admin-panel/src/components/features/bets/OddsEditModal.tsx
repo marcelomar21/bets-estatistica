@@ -79,11 +79,11 @@ export function OddsEditModal({ bet, onClose, onSave, oddsHistory, loading }: Od
               min="0.01"
               value={oddsInput}
               onChange={(e) => setOddsInput(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 focus:outline-none"
               disabled={saving || loading}
             />
             {showWarning && (
-              <p className="mt-1 text-xs text-orange-600">
+              <p className="mt-1 text-xs text-orange-700">
                 Odds abaixo de {MIN_ODDS}. A aposta nao sera promovida automaticamente.
               </p>
             )}
@@ -104,7 +104,7 @@ export function OddsEditModal({ bet, onClose, onSave, oddsHistory, loading }: Od
             </button>
             <button
               type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50"
               disabled={saving || loading}
             >
               {saving ? 'Salvando...' : 'Salvar'}

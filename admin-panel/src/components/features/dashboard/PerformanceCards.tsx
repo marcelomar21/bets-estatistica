@@ -103,7 +103,7 @@ export default function PerformanceCards({ periods, overallRate, postedRate, byG
     <div className="rounded-lg border border-gray-200 bg-white p-5">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-gray-900">Performance</h2>
-        <Link href="/analytics" className="text-sm text-blue-600 hover:text-blue-800">
+        <Link href="/analytics" className="text-sm text-orange-700 hover:text-orange-800">
           Ver detalhes &rarr;
         </Link>
       </div>

@@ -190,7 +190,7 @@ function JobExecutionsContent() {
             type="checkbox"
             checked={hideEmpty}
             onChange={(e) => setHideEmpty(e.target.checked)}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-gray-300 text-orange-700 focus:ring-orange-500"
           />
           <label htmlFor="hide-empty" className="text-sm font-medium text-gray-700">
             Ocultar execucoes vazias

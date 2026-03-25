@@ -55,7 +55,7 @@ export default function DynamicInputList({
                 onChange={(e) => handleChange(index, e.target.value)}
                 placeholder={placeholder}
                 rows={textareaRows}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 resize-y"
               />
             ) : (
               <input
@@ -63,7 +63,7 @@ export default function DynamicInputList({
                 value={item}
                 onChange={(e) => handleChange(index, e.target.value)}
                 placeholder={placeholder}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
             )}
             {maxLength && (
@@ -86,7 +86,7 @@ export default function DynamicInputList({
         <button
           type="button"
           onClick={handleAdd}
-          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+          className="text-sm text-orange-700 hover:text-orange-800 font-medium"
         >
           {addLabel}
         </button>

@@ -104,7 +104,7 @@ export default function CommunitySettingsForm({
             step={1}
             value={trialDays}
             onChange={(e) => setTrialDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 1)))}
-            className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-32 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
           <p className="mt-1 text-xs text-gray-400">
             Duração do período de teste para novos membros (1-30 dias)
@@ -128,7 +128,7 @@ export default function CommunitySettingsForm({
             min={1}
             max={99999.99}
             step={0.01}
-            className="w-48 rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-48 rounded-md border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           />
           {price != null && !isNaN(price) && price > 0 && (
             <p className="mt-1 text-sm text-green-700 font-medium">
@@ -147,7 +147,7 @@ export default function CommunitySettingsForm({
           type="button"
           onClick={handleSave}
           disabled={saving || (!hasChanges && !mpSyncFailed)}
-          className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 rounded-md bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {saving ? 'Salvando...' : mpSyncFailed && !hasChanges ? 'Retentar sync MP' : 'Salvar'}
         </button>

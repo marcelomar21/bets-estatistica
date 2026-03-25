@@ -29,11 +29,11 @@ const severityStyles: Record<Notification['severity'], string> = {
   error: 'border-red-200 bg-red-50',
   warning: 'border-yellow-200 bg-yellow-50',
   success: 'border-green-200 bg-green-50',
-  info: 'border-blue-200 bg-blue-50',
+  info: 'border-gray-200 bg-gray-50',
 };
 
 const typeStyleOverrides: Partial<Record<Notification['type'], string>> = {
-  group_failed: 'border-orange-200 bg-orange-50',
+  group_failed: 'border-amber-200 bg-amber-50',
 };
 
 export default function NotificationsPanel({
@@ -77,7 +77,7 @@ export default function NotificationsPanel({
           <button
             type="button"
             onClick={onMarkAllRead}
-            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            className="text-sm text-orange-700 hover:text-orange-800 font-medium"
           >
             Marcar todas como lidas
           </button>

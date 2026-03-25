@@ -73,7 +73,7 @@ export function GroupForm({ onSubmit, loading, error }: GroupFormProps) {
           minLength={2}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           placeholder="Ex: Influencer João"
         />
       </div>
@@ -87,7 +87,7 @@ export function GroupForm({ onSubmit, loading, error }: GroupFormProps) {
           type="text"
           value={telegramGroupId}
           onChange={(e) => setTelegramGroupId(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           placeholder="Ex: -1001234567890"
         />
       </div>
@@ -101,7 +101,7 @@ export function GroupForm({ onSubmit, loading, error }: GroupFormProps) {
           type="text"
           value={telegramAdminGroupId}
           onChange={(e) => setTelegramAdminGroupId(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
           placeholder="Ex: -1009876543210"
         />
       </div>
@@ -109,7 +109,7 @@ export function GroupForm({ onSubmit, loading, error }: GroupFormProps) {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? 'Criando...' : 'Criar Grupo'}
       </button>

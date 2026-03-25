@@ -97,7 +97,7 @@ export function MemberList({ members, role, onCancelClick, onReactivateClick, on
                   {member.channel === 'whatsapp' ? (
                     <span className="inline-flex rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">WA</span>
                   ) : (
-                    <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">TG</span>
+                    <span className="inline-flex rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-800">TG</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-sm font-mono text-gray-500">

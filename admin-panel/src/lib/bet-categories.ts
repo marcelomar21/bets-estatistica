@@ -17,7 +17,7 @@ export function categorizeMarket(market: string): string {
 export type MarketCategory = 'Gols' | 'Escanteios' | 'Cartões' | 'BTTS' | 'Outros';
 
 export const CATEGORY_STYLES: Record<string, string> = {
-  'Gols': 'bg-blue-100 text-blue-800',
+  'Gols': 'bg-orange-100 text-orange-800',
   'Escanteios': 'bg-purple-100 text-purple-800',
   'Cartões': 'bg-yellow-100 text-yellow-800',
   'BTTS': 'bg-green-100 text-green-800',

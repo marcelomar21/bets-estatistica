@@ -95,7 +95,7 @@ describe('BetStatusBadge', () => {
   it('applies correct CSS class for posted status', () => {
     render(<BetStatusBadge status="posted" />);
     const badge = screen.getByText('Postada');
-    expect(badge.className).toContain('bg-blue-100');
+    expect(badge.className).toContain('bg-emerald-100');
   });
 });
 

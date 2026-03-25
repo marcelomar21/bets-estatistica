@@ -29,7 +29,7 @@ export default async function GroupsPage() {
         {isSuperAdmin && (
           <Link
             href="/groups/new"
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2"
           >
             Novo Grupo
           </Link>
@@ -42,7 +42,7 @@ export default async function GroupsPage() {
           {isSuperAdmin && (
             <Link
               href="/groups/new"
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700"
             >
               Criar primeiro grupo
             </Link>

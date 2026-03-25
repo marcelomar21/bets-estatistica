@@ -2,11 +2,11 @@ import type { WhatsAppNumberStatus } from '@/types/database';
 
 export const whatsappStatusConfig: Record<WhatsAppNumberStatus, { label: string; className: string }> = {
   available: { label: 'Disponivel', className: 'bg-green-100 text-green-800' },
-  active: { label: 'Ativo', className: 'bg-blue-100 text-blue-800' },
+  active: { label: 'Ativo', className: 'bg-orange-100 text-orange-800' },
   backup: { label: 'Backup', className: 'bg-cyan-100 text-cyan-800' },
   banned: { label: 'Banido', className: 'bg-red-100 text-red-800' },
   cooldown: { label: 'Cooldown', className: 'bg-yellow-100 text-yellow-800' },
-  connecting: { label: 'Conectando', className: 'bg-orange-100 text-orange-800' },
+  connecting: { label: 'Conectando', className: 'bg-amber-100 text-amber-800' },
 };
 
 export function formatPhoneNumber(phone: string): string {

@@ -77,8 +77,8 @@ export function PostingQueueCard({ groupId, requireGroupSelection = false }: Pos
 
   if (requireGroupSelection && !groupId) {
     return (
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <p className="text-sm text-blue-800">
+      <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+        <p className="text-sm text-orange-800">
           Selecione um grupo no filtro para visualizar a fila e usar o &quot;Postar Agora&quot;.
         </p>
       </div>
@@ -89,7 +89,7 @@ export function PostingQueueCard({ groupId, requireGroupSelection = false }: Pos
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="flex items-center gap-2">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-orange-600" />
           <span className="text-sm text-gray-500">Carregando fila...</span>
         </div>
       </div>
@@ -156,7 +156,7 @@ export function PostingQueueCard({ groupId, requireGroupSelection = false }: Pos
         </div>
         <div className="rounded-md bg-orange-50 p-2 text-center">
           <div className="text-lg font-bold text-orange-700">{pendingOddsCount}</div>
-          <div className="text-xs text-orange-600">sem odds</div>
+          <div className="text-xs text-orange-700">sem odds</div>
         </div>
       </div>
 

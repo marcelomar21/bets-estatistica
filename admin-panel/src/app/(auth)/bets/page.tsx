@@ -458,19 +458,19 @@ export default function BetsPage() {
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && role === 'super_admin' && (
-        <div className="flex items-center gap-3 rounded-lg bg-blue-50 px-4 py-3">
-          <span className="text-sm font-medium text-blue-700">
+        <div className="flex items-center gap-3 rounded-lg bg-orange-50 px-4 py-3">
+          <span className="text-sm font-medium text-orange-700">
             {selectedIds.size} aposta{selectedIds.size > 1 ? 's' : ''} selecionada{selectedIds.size > 1 ? 's' : ''}
           </span>
           <button
             onClick={() => setShowBulkModal(true)}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700"
           >
             Atualizar Odds em Lote
           </button>
           <button
             onClick={() => setShowBulkLinks(true)}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-md bg-orange-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-700"
           >
             Adicionar Links em Lote
           </button>
@@ -495,7 +495,7 @@ export default function BetsPage() {
 
       {loading ? (
         <div className="flex justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-orange-600" />
         </div>
       ) : (
         <BetTable

@@ -399,7 +399,7 @@ export function OnboardingWizard() {
   if (wizardState === 'loading') {
     return (
       <div className="flex justify-center py-8">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-orange-600" />
       </div>
     );
   }
@@ -448,8 +448,8 @@ export function OnboardingWizard() {
 
         {/* Resume mode header */}
         {resumeMode && incompleteGroup && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-            <p className="text-sm text-blue-800">
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+            <p className="text-sm text-orange-800">
               Retomando onboarding de <strong>&ldquo;{incompleteGroup.name}&rdquo;</strong>.
               Confirme o email e preço abaixo para continuar.
             </p>
@@ -460,7 +460,7 @@ export function OnboardingWizard() {
                 setName('');
                 setGroupId(null);
               }}
-              className="mt-2 text-xs text-blue-600 hover:text-blue-800 underline"
+              className="mt-2 text-xs text-orange-700 hover:text-orange-800 underline"
             >
               Cancelar e voltar
             </button>
@@ -479,7 +479,7 @@ export function OnboardingWizard() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   placeholder="Ex: Canal do João"
                 />
                 {formErrors.name && (
@@ -502,7 +502,7 @@ export function OnboardingWizard() {
                     id="bot"
                     value={botId}
                     onChange={(e) => setBotId(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
                   >
                     <option value="">Selecione um bot</option>
                     {bots.map((bot) => (
@@ -528,7 +528,7 @@ export function OnboardingWizard() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="influencer@email.com"
             />
             {formErrors.email && (
@@ -547,7 +547,7 @@ export function OnboardingWizard() {
               step="0.01"
               value={price}
               onChange={(e) => setPrice(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
               placeholder="Ex: 29.90"
             />
             {formErrors.price && (
@@ -558,7 +558,7 @@ export function OnboardingWizard() {
           <button
             type="submit"
             disabled={!resumeMode && (loadingBots || bots.length === 0)}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {resumeMode ? 'Retomar Onboarding' : 'Iniciar Onboarding'}
           </button>
@@ -581,7 +581,7 @@ export function OnboardingWizard() {
                   status === 'done'
                     ? 'bg-green-100 text-green-700'
                     : status === 'active'
-                      ? 'bg-blue-100 text-blue-700'
+                      ? 'bg-orange-100 text-orange-700'
                       : status === 'error'
                         ? 'bg-red-100 text-red-700'
                         : 'bg-gray-100 text-gray-400'
@@ -609,7 +609,7 @@ export function OnboardingWizard() {
                   status === 'done'
                     ? 'text-green-700'
                     : status === 'active'
-                      ? 'font-medium text-blue-700'
+                      ? 'font-medium text-orange-700'
                       : status === 'error'
                         ? 'font-medium text-red-700'
                         : 'text-gray-400'
