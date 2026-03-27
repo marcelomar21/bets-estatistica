@@ -1307,7 +1307,7 @@ function getNextPostTime(postTimesParam) {
  * @param {string[]|undefined} postTimesParam - Horarios de postagem "HH:mm" opcionais para cálculo do próximo post
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefined) {
+async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefined, { skipMaxDaysFilter = false } = {}) {
   try {
     const now = new Date();
     const twoDaysLater = new Date(now.getTime() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000);
@@ -1340,8 +1340,12 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       `)
       .eq('bet_status', 'posted')
       .eq('elegibilidade', 'elegivel')  // Respeita /remover - apostas removidas não aparecem
-      .gte('league_matches.kickoff_time', now.toISOString())
-      .lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+      .gte('league_matches.kickoff_time', now.toISOString());
+
+    // Manual post-now bypasses maxDaysAhead — operator explicitly chose the bets
+    if (!skipMaxDaysFilter) {
+      ativasQuery = ativasQuery.lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+    }
 
     // Story 5.1: Multi-tenant — filtrar por group_id quando definido
     if (effectiveGroupId) {
@@ -1403,8 +1407,12 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         .eq('elegibilidade', 'elegivel')
         .not('deep_link', 'is', null)
         .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
-        .gte('league_matches.kickoff_time', now.toISOString())
-        .lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+        .gte('league_matches.kickoff_time', now.toISOString());
+
+      // Manual post-now bypasses maxDaysAhead — operator explicitly chose the bets
+      if (!skipMaxDaysFilter) {
+        novasQuery = novasQuery.lte('league_matches.kickoff_time', twoDaysLater.toISOString());
+      }
 
       // Story 5.1: Multi-tenant — filtrar por group_id quando definido
       if (effectiveGroupId) {

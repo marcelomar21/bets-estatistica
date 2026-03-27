@@ -17,6 +17,7 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
   const [phase, setPhase] = useState<PostingPhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [postedCount, setPostedCount] = useState(0);
@@ -38,14 +39,15 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
     setStatusMessage(`Aguardando bot... 0/${betIds.length} postada(s)`);
 
     const idsParam = betIds.join(',');
+    const groupParam = groupId ? `&group_id=${groupId}` : '';
 
     async function poll() {
       try {
-        const res = await fetch(`/api/bets/post-now/status?bet_ids=${idsParam}`);
+        const res = await fetch(`/api/bets/post-now/status?bet_ids=${idsParam}${groupParam}`);
         const json = await res.json();
         if (!json.success) return;
 
-        const { posted, allPosted } = json.data;
+        const { posted, allPosted, botProcessed } = json.data;
         setPostedCount(posted.length);
         setStatusMessage(`${allPosted ? 'Concluido!' : 'Aguardando bot...'} ${posted.length}/${betIds.length} postada(s)`);
 
@@ -54,6 +56,11 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
           setPhase('done');
           onPostComplete();
           setTimeout(() => { setPhase('idle'); setStatusMessage(null); }, 5000);
+        } else if (botProcessed && posted.length === 0) {
+          stopPolling();
+          setPhase('timeout');
+          setStatusMessage('Bot processou a solicitacao, mas nenhuma aposta foi postada. Verifique se as apostas estao prontas.');
+          onPostComplete();
         }
       } catch {
         // Network error during poll, just keep trying
@@ -95,6 +102,9 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
         if (json.error?.details) setErrorDetails(json.error.details);
         return;
       }
+
+      // Show warnings if any (non-blocking — distant kickoff)
+      if (json.data?.warnings) setWarnings(json.data.warnings);
 
       // Start polling for posting status
       const betIds: number[] = json.data?.betIds ?? [];
@@ -144,8 +154,17 @@ export function PostNowButton({ readyCount, groupId, onPostComplete }: PostNowBu
 
       {phase === 'timeout' && (
         <p className="text-sm text-amber-700">
-          Bot nao respondeu em 60s. Verifique se o bot esta rodando no Render.
+          {statusMessage || 'Bot nao respondeu em 60s. Verifique se o bot esta rodando no Render.'}
         </p>
+      )}
+
+      {warnings.length > 0 && (phase === 'polling' || phase === 'done') && (
+        <div className="rounded-md bg-amber-50 px-3 py-1.5">
+          <p className="text-xs font-medium text-amber-700">Aviso: jogos distantes</p>
+          <ul className="mt-0.5 text-xs text-amber-600">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
       )}
 
       {phase === 'confirming' && (
