@@ -1,6 +1,10 @@
 ---
-tags: [flow]
-related: [post-now, postBets]
+tags:
+- flow
+related:
+- post-now
+- postBets
+permalink: guru/flows/manual-post
 ---
 
 # Manual Post Flow

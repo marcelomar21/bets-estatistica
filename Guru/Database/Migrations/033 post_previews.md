@@ -1,8 +1,10 @@
 ---
-number: 033
+number: 27
 status: planned
 phase: 4
-tags: [migration]
+tags:
+- migration
+permalink: guru/database/migrations/033-post-previews
 ---
 
 # Migration 033: post_previews Table

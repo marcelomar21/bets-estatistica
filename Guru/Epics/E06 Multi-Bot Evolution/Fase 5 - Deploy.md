@@ -3,7 +3,10 @@ status: todo
 tasks: 7
 complexity: Alta
 design_dependency: false
-tags: [phase, epic/e06]
+tags:
+- phase
+- epic/e06
+permalink: guru/epics/e06-multi-bot-evolution/fase-5-deploy-1
 ---
 
 # Fase 5 — Deploy Multi-Bot Unificado

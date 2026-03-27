@@ -1,7 +1,10 @@
 ---
 title: Tech Stack
 created: 2026-02-25
-tags: [project, tech-stack]
+tags:
+- project
+- tech-stack
+permalink: guru/project/tech-stack
 ---
 
 ## Runtime
@@ -17,8 +20,8 @@ tags: [project, tech-stack]
 
 ## LLMs
 
-- **LangChain 1.1.x** como framework de orquestracao
-- **OpenAI** -- heavy model: `gpt-5.2`, light model: `gpt-5-mini`
+- **LangChain 1.2.x** como framework de orquestracao
+- **OpenAI** -- heavy model: `gpt-5.4`, light model: `gpt-5.4-nano`
 - **Anthropic** -- Claude Sonnet 4.6 (para consenso multi-LLM)
 - **Moonshot** -- Kimi 2.5 (para consenso multi-LLM)
 - **Zod 4.x** -- validation + `withStructuredOutput` para LLM calls
@@ -27,8 +30,8 @@ tags: [project, tech-stack]
 
 ```js
 llm: {
-  heavyModel: 'gpt-5.2',       // analise de jogos, avaliacao de resultados
-  lightModel: 'gpt-5-mini',     // copy, interpretacao de mercado
+  heavyModel: 'gpt-5.4',       // analise de jogos, avaliacao de resultados
+  lightModel: 'gpt-5.4-nano',     // copy, interpretacao de mercado
   resultEvaluatorModel: this.heavyModel,  // alias
 }
 ```
@@ -48,7 +51,7 @@ llm: {
 - **node-cron** -- scheduling de jobs
 - **node-telegram-bot-api** -- Telegram SDK
 - **Zod 4.x** -- validation de schemas e structured LLM output
-- **LangChain 1.1.x** -- orquestracao de LLM calls
+- **LangChain 1.2.x** -- orquestracao de LLM calls
 - **dotenv** -- env vars
 
 ## Testing

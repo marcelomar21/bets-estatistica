@@ -1,6 +1,11 @@
 ---
-tags: [flow]
-related: [trackResults, resultEvaluator, alertService]
+tags:
+- flow
+related:
+- trackResults
+- resultEvaluator
+- alertService
+permalink: guru/flows/tracking
 ---
 
 # Tracking / Results Flow
@@ -63,7 +68,7 @@ File: `bot/services/resultEvaluator.js`
 2. **Minimum data validation**: if `homeScore` or `awayScore` is null, returns all bets as `unknown` with reason "Dados do jogo incompletos"
 
 3. **LLM call** using LangChain `ChatOpenAI`:
-   - Model: `config.llm.resultEvaluatorModel` (currently `gpt-5.2`)
+   - Model: `config.llm.resultEvaluatorModel` (currently `gpt-5.4`)
    - Temperature: 0 (deterministic)
    - Uses `withStructuredOutput(evaluationResponseSchema)` with Zod schema:
      ```

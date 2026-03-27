@@ -1,8 +1,10 @@
 ---
-title: ""
-created: ""
+title: ''
+created: ''
 status: accepted
-tags: [adr]
+tags:
+- adr
+permalink: guru/templates/adr
 ---
 
 ## Context

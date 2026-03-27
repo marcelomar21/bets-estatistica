@@ -1,7 +1,10 @@
 ---
 title: Architecture
 created: 2026-02-25
-tags: [project, architecture]
+tags:
+- project
+- architecture
+permalink: guru/project/architecture
 ---
 
 ## Arquitetura Atual

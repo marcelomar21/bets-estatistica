@@ -1,8 +1,10 @@
 ---
-number: 030
+number: 24
 status: planned
 phase: 2
-tags: [migration]
+tags:
+- migration
+permalink: guru/database/migrations/030-group-config-columns
 ---
 
 # Migration 030: Group Config Columns

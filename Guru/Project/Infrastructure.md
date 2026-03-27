@@ -1,7 +1,10 @@
 ---
 title: Infrastructure
 created: 2026-02-25
-tags: [project, infra]
+tags:
+- project
+- infra
+permalink: guru/project/infrastructure
 ---
 
 ## Supabase

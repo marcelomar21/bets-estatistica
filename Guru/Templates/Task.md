@@ -1,11 +1,13 @@
 ---
 status: todo
-phase: ""
-priority: ""
-epic: ""
+phase: ''
+priority: ''
+epic: ''
 files: []
 depends_on: []
-tags: [task]
+tags:
+- task
+permalink: guru/templates/task
 ---
 
 ## Objetivo

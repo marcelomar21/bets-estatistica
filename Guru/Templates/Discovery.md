@@ -1,7 +1,9 @@
 ---
-date: ""
+date: ''
 participants: []
-tags: [discovery]
+tags:
+- discovery
+permalink: guru/templates/discovery
 ---
 
 ## Contexto

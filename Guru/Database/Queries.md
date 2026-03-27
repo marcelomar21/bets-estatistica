@@ -1,5 +1,8 @@
 ---
-tags: [database, queries]
+tags:
+- database
+- queries
+permalink: guru/database/queries
 ---
 
 # Useful Queries

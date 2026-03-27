@@ -1,8 +1,10 @@
 ---
-tags: [client]
+tags:
+- client
 render_service: srv-d5hp23a4d50c7397o1q0
-admin_group_id: ""
-public_group_id: ""
+admin_group_id: ''
+public_group_id: ''
+permalink: guru/clients/guru-da-bet
 ---
 
 # Guru da Bet
@@ -12,19 +14,15 @@ public_group_id: ""
 Guru da Bet is one of two betting tip groups operated on the platform. It is currently **offline/non-functional** -- the bot does not respond to commands and does not make automatic postings. This is the highest-priority bug (B1, B2 in the tech spec).
 
 ## Infrastructure
-
 | Property | Value |
 |---|---|
-| Render Service ID | `srv-d5hp23a4d50c7397o1q0` |
-| Render Service Name | `bets-bot` |
-| Admin Group Chat ID | Unknown (needs investigation) |
-| Public Group Chat ID | Unknown (needs investigation) |
-
-**Important**: There are TWO Render services named `bets-bot`:
-- `srv-d5hp23a4d50c7397o1q0` -- Guru da Bet bot
-- `srv-d5hotp24d50c7397lcf0` -- Payment webhook
-
-Do NOT suspend or confuse these services.
+| Group name in DB | GuruBet |
+| group_id | `98f21545-f918-49a1-9499-5043bcdc6fb8` |
+| bot_username | `TheGuruBet_Bot` |
+| admin_group_id | `-1003363567204` (shared with Osmar and Rajizito) |
+| public_group_id | `-1003659711655` |
+| Status | active |
+| Render Service | bets-bot-unified (`srv-d6fliv6a2pns7382ckd0`) — unified service, not per-bot |
 
 ## Bot Token Retrieval
 

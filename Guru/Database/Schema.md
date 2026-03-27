@@ -1,5 +1,8 @@
 ---
-tags: [database, schema]
+tags:
+- database
+- schema
+permalink: guru/database/schema
 ---
 
 # Database Schema

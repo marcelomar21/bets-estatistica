@@ -1,6 +1,11 @@
 ---
-tags: [flow]
-related: [postBets, copyService, betService]
+tags:
+- flow
+related:
+- postBets
+- copyService
+- betService
+permalink: guru/flows/posting
 ---
 
 # Posting Flow
@@ -106,7 +111,7 @@ After posting, `sendPostWarn()` from `bot/jobs/jobWarn.js` sends a summary to th
 
 ## Known Issues
 
-- **MAX_ACTIVE_BETS = 3 hardcoded** in `lib/config.js` line 37. Propagates to 5 points in `betService.js`. Planned removal in spec Task 1.2.
+- **MAX_ACTIVE_BETS = 50 (configuravel via groups.max_active_bets)** in `lib/config.js` line 37. Propagates to 5 points in `betService.js`. Planned removal in spec Task 1.2.
 - **MIN_ODDS = 1.60 duplicated** between bot (`config.betting.minOdds`) and admin panel (`post-now/route.ts` line 4). Can diverge silently.
 - **`pendingConfirmations` is a global Map** -- not scoped per group. In multi-bot future, two groups confirming simultaneously could collide.
 - **Copy generation failures** fall back to truncated raw `reasoning` text (200 chars max). Not ideal for user-facing messages.

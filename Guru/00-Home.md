@@ -1,5 +1,8 @@
 ---
-tags: [home, moc]
+tags:
+- home
+- moc
+permalink: guru/00-home
 ---
 
 # GuruBet -- Command Center

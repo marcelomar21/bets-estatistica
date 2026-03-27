@@ -1,8 +1,10 @@
 ---
-number: 031
+number: 25
 status: planned
 phase: 2
-tags: [migration]
+tags:
+- migration
+permalink: guru/database/migrations/031-bet-result-confidence
 ---
 
 # Migration 031: Bet Result Confidence

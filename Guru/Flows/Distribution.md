@@ -1,6 +1,10 @@
 ---
-tags: [flow]
-related: [distributeBets, betService]
+tags:
+- flow
+related:
+- distributeBets
+- betService
+permalink: guru/flows/distribution
 ---
 
 # Distribution Flow

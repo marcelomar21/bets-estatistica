@@ -1,8 +1,10 @@
 ---
-title: ""
-created: ""
+title: ''
+created: ''
 status: draft
-tags: [spec]
+tags:
+- spec
+permalink: guru/templates/spec
 ---
 
 ## Overview

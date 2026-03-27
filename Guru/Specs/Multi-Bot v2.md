@@ -1,3 +1,9 @@
+---
+title: Multi-Bot v2
+type: note
+permalink: guru/specs/multi-bot-v2
+---
+
 > [!info] Fonte original
 > `_bmad-output/implementation-artifacts/tech-spec-evolucao-plataforma-multi-bot-v2.md`
 

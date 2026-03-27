@@ -1,10 +1,12 @@
 ---
-title: "E06 — Evolucao Plataforma Multi-Bot"
+title: E06 — Evolucao Plataforma Multi-Bot
 status: todo
 phases: 5
 tasks: 24
-spec: "[[Multi-Bot v2]]"
-tags: [epic]
+spec: '[[Multi-Bot v2]]'
+tags:
+- epic
+permalink: guru/epics/e06-multi-bot-evolution/overview-1
 ---
 
 # E06 — Evolucao Plataforma Multi-Bot

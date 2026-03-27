@@ -1,8 +1,10 @@
 ---
-number: 032
+number: 26
 status: planned
 phase: 2
-tags: [migration]
+tags:
+- migration
+permalink: guru/database/migrations/032-tracking-recovery-index
 ---
 
 # Migration 032: Tracking Recovery Index

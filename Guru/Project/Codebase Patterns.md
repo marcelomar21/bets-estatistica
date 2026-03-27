@@ -1,7 +1,10 @@
 ---
 title: Codebase Patterns
 created: 2026-02-25
-tags: [project, patterns]
+tags:
+- project
+- patterns
+permalink: guru/project/codebase-patterns
 ---
 
 ## Arquitetura Atual do Bot (Singletons)
@@ -47,7 +50,7 @@ Todas as funcoes helpers (`sendToAdmin`, `sendToPublic`) leem direto de `config.
 
 ## Limite de 3 Apostas
 
-- Source of truth: `lib/config.js` linha 37: `maxActiveBets: 3`
+- Source of truth: `lib/config.js` linha 37: `maxActiveBets: 50`
 - Propagacao: `betService.js` linhas 1326 (`.limit(maxActiveBets)` em ativas), 1348 (`slotsDisponiveis = max - ativas.length`), 1396 (`.slice(0, slotsDisponiveis)` em novas), 153 (`.slice` em `getBetsReadyForPosting`)
 - `post-now/route.ts` linha 4 tem `MIN_ODDS = 1.60` hardcoded (duplicacao do config do bot -- pode divergir)
 

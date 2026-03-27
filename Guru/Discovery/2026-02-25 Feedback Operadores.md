@@ -1,7 +1,12 @@
 ---
-date: "2026-02-25"
-participants: [Operador Guru, Operador Osmar, Marcelomendes]
-tags: [discovery]
+date: '2026-02-25'
+participants:
+- Operador Guru
+- Operador Osmar
+- Marcelomendes
+tags:
+- discovery
+permalink: guru/discovery/2026-02-25-feedback-operadores
 ---
 
 # Feedback dos Operadores — 2026-02-25

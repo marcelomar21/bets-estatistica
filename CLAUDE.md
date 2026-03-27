@@ -6,8 +6,8 @@ Configurados em `lib/config.js:84`:
 
 | Modelo | Uso | Valor atual |
 |--------|-----|-------------|
-| `config.llm.heavyModel` | Análise de jogos, avaliação de resultados | `gpt-5.2` |
-| `config.llm.lightModel` | Copy, interpretação de mercado, preview | `gpt-5-mini` |
+| `config.llm.heavyModel` | Análise de jogos, avaliação de resultados | `gpt-5.4` |
+| `config.llm.lightModel` | Copy, interpretação de mercado, preview | `gpt-5.4-nano` |
 
 O bot usa LangChain (`@langchain/openai`) em `bot/services/copyService.js`. **Nunca** hardcodar modelo — sempre usar `config.llm.*`.
 
@@ -148,5 +148,9 @@ O SUPABASE_SERVICE_KEY esta em `admin-panel/.env.local` (variavel `SUPABASE_SERV
 
 | Grupo | Chat ID |
 |---|---|
-| Guru da Bet (admin) | `-1003363567204` |
-| Guru da Bet (publico) | `-1003647535811` |
+| Osmar Palpites (admin) | `-1003363567204` |
+| Osmar Palpites (publico) | `-1003647535811` |
+| GuruBet (publico) | `-1003659711655` |
+| CAP 1000 Tips | `-1003836475731` |
+| Rajizito Tips (publico) | `-1003581390882` |
+| Zebrismos Tips | `-1003761566384` |

@@ -1,9 +1,11 @@
 ---
-title: "Consenso Multi-LLM para Avaliação de Resultados"
-created: "2026-02-25"
+title: Consenso Multi-LLM para Avaliação de Resultados
+created: '2026-02-25'
 status: accepted
 author: Marcelomendes
-tags: [adr]
+tags:
+- adr
+permalink: guru/adrs/adr-002-consenso-multi-llm
 ---
 
 # ADR-002: Consenso Multi-LLM para Avaliação de Resultados

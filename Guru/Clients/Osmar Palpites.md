@@ -1,8 +1,10 @@
 ---
-tags: [client]
+tags:
+- client
 render_service: srv-d6678u1r0fns73ciknn0
-admin_group_id: "-1003363567204"
-public_group_id: "-1003659711655"
+admin_group_id: '-1003363567204'
+public_group_id: '-1003647535811'
+permalink: guru/clients/osmar-palpites
 ---
 
 # Osmar Palpites
@@ -18,7 +20,7 @@ Osmar Palpites is the primary and currently **functioning** betting tip group. T
 | Render Service ID | `srv-d6678u1r0fns73ciknn0` |
 | Render Service Name | `bot-osmar-palpites` |
 | Admin Group Chat ID | `-1003363567204` |
-| Public Group Chat ID | `-1003659711655` |
+| Public Group Chat ID | `-1003647535811` |
 
 ## Bot Token Retrieval
 
@@ -43,7 +45,7 @@ curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo" | python3 -m json.t
 curl -s "https://api.telegram.org/bot<TOKEN>/getChat?chat_id=-1003363567204" | python3 -m json.tool
 
 # Check bot can access public group
-curl -s "https://api.telegram.org/bot<TOKEN>/getChat?chat_id=-1003659711655" | python3 -m json.tool
+curl -s "https://api.telegram.org/bot<TOKEN>/getChat?chat_id=-1003647535811" | python3 -m json.tool
 ```
 
 ## Current Status: OPERATIONAL
@@ -110,7 +112,7 @@ curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/job_executions?order=c
 
 - **B3: Inverted result alerts** -- LLM sometimes returns wrong result (says success when failure and vice versa). Root cause is single-LLM evaluation in `resultEvaluator.js`, not the alert code.
 - **B4: Only 2 of 3 bets tracked** -- Sliding window gap in `trackResults.js`. A match that is not complete at cron time escapes the 2-4h window permanently.
-- **B5: Max 3 bets per slot** -- Hardcoded limit, planned removal.
+- **B5: Max bets per slot (configuravel, default 50)** -- Hardcoded limit, planned removal.
 - **Message templates contain "APOSTA"** -- `MESSAGE_TEMPLATES` in `postBets.js` has headers like "APOSTA DO DIA" that ignore the operator's no-"apostas" request.
 
 ## Related

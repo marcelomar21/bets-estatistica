@@ -1,9 +1,11 @@
 ---
-title: "Preview e Edição de Mensagens — Web-Only"
-created: "2026-02-25"
+title: Preview e Edição de Mensagens — Web-Only
+created: '2026-02-25'
 status: accepted
 author: Sally (UX), Winston (Arquiteto)
-tags: [adr]
+tags:
+- adr
+permalink: guru/adrs/adr-004-preview-web-only
 ---
 
 # ADR-004: Preview e Edicao de Mensagens -- Web-Only

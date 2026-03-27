@@ -1,6 +1,12 @@
 ---
-tags: [flow]
-related: [membership, sync-group-members, kick-expired, renewal-reminders]
+tags:
+- flow
+related:
+- membership
+- sync-group-members
+- kick-expired
+- renewal-reminders
+permalink: guru/flows/member-lifecycle
 ---
 
 # Member Lifecycle

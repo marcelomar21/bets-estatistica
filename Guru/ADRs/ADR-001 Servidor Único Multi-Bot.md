@@ -1,9 +1,11 @@
 ---
-title: "Servidor Único Multi-Bot"
-created: "2026-02-25"
+title: Servidor Único Multi-Bot
+created: '2026-02-25'
 status: accepted
 author: Winston (Arquiteto), Marcelomendes
-tags: [adr]
+tags:
+- adr
+permalink: guru/adrs/adr-001-servidor-unico-multi-bot
 ---
 
 # ADR-001: Servidor Único Multi-Bot

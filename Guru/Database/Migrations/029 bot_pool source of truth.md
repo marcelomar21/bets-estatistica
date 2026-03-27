@@ -2,7 +2,9 @@
 number: 029
 status: planned
 phase: 2
-tags: [migration]
+tags:
+- migration
+permalink: guru/database/migrations/029-bot-pool-source-of-truth
 ---
 
 # Migration 029: bot_pool as Source of Truth

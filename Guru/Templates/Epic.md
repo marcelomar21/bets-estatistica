@@ -1,9 +1,11 @@
 ---
-title: ""
+title: ''
 status: todo
 phases: 0
 tasks: 0
-tags: [epic]
+tags:
+- epic
+permalink: guru/templates/epic
 ---
 
 ## Objetivo

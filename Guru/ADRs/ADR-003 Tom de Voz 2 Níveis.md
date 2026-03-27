@@ -1,9 +1,11 @@
 ---
-title: "Tom de Voz com 2 Níveis de Configuração"
-created: "2026-02-25"
+title: Tom de Voz com 2 Níveis de Configuração
+created: '2026-02-25'
 status: accepted
 author: Sally (UX)
-tags: [adr]
+tags:
+- adr
+permalink: guru/adrs/adr-003-tom-de-voz-2-niveis
 ---
 
 # ADR-003: Tom de Voz com 2 Niveis de Configuracao
