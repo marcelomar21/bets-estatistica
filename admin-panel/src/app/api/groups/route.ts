@@ -13,7 +13,8 @@ export const GET = createApiHandler(
     let query = context.supabase
       .from('groups')
       .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at, bot_pool(bot_username)')
-      .neq('status', 'deleted');
+      .neq('status', 'deleted')
+      .eq('is_test', false);
 
     // group_admin can only see their own group
     if (context.groupFilter) {

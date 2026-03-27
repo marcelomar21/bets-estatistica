@@ -30,10 +30,10 @@ export const POST = createApiHandler(
 
     const { betIds, groupId } = body;
 
-    // Validate group exists and is not deleted + load posting_schedule
+    // Validate group exists, is not deleted, and is not excluded (is_test)
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id, name, posting_schedule')
+      .select('id, name, posting_schedule, is_test')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -41,6 +41,13 @@ export const POST = createApiHandler(
     if (groupError || !group) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
+        { status: 400 },
+      );
+    }
+
+    if (group.is_test) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Este grupo está excluído da distribuição' } },
         { status: 400 },
       );
     }

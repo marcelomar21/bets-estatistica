@@ -153,7 +153,7 @@ describe('GET /api/groups', () => {
     vi.resetModules();
   });
 
-  it('returns list of groups for super_admin', async () => {
+  it('returns list of groups for super_admin (excluding is_test)', async () => {
     const groups = [sampleGroup];
     const qb = createMockQueryBuilder({ selectData: groups });
     const context = createMockContext('super_admin', qb);
@@ -171,6 +171,8 @@ describe('GET /api/groups', () => {
     expect(qb.select).toHaveBeenCalledWith(
       'id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, created_at, bot_pool(bot_username)',
     );
+    expect(qb.neq).toHaveBeenCalledWith('status', 'deleted');
+    expect(qb.eq).toHaveBeenCalledWith('is_test', false);
     expect(qb.order).toHaveBeenCalledWith('created_at', { ascending: false });
   });
 

@@ -852,6 +852,29 @@ describe('POST /api/bets/[id]/distribute', () => {
     expect(body.error.code).toBe('NOT_FOUND');
   });
 
+  it('returns 400 when distributing to is_test group', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createDistributeQueryBuilder({
+      groupData: { id: groupUuid, name: 'Rajizito Tips', is_test: true },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/[id]/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/1/distribute', {
+      groupId: groupUuid,
+    });
+    const routeCtx = createRouteContext({ id: '1' });
+
+    const response = await POST(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toContain('excluído da distribuição');
+  });
+
   it('returns 400 for invalid groupId format', async () => {
     const qb = createDistributeQueryBuilder();
     const context = createMockContext('super_admin', qb);
@@ -1046,6 +1069,29 @@ describe('POST /api/bets/bulk/distribute', () => {
     const response = await POST(req);
 
     expect(response.status).toBe(400);
+  });
+
+  it('returns 400 when bulk distributing to is_test group', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createBulkDistributeQueryBuilder({
+      groupData: { id: groupUuid, name: 'Rajizito Tips', is_test: true },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1, 2],
+      groupId: groupUuid,
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toContain('excluído da distribuição');
   });
 
   it('returns 400 for empty betIds', async () => {
