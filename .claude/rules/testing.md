@@ -51,8 +51,17 @@ const mockFrom = vi.fn(() => ({
 }));
 ```
 
+## E2E — Playwright MCP (OBRIGATORIO)
+
+- **SEMPRE** rodar E2E via Playwright antes de commitar — nao e opcional
+- Garantir dev server rodando (`npm run dev` no admin-panel)
+- Navegar ate a pagina afetada e executar o fluxo completo
+- Validar o resultado final, nao apenas acoes intermediarias
+- Se o fluxo toca Telegram, verificar que a mensagem chegou
+
 ## General Rules
 
-- Tests must pass before any PR: `npm test` + `npm run build`
-- Never skip E2E validation via Playwright MCP
+- Tests must pass before any PR: `npm test` + `npm run build` + **E2E Playwright**
+- Never skip E2E validation — it catches real integration bugs that unit tests miss
 - Test the result, not the implementation
+- After retriggering CI, always monitor until completion and report the result
