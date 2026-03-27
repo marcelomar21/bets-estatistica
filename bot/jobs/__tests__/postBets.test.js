@@ -250,7 +250,7 @@ describe('postBets', () => {
 
       await runPostBets(true);
 
-      expect(getFilaStatus).toHaveBeenCalledWith('test-group-uuid', ['10:00', '15:00', '22:00']);
+      expect(getFilaStatus).toHaveBeenCalledWith('test-group-uuid', ['10:00', '15:00', '22:00'], { skipMaxDaysFilter: false });
     });
 
     it('should record telegram_posted_at, message_id, odds_at_post via markBetAsPosted', async () => {
