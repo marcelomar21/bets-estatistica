@@ -155,6 +155,20 @@ export const POST = createApiHandler(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const betIds = validBets.map((b: any) => b.id);
 
+    // Warn about bets with distant kickoff (non-blocking)
+    const MAX_DAYS_AHEAD = 2;
+    const maxDate = new Date(Date.now() + MAX_DAYS_AHEAD * 24 * 60 * 60 * 1000);
+    const warnings: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const b of validBets as any[]) {
+      const kickoff = new Date(b.league_matches.kickoff_time);
+      if (kickoff > maxDate) {
+        const daysAhead = Math.ceil((kickoff.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+        const matchLabel = `${b.league_matches.home_team_name} x ${b.league_matches.away_team_name}`;
+        warnings.push(`${matchLabel}: jogo em ${daysAhead} dia(s)`);
+      }
+    }
+
     // Set the post_now_requested_at flag + specific bet IDs + preview ID
     const updateData: Record<string, unknown> = {
       post_now_requested_at: new Date().toISOString(),
@@ -181,6 +195,7 @@ export const POST = createApiHandler(
         validCount: validBets.length,
         betIds,
         issues: issues.length > 0 ? issues : undefined,
+        warnings: warnings.length > 0 ? warnings : undefined,
       },
     });
   },

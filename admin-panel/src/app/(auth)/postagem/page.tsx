@@ -81,6 +81,7 @@ export default function PostagemPage() {
   const [editingPreviewIdx, setEditingPreviewIdx] = useState<number | null>(null);
   const [editingPreviewText, setEditingPreviewText] = useState('');
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewWarnings, setPreviewWarnings] = useState<string[]>([]);
   const [removingPreviewIdx, setRemovingPreviewIdx] = useState<number | null>(null);
   const [regeneratingIdx, setRegeneratingIdx] = useState<number | null>(null);
   const [savingPreviewEdit, setSavingPreviewEdit] = useState(false);
@@ -524,14 +525,15 @@ export default function PostagemPage() {
     setSendStatusMessage(`Aguardando bot... 0/${betIds.length} postada(s)`);
 
     const idsParam = betIds.join(',');
+    const groupParam = selectedGroupId ? `&group_id=${selectedGroupId}` : '';
 
     async function poll() {
       try {
-        const res = await fetch(`/api/bets/post-now/status?bet_ids=${idsParam}`);
+        const res = await fetch(`/api/bets/post-now/status?bet_ids=${idsParam}${groupParam}`);
         const json = await res.json();
         if (!json.success) return;
 
-        const { posted, allPosted } = json.data;
+        const { posted, allPosted, botProcessed } = json.data;
         setPostedCount(posted.length);
         setSendStatusMessage(`${allPosted ? 'Concluido!' : 'Aguardando bot...'} ${posted.length}/${betIds.length} postada(s)`);
 
@@ -543,6 +545,12 @@ export default function PostagemPage() {
             handleCancelPreview();
             setSendStatusMessage(null);
           }, 5000);
+        } else if (botProcessed && posted.length === 0) {
+          // Bot processed but posted nothing — stop early instead of waiting 60s
+          stopPolling();
+          setPreviewPhase('timeout');
+          setSendStatusMessage('Bot processou a solicitacao, mas nenhuma aposta foi postada. Verifique se as apostas estao prontas (link, odds, kickoff proximo).');
+          fetchQueue();
         }
       } catch {
         // Network error during poll, keep trying
@@ -565,6 +573,7 @@ export default function PostagemPage() {
 
     setPreviewPhase('sending');
     setPreviewError(null);
+    setPreviewWarnings([]);
 
     try {
       const res = await fetch('/api/bets/post-now', {
@@ -584,6 +593,9 @@ export default function PostagemPage() {
         setPreviewPhase('reviewing');
         return;
       }
+
+      // Show warnings about distant kickoff (non-blocking)
+      if (json.data?.warnings) setPreviewWarnings(json.data.warnings);
 
       const betIds: number[] = json.data?.betIds ?? [];
       if (betIds.length > 0) {
@@ -763,8 +775,15 @@ export default function PostagemPage() {
                 {/* Timeout message */}
                 {previewPhase === 'timeout' && (
                   <p className="text-xs text-amber-700 mr-3">
-                    Bot nao respondeu em 60s. Verifique se o bot esta rodando.
+                    {sendStatusMessage || 'Bot nao respondeu em 60s. Verifique se o bot esta rodando.'}
                   </p>
+                )}
+
+                {/* Distant kickoff warning */}
+                {previewWarnings.length > 0 && (previewPhase === 'polling' || previewPhase === 'done') && (
+                  <div className="rounded-md bg-amber-50 px-2 py-1 mr-3">
+                    <p className="text-xs text-amber-700">{previewWarnings.join(' · ')}</p>
+                  </div>
                 )}
 
                 {/* Action buttons */}

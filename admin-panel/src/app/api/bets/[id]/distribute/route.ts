@@ -36,10 +36,10 @@ export const POST = createApiHandler(
 
     const { groupId } = body;
 
-    // Validate group exists and is not deleted
+    // Validate group exists and is not deleted + load posting_schedule for post_at
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id, name')
+      .select('id, name, posting_schedule')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -68,14 +68,53 @@ export const POST = createApiHandler(
     const oldGroupId = currentBet.group_id;
     const isRedistribution = oldGroupId !== null;
 
-    // Update bet: set group_id, bet_status='ready', distributed_at=now (D4)
+    // Auto-assign post_at from posting_schedule (pick time with fewest bets)
+    let postAt: string | null = null;
+    const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
+    if (schedule?.times && schedule.times.length > 0) {
+      const now = new Date();
+      const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const currentMin = brTime.getHours() * 60 + brTime.getMinutes();
+      const futureTimes = schedule.times.filter((t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        return (h * 60 + m) > currentMin;
+      });
+      const availableTimes = futureTimes.length > 0 ? futureTimes : schedule.times;
+
+      // Count already-scheduled bets per time slot
+      const { data: scheduled } = await supabase
+        .from('suggested_bets')
+        .select('post_at')
+        .eq('group_id', groupId)
+        .not('post_at', 'is', null)
+        .neq('bet_status', 'posted');
+
+      const counts: Record<string, number> = {};
+      for (const t of availableTimes) counts[t] = 0;
+      for (const s of (scheduled || [])) {
+        if (s.post_at && counts[s.post_at] !== undefined) counts[s.post_at]++;
+      }
+
+      // Pick time with fewest bets
+      let minTime = availableTimes[0];
+      let minCount = counts[minTime] ?? 0;
+      for (const t of availableTimes) {
+        if ((counts[t] ?? 0) < minCount) { minTime = t; minCount = counts[t] ?? 0; }
+      }
+      postAt = minTime;
+    }
+
+    // Update bet: set group_id, bet_status='ready', distributed_at=now, post_at (D4)
+    const updatePayload: Record<string, unknown> = {
+      group_id: groupId,
+      bet_status: 'ready',
+      distributed_at: new Date().toISOString(),
+    };
+    if (postAt) updatePayload.post_at = postAt;
+
     const { error: updateError } = await supabase
       .from('suggested_bets')
-      .update({
-        group_id: groupId,
-        bet_status: 'ready',
-        distributed_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', betId);
 
     if (updateError) {

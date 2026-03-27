@@ -592,7 +592,8 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   // Step 1: Usar getFilaStatus() - MESMA lógica do /fila
   // Story 5.1/5.5: passar groupId e horários dinâmicos quando disponíveis
   const postTimes = await loadPostingTimesForGroup(groupId);
-  const filaResult = await getFilaStatus(groupId, postTimes);
+  const isManualPost = !!allowedBetIds;
+  const filaResult = await getFilaStatus(groupId, postTimes, { skipMaxDaysFilter: isManualPost });
 
   if (!filaResult.success) {
     logger.error('[postBets] Failed to get fila status', { groupId, error: filaResult.error?.message });
