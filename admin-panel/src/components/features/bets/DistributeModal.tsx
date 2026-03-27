@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { SuggestedBetListItem } from '@/types/database';
+import { formatPickDisplay } from '@/lib/bet-categories';
 import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface DistributeModalProps {
@@ -64,7 +65,7 @@ export function DistributeModal({ bet, groups, onClose, onDistribute }: Distribu
               {resolve(matchInfo.home_team_name)} vs {resolve(matchInfo.away_team_name)}
             </p>
             <p className="text-xs text-gray-500">
-              {bet.bet_market} - {bet.bet_pick}
+              {formatPickDisplay(bet.bet_market, bet.bet_pick)}
             </p>
           </div>
         )}

@@ -31,7 +31,7 @@ describe('ResultEditModal', () => {
 
     expect(screen.getByText('Editar Resultado')).toBeInTheDocument();
     expect(screen.getByText('Flamengo vs Palmeiras')).toBeInTheDocument();
-    expect(screen.getByText('Over 2.5 — Over')).toBeInTheDocument();
+    expect(screen.getByText('Over 2.5 - Over')).toBeInTheDocument();
     expect(screen.getByText('Erro')).toBeInTheDocument(); // current result badge
     expect(screen.getByText('via LLM')).toBeInTheDocument();
   });

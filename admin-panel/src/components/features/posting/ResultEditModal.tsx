@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { BetResultBadge } from './BetResultBadge';
 import type { BetResult } from './BetResultBadge';
+import { formatPickDisplay } from '@/lib/bet-categories';
 import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 interface ResultEditBet {
@@ -90,7 +91,7 @@ export function ResultEditModal({ bet, onClose, onSave }: ResultEditModalProps) 
             {resolve(match.home_team_name)} vs {resolve(match.away_team_name)}
           </p>
           <p className="text-xs text-gray-500">
-            {bet.bet_market} — {bet.bet_pick}
+            {formatPickDisplay(bet.bet_market, bet.bet_pick)}
           </p>
         </div>
 
