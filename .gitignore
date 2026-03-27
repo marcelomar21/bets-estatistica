@@ -60,6 +60,12 @@ supabase/
 # Render env (contains API keys)
 admin-panel/.env.render
 
+# Data (pipeline output, API JSONs, analysis artifacts)
+data/
+
+# Screenshots (E2E captures, debug images)
+*.png
+
 # Temporary images
 telegram-login-qr.png
 .devcontainer/.env
