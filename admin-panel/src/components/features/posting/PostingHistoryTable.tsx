@@ -3,6 +3,7 @@
 import { BetResultBadge } from './BetResultBadge';
 import type { BetResult } from './BetResultBadge';
 import { formatDateTimeShort } from '@/lib/format-utils';
+import { formatPickDisplay } from '@/lib/bet-categories';
 import { useTeamDisplayNames } from '@/hooks/useTeamDisplayNames';
 
 export interface HistoryBet {
@@ -183,9 +184,9 @@ export function PostingHistoryTable({
                 </td>
                 <td
                   className="px-4 py-3 text-sm text-gray-600 max-w-[200px] truncate"
-                  title={`${bet.bet_market} — ${bet.bet_pick}`}
+                  title={formatPickDisplay(bet.bet_market, bet.bet_pick)}
                 >
-                  {bet.bet_market} — {bet.bet_pick}
+                  {formatPickDisplay(bet.bet_market, bet.bet_pick)}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                   {bet.odds_at_post?.toFixed(2) ?? bet.odds?.toFixed(2) ?? '—'}
