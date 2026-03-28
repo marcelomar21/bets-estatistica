@@ -3,6 +3,16 @@ export interface PostingSchedule {
   times: string[]; // Array of "HH:mm" strings
 }
 
+export interface LinkConfig {
+  enabled: boolean;
+  templateUrl?: string;
+  templateType?: 'generic' | 'search';
+  searchUrl?: string;
+  bookmakerName?: string;
+  affiliateTag?: string;
+  overrideManual?: boolean;
+}
+
 export interface Group {
   id: string;
   name: string;
@@ -14,6 +24,7 @@ export interface Group {
   render_service_id: string | null;
   checkout_url: string | null;
   posting_schedule: PostingSchedule;
+  link_config: LinkConfig;
   post_now_requested_at: string | null;
   status: 'creating' | 'active' | 'paused' | 'inactive' | 'failed' | 'deleted';
   whatsapp_group_jid: string | null;
