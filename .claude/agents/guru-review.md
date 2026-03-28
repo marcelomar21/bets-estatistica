@@ -85,63 +85,23 @@ E2E via Playwright MCP (if dev server available):
 - Validate final result
 - Take screenshots as evidence
 
-## Step 5: Write result.json AND STOP
+## Step 5: Post review on GitHub + output verdict
 
-Your ONLY job in this step is to write `result.json`. After writing the file, you are DONE. Output your summary and stop.
+### 5a. Post your detailed review on the GitHub PR
 
-The pipeline reads this file after you exit and handles everything:
-- Moving the card on Linear
-- Posting comments on Linear
-- Posting comments on the GitHub PR
+Use `gh pr comment {PR_NUMBER}` to post your full review with findings, QA results, and verdict. This is your main deliverable — make it thorough.
 
-**FORBIDDEN — Do NONE of these:**
-- Do NOT run `gh pr comment` or `gh pr review` or any `gh` command
+### 5b. Output your verdict clearly
+
+End your output with a clear verdict line. The pipeline parses your output automatically to move the card on Linear. Use one of these exact phrases:
+
+- **Verdict: APPROVE** — no HIGH/MEDIUM issues
+- **Verdict: REQUEST CHANGES** — has blocking issues, loop < 3
+- **Verdict: ESCALATE** — loop >= 3, issues persist
+
+The pipeline handles all Linear operations (moving cards, posting comments). You do NOT need to do anything on Linear.
+
+**FORBIDDEN:**
 - Do NOT call `mcp__claude_ai_Linear__save_issue` or `save_comment`
-- Do NOT use `curl` to call Linear or GitHub APIs
-- Do NOT post anything anywhere — the pipeline does ALL posting
-- After writing result.json, do NOT execute any more tools. Just stop.
-
-### Decision rules:
-- No HIGH/MEDIUM issues → `"approve"`
-- HIGH/MEDIUM issues, loop < 3 → `"request_changes"`
-- Loop >= 3, issues persist → `"escalate"`
-
-### Write the file:
-```bash
-cat > result.json << 'RESULT_EOF'
-{
-  "agent": "review",
-  "card": "GURU-XX",
-  "pr": 172,
-  "decision": "approve",
-  "summary": "Clean implementation. All ACs met. Tests pass, build passes.",
-  "findings": []
-}
-RESULT_EOF
-```
-
-For `request_changes`, include findings:
-```json
-{
-  "agent": "review",
-  "card": "GURU-XX",
-  "pr": 172,
-  "decision": "request_changes",
-  "summary": "4 issues found, 1 HIGH",
-  "findings": [
-    {"severity": "HIGH", "file": "bot/jobs/postBets.js:142", "issue": "Missing groupId param", "fix": "Pass groupId from assignment record"}
-  ]
-}
-```
-
-For `escalate`:
-```json
-{
-  "agent": "review",
-  "card": "GURU-XX",
-  "pr": 172,
-  "decision": "escalate",
-  "summary": "3 review loops, HIGH issues persist: ...",
-  "findings": [...]
-}
-```
+- Do NOT use `curl` to call Linear API
+- Do NOT move cards on Linear — the pipeline does this based on your verdict
