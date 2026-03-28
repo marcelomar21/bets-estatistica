@@ -103,9 +103,6 @@ export const POST = createApiHandler(
     const alreadyExisted: Array<{ groupId: string; groupName: string }> = [];
     const skipped: Array<{ groupId: string; reason: string }> = [];
 
-    // Build post-time contexts per group (for groups that will get new assignments)
-    const postTimeContexts = new Map<string, Awaited<ReturnType<typeof buildPostTimeContext>>>();
-
     for (const gid of groupIds) {
       const group = groupMap.get(gid);
 
@@ -127,8 +124,6 @@ export const POST = createApiHandler(
       // Build post-time context for this group
       const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
       const ptCtx = await buildPostTimeContext(supabase, gid, schedule);
-      postTimeContexts.set(gid, ptCtx);
-
       const postAt = pickPostTime(ptCtx);
 
       created.push({ groupId: gid, groupName: group.name, postAt });
@@ -147,22 +142,13 @@ export const POST = createApiHandler(
 
       const { error: insertError } = await supabase
         .from('bet_group_assignments')
-        .insert(rows);
+        .upsert(rows, { onConflict: 'bet_id,group_id', ignoreDuplicates: true });
 
       if (insertError) {
-        // If it's a unique constraint violation, some raced — treat as partial success
-        if (insertError.code === '23505') {
-          // ON CONFLICT scenario: re-categorize as alreadyExisted
-          for (const c of created) {
-            alreadyExisted.push({ groupId: c.groupId, groupName: c.groupName });
-          }
-          created.length = 0;
-        } else {
-          return NextResponse.json(
-            { success: false, error: { code: 'DB_ERROR', message: 'Erro ao criar assignments' } },
-            { status: 500 },
-          );
-        }
+        return NextResponse.json(
+          { success: false, error: { code: 'DB_ERROR', message: 'Erro ao criar assignments' } },
+          { status: 500 },
+        );
       }
     }
 

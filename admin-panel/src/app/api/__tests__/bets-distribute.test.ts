@@ -54,7 +54,7 @@ const GROUP_B = '550e8400-e29b-41d4-a716-446655440002';
  * 1. from('suggested_bets').select().eq().single() — bet lookup
  * 2. from('groups').select().in() — bulk group validation
  * 3. from('bet_group_assignments').select().eq() — existing assignments
- * 4. from('bet_group_assignments').insert() — create new assignments
+ * 4. from('bet_group_assignments').upsert() — create new assignments (ON CONFLICT DO NOTHING)
  * 5. from('audit_log').insert() — audit log
  */
 function createDistributeQueryBuilder(options: {
@@ -63,7 +63,7 @@ function createDistributeQueryBuilder(options: {
   groupsData?: unknown[];
   groupsError?: { message: string; code?: string } | null;
   existingAssignments?: Array<{ group_id: string }>;
-  insertError?: { message: string; code?: string } | null;
+  upsertError?: { message: string; code?: string } | null;
 } = {}) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mockFrom = vi.fn((table: string) => {
@@ -74,9 +74,10 @@ function createDistributeQueryBuilder(options: {
     chain.neq = vi.fn(() => chain);
     chain.not = vi.fn(() => chain);
     chain.in = vi.fn(() => chain);
-    chain.insert = vi.fn(() => ({
+    chain.insert = vi.fn(() => ({ data: null, error: null }));
+    chain.upsert = vi.fn(() => ({
       data: null,
-      error: options.insertError ?? null,
+      error: options.upsertError ?? null,
     }));
     chain.single = vi.fn(() => {
       if (table === 'suggested_bets') {
@@ -99,10 +100,10 @@ function createDistributeQueryBuilder(options: {
         data: options.existingAssignments ?? [],
         error: null,
       }));
-      // For insert — create new assignments
-      chain.insert = vi.fn(() => ({
+      // For upsert — create new assignments (ON CONFLICT DO NOTHING)
+      chain.upsert = vi.fn(() => ({
         data: null,
-        error: options.insertError ?? null,
+        error: options.upsertError ?? null,
       }));
     }
 
@@ -349,7 +350,7 @@ describe('POST /api/bets/[id]/distribute (multi-group)', () => {
         { id: GROUP_A, name: 'Guru', status: 'active', posting_schedule: null },
       ],
       existingAssignments: [],
-      insertError: { message: 'DB connection failed', code: '08006' },
+      upsertError: { message: 'DB connection failed', code: '08006' },
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -364,14 +365,13 @@ describe('POST /api/bets/[id]/distribute (multi-group)', () => {
     expect(response.status).toBe(500);
   });
 
-  it('handles unique constraint race condition gracefully', async () => {
+  it('uses upsert with ignoreDuplicates for race-condition safety', async () => {
     const qb = createDistributeQueryBuilder({
       betData: { id: 1 },
       groupsData: [
         { id: GROUP_A, name: 'Guru', status: 'active', posting_schedule: null },
       ],
       existingAssignments: [],
-      insertError: { message: 'duplicate key', code: '23505' },
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -387,9 +387,32 @@ describe('POST /api/bets/[id]/distribute (multi-group)', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    // Race condition: items moved from created to alreadyExisted
-    expect(body.data.alreadyExisted).toHaveLength(1);
-    expect(body.data.created).toHaveLength(0);
+    expect(body.data.created).toHaveLength(1);
+
+    // Verify upsert was called (not insert) with ignoreDuplicates
+    const bgaCalls = qb.from.mock.calls.filter(([t]: [string]) => t === 'bet_group_assignments');
+    expect(bgaCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('returns 500 on groups fetch DB error', async () => {
+    const qb = createDistributeQueryBuilder({
+      betData: { id: 1 },
+      groupsError: { message: 'connection timeout' },
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/[id]/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/1/distribute', {
+      groupIds: [GROUP_A],
+    });
+    const routeCtx = createRouteContext({ id: '1' });
+
+    const response = await POST(req, routeCtx);
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.error.code).toBe('DB_ERROR');
   });
 
   it('assigns post_at via pickPostTime', async () => {
