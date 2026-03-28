@@ -24,9 +24,18 @@ export interface GroupEditFormData {
   telegram_admin_group_id: number | null;
   status: 'active' | 'paused' | 'inactive';
   is_test: boolean;
+  enabled_modules: string[];
   additional_invitee_ids: InviteeEntry[];
   posting_schedule: PostingSchedule;
 }
+
+const ALL_MODULES = [
+  { key: 'analytics', label: 'Analytics', description: 'Dashboard, metricas, taxa de acerto' },
+  { key: 'distribution', label: 'Distribuicao', description: 'Receber apostas via distribuicao automatica' },
+  { key: 'posting', label: 'Postagem', description: 'Postagem automatica no Telegram/WhatsApp' },
+  { key: 'members', label: 'Membros', description: 'Gestao de membros do grupo' },
+  { key: 'tone', label: 'Tom de Voz', description: 'Configuracao de tom de voz / copy' },
+] as const;
 
 const editableStatuses = ['active', 'paused', 'inactive'] as const;
 
@@ -46,6 +55,8 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       : 'active',
   );
   const [isTest, setIsTest] = useState(initialData.is_test || false);
+  const defaultModules = ['analytics', 'distribution', 'posting', 'members', 'tone'];
+  const [enabledModules, setEnabledModules] = useState<string[]>(initialData.enabled_modules || defaultModules);
   const [invitees, setInvitees] = useState<InviteeEntry[]>(initialData.additional_invitee_ids || []);
 
   // Story 5.5: Posting schedule state
@@ -86,6 +97,7 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       telegram_admin_group_id: null,
       status,
       is_test: isTest,
+      enabled_modules: enabledModules,
       additional_invitee_ids: invitees.filter(i => i.value.trim() !== ''),
       posting_schedule: { enabled: postingEnabled, times: postingTimes },
     };
@@ -182,21 +194,31 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
         </select>
       </div>
 
-      <div className="flex items-center gap-3">
-        <input
-          id="isTest"
-          type="checkbox"
-          checked={isTest}
-          onChange={(e) => setIsTest(e.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-        />
-        <div>
-          <label htmlFor="isTest" className="text-sm font-medium text-gray-700">
-            Grupo de teste
-          </label>
-          <p className="text-xs text-gray-500">
-            Grupos de teste nao recebem apostas na distribuicao automatica
-          </p>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Modulos Habilitados
+        </label>
+        <div className="space-y-2">
+          {ALL_MODULES.map((mod) => (
+            <label key={mod.key} className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enabledModules.includes(mod.key)}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setEnabledModules([...enabledModules, mod.key]);
+                  } else {
+                    setEnabledModules(enabledModules.filter(m => m !== mod.key));
+                  }
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-gray-700">{mod.label}</span>
+                <p className="text-xs text-gray-500">{mod.description}</p>
+              </div>
+            </label>
+          ))}
         </div>
       </div>
 

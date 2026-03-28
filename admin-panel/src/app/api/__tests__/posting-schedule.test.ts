@@ -73,7 +73,7 @@ describe('POST /api/bets/post-now', () => {
 
   it('sets post_now_requested_at flag for group_admin with valid bets', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 1, bet_status: 'ready', odds: 1.8, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
       ],
@@ -114,7 +114,7 @@ describe('POST /api/bets/post-now', () => {
 
   it('super_admin can post for a specific group', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 10, bet_status: 'ready', odds: 2.0, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
       ],
@@ -140,7 +140,7 @@ describe('POST /api/bets/post-now', () => {
     // Bets without deep_link are excluded by the SQL .not('deep_link', 'is', null)
     // so they never reach the JS validation — result is empty queue
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [],
     });
     mockWithTenant.mockResolvedValue(
@@ -159,7 +159,7 @@ describe('POST /api/bets/post-now', () => {
 
   it('returns 422 when bets have low odds', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 7, bet_status: 'ready', odds: 1.2, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
       ],
@@ -180,7 +180,7 @@ describe('POST /api/bets/post-now', () => {
 
   it('allows promovida_manual bets without minimum odds', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 8, bet_status: 'ready', odds: 1.1, deep_link: 'https://link.com', promovida_manual: true, league_matches: { kickoff_time: '2099-01-01T10:00:00Z' } },
       ],
@@ -200,7 +200,7 @@ describe('POST /api/bets/post-now', () => {
 
   it('returns 422 when queue is empty', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [],
     });
     mockWithTenant.mockResolvedValue(
@@ -249,7 +249,7 @@ describe('POST /api/bets/post-now — betIds filtering', () => {
 
   it('stores post_now_bet_ids when betIds are provided', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 10, bet_status: 'ready', odds: 1.9, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'A', away_team_name: 'B' } },
       ],
@@ -279,7 +279,7 @@ describe('POST /api/bets/post-now — betIds filtering', () => {
 
   it('applies .in() filter on suggested_bets when betIds provided', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 5, bet_status: 'ready', odds: 2.0, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'X', away_team_name: 'Y' } },
       ],
@@ -305,7 +305,7 @@ describe('POST /api/bets/post-now — betIds filtering', () => {
 
   it('returns only requested betIds in response', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 3, bet_status: 'ready', odds: 1.8, deep_link: 'https://link.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'C', away_team_name: 'D' } },
       ],
@@ -330,7 +330,7 @@ describe('POST /api/bets/post-now — betIds filtering', () => {
 
   it('works without betIds for backward compatibility (posts all)', async () => {
     const mockSupa = createMockSupabase({
-      groups_single: { id: 'group-uuid-1' },
+      groups_single: { id: 'group-uuid-1', enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'] },
       suggested_bets_list: [
         { id: 1, bet_status: 'ready', odds: 1.8, deep_link: 'https://l1.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'E', away_team_name: 'F' } },
         { id: 2, bet_status: 'ready', odds: 2.0, deep_link: 'https://l2.com', promovida_manual: false, league_matches: { kickoff_time: '2099-01-01T10:00:00Z', home_team_name: 'G', away_team_name: 'H' } },
