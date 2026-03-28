@@ -1,6 +1,7 @@
 /**
  * Tests: postBets.js - Job de postagem automatica
  * Story 5.4: Postagem Automatica de Apostas nos Grupos Telegram
+ * GURU-46: Refactored to use bet_group_assignments (junction table)
  *
  * Tests cover:
  * - runPostBets(true) posts bets with ready status (odds + link)
@@ -8,7 +9,8 @@
  * - runPostBets(true) skips bets with odds < 1.60 (except promovida_manual)
  * - runPostBets(true) skips bets with expired kickoff
  * - runPostBets forwards groupId + dynamic postTimes to getFilaStatus(groupId, postTimes)
- * - markBetAsPosted() records telegram_posted_at, message_id, odds_at_post
+ * - markBetAsPosted() receives groupId (GURU-46)
+ * - registrarPostagem() receives groupId (GURU-46)
  * - No bets to post → job finishes without error
  * - sendToPublic failure → bet skipped, others continue
  * - validateBetForPosting() accepts promovida_manual with low odds
@@ -193,8 +195,8 @@ describe('postBets', () => {
       expect(result.totalSent).toBe(1);
       expect(result.cancelled).toBe(false);
       expect(sendToPublic).toHaveBeenCalledTimes(1);
-      expect(markBetAsPosted).toHaveBeenCalledWith('bet-1', 999, 1.85);
-      expect(registrarPostagem).toHaveBeenCalledWith('bet-1');
+      expect(markBetAsPosted).toHaveBeenCalledWith('bet-1', 999, 1.85, 'test-group-uuid');
+      expect(registrarPostagem).toHaveBeenCalledWith('bet-1', 'test-group-uuid');
     });
 
     it('should skip bet without deep_link and return without throwing (validation fail, not send fail)', async () => {
@@ -263,7 +265,7 @@ describe('postBets', () => {
 
       await runPostBets(true);
 
-      expect(markBetAsPosted).toHaveBeenCalledWith('bet-42', 777, 2.10);
+      expect(markBetAsPosted).toHaveBeenCalledWith('bet-42', 777, 2.10, 'test-group-uuid');
     });
 
     it('should finish without error when no bets to post', async () => {
@@ -299,7 +301,7 @@ describe('postBets', () => {
       expect(result.totalSent).toBe(1);
       expect(sendToPublic).toHaveBeenCalledTimes(2);
       expect(markBetAsPosted).toHaveBeenCalledTimes(1);
-      expect(markBetAsPosted).toHaveBeenCalledWith('bet-2', 888, 1.85);
+      expect(markBetAsPosted).toHaveBeenCalledWith('bet-2', 888, 1.85, 'test-group-uuid');
     });
 
     it('should accept promovida_manual bet with low odds during posting', async () => {
@@ -328,7 +330,7 @@ describe('postBets', () => {
 
       expect(result.reposted).toBe(1);
       expect(result.posted).toBe(0);
-      expect(registrarPostagem).toHaveBeenCalledWith('active-1');
+      expect(registrarPostagem).toHaveBeenCalledWith('active-1', 'test-group-uuid');
       // markBetAsPosted should NOT be called for reposts (already posted)
       expect(markBetAsPosted).not.toHaveBeenCalled();
     });
@@ -452,7 +454,7 @@ describe('postBets', () => {
       expect(result.posted).toBe(1);
       expect(result.totalSent).toBe(1);
       expect(sendToPublic).toHaveBeenCalledTimes(1);
-      expect(markBetAsPosted).toHaveBeenCalledWith('bet-2', 100, 1.85);
+      expect(markBetAsPosted).toHaveBeenCalledWith('bet-2', 100, 1.85, 'test-group-uuid');
     });
 
     it('should post all bets when allowedBetIds is null (backward compat)', async () => {
@@ -483,7 +485,7 @@ describe('postBets', () => {
 
       expect(result.reposted).toBe(1);
       expect(sendToPublic).toHaveBeenCalledTimes(1);
-      expect(registrarPostagem).toHaveBeenCalledWith('active-1');
+      expect(registrarPostagem).toHaveBeenCalledWith('active-1', 'test-group-uuid');
     });
 
     it('should return zero when no bets match allowedBetIds', async () => {
@@ -856,7 +858,7 @@ describe('postBets', () => {
       });
       const result = await getOrGenerateMessage(bet, fullMsgTone, 0);
       expect(result).toBeDefined();
-      expect(updateGeneratedCopy).toHaveBeenCalledWith('bet-1', expect.any(String));
+      expect(updateGeneratedCopy).toHaveBeenCalledWith('bet-1', expect.any(String), undefined);
     });
 
     it('should prioritize previewMessages over generatedCopy in runPostBets', async () => {
