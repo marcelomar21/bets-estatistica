@@ -72,9 +72,13 @@ async function generateBetCopy(bet, toneConfig = null) {
         ? `EXEMPLO DE REFERENCIA:\n${effectiveExamples[0]}`
         : `EXEMPLOS DE REFERENCIA:\n${effectiveExamples.map((ex, i) => `Exemplo ${i + 1}:\n${ex}`).join('\n\n')}`;
 
-      const styleInstruction = effectiveExamples.length === 1
-        ? 'Siga o MESMO formato, estilo e tom do exemplo'
-        : 'Siga o estilo e formato dos exemplos';
+      // Structural enforcement: force the LLM to replicate all sections from the example
+      fullSystemMessage += '\n\nFORMATO OBRIGATORIO:\nAnalise o(s) exemplo(s) de referencia e identifique as SECOES ESTRUTURAIS (header, analise, palpite, link, observacao, engajamento).\nSua resposta DEVE conter TODAS as mesmas secoes na mesma ordem.\nSe o exemplo tem uma secao de analise conversacional, sua resposta TAMBEM deve ter.\nSe o exemplo tem uma secao de "ponto de atencao", sua resposta TAMBEM deve ter.\nNAO simplifique o formato — replique a ESTRUTURA COMPLETA, nao apenas o conteudo.';
+
+      // Fallback enrichment when reasoning is sparse
+      const reasoningBlock = bet.reasoning && bet.reasoning.length > 100
+        ? `- Analise: ${bet.reasoning}`
+        : `- Analise: Gere uma analise conversacional curta baseada nos dados do mercado (${bet.betMarket}) e nos times envolvidos. Use o tom configurado.`;
 
       const fullHumanMessage = `Gere uma postagem COMPLETA para Telegram seguindo EXATAMENTE o estilo e formato ${effectiveExamples.length === 1 ? 'do exemplo abaixo' : 'dos exemplos abaixo'}.
 
@@ -87,15 +91,18 @@ DADOS DA APOSTA:
 - ${toneConfig?.oddLabel || 'Odd'}: ${bet.odds?.toFixed?.(2) || 'N/A'}
 - Kickoff: ${bet.kickoffTime ? (formatDateTimeBR(bet.kickoffTime) || 'N/A') : 'N/A'}
 - Link: ${bet.deepLink || 'N/A'}
-${bet.reasoning ? `- Analise: ${bet.reasoning}` : ''}
+${reasoningBlock}
 
 Regras:
-- ${styleInstruction}
+- Replique EXATAMENTE a estrutura do exemplo: mesmas secoes, mesmos emojis de secao, mesma ordem
+- Se o exemplo tem multiplas secoes distintas, sua resposta DEVE ter o mesmo numero de secoes
+- Use o TOM e VOCABULARIO do exemplo (informal/formal, girias, expressoes)
 - Use os DADOS reais da aposta (nao copie dados do exemplo)
 - Mantenha emojis e formatacao similares ao exemplo
 - A mensagem deve estar PRONTA para enviar no Telegram
 - Use formatacao Markdown do Telegram (*bold*, _italic_)
 - NAO adicione explicacoes, apenas a mensagem final
+- NAO simplifique ou encurte — mantenha o MESMO nivel de detalhe do exemplo
 - Portugues BR`;
 
       const chatPrompt = ChatPromptTemplate.fromMessages([
@@ -105,7 +112,27 @@ Regras:
 
       const chain = chatPrompt.pipe(llmFull);
       const response = await chain.invoke({});
-      const fullCopy = response.content.trim();
+      let fullCopy = response.content.trim();
+
+      // Structural validation: warn if output has significantly fewer sections than example
+      const exampleSections = effectiveExamples[0].split('\n\n').filter(s => s.trim()).length;
+      const outputSections = fullCopy.split('\n\n').filter(s => s.trim()).length;
+
+      if (outputSections < exampleSections * 0.6) {
+        logger.warn('Generated copy has fewer sections than example, retrying', {
+          betId: bet.id,
+          exampleSections,
+          outputSections,
+        });
+        // Retry once with reinforced prompt
+        const retryResponse = await chain.invoke({});
+        const retryCopy = retryResponse.content.trim();
+        const retrySections = retryCopy.split('\n\n').filter(s => s.trim()).length;
+        if (retrySections > outputSections) {
+          fullCopy = retryCopy;
+          logger.info('Retry produced better structured copy', { betId: bet.id, retrySections });
+        }
+      }
 
       logger.info('Generated full message copy', {
         betId: bet.id,
