@@ -245,6 +245,7 @@ export type SuggestedBetListItem = Pick<
     } | null;
   } | null;
   groups: { name: string } | null;
+  bet_group_assignments?: BetGroupAssignmentListItem[];
   hit_rate?: { rate: number; wins: number; total: number } | null;
 };
 
@@ -443,3 +444,33 @@ export interface WhatsAppPoolSummary {
   cooldown: number;
   connecting: number;
 }
+
+// ============================================================
+// Bet Group Assignments (Multi-Group Distribution)
+// ============================================================
+
+export type PostingStatus = 'ready' | 'posted' | 'cancelled';
+
+export interface BetGroupAssignment {
+  id: number;
+  bet_id: number;
+  group_id: string;
+  posting_status: PostingStatus;
+  distributed_at: string;
+  distributed_by: string | null;
+  post_at: string | null;
+  telegram_posted_at: string | null;
+  telegram_message_id: number | null;
+  odds_at_post: number | null;
+  generated_copy: string | null;
+  historico_postagens: Record<string, unknown>[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type BetGroupAssignmentListItem = Pick<
+  BetGroupAssignment,
+  'id' | 'group_id' | 'posting_status' | 'post_at' | 'telegram_posted_at'
+> & {
+  groups: { name: string } | null;
+};
