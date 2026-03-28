@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
+import { generateDeepLink } from '@/lib/link-generator';
+import type { LinkConfig } from '@/types/database';
 
 const MAX_BULK_ITEMS = 50;
 
@@ -30,10 +32,10 @@ export const POST = createApiHandler(
 
     const { betIds, groupId } = body;
 
-    // Validate group exists and is not deleted + load posting_schedule
+    // Validate group exists and is not deleted + load posting_schedule and link_config
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id, name, posting_schedule')
+      .select('id, name, posting_schedule, link_config')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -44,6 +46,8 @@ export const POST = createApiHandler(
         { status: 400 },
       );
     }
+
+    const linkConfig = group.link_config as LinkConfig | null;
 
     // Pre-compute available posting times for post_at assignment
     const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
@@ -85,16 +89,17 @@ export const POST = createApiHandler(
     const results = {
       distributed: 0,
       redistributed: 0,
+      autoLinked: 0,
       failed: 0,
       errors: [] as Array<{ id: number; error: string }>,
     };
 
     // Process sequentially to avoid race conditions
     for (const betId of betIds) {
-      // Fetch current bet
+      // Fetch current bet with match data for auto-link
       const { data: currentBet, error: fetchError } = await supabase
         .from('suggested_bets')
-        .select('id, group_id')
+        .select('id, group_id, deep_link, bet_market, league_matches(home_team_name, away_team_name, kickoff_time, league_seasons(league_name))')
         .eq('id', betId)
         .single();
 
@@ -115,6 +120,24 @@ export const POST = createApiHandler(
         distributed_at: new Date().toISOString(),
       };
       if (postAt) updatePayload.post_at = postAt;
+
+      // Auto-generate deep link if group has link_config enabled
+      if (linkConfig?.enabled && (!currentBet.deep_link || linkConfig.overrideManual)) {
+        const match = currentBet.league_matches as unknown as { home_team_name: string; away_team_name: string; kickoff_time: string; league_seasons?: { league_name: string } | null } | null;
+        if (match) {
+          const linkResult = generateDeepLink(linkConfig, {
+            homeTeamName: match.home_team_name,
+            awayTeamName: match.away_team_name,
+            leagueName: match.league_seasons?.league_name,
+            kickoffTime: match.kickoff_time,
+            betMarket: currentBet.bet_market,
+          });
+          if (linkResult.success && linkResult.link) {
+            updatePayload.deep_link = linkResult.link;
+            results.autoLinked++;
+          }
+        }
+      }
 
       const { error: updateError } = await supabase
         .from('suggested_bets')

@@ -15,6 +15,7 @@ require('dotenv').config();
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { alertAdmin } = require('../services/alertService');
+const { generateDeepLink } = require('../services/linkGeneratorService');
 
 /**
  * Get all active groups ordered by created_at ASC (deterministic order)
@@ -24,7 +25,7 @@ async function getActiveGroups() {
   try {
     const { data, error } = await supabase
       .from('groups')
-      .select('id, name, status, created_at, is_test')
+      .select('id, name, status, created_at, is_test, link_config')
       .eq('status', 'active')
       .neq('is_test', true)
       .order('created_at', { ascending: true });
@@ -77,7 +78,7 @@ async function getUndistributedBets() {
 
     const { data, error } = await supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
+      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, bet_market, league_matches!inner(home_team_name, away_team_name, kickoff_time, league_seasons!inner(league_name))')
       .eq('elegibilidade', 'elegivel')
       .is('group_id', null)
       .is('distributed_at', null)
@@ -320,9 +321,11 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
  * @param {string} betId - Bet UUID
  * @param {string} groupId - Group UUID
  * @param {string|null} postAt - Optional posting time (HH:MM)
+ * @param {object|null} linkConfig - Group's link_config for auto-link generation
+ * @param {object|null} matchData - Match data for template variables
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function assignBetToGroup(betId, groupId, postAt = null) {
+async function assignBetToGroup(betId, groupId, postAt = null, linkConfig = null, matchData = null) {
   try {
     const updatePayload = {
       group_id: groupId,
@@ -332,12 +335,21 @@ async function assignBetToGroup(betId, groupId, postAt = null) {
       updatePayload.post_at = postAt;
     }
 
+    // Auto-generate deep link if group has link_config enabled
+    if (linkConfig && linkConfig.enabled && matchData) {
+      const linkResult = generateDeepLink(linkConfig, matchData);
+      if (linkResult.success && linkResult.link) {
+        updatePayload.deep_link = linkResult.link;
+        logger.info('[bets:distribute] Auto-link gerado', { betId, groupId, link: linkResult.link });
+      }
+    }
+
     const { data, error } = await supabase
       .from('suggested_bets')
       .update(updatePayload)
       .eq('id', betId)
       .is('group_id', null)
-      .select('id, group_id, distributed_at, post_at');
+      .select('id, group_id, distributed_at, post_at, deep_link');
 
     if (error) {
       logger.error('[bets:distribute] Erro ao atribuir aposta', { betId, groupId, error: error.message });
@@ -568,9 +580,29 @@ async function _runDistributeBetsInternal() {
     groupTimeCountsCache[group.id] = await getScheduledCountsPerTime(group.id, availableTimes);
   }
 
+  // 3.6. Build group link config cache and bet match data index
+  const groupLinkConfigCache = {};
+  for (const group of groups) {
+    groupLinkConfigCache[group.id] = group.link_config || null;
+  }
+  const betMatchDataMap = {};
+  for (const bet of bets) {
+    const match = bet.league_matches;
+    if (match) {
+      betMatchDataMap[bet.id] = {
+        homeTeamName: match.home_team_name || '',
+        awayTeamName: match.away_team_name || '',
+        leagueName: match.league_seasons?.league_name || '',
+        kickoffTime: match.kickoff_time || '',
+        betMarket: bet.bet_market || '',
+      };
+    }
+  }
+
   // 4. Execute assignments
   let successCount = 0;
   let failCount = 0;
+  let autoLinkedCount = 0;
   const perGroup = {};
 
   for (const { betId, groupId } of assignments) {
@@ -578,11 +610,14 @@ async function _runDistributeBetsInternal() {
     const availableTimes = groupTimesCache[groupId] || [];
     const timeCounts = groupTimeCountsCache[groupId] || {};
     const postAt = pickPostTime(availableTimes, timeCounts);
+    const linkConfig = groupLinkConfigCache[groupId] || null;
+    const matchData = betMatchDataMap[betId] || null;
 
-    const result = await assignBetToGroup(betId, groupId, postAt);
+    const result = await assignBetToGroup(betId, groupId, postAt, linkConfig, matchData);
     if (result.success && !result.data.alreadyDistributed) {
       successCount++;
       perGroup[groupId] = (perGroup[groupId] || 0) + 1;
+      if (result.data.deep_link) autoLinkedCount++;
     } else if (!result.success) {
       failCount++;
     }
@@ -593,6 +628,7 @@ async function _runDistributeBetsInternal() {
   const summary = {
     distributed: successCount,
     failed: failCount,
+    autoLinked: autoLinkedCount,
     groupCount: groups.length,
     perGroup,
     duration: Date.now() - startTime,

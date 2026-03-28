@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
+import { generateDeepLink } from '@/lib/link-generator';
+import type { LinkConfig } from '@/types/database';
 
 // Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,10 +38,10 @@ export const POST = createApiHandler(
 
     const { groupId } = body;
 
-    // Validate group exists and is not deleted + load posting_schedule for post_at
+    // Validate group exists and is not deleted + load posting_schedule and link_config
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id, name, posting_schedule')
+      .select('id, name, posting_schedule, link_config')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -51,10 +53,10 @@ export const POST = createApiHandler(
       );
     }
 
-    // Fetch current bet
+    // Fetch current bet with match data for auto-link generation
     const { data: currentBet, error: fetchError } = await supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status')
+      .select('id, group_id, bet_status, deep_link, bet_market, league_matches(home_team_name, away_team_name, kickoff_time, league_seasons(league_name))')
       .eq('id', betId)
       .single();
 
@@ -112,6 +114,27 @@ export const POST = createApiHandler(
     };
     if (postAt) updatePayload.post_at = postAt;
 
+    // Auto-generate deep link if group has link_config enabled
+    const linkConfig = group.link_config as LinkConfig | null;
+    let autoLinked = false;
+    if (linkConfig?.enabled && (!currentBet.deep_link || linkConfig.overrideManual)) {
+      // Supabase returns relations as objects (single FK) — cast accordingly
+      const match = currentBet.league_matches as unknown as { home_team_name: string; away_team_name: string; kickoff_time: string; league_seasons?: { league_name: string } | null } | null;
+      if (match) {
+        const result = generateDeepLink(linkConfig, {
+          homeTeamName: match.home_team_name,
+          awayTeamName: match.away_team_name,
+          leagueName: match.league_seasons?.league_name,
+          kickoffTime: match.kickoff_time,
+          betMarket: currentBet.bet_market,
+        });
+        if (result.success && result.link) {
+          updatePayload.deep_link = result.link;
+          autoLinked = true;
+        }
+      }
+    }
+
     const { error: updateError } = await supabase
       .from('suggested_bets')
       .update(updatePayload)
@@ -138,7 +161,7 @@ export const POST = createApiHandler(
     // Fetch updated bet
     const { data: updatedBet } = await supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status, distributed_at')
+      .select('id, group_id, bet_status, distributed_at, deep_link')
       .eq('id', betId)
       .single();
 
@@ -147,6 +170,7 @@ export const POST = createApiHandler(
       data: {
         bet: updatedBet ?? currentBet,
         redistributed: isRedistribution,
+        autoLinked,
         groupName: group.name,
       },
     });

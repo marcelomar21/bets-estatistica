@@ -152,6 +152,12 @@ export default async function GroupDetailPage({
           >
             Campeonatos
           </Link>
+          <Link
+            href={`/groups/${typedGroup.id}/link-config`}
+            className="inline-block rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Links
+          </Link>
           {isSuperAdmin && <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />}
           {isSuperAdmin && <DeleteGroupButton groupId={typedGroup.id} groupName={typedGroup.name} />}
         </div>

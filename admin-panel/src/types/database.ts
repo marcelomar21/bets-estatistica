@@ -443,3 +443,19 @@ export interface WhatsAppPoolSummary {
   cooldown: number;
   connecting: number;
 }
+
+// ============================================================
+// Link Config (GURU-4: Automatic Deep Links)
+// ============================================================
+
+export type LinkTemplateType = 'generic' | 'search';
+
+export interface LinkConfig {
+  enabled: boolean;
+  templateUrl: string;
+  templateType: LinkTemplateType;
+  searchUrl?: string;
+  bookmakerName?: string;
+  affiliateTag?: string;
+  overrideManual?: boolean;
+}
