@@ -99,6 +99,9 @@ The Linear card status is the source of truth, not the GitHub review state.
 
 ### If no HIGH or MEDIUM issues → APPROVE
 
+You MUST do ALL 3 actions below in sequence. Do NOT stop after the comment.
+
+**Action 1 — Post review comment on GitHub:**
 ```bash
 gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — APPROVED
 
@@ -112,10 +115,20 @@ gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} �
 
 GuruPipeline Review Agent"
 ```
-Go to Step 6.
+
+**Action 2 — Move card to Ready to Deploy on Linear:**
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="Ready to Deploy"**.
+
+**Action 3 — Post Linear comment:**
+ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
+
+Done. Stop.
 
 ### If HIGH/MEDIUM issues AND REVIEW_LOOP < 3 → REQUEST CHANGES
 
+You MUST do ALL 3 actions below in sequence. Do NOT stop after the comment.
+
+**Action 1 — Post review comment on GitHub:**
 ```bash
 gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — Changes Requested
 
@@ -133,9 +146,13 @@ gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} �
 GuruPipeline Review Agent (Loop {REVIEW_LOOP}/3)"
 ```
 
-Move card to In Progress (aa676804-1017-4f19-a888-8197c1c1c567).
+**Action 2 — Move card to In Progress on Linear:**
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="In Progress"**.
+
+**Action 3 — Post Linear comment:**
 ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}/3**: {N} issues ({H} high, {M} medium). Moved to In Progress for fixes."
-Stop.
+
+Done. Stop.
 
 ### If REVIEW_LOOP >= 3 → MAKE A DECISION
 
@@ -143,11 +160,12 @@ Review ALL findings across ALL 3 loops. Then decide:
 
 **Option A — Approve (good enough):**
 If remaining issues are all LOW or cosmetic MEDIUM:
-Approve, go to Step 6.
+Follow the APPROVE flow above (all 3 actions).
 
 **Option B — Escalate to human (real problems persist):**
 If HIGH or functional MEDIUM issues still present:
 
+**Action 1 — Post review comment on GitHub:**
 ```bash
 gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — ESCALATED TO HUMAN
 
@@ -168,25 +186,13 @@ gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} �
 GuruPipeline Review Agent"
 ```
 
-Move to **Needs Human Review** (7fbf0da0-36d8-4416-8412-b20226559104).
+**Action 2 — Move card to Needs Human Review on Linear:**
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="Needs Human Review"**.
+
+**Action 3 — Post Linear comment:**
 ONE comment: "@marcelomar21 @lucasnakauchi — **Escalated after 3 review loops.** {Why}. {H} high, {M} medium unresolved. Full history in the PR."
-Stop.
 
-## Step 6: Finalize approved card
-
-```bash
-gh pr view {PR_NUMBER} --json mergeable,mergeStateStatus
-```
-
-If conflicts:
-```bash
-git checkout {gitBranchName} && git fetch origin master && git rebase origin/master
-git push --force-with-lease origin {gitBranchName}
-cd admin-panel && npm test 2>&1
-```
-
-Move to Ready to Deploy (183cedb6-bbd4-4c07-b8cd-d0e76f7395bf).
-ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
+Done. Stop.
 
 ## Output
 
