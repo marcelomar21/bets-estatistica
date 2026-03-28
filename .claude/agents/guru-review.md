@@ -85,13 +85,21 @@ E2E via Playwright MCP (if dev server available):
 - Validate final result
 - Take screenshots as evidence
 
-## Step 5: Write result.json
+## Step 5: Write result.json AND STOP
 
-After QA, decide your verdict and write `result.json` in the current directory. The pipeline handles all Linear status changes and GitHub comments automatically — you do NOT need to call any tools for that.
+Your ONLY job in this step is to write `result.json`. After writing the file, you are DONE. Output your summary and stop.
 
-**Do NOT** call `mcp__claude_ai_Linear__save_issue` or `mcp__claude_ai_Linear__save_comment`.
-**Do NOT** call `gh pr comment` or `gh pr review`.
-**Just write the file.** The pipeline does the rest.
+The pipeline reads this file after you exit and handles everything:
+- Moving the card on Linear
+- Posting comments on Linear
+- Posting comments on the GitHub PR
+
+**FORBIDDEN — Do NONE of these:**
+- Do NOT run `gh pr comment` or `gh pr review` or any `gh` command
+- Do NOT call `mcp__claude_ai_Linear__save_issue` or `save_comment`
+- Do NOT use `curl` to call Linear or GitHub APIs
+- Do NOT post anything anywhere — the pipeline does ALL posting
+- After writing result.json, do NOT execute any more tools. Just stop.
 
 ### Decision rules:
 - No HIGH/MEDIUM issues → `"approve"`
