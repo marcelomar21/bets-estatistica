@@ -217,6 +217,97 @@ Responda APENAS com os bullets, sem texto adicional.`;
   }
 }
 
+/**
+ * Generate a celebratory recap of yesterday's winning bets via LLM
+ * @param {object} winsData - { wins: Array, winCount: number, totalCount: number, rate: number|null }
+ * @param {object|null} toneConfig - Tone configuration (copyToneConfig from group)
+ * @returns {Promise<{success: boolean, data?: {copy: string}, error?: object}>}
+ */
+async function generateWinsRecapCopy(winsData, toneConfig = null) {
+  if (!winsData || winsData.winCount === 0) {
+    return { success: false, error: { code: 'NO_WINS', message: 'No wins to recap' } };
+  }
+
+  try {
+    const llm = getOpenAI();
+
+    let systemMessage = 'Voce e um copywriter de apostas esportivas. Gere mensagens de recap celebrando os acertos do dia anterior para Telegram.';
+
+    if (toneConfig) {
+      const parts = [];
+      if (toneConfig.persona) parts.push(`Persona: ${toneConfig.persona}`);
+      if (toneConfig.tone) parts.push(`Tom: ${toneConfig.tone}`);
+      if (toneConfig.forbiddenWords?.length > 0) {
+        parts.push(`Palavras PROIBIDAS (NUNCA use): ${toneConfig.forbiddenWords.join(', ')}`);
+      }
+      if (toneConfig.suggestedWords?.length > 0) {
+        parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
+      }
+      if (toneConfig.ctaTexts?.length > 0) {
+        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+      } else if (toneConfig.ctaText) {
+        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+      }
+      if (toneConfig.customRules?.length > 0) {
+        parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
+      }
+      if (toneConfig.oddLabel && toneConfig.oddLabel !== '') {
+        parts.push(`Use "${toneConfig.oddLabel}" em vez de "Odd" para se referir as odds`);
+      }
+      if (toneConfig.rawDescription) parts.push(`Descricao geral do tom: ${toneConfig.rawDescription}`);
+      if (parts.length > 0) {
+        systemMessage += '\n\nCONFIGURACAO DE TOM DE VOZ:\n' + parts.join('\n');
+      }
+    }
+
+    const winsList = winsData.wins.map(w => {
+      const home = w.league_matches?.home_team_name || '?';
+      const away = w.league_matches?.away_team_name || '?';
+      const odds = w.odds_at_post ? parseFloat(w.odds_at_post).toFixed(2) : 'N/A';
+      return `- ${home} x ${away} | Mercado: ${w.bet_market} | Pick: ${w.bet_pick || 'N/A'} | ${toneConfig?.oddLabel || 'Odd'}: ${odds}`;
+    }).join('\n');
+
+    const humanMessage = `Gere uma mensagem de RECAP celebrando os acertos de ontem para o grupo de Telegram.
+
+DADOS:
+- Acertos: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
+- Jogos acertados:
+${winsList}
+
+Regras:
+- Celebre os acertos sem arrogancia
+- Mencione cada jogo acertado com mercado, pick e odd
+- Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
+- Emojis moderados (nao exagere)
+- Inclua um CTA no final
+- Formato: Markdown do Telegram (*bold*, _italic_)
+- Portugues BR
+- A mensagem deve estar PRONTA para enviar no Telegram
+- NAO adicione explicacoes, apenas a mensagem final`;
+
+    const chatPrompt = ChatPromptTemplate.fromMessages([
+      ['system', systemMessage],
+      ['human', humanMessage],
+    ]);
+
+    const chain = chatPrompt.pipe(llm);
+    const response = await chain.invoke({});
+    const copy = response.content.trim();
+
+    logger.info('Generated wins recap copy', {
+      winCount: winsData.winCount,
+      totalCount: winsData.totalCount,
+      copyLength: copy.length,
+    });
+
+    return { success: true, data: { copy } };
+  } catch (error) {
+    logger.error('Failed to generate wins recap copy', { error: error.message });
+    return { success: false, error: { code: 'LLM_ERROR', message: error.message } };
+  }
+}
+
 module.exports = {
   generateBetCopy,
+  generateWinsRecapCopy,
 };

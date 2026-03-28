@@ -287,6 +287,63 @@ async function getAllPairStats() {
   }
 }
 
+/**
+ * Get yesterday's winning bets for a specific group
+ * Uses BRT (America/Sao_Paulo) for day boundaries
+ *
+ * @param {string} groupId - UUID of the group
+ * @returns {Promise<{success: boolean, data?: {wins: Array, winCount: number, totalCount: number, rate: number|null}, error?: object}>}
+ */
+async function getYesterdayWins(groupId) {
+  try {
+    // Calculate yesterday's boundaries in BRT
+    const now = new Date();
+    const brt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const yesterdayStart = new Date(brt);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    yesterdayStart.setHours(0, 0, 0, 0);
+    const yesterdayEnd = new Date(brt);
+    yesterdayEnd.setHours(0, 0, 0, 0);
+
+    // Convert back to UTC for the query
+    const offsetMs = brt.getTime() - now.getTime();
+    const startUtc = new Date(yesterdayStart.getTime() - offsetMs);
+    const endUtc = new Date(yesterdayEnd.getTime() - offsetMs);
+
+    const { data, error } = await supabase
+      .from('suggested_bets')
+      .select(`
+        id, bet_market, bet_pick, odds_at_post, bet_result,
+        league_matches!inner(home_team_name, away_team_name, kickoff_time)
+      `)
+      .eq('group_id', groupId)
+      .eq('bet_status', 'posted')
+      .in('bet_result', ['success', 'failure'])
+      .gte('result_updated_at', startUtc.toISOString())
+      .lt('result_updated_at', endUtc.toISOString());
+
+    if (error) {
+      logger.error('Failed to fetch yesterday wins', { groupId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    const wins = (data || []).filter(b => b.bet_result === 'success');
+    const totalCount = (data || []).length;
+    const winCount = wins.length;
+    const rate = totalCount > 0 ? (winCount / totalCount) * 100 : null;
+
+    logger.debug('Yesterday wins fetched', { groupId, winCount, totalCount, rate });
+
+    return {
+      success: true,
+      data: { wins, winCount, totalCount, rate },
+    };
+  } catch (err) {
+    logger.error('Error fetching yesterday wins', { groupId, error: err.message });
+    return { success: false, error: { code: 'CALC_ERROR', message: err.message } };
+  }
+}
+
 module.exports = {
   getSuccessRateForDays,
   getSuccessRateStats,
@@ -294,4 +351,5 @@ module.exports = {
   formatStatsMessage,
   categorizeMarket,
   getAllPairStats,
+  getYesterdayWins,
 };

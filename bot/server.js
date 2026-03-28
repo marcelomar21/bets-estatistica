@@ -68,7 +68,7 @@ app.get('/health', (req, res) => {
  */
 app.get('/debug/run-job/:jobName', async (req, res) => {
   const { jobName } = req.params;
-  const allowed = ['trial-reminders', 'kick-expired', 'track-results', 'audit-results'];
+  const allowed = ['trial-reminders', 'kick-expired', 'track-results', 'audit-results', 'daily-wins-recap'];
   if (!allowed.includes(jobName)) {
     return res.status(400).json({ error: `Job not allowed. Use: ${allowed.join(', ')}` });
   }
@@ -86,6 +86,9 @@ app.get('/debug/run-job/:jobName', async (req, res) => {
     } else if (jobName === 'audit-results') {
       const { runAuditResults } = require('./jobs/auditResults');
       result = await runAuditResults();
+    } else if (jobName === 'daily-wins-recap') {
+      const { runDailyWinsRecap } = require('./jobs/dailyWinsRecap');
+      result = await runDailyWinsRecap();
     }
     logger.info(`[debug] Manual job trigger: ${jobName}`, { result });
     res.json({ success: true, jobName, result });
@@ -395,6 +398,18 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
+    // GURU-18: Daily wins recap - 09:00 São Paulo (before first post of the day)
+    const { runDailyWinsRecap } = require('./jobs/dailyWinsRecap');
+    cron.schedule('0 9 * * *', async () => {
+      logger.info('[scheduler] Running daily-wins-recap job');
+      try {
+        await withExecutionLogging('daily-wins-recap', runDailyWinsRecap);
+        logger.info('[scheduler] daily-wins-recap complete');
+      } catch (err) {
+        logger.error('[scheduler] daily-wins-recap failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
     // Sync group members from Telegram every 30 minutes
     cron.schedule('*/30 * * * *', async () => {
       logger.info('[scheduler] Running sync-group-members job');
@@ -542,6 +557,7 @@ async function setupScheduler() {
   console.log(`⏰ Scheduler started (BOT_MODE=${mode}):`);
   console.log('   */5   - Health check');
   if (runGroup) {
+    console.log('   09:00 - Daily wins recap (GURU-18)');
     console.log('   10:00 - Renewal reminders');
     console.log('   */30s - Post-now polling (story 5.5)');
     console.log('   */30s - Send scheduled messages (story 5.3)');
