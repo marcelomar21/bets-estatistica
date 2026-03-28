@@ -89,13 +89,18 @@ E2E via Playwright MCP (if dev server available):
 
 **ALWAYS check REVIEW_LOOP first.**
 
-### CRITICAL RULES FOR THIS STEP
+### CRITICAL RULES FOR THIS STEP — READ BEFORE DECIDING
 
-1. **GitHub self-review:** GH_TOKEN is the same user. `--approve` and `--request-changes` WILL FAIL. Always use `--comment`.
-2. **NEVER move cards to "Done".** The review agent does NOT have authority to mark cards as Done. Only the human does that after merging and deploying.
-3. **Approved cards go to "Ready to Deploy" (ID: 183cedb6-bbd4-4c07-b8cd-d0e76f7395bf).** NOT Done. NOT any other status. Ready to Deploy means "approved, waiting for human to merge".
-4. **Rejected cards go to "In Progress" (ID: aa676804-1017-4f19-a888-8197c1c1c567).**
-5. **Escalated cards go to "Needs Human Review" (ID: 7fbf0da0-36d8-4416-8412-b20226559104).**
+1. **GitHub self-review:** `--approve` and `--request-changes` WILL FAIL. Always use `--comment`.
+2. **NEVER move cards to "Done".** Only the human does that after merge + deploy.
+3. **NEVER use "Needs Human Review" for REQUEST CHANGES.** Needs Human Review is ONLY for escalation after 3+ failed loops. A normal "fix this and come back" is In Progress.
+4. **Status mapping (EXACT — no exceptions):**
+
+| Decision | Target status | Status ID |
+|----------|--------------|-----------|
+| APPROVE | Ready to Deploy | `183cedb6-bbd4-4c07-b8cd-d0e76f7395bf` |
+| REQUEST CHANGES | In Progress | `aa676804-1017-4f19-a888-8197c1c1c567` |
+| ESCALATE (3+ loops only) | Needs Human Review | `7fbf0da0-36d8-4416-8412-b20226559104` |
 
 ### If no HIGH or MEDIUM issues → APPROVE
 
