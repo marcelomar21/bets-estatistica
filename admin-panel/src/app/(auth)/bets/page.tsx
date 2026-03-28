@@ -9,7 +9,6 @@ import { BetEditDrawer } from '@/components/features/bets/BetEditDrawer';
 import { BulkOddsModal } from '@/components/features/bets/BulkOddsModal';
 import { BulkLinksModal } from '@/components/features/bets/BulkLinksModal';
 import { DistributeModal } from '@/components/features/bets/DistributeModal';
-import { BulkDistributeModal } from '@/components/features/bets/BulkDistributeModal';
 
 const DEFAULT_FILTERS: BetFilterValues = {
   status: '',
@@ -67,9 +66,8 @@ export default function BetsPage() {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showBulkLinks, setShowBulkLinks] = useState(false);
 
-  // Distribute modal state
-  const [distributeBet, setDistributeBet] = useState<SuggestedBetListItem | null>(null);
-  const [showBulkDistribute, setShowBulkDistribute] = useState(false);
+  // Distribute modal state (unified: single-bet or multi-bet)
+  const [distributeModalBetIds, setDistributeModalBetIds] = useState<number[]>([]);
 
   // Championships extracted from loaded bets for filter dropdown
   const [knownChampionships, setKnownChampionships] = useState<string[]>([]);
@@ -366,51 +364,8 @@ export default function BetsPage() {
     fetchBets(pagination.page);
   }
 
-  async function handleDistribute(betId: number, groupId: string) {
-    const res = await fetch(`/api/bets/${betId}/distribute`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupId }),
-    });
-
-    const json = await res.json();
-    if (!json.success) {
-      throw new Error(json.error?.message ?? 'Erro ao distribuir');
-    }
-
-    const { redistributed, groupName } = json.data;
-    showToast(
-      redistributed
-        ? `Aposta redistribuida para ${groupName}`
-        : `Aposta distribuida para ${groupName}`,
-      'success',
-    );
-
-    setDistributeBet(null);
-    fetchBets(pagination.page);
-  }
-
-  async function handleBulkDistribute(groupId: string) {
-    const betIds = Array.from(selectedIds);
-
-    const res = await fetch('/api/bets/bulk/distribute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ betIds, groupId }),
-    });
-
-    const json = await res.json();
-    if (!json.success) {
-      throw new Error(json.error?.message ?? 'Erro ao distribuir em lote');
-    }
-
-    const { distributed, redistributed, failed, groupName } = json.data;
-    showToast(
-      `${distributed} distribuida${distributed > 1 ? 's' : ''}${redistributed > 0 ? ` (${redistributed} redistribuida${redistributed > 1 ? 's' : ''})` : ''} para ${groupName}${failed > 0 ? `, ${failed} falha${failed > 1 ? 's' : ''}` : ''}`,
-      failed > 0 ? 'error' : 'success',
-    );
-
-    setShowBulkDistribute(false);
+  function handleDistributeCompleted() {
+    setDistributeModalBetIds([]);
     setSelectedIds(new Set());
     fetchBets(pagination.page);
   }
@@ -475,7 +430,7 @@ export default function BetsPage() {
             Adicionar Links em Lote
           </button>
           <button
-            onClick={() => setShowBulkDistribute(true)}
+            onClick={() => setDistributeModalBetIds(Array.from(selectedIds))}
             className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
           >
             Distribuir Selecionadas
@@ -507,7 +462,7 @@ export default function BetsPage() {
           onPageChange={handlePageChange}
           onEditOdds={handleEditBet}
           onEditBet={handleEditBet}
-          onDistribute={role === 'super_admin' ? setDistributeBet : undefined}
+          onDistribute={role === 'super_admin' ? (bet) => setDistributeModalBetIds([bet.id]) : undefined}
           onSort={handleSort}
           sortBy={sortBy}
           sortDir={sortDir}
@@ -536,23 +491,25 @@ export default function BetsPage() {
         />
       )}
 
-      {/* Distribute Modal */}
-      {distributeBet && (
+      {/* Distribute Modal (unified: single or multi-bet, multi-group) */}
+      {distributeModalBetIds.length > 0 && (
         <DistributeModal
-          bet={distributeBet}
+          isOpen={true}
+          onClose={() => setDistributeModalBetIds([])}
+          selectedBetIds={distributeModalBetIds}
+          existingAssignments={(() => {
+            const m = new Map<number, string[]>();
+            for (const bet of bets) {
+              if (distributeModalBetIds.includes(bet.id) && bet.group_id) {
+                m.set(bet.id, [bet.group_id]);
+              }
+            }
+            return m;
+          })()}
           groups={groups}
-          onClose={() => setDistributeBet(null)}
-          onDistribute={handleDistribute}
-        />
-      )}
-
-      {/* Bulk Distribute Modal */}
-      {showBulkDistribute && (
-        <BulkDistributeModal
-          selectedCount={selectedIds.size}
-          groups={groups}
-          onClose={() => setShowBulkDistribute(false)}
-          onSave={handleBulkDistribute}
+          role={role}
+          userGroupId={role === 'group_admin' && groups.length > 0 ? groups[0].id : null}
+          onDistributed={handleDistributeCompleted}
         />
       )}
 
