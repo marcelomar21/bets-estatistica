@@ -85,45 +85,55 @@ E2E via Playwright MCP (if dev server available):
 - Validate final result
 - Take screenshots as evidence
 
-## Step 5: Decision + Finalize
+## Step 5: Write result.json
 
-After QA, decide and execute ALL actions. This step is NOT complete until the Linear card has been moved.
+After QA, decide your verdict and write `result.json` in the current directory. The pipeline handles all Linear status changes and GitHub comments automatically — you do NOT need to call any tools for that.
 
-### Decide:
-- No HIGH/MEDIUM issues → **APPROVE**
-- HIGH/MEDIUM issues, loop < 3 → **REQUEST CHANGES**
-- Loop >= 3, issues persist → **ESCALATE**
+**Do NOT** call `mcp__claude_ai_Linear__save_issue` or `mcp__claude_ai_Linear__save_comment`.
+**Do NOT** call `gh pr comment` or `gh pr review`.
+**Just write the file.** The pipeline does the rest.
 
-### APPROVE — Do these in order (Linear FIRST, GitHub LAST):
+### Decision rules:
+- No HIGH/MEDIUM issues → `"approve"`
+- HIGH/MEDIUM issues, loop < 3 → `"request_changes"`
+- Loop >= 3, issues persist → `"escalate"`
 
-**FIRST — Move card on Linear (most important, do this before anything else):**
-Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"
+### Write the file:
+```bash
+cat > result.json << 'RESULT_EOF'
+{
+  "agent": "review",
+  "card": "GURU-XX",
+  "pr": 172,
+  "decision": "approve",
+  "summary": "Clean implementation. All ACs met. Tests pass, build passes.",
+  "findings": []
+}
+RESULT_EOF
+```
 
-**SECOND — Comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — APPROVED. PR: {URL}. Ready to Deploy."
+For `request_changes`, include findings:
+```json
+{
+  "agent": "review",
+  "card": "GURU-XX",
+  "pr": 172,
+  "decision": "request_changes",
+  "summary": "4 issues found, 1 HIGH",
+  "findings": [
+    {"severity": "HIGH", "file": "bot/jobs/postBets.js:142", "issue": "Missing groupId param", "fix": "Pass groupId from assignment record"}
+  ]
+}
+```
 
-**THIRD — Post comment on GitHub PR:**
-Run: `gh pr comment {PR_NUMBER} --body "Code Review — APPROVED. QA: Tests {result}, Build {result}. {summary}"`
-
-### REQUEST CHANGES — Do these in order (Linear FIRST, GitHub LAST):
-
-**FIRST — Move card on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="aa676804-1017-4f19-a888-8197c1c1c567"
-
-**SECOND — Comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — Changes requested. {N} issues."
-
-**THIRD — Post comment on GitHub PR:**
-Run: `gh pr comment {PR_NUMBER} --body "Code Review — Changes Requested. {findings}"`
-
-### ESCALATE (loop >= 3 only) — Do these in order (Linear FIRST):
-
-**FIRST:** Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="7fbf0da0-36d8-4416-8412-b20226559104"
-**SECOND:** Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — Escalated. {reason}."
-**THIRD:** `gh pr comment {PR_NUMBER} --body "Escalated to human. {reason}"`
-
-### FORBIDDEN
-- NEVER use state "Done" (10c57d23-271c-45d8-baa2-b9e861e0a5a7)
-- NEVER use state "Needs Human Review" for REQUEST CHANGES
-- NEVER skip the `mcp__claude_ai_Linear__save_issue` call
-- NEVER use `gh pr review` (fails on own PRs) — use `gh pr comment` instead
+For `escalate`:
+```json
+{
+  "agent": "review",
+  "card": "GURU-XX",
+  "pr": 172,
+  "decision": "escalate",
+  "summary": "3 review loops, HIGH issues persist: ...",
+  "findings": [...]
+}
+```
