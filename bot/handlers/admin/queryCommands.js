@@ -362,8 +362,9 @@ async function handleSimularCommand(bot, msg, arg) {
     }
 
     // If "novo", clear persisted copy to force regeneration
+    const groupId = config.membership.groupId;
     if (isNovo) {
-      await Promise.all(betsToPreview.map(bet => updateGeneratedCopy(bet.id, null)));
+      await Promise.all(betsToPreview.map(bet => updateGeneratedCopy(bet.id, null, groupId)));
       logger.info('[admin:query] Cleared generated_copy for preview bets', { count: betsToPreview.length });
     }
 
@@ -403,7 +404,7 @@ async function handleSimularCommand(bot, msg, arg) {
           copyText = copyResult.data.copy;
           // Persist the regenerated copy so it's not wasted
           if (isNovo || !bet.generatedCopy) {
-            updateGeneratedCopy(bet.id, copyResult.data.fullMessage ? copyText : null).catch(() => {});
+            updateGeneratedCopy(bet.id, copyResult.data.fullMessage ? copyText : null, groupId).catch(() => {});
           }
         }
       } catch (e) {

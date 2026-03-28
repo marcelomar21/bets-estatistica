@@ -856,9 +856,9 @@ describe('postBets', () => {
         success: true,
         data: { copy: '🔥 Generated full message', fullMessage: true },
       });
-      const result = await getOrGenerateMessage(bet, fullMsgTone, 0);
+      const result = await getOrGenerateMessage(bet, fullMsgTone, 0, 'test-group-uuid');
       expect(result).toBeDefined();
-      expect(updateGeneratedCopy).toHaveBeenCalledWith('bet-1', expect.any(String), undefined);
+      expect(updateGeneratedCopy).toHaveBeenCalledWith('bet-1', expect.any(String), 'test-group-uuid');
     });
 
     it('should prioritize previewMessages over generatedCopy in runPostBets', async () => {
