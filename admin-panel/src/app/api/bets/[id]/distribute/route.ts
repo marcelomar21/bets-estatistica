@@ -36,10 +36,10 @@ export const POST = createApiHandler(
 
     const { groupId } = body;
 
-    // Validate group exists and is not deleted + load posting_schedule for post_at
+    // Validate group exists and is not deleted + load posting_schedule and link_config
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id, name, posting_schedule')
+      .select('id, name, posting_schedule, link_config')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -51,10 +51,10 @@ export const POST = createApiHandler(
       );
     }
 
-    // Fetch current bet
+    // Fetch current bet with match data for auto-link
     const { data: currentBet, error: fetchError } = await supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status')
+      .select('id, group_id, bet_status, deep_link, bet_market, league_matches(home_team_name, away_team_name, kickoff_time, league_seasons(league_name))')
       .eq('id', betId)
       .single();
 
@@ -104,6 +104,43 @@ export const POST = createApiHandler(
       postAt = minTime;
     }
 
+    // Auto-generate deep link if group has link_config enabled
+    let autoLink: string | null = null;
+    const linkConfig = group.link_config as unknown as Record<string, unknown> | null;
+    if (linkConfig?.enabled && (!currentBet.deep_link || linkConfig.overrideManual)) {
+      const matchRaw = currentBet.league_matches as unknown;
+      const match = (Array.isArray(matchRaw) ? matchRaw[0] : matchRaw) as Record<string, unknown> | null;
+      const seasonsRaw = match?.league_seasons as unknown;
+      const leagueSeasons = (Array.isArray(seasonsRaw) ? seasonsRaw[0] : seasonsRaw) as Record<string, unknown> | null;
+      const matchData = {
+        homeTeam: (match?.home_team_name as string) || '',
+        awayTeam: (match?.away_team_name as string) || '',
+        league: (leagueSeasons?.league_name as string) || '',
+        kickoffDate: match?.kickoff_time ? new Date(match.kickoff_time as string).toISOString().split('T')[0] : '',
+        market: (currentBet.bet_market as string) || '',
+      };
+
+      const templateType = (linkConfig.templateType as string) || 'generic';
+      let templateUrl = templateType === 'search'
+        ? (linkConfig.searchUrl as string) || (linkConfig.templateUrl as string)
+        : (linkConfig.templateUrl as string);
+
+      if (templateUrl) {
+        const vars: Record<string, string> = {
+          '{home_team}': matchData.homeTeam,
+          '{away_team}': matchData.awayTeam,
+          '{league}': matchData.league,
+          '{kickoff_date}': matchData.kickoffDate,
+          '{market}': matchData.market,
+          '{affiliate_tag}': (linkConfig.affiliateTag as string) || '',
+        };
+        for (const [key, value] of Object.entries(vars)) {
+          templateUrl = templateUrl.replaceAll(key, encodeURIComponent(value));
+        }
+        autoLink = templateUrl;
+      }
+    }
+
     // Update bet: set group_id, bet_status='ready', distributed_at=now, post_at (D4)
     const updatePayload: Record<string, unknown> = {
       group_id: groupId,
@@ -111,6 +148,7 @@ export const POST = createApiHandler(
       distributed_at: new Date().toISOString(),
     };
     if (postAt) updatePayload.post_at = postAt;
+    if (autoLink) updatePayload.deep_link = autoLink;
 
     const { error: updateError } = await supabase
       .from('suggested_bets')

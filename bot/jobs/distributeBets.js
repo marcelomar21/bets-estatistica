@@ -15,6 +15,7 @@ require('dotenv').config();
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
 const { alertAdmin } = require('../services/alertService');
+const { generateDeepLink, buildMatchDataFromBet } = require('../services/linkGeneratorService');
 
 /**
  * Get all active groups ordered by created_at ASC (deterministic order)
@@ -24,7 +25,7 @@ async function getActiveGroups() {
   try {
     const { data, error } = await supabase
       .from('groups')
-      .select('id, name, status, created_at, is_test')
+      .select('id, name, status, created_at, is_test, link_config')
       .eq('status', 'active')
       .neq('is_test', true)
       .order('created_at', { ascending: true });
@@ -77,7 +78,7 @@ async function getUndistributedBets() {
 
     const { data, error } = await supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
+      .select('id, match_id, bet_market, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, home_team_name, away_team_name, league_seasons!inner(league_name))')
       .eq('elegibilidade', 'elegivel')
       .is('group_id', null)
       .is('distributed_at', null)
@@ -320,9 +321,10 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
  * @param {string} betId - Bet UUID
  * @param {string} groupId - Group UUID
  * @param {string|null} postAt - Optional posting time (HH:MM)
+ * @param {string|null} deepLink - Optional auto-generated deep link
  * @returns {Promise<{success: boolean, data?: object, error?: object}>}
  */
-async function assignBetToGroup(betId, groupId, postAt = null) {
+async function assignBetToGroup(betId, groupId, postAt = null, deepLink = null) {
   try {
     const updatePayload = {
       group_id: groupId,
@@ -330,6 +332,9 @@ async function assignBetToGroup(betId, groupId, postAt = null) {
     };
     if (postAt) {
       updatePayload.post_at = postAt;
+    }
+    if (deepLink) {
+      updatePayload.deep_link = deepLink;
     }
 
     const { data, error } = await supabase
@@ -561,11 +566,19 @@ async function _runDistributeBetsInternal() {
   // 3.5. Pre-load posting times per group for auto-scheduling
   const groupTimesCache = {};
   const groupTimeCountsCache = {};
+  const groupLinkConfigCache = {};
   for (const group of groups) {
     const times = await loadGroupPostingTimes(group.id);
     const availableTimes = getFuturePostingTimes(times);
     groupTimesCache[group.id] = availableTimes;
     groupTimeCountsCache[group.id] = await getScheduledCountsPerTime(group.id, availableTimes);
+    groupLinkConfigCache[group.id] = group.link_config || {};
+  }
+
+  // Build a lookup from betId → bet (for match data in link generation)
+  const betLookup = {};
+  for (const bet of bets) {
+    betLookup[bet.id] = bet;
   }
 
   // 4. Execute assignments
@@ -579,7 +592,24 @@ async function _runDistributeBetsInternal() {
     const timeCounts = groupTimeCountsCache[groupId] || {};
     const postAt = pickPostTime(availableTimes, timeCounts);
 
-    const result = await assignBetToGroup(betId, groupId, postAt);
+    // Auto-generate deep link if group has link_config enabled
+    let deepLink = null;
+    const linkConfig = groupLinkConfigCache[groupId];
+    if (linkConfig?.enabled) {
+      const bet = betLookup[betId];
+      if (bet) {
+        const matchData = buildMatchDataFromBet(bet);
+        const linkResult = generateDeepLink(linkConfig, matchData);
+        if (linkResult.success) {
+          deepLink = linkResult.data.url;
+          logger.debug('[bets:distribute] Auto-link gerado', { betId, groupId, url: deepLink });
+        } else {
+          logger.warn('[bets:distribute] Falha ao gerar auto-link', { betId, groupId, error: linkResult.error });
+        }
+      }
+    }
+
+    const result = await assignBetToGroup(betId, groupId, postAt, deepLink);
     if (result.success && !result.data.alreadyDistributed) {
       successCount++;
       perGroup[groupId] = (perGroup[groupId] || 0) + 1;
