@@ -924,7 +924,7 @@ describe('POST /api/bets/[id]/distribute', () => {
 });
 
 // ============================================================
-// POST /api/bets/bulk/distribute (Story 4-3)
+// POST /api/bets/bulk/distribute (GURU-43: multi-group batch)
 // ============================================================
 describe('POST /api/bets/bulk/distribute', () => {
   beforeEach(() => {
@@ -932,54 +932,95 @@ describe('POST /api/bets/bulk/distribute', () => {
     vi.resetModules();
   });
 
-  function createBulkDistributeQueryBuilder(options: {
-    groupData?: unknown;
+  function createMultiGroupBulkQB(options: {
+    validGroups?: Array<{ id: string; name: string; posting_schedule?: unknown }>;
     groupError?: { message: string } | null;
-    bets?: Array<{ id: number; group_id: string | null }>;
-    updateError?: { message: string } | null;
+    existingAssignments?: Array<{ bet_id: number; group_id: string }>;
+    scheduledPostAts?: Array<{ post_at: string }>;
+    insertedRows?: Array<{ bet_id: number; group_id: string }> | null;
+    insertError?: { message: string } | null;
+    singleInsertError?: { message: string } | null;
   } = {}) {
-    let fromCallIndex = 0;
-    let betIndex = 0;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mockFrom = vi.fn((_table: string) => {
-      fromCallIndex++;
+    const mockFrom = vi.fn((table: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
       chain.neq = vi.fn(() => chain);
-      chain.update = vi.fn(() => chain);
-      chain.insert = vi.fn(() => ({ data: null, error: null }));
-      chain.single = vi.fn(() => {
-        if (fromCallIndex === 1) {
-          // Group lookup
-          return { data: options.groupData ?? null, error: options.groupError ?? null };
+      chain.not = vi.fn(() => chain);
+      chain.in = vi.fn(() => chain);
+      chain.insert = vi.fn((rows: unknown) => {
+        if (table === 'bet_group_assignments') {
+          const rowArr = Array.isArray(rows) ? rows : [rows];
+          if (options.singleInsertError && !Array.isArray(rows)) {
+            return { data: null, error: options.singleInsertError };
+          }
+          if (options.insertError && Array.isArray(rows)) {
+            return { ...chain, data: null, error: options.insertError };
+          }
+          // Successful insert: return select chain
+          const result = {
+            ...chain,
+            select: vi.fn(() => ({
+              data: options.insertedRows ?? rowArr.map((r: { bet_id: number; group_id: string }) => ({
+                bet_id: r.bet_id,
+                group_id: r.group_id,
+              })),
+              error: null,
+            })),
+          };
+          return result;
         }
-        // Bet fetches (each bet: fetch + update cycles)
-        const bets = options.bets ?? [];
-        const bet = bets[betIndex];
-        betIndex++;
-        if (!bet) {
-          return { data: null, error: { message: 'Not found' } };
-        }
-        return { data: bet, error: null };
+        return { data: null, error: null };
       });
+
+      if (table === 'groups') {
+        // Bulk group validation: .in('id', groupIds).neq('status', 'deleted')
+        chain.in = vi.fn(() => ({
+          ...chain,
+          neq: vi.fn(() => ({
+            data: options.validGroups ?? [],
+            error: options.groupError ?? null,
+          })),
+        }));
+      } else if (table === 'bet_group_assignments') {
+        // Two possible queries:
+        // 1) existing assignments: .select().in('bet_id',...).in('group_id',...)
+        // 2) scheduled post_at: .select().eq('group_id',...).not().neq()
+        let inCallCount = 0;
+        chain.in = vi.fn(() => {
+          inCallCount++;
+          if (inCallCount >= 2) {
+            // Existing assignments check (after second .in())
+            return { data: options.existingAssignments ?? [], error: null };
+          }
+          return chain;
+        });
+        // post_at schedule query
+        chain.not = vi.fn(() => ({
+          neq: vi.fn(() => ({
+            data: options.scheduledPostAts ?? [],
+            error: null,
+          })),
+        }));
+      }
+
       return chain;
     });
 
     return { from: mockFrom };
   }
 
-  it('distributes multiple pool bets to a group', async () => {
-    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
-    const qb = createBulkDistributeQueryBuilder({
-      groupData: { id: groupUuid, name: 'Guru da Bet' },
-      bets: [
-        { id: 1, group_id: null },
-        { id: 2, group_id: null },
-        { id: 3, group_id: null },
+  it('distributes 3 bets to 2 groups (batch insert)', async () => {
+    const g1 = '550e8400-e29b-41d4-a716-446655440001';
+    const g2 = '550e8400-e29b-41d4-a716-446655440002';
+    const qb = createMultiGroupBulkQB({
+      validGroups: [
+        { id: g1, name: 'Guru da Bet' },
+        { id: g2, name: 'Osmar Palpites' },
       ],
+      existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -987,7 +1028,7 @@ describe('POST /api/bets/bulk/distribute', () => {
     const { POST } = await import('@/app/api/bets/bulk/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
       betIds: [1, 2, 3],
-      groupId: groupUuid,
+      groupIds: [g1, g2],
     });
 
     const response = await POST(req);
@@ -995,21 +1036,16 @@ describe('POST /api/bets/bulk/distribute', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.distributed).toBe(3);
-    expect(body.data.redistributed).toBe(0);
+    expect(body.data.created).toBe(6); // 3 bets x 2 groups
     expect(body.data.failed).toBe(0);
-    expect(body.data.groupName).toBe('Guru da Bet');
+    expect(body.data.groupNames).toEqual(['Guru da Bet', 'Osmar Palpites']);
   });
 
-  it('writes audit_log for redistributed bets', async () => {
-    const groupUuid = '550e8400-e29b-41d4-a716-446655440002';
-    const oldGroupUuid = '550e8400-e29b-41d4-a716-446655440001';
-    const qb = createBulkDistributeQueryBuilder({
-      groupData: { id: groupUuid, name: 'Osmar Palpites' },
-      bets: [
-        { id: 1, group_id: oldGroupUuid },
-        { id: 2, group_id: null },
-      ],
+  it('backward compat: accepts single groupId', async () => {
+    const g1 = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createMultiGroupBulkQB({
+      validGroups: [{ id: g1, name: 'Guru da Bet' }],
+      existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -1017,22 +1053,45 @@ describe('POST /api/bets/bulk/distribute', () => {
     const { POST } = await import('@/app/api/bets/bulk/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
       betIds: [1, 2],
-      groupId: groupUuid,
+      groupId: g1,
     });
 
     const response = await POST(req);
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data.distributed).toBe(2);
-    expect(body.data.redistributed).toBe(1);
-    expect(qb.from).toHaveBeenCalledWith('audit_log');
+    expect(body.success).toBe(true);
+    expect(body.data.created).toBe(2);
+    expect(body.data.groupNames).toEqual(['Guru da Bet']);
   });
 
-  it('returns 400 for invalid group', async () => {
-    const qb = createBulkDistributeQueryBuilder({
-      groupData: null,
-      groupError: { message: 'Not found' },
+  it('skips already-existing assignments', async () => {
+    const g1 = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createMultiGroupBulkQB({
+      validGroups: [{ id: g1, name: 'Guru da Bet' }],
+      existingAssignments: [{ bet_id: 1, group_id: g1 }],
+      insertedRows: [{ bet_id: 2, group_id: g1 }],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1, 2],
+      groupIds: [g1],
+    });
+
+    const response = await POST(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.created).toBe(1); // only bet 2
+    expect(body.data.alreadyExisted).toBe(1); // bet 1
+  });
+
+  it('returns 400 for no valid groups found', async () => {
+    const qb = createMultiGroupBulkQB({
+      validGroups: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -1040,11 +1099,10 @@ describe('POST /api/bets/bulk/distribute', () => {
     const { POST } = await import('@/app/api/bets/bulk/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
       betIds: [1],
-      groupId: '550e8400-e29b-41d4-a716-446655440000',
+      groupIds: ['550e8400-e29b-41d4-a716-446655440099'],
     });
 
     const response = await POST(req);
-
     expect(response.status).toBe(400);
   });
 
@@ -1059,7 +1117,6 @@ describe('POST /api/bets/bulk/distribute', () => {
     });
 
     const response = await POST(req);
-
     expect(response.status).toBe(400);
   });
 
@@ -1075,11 +1132,24 @@ describe('POST /api/bets/bulk/distribute', () => {
     });
 
     const response = await POST(req);
-
     expect(response.status).toBe(400);
   });
 
-  it('returns 403 for group_admin', async () => {
+  it('returns 400 for invalid UUID in groupIds', async () => {
+    const context = createMockContext('super_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1],
+      groupIds: ['not-a-uuid'],
+    });
+
+    const response = await POST(req);
+    expect(response.status).toBe(400);
+  });
+
+  it('returns 403 for group_admin distributing to other group', async () => {
     mockWithTenant.mockResolvedValue({
       success: true,
       context: createMockContext('group_admin'),
@@ -1088,40 +1158,50 @@ describe('POST /api/bets/bulk/distribute', () => {
     const { POST } = await import('@/app/api/bets/bulk/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
       betIds: [1],
-      groupId: '550e8400-e29b-41d4-a716-446655440000',
+      groupIds: ['550e8400-e29b-41d4-a716-446655440000'],
     });
 
     const response = await POST(req);
-
     expect(response.status).toBe(403);
   });
 
-  it('handles partial failure gracefully', async () => {
-    const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
-    const qb = createBulkDistributeQueryBuilder({
-      groupData: { id: groupUuid, name: 'Guru da Bet' },
-      bets: [
-        { id: 1, group_id: null },
-        // bet 2 not in array → will return NOT_FOUND
-      ],
+  it('handles batch insert failure with individual fallback (NFR7)', async () => {
+    const g1 = '550e8400-e29b-41d4-a716-446655440001';
+    const qb = createMultiGroupBulkQB({
+      validGroups: [{ id: g1, name: 'Guru da Bet' }],
+      existingAssignments: [],
+      insertError: { message: 'batch insert failed' },
+      singleInsertError: undefined,
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { POST } = await import('@/app/api/bets/bulk/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
-      betIds: [1, 999],
-      groupId: groupUuid,
+      betIds: [1, 2],
+      groupIds: [g1],
     });
 
     const response = await POST(req);
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.data.distributed).toBe(1);
-    expect(body.data.failed).toBe(1);
-    expect(body.data.errors).toHaveLength(1);
-    expect(body.data.errors[0].id).toBe(999);
+    expect(body.success).toBe(true);
+    // Individual fallback: both should succeed
+    expect(body.data.created).toBe(2);
+  });
+
+  it('returns 400 when no groupIds or groupId provided', async () => {
+    const context = createMockContext('super_admin');
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { POST } = await import('@/app/api/bets/bulk/distribute/route');
+    const req = createMockRequest('POST', 'http://localhost/api/bets/bulk/distribute', {
+      betIds: [1],
+    });
+
+    const response = await POST(req);
+    expect(response.status).toBe(400);
   });
 });
 

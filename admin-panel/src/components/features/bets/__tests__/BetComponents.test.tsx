@@ -450,7 +450,7 @@ describe('DistributeModal', () => {
 });
 
 // ============================================================
-// BulkDistributeModal (Story 4-3)
+// BulkDistributeModal (GURU-43: multi-group)
 // ============================================================
 describe('BulkDistributeModal', () => {
   const groups = [
@@ -458,31 +458,49 @@ describe('BulkDistributeModal', () => {
     { id: 'group-uuid-2', name: 'Osmar Palpites' },
   ];
 
-  it('renders selected count and group selector', () => {
+  it('renders selected count and group checkboxes', () => {
     render(<BulkDistributeModal selectedCount={5} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
     const paragraph = screen.getByText((_content, element) =>
       element?.tagName === 'P' && /5.*apostas selecionadas/i.test(element.textContent ?? ''),
     );
     expect(paragraph).toBeInTheDocument();
-    expect(screen.getByLabelText(/Grupo destino/i)).toBeInTheDocument();
     expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
+    expect(screen.getByText('Osmar Palpites')).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
   });
 
-  it('calls onSave with groupId', async () => {
+  it('calls onSave with array of selected groupIds', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(<BulkDistributeModal selectedCount={3} groups={groups} onClose={vi.fn()} onSave={onSave} />);
 
-    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-2');
+    // Select both groups
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]);
+    await user.click(checkboxes[1]);
     await user.click(screen.getByText(/Distribuir 3 Apostas/i));
 
-    expect(onSave).toHaveBeenCalledWith('group-uuid-2');
+    expect(onSave).toHaveBeenCalledWith(expect.arrayContaining(['group-uuid-1', 'group-uuid-2']));
   });
 
   it('disables submit when no group selected', () => {
     render(<BulkDistributeModal selectedCount={2} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
     const submitBtn = screen.getByRole('button', { name: /Distribuir 2 Apostas/i });
     expect(submitBtn).toBeDisabled();
+  });
+
+  it('select all / deselect all toggles all checkboxes', async () => {
+    const user = userEvent.setup();
+    render(<BulkDistributeModal selectedCount={2} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
+
+    await user.click(screen.getByText(/Selecionar todos/i));
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes[0]).toBeChecked();
+    expect(checkboxes[1]).toBeChecked();
+
+    await user.click(screen.getByText(/Desmarcar todos/i));
+    expect(checkboxes[0]).not.toBeChecked();
+    expect(checkboxes[1]).not.toBeChecked();
   });
 });
 

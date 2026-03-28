@@ -390,13 +390,13 @@ export default function BetsPage() {
     fetchBets(pagination.page);
   }
 
-  async function handleBulkDistribute(groupId: string) {
+  async function handleBulkDistribute(groupIds: string[]) {
     const betIds = Array.from(selectedIds);
 
     const res = await fetch('/api/bets/bulk/distribute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ betIds, groupId }),
+      body: JSON.stringify({ betIds, groupIds }),
     });
 
     const json = await res.json();
@@ -404,9 +404,14 @@ export default function BetsPage() {
       throw new Error(json.error?.message ?? 'Erro ao distribuir em lote');
     }
 
-    const { distributed, redistributed, failed, groupName } = json.data;
+    const { created, alreadyExisted, failed, groupNames } = json.data;
+    const groupLabel = (groupNames as string[]).join(', ');
+    const parts: string[] = [];
+    if (created > 0) parts.push(`${created} criada${created > 1 ? 's' : ''}`);
+    if (alreadyExisted > 0) parts.push(`${alreadyExisted} ja existente${alreadyExisted > 1 ? 's' : ''}`);
+    if (failed > 0) parts.push(`${failed} falha${failed > 1 ? 's' : ''}`);
     showToast(
-      `${distributed} distribuida${distributed > 1 ? 's' : ''}${redistributed > 0 ? ` (${redistributed} redistribuida${redistributed > 1 ? 's' : ''})` : ''} para ${groupName}${failed > 0 ? `, ${failed} falha${failed > 1 ? 's' : ''}` : ''}`,
+      `${parts.join(', ')} para ${groupLabel}`,
       failed > 0 ? 'error' : 'success',
     );
 

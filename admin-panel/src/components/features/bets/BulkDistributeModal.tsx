@@ -6,32 +6,54 @@ interface BulkDistributeModalProps {
   selectedCount: number;
   groups: Array<{ id: string; name: string }>;
   onClose: () => void;
-  onSave: (groupId: string) => Promise<void>;
+  onSave: (groupIds: string[]) => Promise<void>;
 }
 
 export function BulkDistributeModal({ selectedCount, groups, onClose, onSave }: BulkDistributeModalProps) {
-  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  function toggleGroup(groupId: string) {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selectedGroupIds.size === groups.length) {
+      setSelectedGroupIds(new Set());
+    } else {
+      setSelectedGroupIds(new Set(groups.map((g) => g.id)));
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
 
-    if (!selectedGroupId) {
-      setError('Selecione um grupo destino');
+    if (selectedGroupIds.size === 0) {
+      setError('Selecione ao menos um grupo destino');
       return;
     }
 
     setSaving(true);
     try {
-      await onSave(selectedGroupId);
+      await onSave(Array.from(selectedGroupIds));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao distribuir em lote');
     } finally {
       setSaving(false);
     }
   }
+
+  const totalAssignments = selectedCount * selectedGroupIds.size;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -46,29 +68,47 @@ export function BulkDistributeModal({ selectedCount, groups, onClose, onSave }: 
         </div>
 
         <p className="mb-4 text-sm text-gray-600">
-          Distribuir <strong>{selectedCount}</strong> aposta{selectedCount > 1 ? 's' : ''} selecionada{selectedCount > 1 ? 's' : ''} para o grupo escolhido.
+          Distribuir <strong>{selectedCount}</strong> aposta{selectedCount > 1 ? 's' : ''} selecionada{selectedCount > 1 ? 's' : ''} para os grupos escolhidos.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="bulk-group-select" className="block text-sm font-medium text-gray-700">
-              Grupo destino
-            </label>
-            <select
-              id="bulk-group-select"
-              value={selectedGroupId}
-              onChange={(e) => setSelectedGroupId(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-              disabled={saving}
-            >
-              <option value="">Selecione um grupo...</option>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">
+                Grupos destino
+              </label>
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                {selectedGroupIds.size === groups.length ? 'Desmarcar todos' : 'Selecionar todos'}
+              </button>
+            </div>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-gray-200 p-2">
               {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
+                <label
+                  key={group.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedGroupIds.has(group.id)}
+                    onChange={() => toggleGroup(group.id)}
+                    disabled={saving}
+                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-sm text-gray-700">{group.name}</span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
+
+          {totalAssignments > 0 && (
+            <p className="text-xs text-gray-500">
+              {totalAssignments} assignment{totalAssignments > 1 ? 's' : ''} ({selectedCount} aposta{selectedCount > 1 ? 's' : ''} x {selectedGroupIds.size} grupo{selectedGroupIds.size > 1 ? 's' : ''})
+            </p>
+          )}
 
           {error && (
             <p className="text-sm text-red-600">{error}</p>
@@ -86,7 +126,7 @@ export function BulkDistributeModal({ selectedCount, groups, onClose, onSave }: 
             <button
               type="submit"
               className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              disabled={saving || !selectedGroupId}
+              disabled={saving || selectedGroupIds.size === 0}
             >
               {saving ? 'Distribuindo...' : `Distribuir ${selectedCount} Aposta${selectedCount > 1 ? 's' : ''}`}
             </button>
