@@ -43,7 +43,7 @@ Pick highest priority card.
 ```bash
 gh pr list --head {gitBranchName} --json number,url --state open
 ```
-If no PR: comment "@marcelomar21 @lucasnakauchi — No PR found. Waiting for dev execution.", stop.
+If no PR: use `mcp__claude_ai_Linear__save_comment` with issueId and body "@marcelomar21 @lucasnakauchi — No PR found. Waiting for dev execution.", then stop.
 
 **Get changes:**
 ```bash
@@ -119,10 +119,11 @@ GuruPipeline Review Agent"
 **Action 2 — Move card to Ready to Deploy on Linear (NOT Done!):**
 Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"** (Ready to Deploy).
 
-**Action 3 — Post Linear comment:**
-ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
+**Action 3 — Post comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+"@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
 
-Done. Stop.
+All 3 actions done. Stop.
 
 ### If HIGH/MEDIUM issues AND REVIEW_LOOP < 3 → REQUEST CHANGES
 
@@ -149,10 +150,11 @@ GuruPipeline Review Agent (Loop {REVIEW_LOOP}/3)"
 **Action 2 — Move card to In Progress on Linear:**
 Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="aa676804-1017-4f19-a888-8197c1c1c567"** (In Progress).
 
-**Action 3 — Post Linear comment:**
-ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}/3**: {N} issues ({H} high, {M} medium). Moved to In Progress for fixes."
+**Action 3 — Post comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+"@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}/3**: {N} issues ({H} high, {M} medium). Moved to In Progress for fixes."
 
-Done. Stop.
+All 3 actions done. Stop.
 
 ### If REVIEW_LOOP >= 3 → MAKE A DECISION
 
@@ -189,10 +191,11 @@ GuruPipeline Review Agent"
 **Action 2 — Move card to Needs Human Review on Linear:**
 Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="7fbf0da0-36d8-4416-8412-b20226559104"** (Needs Human Review).
 
-**Action 3 — Post Linear comment:**
-ONE comment: "@marcelomar21 @lucasnakauchi — **Escalated after 3 review loops.** {Why}. {H} high, {M} medium unresolved. Full history in the PR."
+**Action 3 — Post comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+"@marcelomar21 @lucasnakauchi — **Escalated after 3 review loops.** {Why}. {H} high, {M} medium unresolved. Full history in the PR."
 
-Done. Stop.
+All 3 actions done. Stop.
 
 ## Output
 
