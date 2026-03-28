@@ -443,3 +443,23 @@ export interface WhatsAppPoolSummary {
   cooldown: number;
   connecting: number;
 }
+
+// Multi-group distribution (GURU-17)
+export type PostingStatus = 'ready' | 'posted' | 'cancelled';
+
+export interface BetGroupAssignment {
+  id: number;
+  bet_id: number;
+  group_id: string;
+  posting_status: PostingStatus;
+  distributed_at: string;
+  distributed_by: string | null;
+  post_at: string | null;
+  telegram_posted_at: string | null;
+  telegram_message_id: number | null;
+  odds_at_post: number | null;
+  generated_copy: string | null;
+  historico_postagens: Record<string, unknown>[];
+  created_at: string;
+  updated_at: string;
+}
