@@ -51,10 +51,7 @@ Pick first non-archived, non-blocked. If none: output "No cards to implement" an
 ## Step 2: Setup
 
 **Count dev loops:** Read comments. Count "Dev Execution #". Set DEV_LOOP = count + 1.
-If DEV_LOOP > 4:
-- Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** = "@marcelomar21 @lucasnakauchi — Escalating. 4+ dev loops."
-- Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="7fbf0da0-36d8-4416-8412-b20226559104"** (Needs Human Review).
-- Stop.
+If DEV_LOOP > 4: write result.json with `"decision": "needs_human"` and `"summary": "4+ dev loops without passing review"`, then stop.
 
 **Move to In Progress** (aa676804-1017-4f19-a888-8197c1c1c567) if not already there.
 
@@ -190,7 +187,7 @@ E2E via Playwright MCP (if dev server available):
 
 If fails: fix and retry (max 3 attempts). If still fails: comment on card explaining what fails, leave In Progress, stop.
 
-## Step 5: Commit, push, and finalize
+## Step 5: Commit, push, create PR
 
 ### Standalone cards (no Project):
 
@@ -214,13 +211,6 @@ Closes GURU-XX
 GuruPipeline Dev Agent"
 ```
 
-**Move card to In Review:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review).
-
-**Post comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-"@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. PR: {URL}. Tests pass, Build pass. Moved to In Review."
-
 ### Project stories (shared phase branch):
 
 ```bash
@@ -233,56 +223,78 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 git push -u origin {phase-branch}
 ```
 
-Mark THIS story as In Review — use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review). Its commit is on the phase branch.
-
 **Check if last story in milestone:**
-List issues in the same project + same milestone. Count those NOT in Done status.
+List issues in the same project + same milestone. Count those NOT in "Done" or "In Review" status.
 
-**If more stories remain in milestone:**
-- Do NOT create PR yet.
-- Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-  "@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. Committed to `{phase-branch}`. {remaining} stories left in this phase."
-- Stop. Next pipeline run picks up the next story and adds another commit to the same branch.
+**If more stories remain:** Do NOT create PR yet. Write result.json with `"decision": "ready_for_review"` and stop.
 
-**If this was the last story in the milestone (none remaining):**
-1. Create PR for the entire phase:
+**If last story:** Create PR for the entire phase:
 ```bash
 gh pr create --base master --head {phase-branch} --title "{Project}: {Phase name}" --body "## {Phase name}
 
 ### Stories implemented
 - GURU-XX: {title}
-- GURU-YY: {title}
-- ...
+...
 
-### Validation
-- Tests: pass
-- Build: pass
-
-Closes GURU-XX, GURU-YY, ...
+Closes GURU-XX, GURU-YY
 
 GuruPipeline Dev Agent"
 ```
-2. Move ALL stories in this milestone to In Review:
-   For each story, use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review).
-3. Post comment on each story card:
-   Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-   "@marcelomar21 @lucasnakauchi — Phase PR created: {URL}. All stories in {Phase name} moved to In Review."
 
-**Clean up:**
+## Step 6: Write result.json AND STOP
+
+After git push and PR creation (if applicable), write `result.json` and STOP.
+
+The pipeline reads this file and handles ALL Linear operations:
+- Moving the card to In Review
+- Posting comments on Linear
+- Moving project stories
+
+**FORBIDDEN — Do NONE of these:**
+- Do NOT call `mcp__claude_ai_Linear__save_issue` or `save_comment`
+- Do NOT use `curl` to call Linear or GitHub APIs
+- Do NOT post comments on Linear — the pipeline does ALL posting
+- After writing result.json, do NOT execute any more tools. Just stop.
+
+### Write the file:
 ```bash
-rm -rf _bmad-output/current-spec.md _bmad-output/implementation-artifacts/current-story.md
-git checkout -- . 2>/dev/null
-git clean -fd _bmad-output/ 2>/dev/null
+cat > result.json << 'RESULT_EOF'
+{
+  "agent": "execute",
+  "card": "GURU-XX",
+  "pr": 185,
+  "branch": "feature/guru-xx-description",
+  "decision": "ready_for_review",
+  "summary": "Implemented X, Y, Z. Tests pass, build passes.",
+  "tests": "830 passed, 1 failed (pre-existing)",
+  "build": "success"
+}
+RESULT_EOF
 ```
 
-## Output
-
+For failed implementation:
+```json
+{
+  "agent": "execute",
+  "card": "GURU-XX",
+  "branch": "feature/guru-xx-description",
+  "decision": "failed",
+  "summary": "Build fails due to X. Needs investigation.",
+  "tests": "failed",
+  "build": "failed"
+}
 ```
-## Execute Agent Summary
-- Card: GURU-XX | none
-- Dev Loop: #N/4
-- Workflow: quick-dev | dev-story
-- Branch: {branch} (standalone | phase branch)
-- PR: {URL} | pending (N stories left in phase) | none
-- QA: tests {r}, build {r}
+
+For project stories with remaining work in the milestone:
+```json
+{
+  "agent": "execute",
+  "card": "GURU-XX",
+  "branch": "multi-group/phase-1",
+  "decision": "ready_for_review",
+  "summary": "Story implemented. 2 stories remaining in Phase 1.",
+  "project_stories": ["GURU-41", "GURU-42"],
+  "tests": "pass",
+  "build": "pass"
+}
 ```
