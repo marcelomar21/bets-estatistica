@@ -420,6 +420,7 @@ async function setupScheduler() {
     const { runReconciliation } = require('./jobs/membership/reconciliation');
     const { runCheckAffiliateExpiration } = require('./jobs/membership/check-affiliate-expiration');
     const { runDistributeBets } = require('./jobs/distributeBets');
+    const { runGenerateDailyArt } = require('./jobs/generateDailyArt');
 
     // Distribute bets (round-robin) - every 15 minutes
     cron.schedule('*/15 * * * *', async () => {
@@ -524,6 +525,17 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
+    // Generate daily art (D+1 hits) - 09:00 São Paulo (GURU-19)
+    cron.schedule('0 9 * * *', async () => {
+      logger.info('[scheduler] Running generate-daily-art job');
+      try {
+        await withExecutionLogging('generate-daily-art', runGenerateDailyArt);
+        logger.info('[scheduler] generate-daily-art complete');
+      } catch (err) {
+        logger.error('[scheduler] generate-daily-art failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
     // Cleanup stuck job executions - every hour at minute 0
     cron.schedule('0 * * * *', async () => {
       logger.debug('[scheduler] Running cleanup-stuck-jobs');
@@ -557,6 +569,7 @@ async function setupScheduler() {
     console.log('   13-23 - Track results (hourly)');
     console.log('   */15  - Distribute bets (round-robin)');
     console.log('   */30s - Process webhooks (membership)');
+    console.log('   09:00 - Generate daily art (GURU-19)');
     console.log('   */1h  - Cleanup stuck jobs');
   }
 }
