@@ -27,8 +27,12 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 
 ## Step 1: Find card
 
-Use `mcp__claude_ai_Linear__list_issues` with team="Guru", state="In Review".
-If none: output "No cards in review" and stop.
+**IMPORTANT:** Always pass BOTH parameters. The query fails without the team.
+
+Use `mcp__claude_ai_Linear__list_issues` with **team="Guru"** and **state="In Review"**.
+
+If the query returns empty, do NOT retry with different parameters — just output "No cards in review" and stop. The dashboard shows the real board state; an empty result means the MCP query worked but there are genuinely no cards.
+
 Pick highest priority card.
 
 ## Step 2: Setup context

@@ -30,7 +30,9 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 
 ## Step 1: Check Needs Info cards
 
-Use `mcp__claude_ai_Linear__list_issues` with team="Guru", state="Needs Info", limit=10.
+**IMPORTANT:** Always pass BOTH team and state parameters. The query fails without the team.
+
+Use `mcp__claude_ai_Linear__list_issues` with **team="Guru"** and **state="Needs Info"**, limit=10.
 For each:
 1. Read comments via `mcp__claude_ai_Linear__list_comments`
 2. If Marcelo/Yuki replied AFTER the agent's question → move back to Backlog

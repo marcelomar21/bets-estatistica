@@ -31,13 +31,15 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 
 ## Step 1: Find card
 
+**IMPORTANT:** Always pass BOTH team and state parameters. The query fails without the team.
+
 **Priority A — In Progress (returning from review):**
-Use `mcp__claude_ai_Linear__list_issues` with team="Guru", state="In Progress".
+Use `mcp__claude_ai_Linear__list_issues` with **team="Guru"** and **state="In Progress"**.
 For each: read comments. If has "Code Review Loop #" → needs fixes. Take it.
 No review comments → skip (manually placed).
 
 **Priority B — Ready to Dev:**
-Use `mcp__claude_ai_Linear__list_issues` with team="Guru", state="Ready to Dev", limit=5.
+Use `mcp__claude_ai_Linear__list_issues` with **team="Guru"** and **state="Ready to Dev"**, limit=5.
 For each: use `mcp__claude_ai_Linear__get_issue` with `includeRelations=true`. Skip issues with unresolved `blockedBy` (blocking issues not in Done).
 
 **IMPORTANT — Icebox filter:** Never pick a card whose `status` is "Icebox". These are deliberately parked. Only process cards with `status` = "Ready to Dev".
