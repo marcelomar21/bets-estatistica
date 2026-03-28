@@ -85,129 +85,83 @@ E2E via Playwright MCP (if dev server available):
 - Validate final result
 - Take screenshots as evidence
 
-## Step 5: Decision
+## Step 5: Decision + Finalize
 
-**ALWAYS check REVIEW_LOOP first.**
+After QA, decide and execute ALL actions. This step is NOT complete until the Linear card has been moved.
 
-### CRITICAL RULES FOR THIS STEP — READ BEFORE DECIDING
+### Decide:
+- No HIGH/MEDIUM issues → **APPROVE**
+- HIGH/MEDIUM issues, loop < 3 → **REQUEST CHANGES**
+- Loop >= 3, issues persist → **ESCALATE**
 
-1. **GitHub self-review:** `--approve` and `--request-changes` WILL FAIL. Always use `--comment`.
-2. **NEVER move cards to "Done".** Only the human does that after merge + deploy.
-3. **NEVER use "Needs Human Review" for REQUEST CHANGES.** Needs Human Review is ONLY for escalation after 3+ failed loops. A normal "fix this and come back" is In Progress.
-4. **Status mapping (EXACT — no exceptions):**
+### APPROVE — Execute these 3 tool calls:
 
-| Decision | Target status | Status ID |
-|----------|--------------|-----------|
-| APPROVE | Ready to Deploy | `183cedb6-bbd4-4c07-b8cd-d0e76f7395bf` |
-| REQUEST CHANGES | In Progress | `aa676804-1017-4f19-a888-8197c1c1c567` |
-| ESCALATE (3+ loops only) | Needs Human Review | `7fbf0da0-36d8-4416-8412-b20226559104` |
-
-### If no HIGH or MEDIUM issues → APPROVE
-
-You MUST do ALL 3 actions below in sequence. Do NOT stop after the comment.
-
-**Action 1 — Post review comment on GitHub:**
+**1.** Post comment on the GitHub PR:
 ```bash
-gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — APPROVED
-
-### QA Results
-- Tests: {result}
-- Build: {result}
-- E2E: {result}
-
-### Notes
-{LOW items or 'Clean implementation.'}
-
-GuruPipeline Review Agent"
-```
-
-**Action 2 — Move card to Ready to Deploy on Linear (NOT Done!):**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"** (Ready to Deploy).
-
-**Action 3 — Post comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-"@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
-
-All 3 actions done. Stop.
-
-### If HIGH/MEDIUM issues AND REVIEW_LOOP < 3 → REQUEST CHANGES
-
-You MUST do ALL 3 actions below in sequence. Do NOT stop after the comment.
-
-**Action 1 — Post review comment on GitHub:**
-```bash
-gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — Changes Requested
-
-### Findings
-**[HIGH/MEDIUM]** {description}
-- File: {file_path}:{line}
-- Issue: {what is wrong}
-- Fix: {suggested fix}
-
-### Required Fixes
-1. {actionable fix}
+gh pr comment {PR_NUMBER} --body "## Code Review — APPROVED
 
 ### QA: Tests {result}, Build {result}
 
-GuruPipeline Review Agent (Loop {REVIEW_LOOP}/3)"
-```
-
-**Action 2 — Move card to In Progress on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="aa676804-1017-4f19-a888-8197c1c1c567"** (In Progress).
-
-**Action 3 — Post comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-"@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}/3**: {N} issues ({H} high, {M} medium). Moved to In Progress for fixes."
-
-All 3 actions done. Stop.
-
-### If REVIEW_LOOP >= 3 → MAKE A DECISION
-
-Review ALL findings across ALL 3 loops. Then decide:
-
-**Option A — Approve (good enough):**
-If remaining issues are all LOW or cosmetic MEDIUM:
-Follow the APPROVE flow above (all 3 actions).
-
-**Option B — Escalate to human (real problems persist):**
-If HIGH or functional MEDIUM issues still present:
-
-**Action 1 — Post review comment on GitHub:**
-```bash
-gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} — ESCALATED TO HUMAN
-
-### Why escalated
-{clear explanation of persistent problems}
-
-### Full History
-- Loop 1: {summary}
-- Loop 2: {summary}
-- Loop 3: {summary}
-
-### Remaining Issues
-{list each HIGH/MEDIUM}
-
-### Suggested path forward
-{recommendation}
+{summary}
 
 GuruPipeline Review Agent"
 ```
 
-**Action 2 — Move card to Needs Human Review on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="7fbf0da0-36d8-4416-8412-b20226559104"** (Needs Human Review).
-
-**Action 3 — Post comment on Linear card:**
-Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
-"@marcelomar21 @lucasnakauchi — **Escalated after 3 review loops.** {Why}. {H} high, {M} medium unresolved. Full history in the PR."
-
-All 3 actions done. Stop.
-
-## Output
-
+**2.** Move card to Ready to Deploy — call this tool NOW:
 ```
-## Review Agent Summary
-- Card: GURU-XX | none
-- Review Loop: #N/3
-- Decision: APPROVED | CHANGES_REQUESTED | ESCALATED | skipped
-- QA: tests {r}, build {r}
+Tool: mcp__claude_ai_Linear__save_issue
+Parameters: id="GURU-XX", state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"
 ```
+
+**3.** Comment on Linear card — call this tool NOW:
+```
+Tool: mcp__claude_ai_Linear__save_comment
+Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — APPROVED. PR: {URL}. Ready to Deploy."
+```
+
+**If you did not call `mcp__claude_ai_Linear__save_issue`, YOU ARE NOT DONE. Go back and call it.**
+
+### REQUEST CHANGES — Execute these 3 tool calls:
+
+**1.** Post comment on the GitHub PR:
+```bash
+gh pr comment {PR_NUMBER} --body "## Code Review — Changes Requested
+
+{findings}
+
+GuruPipeline Review Agent"
+```
+
+**2.** Move card to In Progress:
+```
+Tool: mcp__claude_ai_Linear__save_issue
+Parameters: id="GURU-XX", state="aa676804-1017-4f19-a888-8197c1c1c567"
+```
+
+**3.** Comment on Linear card:
+```
+Tool: mcp__claude_ai_Linear__save_comment
+Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — Changes requested. {N} issues. Moved to In Progress."
+```
+
+### ESCALATE (loop >= 3 only) — Execute these 3 tool calls:
+
+**1.** Post comment on the GitHub PR with full history.
+
+**2.** Move card to Needs Human Review:
+```
+Tool: mcp__claude_ai_Linear__save_issue
+Parameters: id="GURU-XX", state="7fbf0da0-36d8-4416-8412-b20226559104"
+```
+
+**3.** Comment on Linear card:
+```
+Tool: mcp__claude_ai_Linear__save_comment
+Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — Escalated. {reason}."
+```
+
+### FORBIDDEN
+- NEVER use state "Done" (10c57d23-271c-45d8-baa2-b9e861e0a5a7)
+- NEVER use state "Needs Human Review" for REQUEST CHANGES
+- NEVER skip the `mcp__claude_ai_Linear__save_issue` call
+- NEVER use `gh pr review` (fails on own PRs) — use `gh pr comment` instead
