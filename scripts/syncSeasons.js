@@ -43,8 +43,9 @@ const TARGET_LEAGUES = [
   // Europe - UEFA competitions
   'europe uefa champions league',
   'europe uefa europa league',
-  // Brazil - Serie A + Estaduais
+  // Brazil - Serie A + Serie B + Estaduais
   'brazil serie a',
+  'brazil serie b',
   'brazil mineiro 1',
   'brazil carioca 1',
   'brazil paulista a1',
