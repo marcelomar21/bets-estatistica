@@ -119,7 +119,19 @@ export function UtmBuilder() {
 
   const handleCopy = useCallback(async () => {
     if (!generatedUrl) return;
-    await navigator.clipboard.writeText(generatedUrl);
+    try {
+      await navigator.clipboard.writeText(generatedUrl);
+    } catch {
+      // Fallback for environments where clipboard API is unavailable
+      const textarea = document.createElement('textarea');
+      textarea.value = generatedUrl;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
 
@@ -138,7 +150,18 @@ export function UtmBuilder() {
 
   const handleCopyHistory = useCallback(
     async (url: string, idx: number) => {
-      await navigator.clipboard.writeText(url);
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        const textarea = document.createElement('textarea');
+        textarea.value = url;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
       setCopiedHistoryIdx(idx);
       setTimeout(() => setCopiedHistoryIdx(null), 2000);
     },
