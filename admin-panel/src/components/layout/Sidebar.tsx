@@ -40,6 +40,7 @@ const modules: NavModule[] = [
       { name: 'Historico', href: '/posting-history', icon: '📋' },
       { name: 'Analytics', href: '/analytics', icon: '📈' },
       { name: 'Tom de Voz', href: '/tone', icon: '🎙️' },
+      { name: 'Gerador UTM', href: '/utm-generator', icon: '🔗' },
     ],
   },
   {
