@@ -175,7 +175,7 @@ export function BetEditDrawer({
               </>
             )}
             <p className="text-sm text-gray-600">
-              {bet.bet_market} {'\u2014'} {pickDisplay}
+              {pickDisplay}
             </p>
             {bet.hit_rate && (
               <p className="text-xs text-gray-500">

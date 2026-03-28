@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { PostingQueueTable } from '@/components/features/posting/PostingQueueTable';
 import type { QueueBet } from '@/components/features/posting/PostingQueueTable';
 import { formatDateTimeShort } from '@/lib/format-utils';
+import { formatPickDisplay } from '@/lib/bet-categories';
 
 interface QueueData {
   readyCount: number;
@@ -1046,7 +1047,7 @@ export default function PostagemPage() {
               {editingOddsBet.match.home_team_name} x {editingOddsBet.match.away_team_name}
             </p>
             <p className="text-xs text-gray-400">
-              {editingOddsBet.bet_market} — {editingOddsBet.bet_pick}
+              {formatPickDisplay(editingOddsBet.bet_market, editingOddsBet.bet_pick)}
             </p>
 
             <input
@@ -1094,7 +1095,7 @@ export default function PostagemPage() {
               {editingLinkBet.match.home_team_name} x {editingLinkBet.match.away_team_name}
             </p>
             <p className="text-xs text-gray-400">
-              {editingLinkBet.bet_market} — {editingLinkBet.bet_pick}
+              {formatPickDisplay(editingLinkBet.bet_market, editingLinkBet.bet_pick)}
             </p>
 
             <input

@@ -77,7 +77,7 @@ describe('PostingHistoryTable', () => {
     );
 
     expect(screen.getByText('Flamengo vs Palmeiras')).toBeInTheDocument();
-    expect(screen.getByText('Over 2.5 — Over')).toBeInTheDocument();
+    expect(screen.getByText('Over 2.5 - Over')).toBeInTheDocument();
     expect(screen.getByText('1.80')).toBeInTheDocument();
     expect(screen.getByText('Grupo Principal')).toBeInTheDocument();
   });
