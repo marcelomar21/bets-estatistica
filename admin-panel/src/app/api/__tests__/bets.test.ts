@@ -8,6 +8,10 @@ vi.mock('@/middleware/tenant', () => ({
   withTenant: () => mockWithTenant(),
 }));
 
+vi.mock('@/lib/distribute-utils', () => ({
+  pickPostTime: vi.fn().mockResolvedValue('14:30'),
+}));
+
 function createRouteContext(params: Record<string, string>) {
   return { params: Promise.resolve(params) };
 }
@@ -728,7 +732,8 @@ describe('POST /api/bets/bulk/odds', () => {
 });
 
 // ============================================================
-// POST /api/bets/[id]/distribute (Story 4-2)
+// POST /api/bets/[id]/distribute (GURU-42: multi-group)
+// Tests moved to bets-distribute.test.ts — kept here: basic smoke tests
 // ============================================================
 describe('POST /api/bets/[id]/distribute', () => {
   beforeEach(() => {
@@ -737,12 +742,12 @@ describe('POST /api/bets/[id]/distribute', () => {
   });
 
   function createDistributeQueryBuilder(options: {
-    groupData?: unknown;
-    groupError?: { message: string } | null;
-    currentBet?: unknown;
+    bet?: unknown;
     betError?: { message: string } | null;
-    updateError?: { message: string } | null;
-    updatedBet?: unknown;
+    groups?: unknown[];
+    groupsError?: { message: string } | null;
+    existingAssignments?: unknown[];
+    insertError?: { message: string } | null;
   } = {}) {
     let fromCallIndex = 0;
 
@@ -754,23 +759,17 @@ describe('POST /api/bets/[id]/distribute', () => {
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
       chain.neq = vi.fn(() => chain);
-      chain.update = vi.fn(() => chain);
-      chain.insert = vi.fn(() => ({ data: null, error: null }));
+      chain.not = vi.fn(() => chain);
+      chain.in = vi.fn(() => {
+        if (fromCallIndex === 2) return { data: options.groups ?? [], error: options.groupsError ?? null };
+        return { data: options.existingAssignments ?? [], error: null };
+      });
       chain.single = vi.fn(() => {
-        if (fromCallIndex === 1) {
-          // Group lookup
-          return { data: options.groupData ?? null, error: options.groupError ?? null };
-        }
-        if (fromCallIndex === 2) {
-          // Current bet fetch
-          return { data: options.currentBet ?? null, error: options.betError ?? null };
-        }
-        if (fromCallIndex === 3) {
-          // Update bet (returns error only)
-          return { data: null, error: options.updateError ?? null };
-        }
-        // Fetch updated bet (call 4 or 5 depending on audit_log insert)
-        return { data: options.updatedBet ?? options.currentBet ?? null, error: null };
+        return { data: options.bet ?? null, error: options.betError ?? null };
+      });
+      chain.insert = vi.fn(() => {
+        if (fromCallIndex >= 5) return { data: null, error: null };
+        return { data: null, error: options.insertError ?? null };
       });
       return chain;
     });
@@ -778,12 +777,12 @@ describe('POST /api/bets/[id]/distribute', () => {
     return { from: mockFrom };
   }
 
-  it('distributes a pool bet to a group', async () => {
+  it('distributes a bet to a group (backward compat)', async () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createDistributeQueryBuilder({
-      groupData: { id: groupUuid, name: 'Guru da Bet' },
-      currentBet: { id: 1, group_id: null, bet_status: 'generated' },
-      updatedBet: { id: 1, group_id: groupUuid, bet_status: 'ready', distributed_at: '2026-02-20T10:00:00Z' },
+      bet: { id: 1, bet_status: 'generated' },
+      groups: [{ id: groupUuid, name: 'Guru da Bet', status: 'active', posting_schedule: null }],
+      existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -799,24 +798,27 @@ describe('POST /api/bets/[id]/distribute', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.redistributed).toBe(false);
-    expect(body.data.groupName).toBe('Guru da Bet');
+    expect(body.data.created).toHaveLength(1);
+    expect(body.data.created[0].groupName).toBe('Guru da Bet');
   });
 
-  it('redistributes a bet and writes audit_log', async () => {
-    const oldGroupUuid = '550e8400-e29b-41d4-a716-446655440001';
-    const newGroupUuid = '550e8400-e29b-41d4-a716-446655440002';
+  it('distributes to multiple groups and writes audit_log', async () => {
+    const groupA = '550e8400-e29b-41d4-a716-446655440001';
+    const groupB = '550e8400-e29b-41d4-a716-446655440002';
     const qb = createDistributeQueryBuilder({
-      groupData: { id: newGroupUuid, name: 'Osmar Palpites' },
-      currentBet: { id: 1, group_id: oldGroupUuid, bet_status: 'ready' },
-      updatedBet: { id: 1, group_id: newGroupUuid, bet_status: 'ready', distributed_at: '2026-02-20T10:00:00Z' },
+      bet: { id: 1, bet_status: 'ready' },
+      groups: [
+        { id: groupA, name: 'Group A', status: 'active', posting_schedule: null },
+        { id: groupB, name: 'Group B', status: 'active', posting_schedule: null },
+      ],
+      existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { POST } = await import('@/app/api/bets/[id]/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/1/distribute', {
-      groupId: newGroupUuid,
+      groupIds: [groupA, groupB],
     });
     const routeCtx = createRouteContext({ id: '1' });
 
@@ -825,31 +827,32 @@ describe('POST /api/bets/[id]/distribute', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.redistributed).toBe(true);
-    // Verify audit_log was called (from was called for audit_log insert)
+    expect(body.data.created).toHaveLength(2);
     expect(qb.from).toHaveBeenCalledWith('audit_log');
   });
 
-  it('returns 400 for invalid group', async () => {
+  it('skips group not found in DB', async () => {
+    const groupUuid = '550e8400-e29b-41d4-a716-446655440000';
     const qb = createDistributeQueryBuilder({
-      groupData: null,
-      groupError: { message: 'Not found' },
+      bet: { id: 1, bet_status: 'ready' },
+      groups: [],
+      existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { POST } = await import('@/app/api/bets/[id]/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/1/distribute', {
-      groupId: '550e8400-e29b-41d4-a716-446655440000',
+      groupId: groupUuid,
     });
     const routeCtx = createRouteContext({ id: '1' });
 
     const response = await POST(req, routeCtx);
     const body = await response.json();
 
-    expect(response.status).toBe(400);
-    expect(body.success).toBe(false);
-    expect(body.error.code).toBe('NOT_FOUND');
+    expect(response.status).toBe(200);
+    expect(body.data.skipped).toHaveLength(1);
+    expect(body.data.skipped[0].reason).toContain('nao encontrado');
   });
 
   it('returns 400 for invalid groupId format', async () => {
@@ -884,7 +887,7 @@ describe('POST /api/bets/[id]/distribute', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 403 for group_admin', async () => {
+  it('returns 403 for group_admin distributing to cross-group', async () => {
     mockWithTenant.mockResolvedValue({
       success: true,
       context: createMockContext('group_admin'),
@@ -904,8 +907,7 @@ describe('POST /api/bets/[id]/distribute', () => {
   it('returns 404 for non-existent bet', async () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createDistributeQueryBuilder({
-      groupData: { id: groupUuid, name: 'Guru da Bet' },
-      currentBet: null,
+      bet: null,
       betError: { message: 'Not found' },
     });
     const context = createMockContext('super_admin', qb);
