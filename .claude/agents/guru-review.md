@@ -89,13 +89,13 @@ E2E via Playwright MCP (if dev server available):
 
 **ALWAYS check REVIEW_LOOP first.**
 
-### IMPORTANT: GitHub self-review limitation
+### CRITICAL RULES FOR THIS STEP
 
-The GH_TOKEN belongs to the same user who creates PRs. GitHub blocks `--approve` and `--request-changes` on your own PRs. **Always use `--comment`** instead and proceed with the Linear status move regardless:
-- APPROVE decision → post comment review + move card to **Ready to Deploy** (Step 6)
-- REQUEST CHANGES decision → post comment review + move card to **In Progress**
-
-The Linear card status is the source of truth, not the GitHub review state.
+1. **GitHub self-review:** GH_TOKEN is the same user. `--approve` and `--request-changes` WILL FAIL. Always use `--comment`.
+2. **NEVER move cards to "Done".** The review agent does NOT have authority to mark cards as Done. Only the human does that after merging and deploying.
+3. **Approved cards go to "Ready to Deploy" (ID: 183cedb6-bbd4-4c07-b8cd-d0e76f7395bf).** NOT Done. NOT any other status. Ready to Deploy means "approved, waiting for human to merge".
+4. **Rejected cards go to "In Progress" (ID: aa676804-1017-4f19-a888-8197c1c1c567).**
+5. **Escalated cards go to "Needs Human Review" (ID: 7fbf0da0-36d8-4416-8412-b20226559104).**
 
 ### If no HIGH or MEDIUM issues → APPROVE
 
@@ -116,8 +116,8 @@ gh pr review {PR_NUMBER} --comment --body "## Code Review Loop #{REVIEW_LOOP} �
 GuruPipeline Review Agent"
 ```
 
-**Action 2 — Move card to Ready to Deploy on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="Ready to Deploy"**.
+**Action 2 — Move card to Ready to Deploy on Linear (NOT Done!):**
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"** (Ready to Deploy).
 
 **Action 3 — Post Linear comment:**
 ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}: APPROVED**. PR: {URL}. Tests pass, Build pass. Ready to Deploy — awaiting your merge."
@@ -147,7 +147,7 @@ GuruPipeline Review Agent (Loop {REVIEW_LOOP}/3)"
 ```
 
 **Action 2 — Move card to In Progress on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="In Progress"**.
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="aa676804-1017-4f19-a888-8197c1c1c567"** (In Progress).
 
 **Action 3 — Post Linear comment:**
 ONE comment: "@marcelomar21 @lucasnakauchi — **Code Review Loop #{REVIEW_LOOP}/3**: {N} issues ({H} high, {M} medium). Moved to In Progress for fixes."
@@ -187,7 +187,7 @@ GuruPipeline Review Agent"
 ```
 
 **Action 2 — Move card to Needs Human Review on Linear:**
-Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="Needs Human Review"**.
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="7fbf0da0-36d8-4416-8412-b20226559104"** (Needs Human Review).
 
 **Action 3 — Post Linear comment:**
 ONE comment: "@marcelomar21 @lucasnakauchi — **Escalated after 3 review loops.** {Why}. {H} high, {M} medium unresolved. Full history in the PR."
