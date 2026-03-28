@@ -94,71 +94,33 @@ After QA, decide and execute ALL actions. This step is NOT complete until the Li
 - HIGH/MEDIUM issues, loop < 3 → **REQUEST CHANGES**
 - Loop >= 3, issues persist → **ESCALATE**
 
-### APPROVE — Execute these 3 tool calls:
+### APPROVE — Do these in order (Linear FIRST, GitHub LAST):
 
-**1.** Post comment on the GitHub PR:
-```bash
-gh pr comment {PR_NUMBER} --body "## Code Review — APPROVED
+**FIRST — Move card on Linear (most important, do this before anything else):**
+Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"
 
-### QA: Tests {result}, Build {result}
+**SECOND — Comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — APPROVED. PR: {URL}. Ready to Deploy."
 
-{summary}
+**THIRD — Post comment on GitHub PR:**
+Run: `gh pr comment {PR_NUMBER} --body "Code Review — APPROVED. QA: Tests {result}, Build {result}. {summary}"`
 
-GuruPipeline Review Agent"
-```
+### REQUEST CHANGES — Do these in order (Linear FIRST, GitHub LAST):
 
-**2.** Move card to Ready to Deploy — call this tool NOW:
-```
-Tool: mcp__claude_ai_Linear__save_issue
-Parameters: id="GURU-XX", state="183cedb6-bbd4-4c07-b8cd-d0e76f7395bf"
-```
+**FIRST — Move card on Linear:**
+Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="aa676804-1017-4f19-a888-8197c1c1c567"
 
-**3.** Comment on Linear card — call this tool NOW:
-```
-Tool: mcp__claude_ai_Linear__save_comment
-Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — APPROVED. PR: {URL}. Ready to Deploy."
-```
+**SECOND — Comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — Changes requested. {N} issues."
 
-**If you did not call `mcp__claude_ai_Linear__save_issue`, YOU ARE NOT DONE. Go back and call it.**
+**THIRD — Post comment on GitHub PR:**
+Run: `gh pr comment {PR_NUMBER} --body "Code Review — Changes Requested. {findings}"`
 
-### REQUEST CHANGES — Execute these 3 tool calls:
+### ESCALATE (loop >= 3 only) — Do these in order (Linear FIRST):
 
-**1.** Post comment on the GitHub PR:
-```bash
-gh pr comment {PR_NUMBER} --body "## Code Review — Changes Requested
-
-{findings}
-
-GuruPipeline Review Agent"
-```
-
-**2.** Move card to In Progress:
-```
-Tool: mcp__claude_ai_Linear__save_issue
-Parameters: id="GURU-XX", state="aa676804-1017-4f19-a888-8197c1c1c567"
-```
-
-**3.** Comment on Linear card:
-```
-Tool: mcp__claude_ai_Linear__save_comment
-Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — Changes requested. {N} issues. Moved to In Progress."
-```
-
-### ESCALATE (loop >= 3 only) — Execute these 3 tool calls:
-
-**1.** Post comment on the GitHub PR with full history.
-
-**2.** Move card to Needs Human Review:
-```
-Tool: mcp__claude_ai_Linear__save_issue
-Parameters: id="GURU-XX", state="7fbf0da0-36d8-4416-8412-b20226559104"
-```
-
-**3.** Comment on Linear card:
-```
-Tool: mcp__claude_ai_Linear__save_comment
-Parameters: issueId="GURU-XX", body="@marcelomar21 @lucasnakauchi — Escalated. {reason}."
-```
+**FIRST:** Use `mcp__claude_ai_Linear__save_issue` with id="GURU-XX" and state="7fbf0da0-36d8-4416-8412-b20226559104"
+**SECOND:** Use `mcp__claude_ai_Linear__save_comment` with issueId="GURU-XX" and body="@marcelomar21 @lucasnakauchi — Escalated. {reason}."
+**THIRD:** `gh pr comment {PR_NUMBER} --body "Escalated to human. {reason}"`
 
 ### FORBIDDEN
 - NEVER use state "Done" (10c57d23-271c-45d8-baa2-b9e861e0a5a7)
