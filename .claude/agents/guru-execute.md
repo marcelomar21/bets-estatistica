@@ -26,6 +26,8 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 5. NEVER commit to main/master. Always work on branches.
 6. ALWAYS run validation (npm test + npm run build) before creating PR.
 7. ALWAYS use model "opus" when spawning subagents.
+8. **NEVER move cards to "Done".** You are the EXECUTE agent, not the reviewer or deployer. After implementation, cards go to **In Review** — NEVER to Done.
+9. **You are NOT a review agent.** Do NOT evaluate code quality, do NOT "approve", do NOT write review summaries. Your job: implement → test → create PR → move to In Review. That's it.
 
 ---
 
@@ -49,7 +51,10 @@ Pick first non-archived, non-blocked. If none: output "No cards to implement" an
 ## Step 2: Setup
 
 **Count dev loops:** Read comments. Count "Dev Execution #". Set DEV_LOOP = count + 1.
-If DEV_LOOP > 4: comment "@marcelomar21 @lucasnakauchi — Escalating. 4+ dev loops.", move to Needs Human Review (7fbf0da0-36d8-4416-8412-b20226559104), stop.
+If DEV_LOOP > 4:
+- Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** = "@marcelomar21 @lucasnakauchi — Escalating. 4+ dev loops."
+- Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="7fbf0da0-36d8-4416-8412-b20226559104"** (Needs Human Review).
+- Stop.
 
 **Move to In Progress** (aa676804-1017-4f19-a888-8197c1c1c567) if not already there.
 
@@ -209,8 +214,12 @@ Closes GURU-XX
 GuruPipeline Dev Agent"
 ```
 
-Move card to In Review (8fb46431-d2c3-450a-a09d-3366a40cf043).
-ONE comment: "@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. PR: {URL}. Tests pass, Build pass. Moved to In Review."
+**Move card to In Review:**
+Use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review).
+
+**Post comment on Linear card:**
+Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+"@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. PR: {URL}. Tests pass, Build pass. Moved to In Review."
 
 ### Project stories (shared phase branch):
 
@@ -224,14 +233,15 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 git push -u origin {phase-branch}
 ```
 
-Mark THIS story as Done (10c57d23-271c-45d8-baa2-b9e861e0a5a7) — its commit is on the branch.
+Mark THIS story as In Review — use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review). Its commit is on the phase branch.
 
 **Check if last story in milestone:**
 List issues in the same project + same milestone. Count those NOT in Done status.
 
 **If more stories remain in milestone:**
 - Do NOT create PR yet.
-- ONE comment: "@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. Committed to `{phase-branch}`. {remaining} stories left in this phase."
+- Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+  "@marcelomar21 @lucasnakauchi — **Dev Execution #{DEV_LOOP}** complete. Committed to `{phase-branch}`. {remaining} stories left in this phase."
 - Stop. Next pipeline run picks up the next story and adds another commit to the same branch.
 
 **If this was the last story in the milestone (none remaining):**
@@ -252,8 +262,11 @@ Closes GURU-XX, GURU-YY, ...
 
 GuruPipeline Dev Agent"
 ```
-2. Move ALL stories in this milestone to In Review (8fb46431-d2c3-450a-a09d-3366a40cf043).
-3. ONE comment on each story: "@marcelomar21 @lucasnakauchi — Phase PR created: {URL}. All stories in {Phase name} moved to In Review."
+2. Move ALL stories in this milestone to In Review:
+   For each story, use `mcp__claude_ai_Linear__save_issue` with **id="GURU-XX"** and **state="8fb46431-d2c3-450a-a09d-3366a40cf043"** (In Review).
+3. Post comment on each story card:
+   Use `mcp__claude_ai_Linear__save_comment` with **issueId="GURU-XX"** and **body** =
+   "@marcelomar21 @lucasnakauchi — Phase PR created: {URL}. All stories in {Phase name} moved to In Review."
 
 **Clean up:**
 ```bash
