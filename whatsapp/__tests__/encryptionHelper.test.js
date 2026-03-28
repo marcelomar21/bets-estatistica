@@ -76,10 +76,11 @@ describe('encryptionHelper', () => {
       expect(() => decrypt(encrypted, WRONG_KEY)).toThrow();
     });
 
-    it('should throw on tampered ciphertext', () => {
+    it('should throw on tampered authTag', () => {
       const encrypted = encrypt({ data: 1 }, TEST_KEY);
       const parts = encrypted.split(':');
-      parts[3] = 'ff' + parts[3].slice(2); // tamper ciphertext
+      // Flip bits in authTag — GCM always rejects mismatched tags
+      parts[2] = parts[2].split('').map(c => c === 'f' ? '0' : 'f').join('');
       expect(() => decrypt(parts.join(':'), TEST_KEY)).toThrow();
     });
 
