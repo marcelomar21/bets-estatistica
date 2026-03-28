@@ -1,17 +1,31 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
+import { buildPostTimeContext, pickPostTime } from '@/lib/distribute-utils';
 
 // Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const distributeSchema = z.object({
-  groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido'),
-});
+const distributeSchema = z.union([
+  z.object({
+    groupIds: z.array(z.string().regex(UUID_RE, 'Cada groupId deve ser um UUID valido')).min(1),
+  }),
+  // Backward compat: single groupId wrapped to array
+  z.object({
+    groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido'),
+  }),
+]);
+
+type DistributeBody = z.infer<typeof distributeSchema>;
+
+function normalizeGroupIds(body: DistributeBody): string[] {
+  if ('groupIds' in body) return body.groupIds;
+  return [body.groupId];
+}
 
 export const POST = createApiHandler(
   async (req, context, routeContext) => {
-    const { supabase } = context;
+    const { supabase, groupFilter, user } = context;
     const { id } = await routeContext.params;
     const betId = Number.parseInt(id, 10);
 
@@ -23,7 +37,7 @@ export const POST = createApiHandler(
     }
 
     // Parse and validate body
-    let body: z.infer<typeof distributeSchema>;
+    let body: DistributeBody;
     try {
       body = distributeSchema.parse(await req.json());
     } catch (err) {
@@ -34,27 +48,23 @@ export const POST = createApiHandler(
       );
     }
 
-    const { groupId } = body;
+    const groupIds = normalizeGroupIds(body);
 
-    // Validate group exists and is not deleted + load posting_schedule for post_at
-    const { data: group, error: groupError } = await supabase
-      .from('groups')
-      .select('id, name, posting_schedule')
-      .eq('id', groupId)
-      .neq('status', 'deleted')
-      .single();
-
-    if (groupError || !group) {
-      return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
-        { status: 400 },
-      );
+    // Enforce group_admin scope: can only distribute to their own group
+    if (groupFilter) {
+      const unauthorized = groupIds.filter((gid) => gid !== groupFilter);
+      if (unauthorized.length > 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Sem permissao para distribuir para grupos fora do seu escopo' } },
+          { status: 403 },
+        );
+      }
     }
 
-    // Fetch current bet
+    // Verify bet exists
     const { data: currentBet, error: fetchError } = await supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status')
+      .select('id')
       .eq('id', betId)
       .single();
 
@@ -65,91 +75,112 @@ export const POST = createApiHandler(
       );
     }
 
-    const oldGroupId = currentBet.group_id;
-    const isRedistribution = oldGroupId !== null;
+    // Bulk-validate groups: fetch all requested groups in one query
+    const { data: groups, error: groupsError } = await supabase
+      .from('groups')
+      .select('id, name, status, posting_schedule')
+      .in('id', groupIds);
 
-    // Auto-assign post_at from posting_schedule (pick time with fewest bets)
-    let postAt: string | null = null;
-    const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
-    if (schedule?.times && schedule.times.length > 0) {
-      const now = new Date();
-      const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const currentMin = brTime.getHours() * 60 + brTime.getMinutes();
-      const futureTimes = schedule.times.filter((t: string) => {
-        const [h, m] = t.split(':').map(Number);
-        return (h * 60 + m) > currentMin;
-      });
-      const availableTimes = futureTimes.length > 0 ? futureTimes : schedule.times;
-
-      // Count already-scheduled bets per time slot
-      const { data: scheduled } = await supabase
-        .from('suggested_bets')
-        .select('post_at')
-        .eq('group_id', groupId)
-        .not('post_at', 'is', null)
-        .neq('bet_status', 'posted');
-
-      const counts: Record<string, number> = {};
-      for (const t of availableTimes) counts[t] = 0;
-      for (const s of (scheduled || [])) {
-        if (s.post_at && counts[s.post_at] !== undefined) counts[s.post_at]++;
-      }
-
-      // Pick time with fewest bets
-      let minTime = availableTimes[0];
-      let minCount = counts[minTime] ?? 0;
-      for (const t of availableTimes) {
-        if ((counts[t] ?? 0) < minCount) { minTime = t; minCount = counts[t] ?? 0; }
-      }
-      postAt = minTime;
-    }
-
-    // Update bet: set group_id, bet_status='ready', distributed_at=now, post_at (D4)
-    const updatePayload: Record<string, unknown> = {
-      group_id: groupId,
-      bet_status: 'ready',
-      distributed_at: new Date().toISOString(),
-    };
-    if (postAt) updatePayload.post_at = postAt;
-
-    const { error: updateError } = await supabase
-      .from('suggested_bets')
-      .update(updatePayload)
-      .eq('id', betId);
-
-    if (updateError) {
+    if (groupsError) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao distribuir aposta' } },
+        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao buscar grupos' } },
         { status: 500 },
       );
     }
 
-    // Audit log for redistribution (P5)
-    if (isRedistribution) {
+    const groupMap = new Map((groups || []).map((g) => [g.id, g]));
+
+    // Check existing assignments for this bet
+    const { data: existingAssignments } = await supabase
+      .from('bet_group_assignments')
+      .select('group_id')
+      .eq('bet_id', betId);
+
+    const existingGroupIds = new Set((existingAssignments || []).map((a: { group_id: string }) => a.group_id));
+
+    // Categorize each requested group
+    const created: Array<{ groupId: string; groupName: string; postAt: string | null }> = [];
+    const alreadyExisted: Array<{ groupId: string; groupName: string }> = [];
+    const skipped: Array<{ groupId: string; reason: string }> = [];
+
+    // Build post-time contexts per group (for groups that will get new assignments)
+    const postTimeContexts = new Map<string, Awaited<ReturnType<typeof buildPostTimeContext>>>();
+
+    for (const gid of groupIds) {
+      const group = groupMap.get(gid);
+
+      if (!group) {
+        skipped.push({ groupId: gid, reason: 'Grupo nao encontrado' });
+        continue;
+      }
+
+      if (group.status === 'deleted' || group.status === 'inactive') {
+        skipped.push({ groupId: gid, reason: `Grupo ${group.status}` });
+        continue;
+      }
+
+      if (existingGroupIds.has(gid)) {
+        alreadyExisted.push({ groupId: gid, groupName: group.name });
+        continue;
+      }
+
+      // Build post-time context for this group
+      const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
+      const ptCtx = await buildPostTimeContext(supabase, gid, schedule);
+      postTimeContexts.set(gid, ptCtx);
+
+      const postAt = pickPostTime(ptCtx);
+
+      created.push({ groupId: gid, groupName: group.name, postAt });
+    }
+
+    // Batch INSERT all new assignments
+    if (created.length > 0) {
+      const rows = created.map((c) => ({
+        bet_id: betId,
+        group_id: c.groupId,
+        posting_status: 'ready' as const,
+        distributed_at: new Date().toISOString(),
+        distributed_by: user.id,
+        post_at: c.postAt,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('bet_group_assignments')
+        .insert(rows);
+
+      if (insertError) {
+        // If it's a unique constraint violation, some raced — treat as partial success
+        if (insertError.code === '23505') {
+          // ON CONFLICT scenario: re-categorize as alreadyExisted
+          for (const c of created) {
+            alreadyExisted.push({ groupId: c.groupId, groupName: c.groupName });
+          }
+          created.length = 0;
+        } else {
+          return NextResponse.json(
+            { success: false, error: { code: 'DB_ERROR', message: 'Erro ao criar assignments' } },
+            { status: 500 },
+          );
+        }
+      }
+    }
+
+    // Audit log for new distributions
+    if (created.length > 0) {
       await supabase.from('audit_log').insert({
-        table_name: 'suggested_bets',
+        table_name: 'bet_group_assignments',
         record_id: betId.toString(),
-        action: 'redistribute',
-        changed_by: context.user.id,
-        changes: { old_group_id: oldGroupId, new_group_id: groupId },
+        action: 'distribute',
+        changed_by: user.id,
+        changes: { group_ids: created.map((c) => c.groupId) },
       });
     }
 
-    // Fetch updated bet
-    const { data: updatedBet } = await supabase
-      .from('suggested_bets')
-      .select('id, group_id, bet_status, distributed_at')
-      .eq('id', betId)
-      .single();
-
     return NextResponse.json({
       success: true,
-      data: {
-        bet: updatedBet ?? currentBet,
-        redistributed: isRedistribution,
-        groupName: group.name,
-      },
+      data: { created, alreadyExisted, skipped },
     });
   },
-  { allowedRoles: ['super_admin'] },
+  { allowedRoles: ['super_admin', 'group_admin'] },
 );
