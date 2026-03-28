@@ -66,7 +66,7 @@ describe('GET /api/campaigns/stats', () => {
     expect(body.success).toBe(true);
     expect(body.data.summary.totalAffiliates).toBe(2);
     expect(body.data.summary.totalClicks).toBe(80);
-    expect(body.data.summary.globalConversionRate).toBeCloseTo(43.3, 0);
+    expect(body.data.summary.globalConversionRate).toBeCloseTo(43.3, 1);
     expect(body.data.affiliates).toHaveLength(2);
     expect(body.data.affiliates[0].code).toBe('PARTNER_001');
     expect(body.data.affiliates[0].conversionRate).toBe(50);

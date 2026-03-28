@@ -28,6 +28,30 @@ interface CampaignsData {
 
 type SortField = 'code' | 'clicks' | 'trials' | 'active' | 'cancelled' | 'conversionRate' | 'lastClickAt';
 
+interface SortHeaderProps {
+  field: SortField;
+  sortField: SortField;
+  sortAsc: boolean;
+  onSort: (field: SortField) => void;
+  children: React.ReactNode;
+}
+
+function SortHeader({ field, sortField, sortAsc, onSort, children }: SortHeaderProps) {
+  return (
+    <th
+      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 select-none"
+      onClick={() => onSort(field)}
+    >
+      <span className="flex items-center gap-1">
+        {children}
+        {sortField === field && (
+          <span className="text-gray-400">{sortAsc ? '\u2191' : '\u2193'}</span>
+        )}
+      </span>
+    </th>
+  );
+}
+
 const PERIODS: { value: Period; label: string }[] = [
   { value: '7d', label: '7 dias' },
   { value: '30d', label: '30 dias' },
@@ -106,20 +130,6 @@ export function CampaignsDashboard() {
         return sortAsc ? cmp : -cmp;
       })
     : [];
-
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <th
-      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:text-gray-700 select-none"
-      onClick={() => handleSort(field)}
-    >
-      <span className="flex items-center gap-1">
-        {children}
-        {sortField === field && (
-          <span className="text-gray-400">{sortAsc ? '\u2191' : '\u2193'}</span>
-        )}
-      </span>
-    </th>
-  );
 
   const conversionColor = (rate: number) => {
     if (rate >= 70) return 'text-green-600';
@@ -200,13 +210,13 @@ export function CampaignsDashboard() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <SortHeader field="code">Código</SortHeader>
-                  <SortHeader field="clicks">Cliques</SortHeader>
-                  <SortHeader field="trials">Trials</SortHeader>
-                  <SortHeader field="active">Ativos</SortHeader>
-                  <SortHeader field="cancelled">Cancelados</SortHeader>
-                  <SortHeader field="conversionRate">Conversão</SortHeader>
-                  <SortHeader field="lastClickAt">Último Clique</SortHeader>
+                  <SortHeader field="code" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Código</SortHeader>
+                  <SortHeader field="clicks" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Cliques</SortHeader>
+                  <SortHeader field="trials" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Trials</SortHeader>
+                  <SortHeader field="active" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Ativos</SortHeader>
+                  <SortHeader field="cancelled" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Cancelados</SortHeader>
+                  <SortHeader field="conversionRate" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Conversão</SortHeader>
+                  <SortHeader field="lastClickAt" sortField={sortField} sortAsc={sortAsc} onSort={handleSort}>Último Clique</SortHeader>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
