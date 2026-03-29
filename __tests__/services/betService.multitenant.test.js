@@ -79,9 +79,10 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
   // ===========================
   // AC4: getFilaStatus com GROUP_ID retorna apenas apostas do grupo
+  // GURU-46: Filtering now uses bet_group_assignments.group_id (junction table)
   // ===========================
   describe('AC4: getFilaStatus com GROUP_ID (Task 4.9)', () => {
-    test('com GROUP_ID definido → adiciona filtro .eq(group_id) nas queries', async () => {
+    test('com GROUP_ID definido → adiciona filtro via bet_group_assignments nas queries', async () => {
       mockConfig.membership.groupId = 'group-uuid-123';
 
       const eqCalls = [];
@@ -107,13 +108,19 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getFilaStatus();
 
-      // Verify that .eq('group_id', 'group-uuid-123') was called
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-uuid-123');
+      // GURU-46: group_id filtering now goes through bet_group_assignments junction table
+      const groupIdFilters = eqCalls.filter(c =>
+        (c.col === 'bet_group_assignments.group_id' || c.col === 'group_id') &&
+        c.val === 'group-uuid-123'
+      );
       // Deve filtrar em: ativas + novas + contagem (allBets)
       expect(groupIdFilters.length).toBeGreaterThanOrEqual(3);
 
       // Não pode haver filtro de group_id com outro valor
-      const otherGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val !== 'group-uuid-123');
+      const otherGroupFilters = eqCalls.filter(c =>
+        (c.col === 'bet_group_assignments.group_id' || c.col === 'group_id') &&
+        c.val !== 'group-uuid-123'
+      );
       expect(otherGroupFilters).toHaveLength(0);
     });
 
@@ -143,10 +150,17 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getFilaStatus(explicitGroupId);
 
-      const explicitGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === explicitGroupId);
+      // GURU-46: group_id filtering now goes through bet_group_assignments junction table
+      const explicitGroupFilters = eqCalls.filter(c =>
+        (c.col === 'bet_group_assignments.group_id' || c.col === 'group_id') &&
+        c.val === explicitGroupId
+      );
       expect(explicitGroupFilters.length).toBeGreaterThanOrEqual(3);
 
-      const configGroupFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-config');
+      const configGroupFilters = eqCalls.filter(c =>
+        (c.col === 'bet_group_assignments.group_id' || c.col === 'group_id') &&
+        c.val === 'group-config'
+      );
       expect(configGroupFilters).toHaveLength(0);
     });
   });
@@ -180,8 +194,10 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getFilaStatus();
 
-      // Verify no .eq('group_id', ...) was called
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id');
+      // Verify no group_id filter was called (neither direct nor via junction table)
+      const groupIdFilters = eqCalls.filter(c =>
+        c.col === 'group_id' || c.col === 'bet_group_assignments.group_id'
+      );
       expect(groupIdFilters).toHaveLength(0);
     });
 
@@ -210,7 +226,9 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getFilaStatus(null);
 
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id');
+      const groupIdFilters = eqCalls.filter(c =>
+        c.col === 'group_id' || c.col === 'bet_group_assignments.group_id'
+      );
       expect(groupIdFilters).toHaveLength(0);
     });
   });

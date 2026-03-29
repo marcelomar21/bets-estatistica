@@ -111,7 +111,7 @@ function mapBet(raw) {
  *
  * When toneConfig is empty/null, falls back to formatBetMessage (static template).
  */
-async function formatPreviewMessage(bet, toneConfig, { forceRegenerate = false } = {}) {
+async function formatPreviewMessage(bet, toneConfig, { forceRegenerate = false, groupId } = {}) {
   const template = getTemplate(toneConfig, 0);
   const hasToneConfig = toneConfig && (
     toneConfig.examplePost ||
@@ -130,14 +130,14 @@ async function formatPreviewMessage(bet, toneConfig, { forceRegenerate = false }
 
   // Tone test (forceRegenerate): clear persisted copy to force fresh LLM generation
   if (forceRegenerate) {
-    await updateGeneratedCopy(bet.id, null);
+    await updateGeneratedCopy(bet.id, null, groupId);
     // Clear the in-memory field so getOrGenerateMessage re-generates
     bet = { ...bet, generatedCopy: null };
   }
 
   if (toneConfig.examplePost || toneConfig.examplePosts?.length > 0) {
     // Full-message mode: use getOrGenerateMessage (persisted or fresh)
-    return getOrGenerateMessage(bet, toneConfig, 0);
+    return getOrGenerateMessage(bet, toneConfig, 0, groupId);
   }
 
   // No examplePost but has tone fields: use formatBetMessage's template structure
@@ -244,7 +244,7 @@ async function generatePreview(groupId, betId = null, betIds = null) {
       deepLink: bet.deepLink,
     };
     try {
-      const preview = await formatPreviewMessage(bet, toneConfig, { forceRegenerate });
+      const preview = await formatPreviewMessage(bet, toneConfig, { forceRegenerate, groupId });
       return { betId: bet.id, preview, betInfo };
     } catch (err) {
       logger.error('[previewService] Failed to format bet', { betId: bet.id, groupId, error: err.message });
