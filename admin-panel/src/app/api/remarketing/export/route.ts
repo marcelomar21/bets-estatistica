@@ -52,7 +52,7 @@ export const GET = createApiHandler(
 
     const select = 'telegram_id, telegram_username, channel, channel_user_id, status, trial_ends_at, subscription_ends_at, last_payment_at, created_at, groups(name)';
 
-    let query = supabase.from('members').select(select);
+    let query = supabase.from('members').select(select, { count: 'exact' });
 
     if (effectiveGroupId) {
       query = query.eq('group_id', effectiveGroupId);
