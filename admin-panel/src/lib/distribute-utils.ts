@@ -4,6 +4,7 @@ type PostingSchedule = { enabled?: boolean; times?: string[] } | null;
 
 /**
  * Build a context map of { timeSlot -> betCount } for a group's posting schedule.
+ * Queries bet_group_assignments (source of truth) instead of suggested_bets.
  * Only future time slots are returned (falls back to all slots if none are in the future).
  */
 export async function buildPostTimeContext(
@@ -24,13 +25,13 @@ export async function buildPostTimeContext(
   });
   const availableTimes = futureTimes.length > 0 ? futureTimes : times;
 
-  // Count already-scheduled bets per time slot
+  // Count already-scheduled bets per time slot from bet_group_assignments (source of truth)
   const { data: scheduled } = await supabase
-    .from('suggested_bets')
+    .from('bet_group_assignments')
     .select('post_at')
     .eq('group_id', groupId)
     .not('post_at', 'is', null)
-    .neq('bet_status', 'posted');
+    .neq('posting_status', 'posted');
 
   const counts: Record<string, number> = {};
   for (const t of availableTimes) counts[t] = 0;

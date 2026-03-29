@@ -18,7 +18,7 @@ const distributeSchema = z.object({
 
 export const POST = createApiHandler(
   async (req, context, routeContext) => {
-    const { supabase } = context;
+    const { supabase, groupFilter } = context;
     const { id } = await routeContext.params;
     const betId = Number.parseInt(id, 10);
 
@@ -41,8 +41,19 @@ export const POST = createApiHandler(
       );
     }
 
-    // Normalize to array of group IDs
-    const groupIds = body.groupIds ?? [body.groupId!];
+    // Normalize to array of group IDs, deduplicated (#10)
+    const groupIds = [...new Set(body.groupIds ?? [body.groupId!])];
+
+    // Group admin scope enforcement (#4): can only distribute to own group
+    if (groupFilter) {
+      const unauthorized = groupIds.filter((gId) => gId !== groupFilter);
+      if (unauthorized.length > 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Sem permissao para distribuir para esses grupos' } },
+          { status: 403 },
+        );
+      }
+    }
 
     // Validate all groups exist and are active
     const { data: groups, error: groupsError } = await supabase
@@ -93,8 +104,15 @@ export const POST = createApiHandler(
     const alreadyExisted: Array<{ groupId: string; groupName: string }> = [];
     const skipped: Array<{ groupId: string; reason: string }> = [];
 
-    // Build rows to upsert and compute post_at for each new group
-    const upsertRows: Array<{ bet_id: number; group_id: string; assigned_at: string; post_at: string | null }> = [];
+    // Build rows to upsert — using correct column names from migration 061 (#1, #6, #7)
+    const upsertRows: Array<{
+      bet_id: number;
+      group_id: string;
+      posting_status: string;
+      distributed_at: string;
+      distributed_by: string;
+      post_at: string | null;
+    }> = [];
 
     for (const gId of groupIds) {
       const group = groupMap.get(gId);
@@ -120,7 +138,9 @@ export const POST = createApiHandler(
       upsertRows.push({
         bet_id: betId,
         group_id: gId,
-        assigned_at: new Date().toISOString(),
+        posting_status: 'ready',
+        distributed_at: new Date().toISOString(),
+        distributed_by: context.user.id,
         post_at: postAt,
       });
 
@@ -139,38 +159,28 @@ export const POST = createApiHandler(
           { status: 500 },
         );
       }
-
-      // Update bet status to 'ready' if it was in pool (no group_id yet)
-      // The dual-write trigger (sync_bga_to_suggested_bets) auto-syncs suggested_bets.group_id
-      if (currentBet.bet_status !== 'ready' && currentBet.bet_status !== 'posted') {
-        await supabase
-          .from('suggested_bets')
-          .update({
-            bet_status: 'ready',
-            distributed_at: new Date().toISOString(),
-          })
-          .eq('id', betId);
-      }
     }
 
-    // Audit log for redistribution (if bet was already assigned to a different group)
+    // Audit log for redistribution (#11: consistent structure)
     const isRedistribution = oldGroupId !== null && created.length > 0;
     if (isRedistribution) {
       await supabase.from('audit_log').insert({
-        table_name: 'suggested_bets',
+        table_name: 'bet_group_assignments',
         record_id: betId.toString(),
-        action: 'redistribute',
+        action: 'distribute',
         changed_by: context.user.id,
         changes: {
           old_group_id: oldGroupId,
           new_group_ids: created.map((c) => c.groupId),
+          type: 'multi_group_distribute',
         },
       });
     }
 
-    // First group info for backward compat fields
-    const firstGroup = created.length > 0 ? created[0] : alreadyExisted[0];
-    const firstGroupName = firstGroup?.groupName ?? groups[0]?.name ?? '';
+    // First group info for backward compat fields (#8: safe fallback)
+    const firstCreated = created.length > 0 ? created[0] : null;
+    const firstExisting = alreadyExisted.length > 0 ? alreadyExisted[0] : null;
+    const firstGroupName = firstCreated?.groupName ?? firstExisting?.groupName ?? '';
 
     return NextResponse.json({
       success: true,
@@ -185,5 +195,5 @@ export const POST = createApiHandler(
       },
     });
   },
-  { allowedRoles: ['super_admin'] },
+  { allowedRoles: ['super_admin', 'group_admin'] },
 );
