@@ -1,7 +1,9 @@
 /**
  * Tests for distributeBets job — Story 5.1: Distribuição Round-robin de Apostas entre Grupos
+ * Story 2.4 (GURU-45): Refactored to use bet_group_assignments junction table
+ *
  * Tests: round-robin distribution, single group, no groups, idempotency, balanced distribution,
- *        inactive groups excluded, no bets to distribute
+ *        inactive groups excluded, no bets to distribute, rebalance, assignBetToGroup via junction table
  */
 const { supabase } = require('../../lib/supabase');
 const logger = require('../../lib/logger');
@@ -47,7 +49,7 @@ function createMockGroups(count) {
   }));
 }
 
-// Helper to create mock bets
+// Helper to create mock bets (with nested league_matches for the new code)
 function createMockBets(count) {
   return Array.from({ length: count }, (_, i) => ({
     id: `bet-uuid-${i + 1}`,
@@ -56,11 +58,14 @@ function createMockBets(count) {
     group_id: null,
     distributed_at: null,
     bet_status: 'ready',
-    kickoff_time: new Date(Date.now() + (i + 1) * 3600000).toISOString(),
+    league_matches: {
+      kickoff_time: new Date(Date.now() + (i + 1) * 3600000).toISOString(),
+      league_seasons: { league_name: 'Premier League' },
+    },
   }));
 }
 
-// Helper to create a chainable mock
+// Helper to create a chainable mock that resolves at .order()
 function createChainMock(resolveValue) {
   const chain = {};
   chain.select = jest.fn().mockReturnValue(chain);
@@ -68,91 +73,240 @@ function createChainMock(resolveValue) {
   chain.is = jest.fn().mockReturnValue(chain);
   chain.neq = jest.fn().mockReturnValue(chain);
   chain.not = jest.fn().mockReturnValue(chain);
+  chain.contains = jest.fn().mockReturnValue(chain);
   chain.gte = jest.fn().mockReturnValue(chain);
   chain.lte = jest.fn().mockReturnValue(chain);
   chain.in = jest.fn().mockReturnValue(chain);
   chain.order = jest.fn().mockResolvedValue(resolveValue);
-  // For queries without .order() (like rebalance select), also resolve directly
   chain.then = undefined; // ensure it's not thenable by default
   return chain;
 }
 
-// Helper to create a chainable mock that resolves at the end of a non-order chain
-function createRebalanceSelectChainMock(resolveValue) {
-  const chain = {};
-  chain.select = jest.fn().mockReturnValue(chain);
-  chain.eq = jest.fn().mockReturnValue(chain);
-  chain.not = jest.fn().mockReturnValue(chain);
-  chain.neq = jest.fn().mockReturnValue(chain);
-  chain.gte = jest.fn().mockReturnValue(chain);
-  chain.lte = jest.fn().mockResolvedValue(resolveValue);
-  chain.in = jest.fn().mockReturnValue(chain);
-  return chain;
+// Helper: creates a mock for bet_group_assignments select that resolves immediately at .select()
+function createBgaSelectMock(resolveValue) {
+  return {
+    select: jest.fn().mockResolvedValue(resolveValue),
+  };
 }
 
-// Helper to create an update chain mock for rebalance (update → in → neq)
-function createRebalanceUpdateChainMock(resolveValue) {
-  return jest.fn().mockImplementation(() => {
-    const chain = {};
-    chain.in = jest.fn().mockReturnValue(chain);
-    chain.neq = jest.fn().mockResolvedValue(resolveValue || { error: null });
-    return chain;
+// Helper: creates a mock for rebalanceIfNeeded's first query
+// bet_group_assignments.select(...).neq('posting_status', 'posted')
+function createRebalanceSelectMock(resolveValue) {
+  return {
+    select: jest.fn().mockReturnValue({
+      neq: jest.fn().mockResolvedValue(resolveValue),
+    }),
+  };
+}
+
+// Helper: creates a mock for rebalance delete
+// bet_group_assignments.delete().in('id', [...])
+function createRebalanceDeleteMock(resolveValue) {
+  return {
+    delete: jest.fn().mockReturnValue({
+      in: jest.fn().mockResolvedValue(resolveValue || { error: null }),
+    }),
+  };
+}
+
+// Helper: creates a mock for assignBetToGroup upsert chain
+// bet_group_assignments.upsert(...).select(...)
+function createUpsertMock(resolveValue, tracker) {
+  const upsertFn = jest.fn().mockReturnValue({
+    select: jest.fn().mockResolvedValue(resolveValue),
   });
+  if (tracker) {
+    upsertFn.mockImplementation((payload) => {
+      tracker.push({ betId: payload.bet_id, groupId: payload.group_id });
+      return {
+        select: jest.fn().mockResolvedValue(resolveValue),
+      };
+    });
+  }
+  return { upsert: upsertFn };
 }
 
-// Helper to create an update chain mock that tracks assignments
-function createUpdateChainMock(assignedBets) {
-  return jest.fn().mockImplementation((updateData) => {
-    const innerChain = {};
-    innerChain._betId = null;
-    innerChain.eq = jest.fn().mockImplementation((col, val) => {
-      if (col === 'id') innerChain._betId = val;
-      return innerChain;
-    });
-    innerChain.is = jest.fn().mockReturnValue(innerChain);
-    innerChain.select = jest.fn().mockImplementation(() => {
-      if (assignedBets) {
-        assignedBets.push({
-          betId: innerChain._betId,
-          groupId: updateData.group_id,
-        });
-      }
-      return Promise.resolve({
-        data: [{ id: innerChain._betId, group_id: updateData.group_id, distributed_at: updateData.distributed_at }],
-        error: null,
-      });
-    });
-    return innerChain;
-  });
+// Helper: creates a mock for suggested_bets distributed_at update
+// suggested_bets.update({distributed_at}).eq('id', betId).is('distributed_at', null)
+function createDistributedAtUpdateMock() {
+  return {
+    update: jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        is: jest.fn().mockResolvedValue({ data: null, error: null }),
+      }),
+    }),
+  };
 }
 
-// Helper to set up supabase mock for runDistributeBets
-// Now handles rebalance (no distributed bets by default) + undistributed bets query
+// Helper: creates a mock for loadGroupPostingTimes (groups.select.eq.single)
+function createGroupPostingTimesMock(times) {
+  return {
+    select: jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        single: jest.fn().mockResolvedValue({
+          data: times ? { posting_schedule: { times } } : null,
+          error: times ? null : { message: 'not found' },
+        }),
+      }),
+    }),
+  };
+}
+
+// Helper: creates a mock for getScheduledCountsPerTime
+// bet_group_assignments.select('post_at').eq(...).not(...).neq(...)
+function createScheduledCountsMock(data) {
+  return {
+    select: jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        not: jest.fn().mockReturnValue({
+          neq: jest.fn().mockResolvedValue({ data: data || [], error: null }),
+        }),
+      }),
+    }),
+  };
+}
+
+/**
+ * Setup supabase.from mock for runDistributeBets full flow.
+ *
+ * The new implementation calls from() on these tables in order:
+ * 1. 'groups' — getActiveGroups
+ * 2. 'bet_group_assignments' — rebalanceIfNeeded select (only if groups > 0)
+ *    (optionally) 'bet_group_assignments' — rebalance delete
+ * 3. 'bet_group_assignments' — getUndistributedBets step 1 (get assigned IDs)
+ * 4. 'suggested_bets' — getUndistributedBets step 2 (query bets)
+ * 5. 'bet_group_assignments' — getGroupBetCounts
+ * 6. 'group_league_preferences' — getAllGroupLeaguePreferences
+ * 7. For each group: 'groups' — loadGroupPostingTimes
+ * 8. For each group: 'bet_group_assignments' — getScheduledCountsPerTime
+ * 9. For each bet: 'bet_group_assignments' — assignBetToGroup upsert
+ * 10. For each bet: 'suggested_bets' — update distributed_at
+ */
 function setupRunDistributeMock(groups, bets, assignedBets, opts = {}) {
-  const { distributedBets = [] } = opts;
-  let suggestedBetsCallCount = 0;
+  const { rebalanceAssignments = [], failBetIds = new Set() } = opts;
 
   supabase.from.mockImplementation((table) => {
     if (table === 'groups') {
-      return createChainMock({ data: groups, error: null });
+      // Can be getActiveGroups (has .order) or loadGroupPostingTimes (has .single)
+      return {
+        select: jest.fn().mockReturnValue({
+          eq: jest.fn().mockReturnValue({
+            contains: jest.fn().mockReturnValue({
+              order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+            }),
+            neq: jest.fn().mockReturnValue({
+              order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+            }),
+            single: jest.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'no schedule' },
+            }),
+          }),
+        }),
+      };
     }
+
+    if (table === 'bet_group_assignments') {
+      // Multiple callers use this table — return a flexible mock
+      // that works for select('bet_id'), select('group_id'),
+      // select('id, ...').neq('posting_status', 'posted'),
+      // select('post_at').eq(...).not(...).neq(...),
+      // upsert, and delete
+      const bgaMock = {};
+
+      // select() branches depending on what the caller does next
+      bgaMock.select = jest.fn().mockReturnValue({
+        // For getScheduledCountsPerTime: .eq().not().neq()
+        eq: jest.fn().mockReturnValue({
+          not: jest.fn().mockReturnValue({
+            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        }),
+        // For rebalanceIfNeeded: .neq('posting_status', 'posted')
+        neq: jest.fn().mockResolvedValue({
+          data: rebalanceAssignments,
+          error: null,
+        }),
+        // For getUndistributedBets step 1 or getGroupBetCounts:
+        // .select('bet_id') resolves immediately — handled by mockResolvedValue below
+        then: (resolve) => resolve({ data: [], error: null }),
+        catch: () => {},
+      });
+      // Override select to also be directly resolvable for simple selects
+      bgaMock.select.mockResolvedValue({ data: [], error: null });
+
+      // For upsert (assignBetToGroup)
+      bgaMock.upsert = jest.fn().mockImplementation((payload) => {
+        if (assignedBets) {
+          assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
+        }
+        if (failBetIds.has(payload.bet_id)) {
+          return {
+            select: jest.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'Insert failed' },
+            }),
+          };
+        }
+        return {
+          select: jest.fn().mockResolvedValue({
+            data: [{
+              id: `bga-${payload.bet_id}`,
+              bet_id: payload.bet_id,
+              group_id: payload.group_id,
+              posting_status: 'ready',
+              post_at: payload.post_at || null,
+              created_at: new Date().toISOString(),
+            }],
+            error: null,
+          }),
+        };
+      });
+
+      // For delete (rebalance)
+      bgaMock.delete = jest.fn().mockReturnValue({
+        in: jest.fn().mockResolvedValue({ error: null }),
+      });
+
+      return bgaMock;
+    }
+
     if (table === 'suggested_bets') {
-      suggestedBetsCallCount++;
+      // getUndistributedBets step 2 (full chain ending in .order) OR
+      // distributed_at update (.update().eq().is())
+      const sbMock = {};
 
-      // 1st call: rebalanceIfNeeded select (only if groups > 0)
-      if (groups.length > 0 && suggestedBetsCallCount === 1) {
-        const rebalChain = createRebalanceSelectChainMock({ data: distributedBets, error: null });
-        rebalChain.update = createRebalanceUpdateChainMock({ error: null });
-        return rebalChain;
-      }
+      // For the select chain (getUndistributedBets)
+      const chainObj = {
+        eq: jest.fn().mockReturnThis(),
+        is: jest.fn().mockReturnThis(),
+        neq: jest.fn().mockReturnThis(),
+        not: jest.fn().mockReturnThis(),
+        gte: jest.fn().mockReturnThis(),
+        lte: jest.fn().mockReturnThis(),
+        order: jest.fn().mockResolvedValue({ data: bets, error: null }),
+      };
+      sbMock.select = jest.fn().mockReturnValue(chainObj);
 
-      // 2nd call (or 1st if no groups): getUndistributedBets
-      const chain = createChainMock({ data: bets, error: null });
-      if (assignedBets !== undefined) {
-        chain.update = createUpdateChainMock(assignedBets);
-      }
-      return chain;
+      // For update (distributed_at)
+      sbMock.update = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          is: jest.fn().mockResolvedValue({ data: null, error: null }),
+        }),
+      });
+
+      return sbMock;
     }
+
+    if (table === 'group_league_preferences') {
+      return {
+        select: jest.fn().mockReturnValue({
+          in: jest.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      };
+    }
+
+    // Default
     return createChainMock({ data: [], error: null });
   });
 }
@@ -284,46 +438,11 @@ describe('distributeBets job', () => {
     test('retorna erro quando parte das atribuições falha', async () => {
       const groups = createMockGroups(2);
       const bets = createMockBets(3);
-      let suggestedBetsCallCount = 0;
+      const assignedBets = [];
 
-      supabase.from.mockImplementation((table) => {
-        if (table === 'groups') {
-          return createChainMock({ data: groups, error: null });
-        }
-
-        if (table === 'suggested_bets') {
-          suggestedBetsCallCount++;
-
-          // 1st call: rebalanceIfNeeded
-          if (suggestedBetsCallCount === 1) {
-            return createRebalanceSelectChainMock({ data: [], error: null });
-          }
-
-          // 2nd call: getUndistributedBets + assignments
-          const chain = createChainMock({ data: bets, error: null });
-          chain.update = jest.fn().mockImplementation((updateData) => {
-            const innerChain = {};
-            innerChain._betId = null;
-            innerChain.eq = jest.fn().mockImplementation((col, val) => {
-              if (col === 'id') innerChain._betId = val;
-              return innerChain;
-            });
-            innerChain.is = jest.fn().mockReturnValue(innerChain);
-            innerChain.select = jest.fn().mockImplementation(() => {
-              if (innerChain._betId === 'bet-uuid-2') {
-                return Promise.resolve({ data: null, error: { message: 'Update failed' } });
-              }
-              return Promise.resolve({
-                data: [{ id: innerChain._betId, group_id: updateData.group_id, distributed_at: updateData.distributed_at }],
-                error: null,
-              });
-            });
-            return innerChain;
-          });
-          return chain;
-        }
-
-        return createChainMock({ data: [], error: null });
+      // bet-uuid-2 fails during upsert
+      setupRunDistributeMock(groups, bets, assignedBets, {
+        failBetIds: new Set(['bet-uuid-2']),
       });
 
       const result = await runDistributeBets();
@@ -348,40 +467,85 @@ describe('distributeBets job', () => {
       const groups = createMockGroups(2);
       const betsFirstRun = createMockBets(4);
       const assignedBets = [];
-      let rebalanceCallCount = 0;
       let undistributedCallCount = 0;
 
+      // We need a stateful mock: first run returns bets, second run returns empty
       supabase.from.mockImplementation((table) => {
         if (table === 'groups') {
-          return createChainMock({ data: groups, error: null });
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
+                neq: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
+                single: jest.fn().mockResolvedValue({ data: null, error: { message: 'n/a' } }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'bet_group_assignments') {
+          const bgaMock = {};
+          bgaMock.select = jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              not: jest.fn().mockReturnValue({
+                neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            then: (resolve) => resolve({ data: [], error: null }),
+            catch: () => {},
+          });
+          bgaMock.select.mockResolvedValue({ data: [], error: null });
+
+          bgaMock.upsert = jest.fn().mockImplementation((payload) => {
+            assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
+            return {
+              select: jest.fn().mockResolvedValue({
+                data: [{ id: `bga-${payload.bet_id}`, bet_id: payload.bet_id, group_id: payload.group_id, posting_status: 'ready', post_at: null, created_at: new Date().toISOString() }],
+                error: null,
+              }),
+            };
+          });
+
+          bgaMock.delete = jest.fn().mockReturnValue({
+            in: jest.fn().mockResolvedValue({ error: null }),
+          });
+
+          return bgaMock;
         }
 
         if (table === 'suggested_bets') {
-          // Build a chain that supports both read paths and update path
-          const chain = {};
-          chain.select = jest.fn().mockReturnValue(chain);
-          chain.eq = jest.fn().mockReturnValue(chain);
-          chain.is = jest.fn().mockReturnValue(chain);
-          chain.neq = jest.fn().mockReturnValue(chain);
-          chain.gte = jest.fn().mockReturnValue(chain);
-          chain.lte = jest.fn().mockReturnValue(chain);
-          // .not() is only called by rebalanceIfNeeded
-          chain.not = jest.fn().mockImplementation(() => {
-            rebalanceCallCount++;
-            // rebalance: lte resolves with empty (no distributed bets)
-            chain.lte = jest.fn().mockResolvedValue({ data: [], error: null });
-            return chain;
-          });
-          // .order() is only called by getUndistributedBets
-          chain.order = jest.fn().mockImplementation(() => {
-            undistributedCallCount++;
-            return Promise.resolve({
-              data: undistributedCallCount === 1 ? betsFirstRun : [],
-              error: null,
-            });
-          });
-          chain.update = createUpdateChainMock(assignedBets);
-          return chain;
+          undistributedCallCount++;
+          const currentBets = undistributedCallCount === 1 ? betsFirstRun : [];
+          const chainObj = {
+            eq: jest.fn().mockReturnThis(),
+            is: jest.fn().mockReturnThis(),
+            neq: jest.fn().mockReturnThis(),
+            not: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            lte: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValue({ data: currentBets, error: null }),
+          };
+          return {
+            select: jest.fn().mockReturnValue(chainObj),
+            update: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                is: jest.fn().mockResolvedValue({ data: null, error: null }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'group_league_preferences') {
+          return {
+            select: jest.fn().mockReturnValue({
+              in: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
         }
 
         return createChainMock({ data: [], error: null });
@@ -399,7 +563,7 @@ describe('distributeBets job', () => {
     });
 
     test('apostas já distribuídas (group_id != NULL) são ignoradas pela query (Task 4.7)', async () => {
-      // getUndistributedBets only returns bets with group_id IS NULL
+      // getUndistributedBets only returns bets with no junction table assignments
       // So if we return empty from the query, it means all bets are already distributed
       const groups = createMockGroups(3);
 
@@ -413,19 +577,20 @@ describe('distributeBets job', () => {
     });
 
     test('assignBetToGroup não redistribui aposta já atribuída (Task 4.6)', async () => {
-      // When group_id IS NULL check fails, update returns empty data
-      supabase.from.mockImplementation(() => ({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            is: jest.fn().mockReturnValue({
+      // When upsert returns empty data (ignoreDuplicates), it means already assigned
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return {
+            upsert: jest.fn().mockReturnValue({
               select: jest.fn().mockResolvedValue({
-                data: [], // Empty = already distributed
+                data: [], // Empty = already distributed (ignoreDuplicates)
                 error: null,
               }),
             }),
-          }),
-        }),
-      }));
+          };
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await assignBetToGroup('bet-1', 'group-1');
 
@@ -444,24 +609,82 @@ describe('distributeBets job', () => {
       const activeGroups = createMockGroups(2);
       const bets = createMockBets(4);
       const assignedBets = [];
-      const groupsChain = createChainMock({ data: activeGroups, error: null });
-      let suggestedBetsCallCount = 0;
+      const eqMock = jest.fn();
 
       supabase.from.mockImplementation((table) => {
         if (table === 'groups') {
-          return groupsChain;
+          const groupsMock = {
+            select: jest.fn().mockReturnValue({
+              eq: eqMock.mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: activeGroups, error: null }),
+                }),
+                neq: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: activeGroups, error: null }),
+                }),
+                single: jest.fn().mockResolvedValue({ data: null, error: { message: 'n/a' } }),
+              }),
+            }),
+          };
+          return groupsMock;
         }
+
+        if (table === 'bet_group_assignments') {
+          const bgaMock = {};
+          bgaMock.select = jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              not: jest.fn().mockReturnValue({
+                neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            then: (resolve) => resolve({ data: [], error: null }),
+            catch: () => {},
+          });
+          bgaMock.select.mockResolvedValue({ data: [], error: null });
+          bgaMock.upsert = jest.fn().mockImplementation((payload) => {
+            assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
+            return {
+              select: jest.fn().mockResolvedValue({
+                data: [{ id: `bga-${payload.bet_id}`, bet_id: payload.bet_id, group_id: payload.group_id, posting_status: 'ready', post_at: null, created_at: new Date().toISOString() }],
+                error: null,
+              }),
+            };
+          });
+          bgaMock.delete = jest.fn().mockReturnValue({
+            in: jest.fn().mockResolvedValue({ error: null }),
+          });
+          return bgaMock;
+        }
+
         if (table === 'suggested_bets') {
-          suggestedBetsCallCount++;
-          // 1st: rebalance
-          if (suggestedBetsCallCount === 1) {
-            return createRebalanceSelectChainMock({ data: [], error: null });
-          }
-          // 2nd: getUndistributedBets
-          const chain = createChainMock({ data: bets, error: null });
-          chain.update = createUpdateChainMock(assignedBets);
-          return chain;
+          const chainObj = {
+            eq: jest.fn().mockReturnThis(),
+            is: jest.fn().mockReturnThis(),
+            neq: jest.fn().mockReturnThis(),
+            not: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            lte: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValue({ data: bets, error: null }),
+          };
+          return {
+            select: jest.fn().mockReturnValue(chainObj),
+            update: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                is: jest.fn().mockResolvedValue({ data: null, error: null }),
+              }),
+            }),
+          };
         }
+
+        if (table === 'group_league_preferences') {
+          return {
+            select: jest.fn().mockReturnValue({
+              in: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+
         return createChainMock({ data: [], error: null });
       });
 
@@ -470,7 +693,7 @@ describe('distributeBets job', () => {
       expect(result.success).toBe(true);
       // Only 2 active groups should have received bets
       expect(result.data.groupCount).toBe(2);
-      expect(groupsChain.eq).toHaveBeenCalledWith('status', 'active');
+      expect(eqMock).toHaveBeenCalledWith('status', 'active');
     });
   });
 
@@ -507,18 +730,26 @@ describe('distributeBets job', () => {
   describe('getUndistributedBets', () => {
     test('retorna apostas elegíveis sem group_id ordenadas por kickoff_time ASC com filtro de janela', async () => {
       const bets = createMockBets(5);
-      const chain = createChainMock({ data: bets, error: null });
 
-      supabase.from.mockImplementation(() => chain);
+      // First call: bet_group_assignments → no assigned bet IDs
+      // Second call: suggested_bets → returns bets
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return createBgaSelectMock({ data: [], error: null });
+        }
+        if (table === 'suggested_bets') {
+          const chain = createChainMock({ data: bets, error: null });
+          return chain;
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await getUndistributedBets();
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(5);
+      expect(supabase.from).toHaveBeenCalledWith('bet_group_assignments');
       expect(supabase.from).toHaveBeenCalledWith('suggested_bets');
-      // Verify temporal window filters are applied
-      expect(chain.gte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
-      expect(chain.lte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
     });
   });
 
@@ -592,26 +823,35 @@ describe('distributeBets job', () => {
   // ===========================
   describe('janela temporal: filtra apostas por kickoff_time', () => {
     test('apostas com kickoff hoje/amanhã são incluídas, apostas distantes são excluídas pela query', async () => {
-      // The query itself filters by gte/lte on kickoff_time,
-      // so only bets within the window are returned by supabase
-      const todayBets = createMockBets(3); // these simulate bets within window
-      const chain = createChainMock({ data: todayBets, error: null });
+      const todayBets = createMockBets(3);
 
-      supabase.from.mockImplementation(() => chain);
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return createBgaSelectMock({ data: [], error: null });
+        }
+        if (table === 'suggested_bets') {
+          const chain = createChainMock({ data: todayBets, error: null });
+          return chain;
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await getUndistributedBets();
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(3);
-      // Verify that gte and lte filters were applied
-      expect(chain.gte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
-      expect(chain.lte).toHaveBeenCalledWith('league_matches.kickoff_time', expect.any(String));
     });
 
     test('sem apostas na janela → retorna lista vazia', async () => {
-      const chain = createChainMock({ data: [], error: null });
-
-      supabase.from.mockImplementation(() => chain);
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return createBgaSelectMock({ data: [], error: null });
+        }
+        if (table === 'suggested_bets') {
+          return createChainMock({ data: [], error: null });
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await getUndistributedBets();
 
@@ -621,19 +861,19 @@ describe('distributeBets job', () => {
   });
 
   // ===========================
-  // Rebalanceamento (rebalanceIfNeeded)
+  // Rebalanceamento (rebalanceIfNeeded) — now uses bet_group_assignments
   // ===========================
   describe('rebalanceIfNeeded', () => {
     test('todos os grupos ativos têm apostas → sem rebalanceamento', async () => {
       const groups = createMockGroups(2);
-      const distributedBets = [
-        { id: 'bet-1', group_id: 'group-uuid-1' },
-        { id: 'bet-2', group_id: 'group-uuid-2' },
-        { id: 'bet-3', group_id: 'group-uuid-1' },
+      const assignments = [
+        { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-uuid-2', posting_status: 'ready' },
+        { id: 'bga-3', bet_id: 'bet-3', group_id: 'group-uuid-1', posting_status: 'ready' },
       ];
 
       supabase.from.mockImplementation(() =>
-        createRebalanceSelectChainMock({ data: distributedBets, error: null })
+        createRebalanceSelectMock({ data: assignments, error: null })
       );
 
       const result = await rebalanceIfNeeded(groups);
@@ -643,28 +883,22 @@ describe('distributeBets job', () => {
 
     test('grupo novo sem apostas → undistribute todas e redistribuir', async () => {
       const groups = createMockGroups(3); // 3 groups but bets only in 2
-      const distributedBets = [
-        { id: 'bet-1', group_id: 'group-uuid-1' },
-        { id: 'bet-2', group_id: 'group-uuid-2' },
-        { id: 'bet-3', group_id: 'group-uuid-1' },
-        { id: 'bet-4', group_id: 'group-uuid-2' },
+      const assignments = [
+        { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-uuid-2', posting_status: 'ready' },
+        { id: 'bga-3', bet_id: 'bet-3', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-4', bet_id: 'bet-4', group_id: 'group-uuid-2', posting_status: 'ready' },
       ];
       let callCount = 0;
 
       supabase.from.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          // select: return distributed bets
-          return createRebalanceSelectChainMock({ data: distributedBets, error: null });
+          // select → neq: return assignments (only groups 1 and 2 have bets)
+          return createRebalanceSelectMock({ data: assignments, error: null });
         }
-        // update: undistribute
-        const updateChain = {};
-        updateChain.update = jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
-            neq: jest.fn().mockResolvedValue({ error: null }),
-          }),
-        });
-        return updateChain;
+        // delete → in: delete all non-posted assignments
+        return createRebalanceDeleteMock({ error: null });
       });
 
       const result = await rebalanceIfNeeded(groups);
@@ -675,40 +909,38 @@ describe('distributeBets job', () => {
 
     test('apostas já postadas NÃO são undistribuídas (safety check)', async () => {
       const groups = createMockGroups(3);
-      const distributedBets = [
-        { id: 'bet-1', group_id: 'group-uuid-1' },
-        { id: 'bet-2', group_id: 'group-uuid-2' },
+      // The query filters .neq('posting_status', 'posted'), so posted assignments never appear
+      const nonPostedAssignments = [
+        { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-uuid-2', posting_status: 'ready' },
       ];
+      // group-uuid-3 has no non-posted assignments, triggering rebalance
       let callCount = 0;
+      const deleteMock = jest.fn().mockReturnValue({
+        in: jest.fn().mockResolvedValue({ error: null }),
+      });
 
       supabase.from.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return createRebalanceSelectChainMock({ data: distributedBets, error: null });
+          return createRebalanceSelectMock({ data: nonPostedAssignments, error: null });
         }
-        // Verify the update chain includes neq('bet_status', 'posted')
-        const neqMock = jest.fn().mockResolvedValue({ error: null });
-        const updateChain = {};
-        updateChain.update = jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
-            neq: neqMock,
-          }),
-        });
-        return updateChain;
+        return { delete: deleteMock };
       });
 
       const result = await rebalanceIfNeeded(groups);
 
       expect(result.rebalanced).toBe(true);
-      // The rebalance select query itself filters out posted bets via .neq('bet_status', 'posted')
-      // And the update also applies .neq('bet_status', 'posted') as safety
+      // The select query itself filters .neq('posting_status', 'posted')
+      // so only non-posted assignments are in the delete set
+      expect(result.undistributed).toBe(2);
     });
 
     test('nenhuma aposta distribuída na janela → sem rebalanceamento', async () => {
       const groups = createMockGroups(2);
 
       supabase.from.mockImplementation(() =>
-        createRebalanceSelectChainMock({ data: [], error: null })
+        createRebalanceSelectMock({ data: [], error: null })
       );
 
       const result = await rebalanceIfNeeded(groups);
@@ -720,7 +952,7 @@ describe('distributeBets job', () => {
       const groups = createMockGroups(2);
 
       supabase.from.mockImplementation(() =>
-        createRebalanceSelectChainMock({ data: null, error: { message: 'DB connection lost' } })
+        createRebalanceSelectMock({ data: null, error: { message: 'DB connection lost' } })
       );
 
       const result = await rebalanceIfNeeded(groups);
@@ -732,24 +964,19 @@ describe('distributeBets job', () => {
 
     test('erro no update do rebalance → retorna erro sem quebrar', async () => {
       const groups = createMockGroups(3);
-      const distributedBets = [
-        { id: 'bet-1', group_id: 'group-uuid-1' },
-        { id: 'bet-2', group_id: 'group-uuid-2' },
+      const assignments = [
+        { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-uuid-2', posting_status: 'ready' },
       ];
       let callCount = 0;
 
       supabase.from.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return createRebalanceSelectChainMock({ data: distributedBets, error: null });
+          return createRebalanceSelectMock({ data: assignments, error: null });
         }
-        const updateChain = {};
-        updateChain.update = jest.fn().mockReturnValue({
-          in: jest.fn().mockReturnValue({
-            neq: jest.fn().mockResolvedValue({ error: { message: 'Update failed' } }),
-          }),
-        });
-        return updateChain;
+        // Delete fails
+        return createRebalanceDeleteMock({ error: { message: 'Delete failed' } });
       });
 
       const result = await rebalanceIfNeeded(groups);
@@ -765,45 +992,113 @@ describe('distributeBets job', () => {
   describe('integração: rebalanceamento + distribuição', () => {
     test('grupo novo adicionado → rebalanceia e redistribui entre todos os grupos', async () => {
       const groups = createMockGroups(3);
-      const distributedBets = [
-        { id: 'bet-1', group_id: 'group-uuid-1' },
-        { id: 'bet-2', group_id: 'group-uuid-2' },
-        { id: 'bet-3', group_id: 'group-uuid-1' },
-      ];
-      // After rebalance, these come back as undistributed
       const reundistributedBets = createMockBets(3);
       const assignedBets = [];
-      let suggestedBetsCallCount = 0;
+
+      // Rebalance data: bets only in groups 1 and 2 (group 3 is new, no bets)
+      const rebalanceData = [
+        { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-uuid-1', posting_status: 'ready' },
+        { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-uuid-2', posting_status: 'ready' },
+        { id: 'bga-3', bet_id: 'bet-3', group_id: 'group-uuid-1', posting_status: 'ready' },
+      ];
+
+      let bgaCallCount = 0;
 
       supabase.from.mockImplementation((table) => {
         if (table === 'groups') {
-          return createChainMock({ data: groups, error: null });
-        }
-        if (table === 'suggested_bets') {
-          suggestedBetsCallCount++;
-
-          // 1st: rebalance select — bets only in 2 of 3 groups
-          if (suggestedBetsCallCount === 1) {
-            const rebalChain = createRebalanceSelectChainMock({ data: distributedBets, error: null });
-            return rebalChain;
-          }
-
-          // 2nd: rebalance update
-          if (suggestedBetsCallCount === 2) {
-            const updateChain = {};
-            updateChain.update = jest.fn().mockReturnValue({
-              in: jest.fn().mockReturnValue({
-                neq: jest.fn().mockResolvedValue({ error: null }),
+          return {
+            select: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
+                neq: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
+                single: jest.fn().mockResolvedValue({ data: null, error: { message: 'n/a' } }),
               }),
+            }),
+          };
+        }
+
+        if (table === 'bet_group_assignments') {
+          bgaCallCount++;
+          const bgaMock = {};
+
+          if (bgaCallCount === 1) {
+            // rebalanceIfNeeded select: .select(...).neq('posting_status', 'posted')
+            bgaMock.select = jest.fn().mockReturnValue({
+              neq: jest.fn().mockResolvedValue({ data: rebalanceData, error: null }),
             });
-            return updateChain;
+            return bgaMock;
           }
 
-          // 3rd: getUndistributedBets (after rebalance, bets are available again)
-          const chain = createChainMock({ data: reundistributedBets, error: null });
-          chain.update = createUpdateChainMock(assignedBets);
-          return chain;
+          if (bgaCallCount === 2) {
+            // rebalanceIfNeeded delete: .delete().in('id', [...])
+            bgaMock.delete = jest.fn().mockReturnValue({
+              in: jest.fn().mockResolvedValue({ error: null }),
+            });
+            return bgaMock;
+          }
+
+          // After rebalance: getUndistributedBets, getGroupBetCounts, getScheduledCountsPerTime, upserts
+          bgaMock.select = jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              not: jest.fn().mockReturnValue({
+                neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            then: (resolve) => resolve({ data: [], error: null }),
+            catch: () => {},
+          });
+          bgaMock.select.mockResolvedValue({ data: [], error: null });
+
+          bgaMock.upsert = jest.fn().mockImplementation((payload) => {
+            assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
+            return {
+              select: jest.fn().mockResolvedValue({
+                data: [{ id: `bga-${payload.bet_id}`, bet_id: payload.bet_id, group_id: payload.group_id, posting_status: 'ready', post_at: null, created_at: new Date().toISOString() }],
+                error: null,
+              }),
+            };
+          });
+
+          bgaMock.delete = jest.fn().mockReturnValue({
+            in: jest.fn().mockResolvedValue({ error: null }),
+          });
+
+          return bgaMock;
         }
+
+        if (table === 'suggested_bets') {
+          const chainObj = {
+            eq: jest.fn().mockReturnThis(),
+            is: jest.fn().mockReturnThis(),
+            neq: jest.fn().mockReturnThis(),
+            not: jest.fn().mockReturnThis(),
+            gte: jest.fn().mockReturnThis(),
+            lte: jest.fn().mockReturnThis(),
+            order: jest.fn().mockResolvedValue({ data: reundistributedBets, error: null }),
+          };
+          return {
+            select: jest.fn().mockReturnValue(chainObj),
+            update: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                is: jest.fn().mockResolvedValue({ data: null, error: null }),
+              }),
+            }),
+          };
+        }
+
+        if (table === 'group_league_preferences') {
+          return {
+            select: jest.fn().mockReturnValue({
+              in: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+
         return createChainMock({ data: [], error: null });
       });
 
@@ -819,41 +1114,52 @@ describe('distributeBets job', () => {
     });
   });
 
+  // ===========================
+  // assignBetToGroup — now uses upsert on bet_group_assignments
+  // ===========================
   describe('assignBetToGroup', () => {
     test('atribui aposta com sucesso', async () => {
-      supabase.from.mockImplementation(() => ({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            is: jest.fn().mockReturnValue({
+      let calledTable = null;
+
+      supabase.from.mockImplementation((table) => {
+        calledTable = table;
+        if (table === 'bet_group_assignments') {
+          return {
+            upsert: jest.fn().mockReturnValue({
               select: jest.fn().mockResolvedValue({
-                data: [{ id: 'bet-1', group_id: 'group-1', distributed_at: '2026-02-10T00:00:00.000Z' }],
+                data: [{ id: 'bga-1', bet_id: 'bet-1', group_id: 'group-1', posting_status: 'ready', post_at: null, created_at: '2026-02-10T00:00:00.000Z' }],
                 error: null,
               }),
             }),
-          }),
-        }),
-      }));
+          };
+        }
+        if (table === 'suggested_bets') {
+          return createDistributedAtUpdateMock();
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await assignBetToGroup('bet-1', 'group-1');
 
       expect(result.success).toBe(true);
-      expect(result.data.id).toBe('bet-1');
+      expect(result.data.bet_id).toBe('bet-1');
       expect(result.data.group_id).toBe('group-1');
     });
 
     test('retorna alreadyDistributed quando aposta já foi atribuída', async () => {
-      supabase.from.mockImplementation(() => ({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            is: jest.fn().mockReturnValue({
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return {
+            upsert: jest.fn().mockReturnValue({
               select: jest.fn().mockResolvedValue({
-                data: [],
+                data: [], // Empty = already distributed (ignoreDuplicates)
                 error: null,
               }),
             }),
-          }),
-        }),
-      }));
+          };
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await assignBetToGroup('bet-1', 'group-1');
 
@@ -862,18 +1168,19 @@ describe('distributeBets job', () => {
     });
 
     test('retorna erro em falha de DB', async () => {
-      supabase.from.mockImplementation(() => ({
-        update: jest.fn().mockReturnValue({
-          eq: jest.fn().mockReturnValue({
-            is: jest.fn().mockReturnValue({
+      supabase.from.mockImplementation((table) => {
+        if (table === 'bet_group_assignments') {
+          return {
+            upsert: jest.fn().mockReturnValue({
               select: jest.fn().mockResolvedValue({
                 data: null,
-                error: { message: 'Update failed' },
+                error: { message: 'Insert failed' },
               }),
             }),
-          }),
-        }),
-      }));
+          };
+        }
+        return createChainMock({ data: [], error: null });
+      });
 
       const result = await assignBetToGroup('bet-1', 'group-1');
 

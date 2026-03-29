@@ -10,7 +10,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
-const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at']);
+const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'distributed_at']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
@@ -29,10 +29,10 @@ function dbErrorResponse() {
 
 const BET_SELECT = `
   id, bet_market, bet_pick, odds, deep_link, bet_status,
-  elegibilidade, promovida_manual, group_id, distributed_at,
+  elegibilidade, promovida_manual, distributed_at,
   created_at, odds_at_post, notes,
   league_matches!inner(home_team_name, away_team_name, kickoff_time, status, league_seasons!inner(league_name, country)),
-  groups(name)
+  bet_group_assignments(id, group_id, posting_status, post_at, telegram_posted_at, groups(name))
 `;
 
 export const GET = createApiHandler(
@@ -107,18 +107,46 @@ export const GET = createApiHandler(
       );
     }
 
+    // Pre-fetch assigned bet IDs from junction table (needed for pool filter/counter and group_admin scoping)
+    const allAssignedPromise = supabase
+      .from('bet_group_assignments')
+      .select('bet_id');
+    const groupAssignedPromise = groupFilter
+      ? supabase.from('bet_group_assignments').select('bet_id').eq('group_id', groupFilter)
+      : null;
+
+    const [{ data: allAssigned }, groupAssignedResult] = await Promise.all([
+      allAssignedPromise,
+      groupAssignedPromise ?? Promise.resolve({ data: null } as { data: null }),
+    ]);
+
+    const allAssignedBetIds = [...new Set((allAssigned ?? []).map((a: { bet_id: number }) => a.bet_id))];
+    const groupBetIds = groupAssignedResult?.data
+      ? [...new Set(groupAssignedResult.data.map((a: { bet_id: number }) => a.bet_id))]
+      : null;
+
     // Build main query
     let query = supabase
       .from('suggested_bets')
       .select(BET_SELECT, { count: 'exact' });
 
-    // Multi-tenant filter
+    // Multi-tenant filter (uses junction table instead of suggested_bets.group_id)
     if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
+      // group_admin: only bets assigned to their group
+      if (groupBetIds && groupBetIds.length > 0) {
+        query = query.in('id', groupBetIds);
+      } else if (groupFilter) {
+        // No bets assigned to this group — return empty
+        query = query.in('id', [0]);
+      }
     } else if (groupIdParam === '__pool__') {
-      query = query.is('group_id', null);
+      // Pool: bets with zero assignments
+      if (allAssignedBetIds.length > 0) {
+        query = query.not('id', 'in', `(${allAssignedBetIds.join(',')})`);
+      }
     } else if (groupIdParam) {
-      query = query.eq('group_id', groupIdParam);
+      // Super admin filtering by specific group via junction table
+      query = query.eq('bet_group_assignments.group_id', groupIdParam);
     }
 
     // Apply filters
@@ -174,52 +202,63 @@ export const GET = createApiHandler(
       query = query.order(sortBy, { ascending });
     }
 
-    // Counter queries — inline with tenant filter (same pattern as members/route.ts)
-    const tenantCol = groupFilter || (groupIdParam !== '__pool__' ? groupIdParam : null);
-
+    // Counter queries — scoped by tenant via junction table
     let readyQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'ready');
-    let postedQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'posted');
     let pendingLinkQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'pending_link');
     let pendingOddsQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('bet_status', 'pending_odds');
     let semOddsQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('odds', null);
     let semLinkQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('deep_link', null);
-    const poolQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).is('group_id', null).eq('elegibilidade', 'elegivel');
-    const distributedQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).not('group_id', 'is', null).eq('elegibilidade', 'elegivel');
 
-    if (tenantCol) {
-      readyQuery = readyQuery.eq('group_id', tenantCol);
-      postedQuery = postedQuery.eq('group_id', tenantCol);
-      pendingLinkQuery = pendingLinkQuery.eq('group_id', tenantCol);
-      pendingOddsQuery = pendingOddsQuery.eq('group_id', tenantCol);
-      semOddsQuery = semOddsQuery.eq('group_id', tenantCol);
-      semLinkQuery = semLinkQuery.eq('group_id', tenantCol);
+    // Scope suggested_bets counters for group_admin (uses junction table bet IDs)
+    if (groupBetIds) {
+      const betIdScope = groupBetIds.length > 0 ? groupBetIds : [0];
+      readyQuery = readyQuery.in('id', betIdScope);
+      pendingLinkQuery = pendingLinkQuery.in('id', betIdScope);
+      pendingOddsQuery = pendingOddsQuery.in('id', betIdScope);
+      semOddsQuery = semOddsQuery.in('id', betIdScope);
+      semLinkQuery = semLinkQuery.in('id', betIdScope);
+    }
+
+    // Pool counter: bets with elegibilidade='elegivel' and ZERO assignments
+    let poolQuery = supabase.from('suggested_bets').select('*', { count: 'exact', head: true }).eq('elegibilidade', 'elegivel');
+    if (allAssignedBetIds.length > 0) {
+      poolQuery = poolQuery.not('id', 'in', `(${allAssignedBetIds.join(',')})`);
+    }
+
+    // Distributed/Posted counters: from bet_group_assignments junction table
+    let distributedQuery = supabase.from('bet_group_assignments').select('*', { count: 'exact', head: true }).eq('posting_status', 'ready');
+    let postedAssignmentsQuery = supabase.from('bet_group_assignments').select('*', { count: 'exact', head: true }).eq('posting_status', 'posted');
+
+    if (groupFilter) {
+      distributedQuery = distributedQuery.eq('group_id', groupFilter);
+      postedAssignmentsQuery = postedAssignmentsQuery.eq('group_id', groupFilter);
     }
 
     // Run all queries in parallel (including pair stats)
-    const [mainResult, readyResult, postedResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult, poolResult, distributedResult, pairStats] =
+    const [mainResult, readyResult, pendingLinkResult, pendingOddsResult, semOddsResult, semLinkResult, poolResult, distributedResult, postedAssignmentsResult, pairStats] =
       await Promise.all([
         query.range(from, from + perPage - 1),
         readyQuery,
-        postedQuery,
         pendingLinkQuery,
         pendingOddsQuery,
         semOddsQuery,
         semLinkQuery,
         poolQuery,
         distributedQuery,
+        postedAssignmentsQuery,
         fetchPairStats(supabase),
       ]);
 
     if (
       mainResult.error ||
       readyResult.error ||
-      postedResult.error ||
       pendingLinkResult.error ||
       pendingOddsResult.error ||
       semOddsResult.error ||
       semLinkResult.error ||
       poolResult.error ||
-      distributedResult.error
+      distributedResult.error ||
+      postedAssignmentsResult.error
     ) {
       return dbErrorResponse();
     }
@@ -247,7 +286,7 @@ export const GET = createApiHandler(
         counters: {
           total: mainResult.count ?? 0,
           ready: readyResult.count ?? 0,
-          posted: postedResult.count ?? 0,
+          posted: postedAssignmentsResult.count ?? 0,
           pending_link: pendingLinkResult.count ?? 0,
           pending_odds: pendingOddsResult.count ?? 0,
           sem_odds: semOddsResult.count ?? 0,

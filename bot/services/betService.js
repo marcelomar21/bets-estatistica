@@ -501,63 +501,84 @@ async function updateBetStatus(betId, status, extraFields = {}) {
 }
 
 /**
- * Mark bet as posted
+ * Mark bet assignment as posted (GURU-46: updates bet_group_assignments)
  * @param {number} betId - Bet ID
  * @param {number} messageId - Telegram message ID
  * @param {number} oddsAtPost - Odds at time of posting
+ * @param {string} groupId - Group ID for the assignment
  * @returns {Promise<{success: boolean, error?: object}>}
  */
-async function markBetAsPosted(betId, messageId, oddsAtPost) {
-  return updateBetStatus(betId, 'posted', {
-    telegram_posted_at: new Date().toISOString(),
-    telegram_message_id: messageId,
-    odds_at_post: oddsAtPost,
-  });
+async function markBetAsPosted(betId, messageId, oddsAtPost, groupId) {
+  try {
+    const { error } = await supabase
+      .from('bet_group_assignments')
+      .update({
+        posting_status: 'posted',
+        telegram_posted_at: new Date().toISOString(),
+        telegram_message_id: messageId,
+        odds_at_post: oddsAtPost,
+      })
+      .eq('bet_id', betId)
+      .eq('group_id', groupId);
+
+    if (error) {
+      logger.error('Failed to mark assignment as posted', { betId, groupId, error: error.message });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('Assignment marked as posted', { betId, groupId });
+    return { success: true };
+  } catch (err) {
+    logger.error('Error marking assignment as posted', { betId, groupId, error: err.message });
+    return { success: false, error: { code: 'UPDATE_ERROR', message: err.message } };
+  }
 }
 
 /**
- * Registra uma postagem no histórico da aposta (Story 13.5)
- * Adiciona timestamp ao array historico_postagens
- * A aposta continua elegível para próximos jobs
+ * Registra uma postagem no histórico do assignment (GURU-46)
+ * Adiciona timestamp ao array historico_postagens na bet_group_assignments
  * @param {number} betId - ID da aposta
+ * @param {string} groupId - Group ID for the assignment
  * @returns {Promise<{success: boolean, error?: object}>}
  */
-async function registrarPostagem(betId) {
+async function registrarPostagem(betId, groupId) {
   try {
     const timestamp = new Date().toISOString();
 
-    // Buscar histórico atual
-    const { data: bet, error: fetchError } = await supabase
-      .from('suggested_bets')
+    // Buscar histórico atual from assignment
+    const { data: assignment, error: fetchError } = await supabase
+      .from('bet_group_assignments')
       .select('historico_postagens')
-      .eq('id', betId)
+      .eq('bet_id', betId)
+      .eq('group_id', groupId)
       .single();
 
     if (fetchError) {
-      logger.error('Erro ao buscar aposta para registro', { betId, error: fetchError.message });
-      return { success: false, error: { code: 'NOT_FOUND', message: 'Aposta não encontrada' } };
+      logger.error('Erro ao buscar assignment para registro', { betId, groupId, error: fetchError.message });
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Assignment não encontrada' } };
     }
 
     // Adicionar novo timestamp ao array
-    const historico = bet.historico_postagens || [];
+    const historico = assignment.historico_postagens || [];
     historico.push(timestamp);
 
-    // Atualizar histórico
+    // Atualizar histórico on assignment
     const { error: updateError } = await supabase
-      .from('suggested_bets')
+      .from('bet_group_assignments')
       .update({ historico_postagens: historico })
-      .eq('id', betId);
+      .eq('bet_id', betId)
+      .eq('group_id', groupId);
 
     if (updateError) {
-      logger.error('Erro ao registrar postagem', { betId, error: updateError.message });
+      logger.error('Erro ao registrar postagem', { betId, groupId, error: updateError.message });
       return { success: false, error: { code: 'UPDATE_ERROR', message: 'Erro ao atualizar' } };
     }
 
-    logger.info('Postagem registrada no histórico', { betId, postCount: historico.length });
+    logger.info('Postagem registrada no histórico', { betId, groupId, postCount: historico.length });
     return { success: true };
 
   } catch (err) {
-    logger.error('Erro inesperado em registrarPostagem', { betId, error: err.message });
+    logger.error('Erro inesperado em registrarPostagem', { betId, groupId, error: err.message });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: 'Erro interno' } };
   }
 }
@@ -1315,7 +1336,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       ? groupIdParam
       : config.membership.groupId;
 
-    // 1. Buscar apostas ATIVAS (posted) - serão repostadas
+    // 1. Buscar apostas ATIVAS (posted) via bet_group_assignments (GURU-46)
     // IMPORTANTE: Também filtra por elegibilidade - apostas removidas não aparecem
     let ativasQuery = supabase
       .from('suggested_bets')
@@ -1324,21 +1345,23 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         bet_market,
         bet_pick,
         odds,
-        odds_at_post,
-        bet_status,
         deep_link,
         reasoning,
         elegibilidade,
         promovida_manual,
-        post_at,
-        generated_copy,
         league_matches!inner (
           home_team_name,
           away_team_name,
           kickoff_time
+        ),
+        bet_group_assignments!inner (
+          posting_status,
+          post_at,
+          generated_copy,
+          odds_at_post
         )
       `)
-      .eq('bet_status', 'posted')
+      .eq('bet_group_assignments.posting_status', 'posted')
       .eq('elegibilidade', 'elegivel')  // Respeita /remover - apostas removidas não aparecem
       .gte('league_matches.kickoff_time', now.toISOString());
 
@@ -1347,9 +1370,9 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       ativasQuery = ativasQuery.lte('league_matches.kickoff_time', twoDaysLater.toISOString());
     }
 
-    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    // GURU-46: Filter by group via junction table
     if (effectiveGroupId) {
-      ativasQuery = ativasQuery.eq('group_id', effectiveGroupId);
+      ativasQuery = ativasQuery.eq('bet_group_assignments.group_id', effectiveGroupId);
     }
 
     const { data: activeBets, error: activeError } = await ativasQuery
@@ -1362,21 +1385,24 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
       return { success: false, error: { code: 'DB_ERROR', message: 'Erro ao buscar fila' } };
     }
 
-    const ativas = (activeBets || []).map(bet => ({
-      id: bet.id,
-      betMarket: bet.bet_market,
-      betPick: bet.bet_pick,
-      odds: bet.odds_at_post || bet.odds,
-      reasoning: bet.reasoning,
-      betStatus: 'posted',
-      deepLink: bet.deep_link,
-      promovidaManual: bet.promovida_manual,
-      postAt: bet.post_at || null,
-      generatedCopy: bet.generated_copy || null,
-      homeTeamName: bet.league_matches.home_team_name,
-      awayTeamName: bet.league_matches.away_team_name,
-      kickoffTime: bet.league_matches.kickoff_time,
-    }));
+    const ativas = (activeBets || []).map(bet => {
+      const assignment = bet.bet_group_assignments[0];
+      return {
+        id: bet.id,
+        betMarket: bet.bet_market,
+        betPick: bet.bet_pick,
+        odds: assignment.odds_at_post || bet.odds,
+        reasoning: bet.reasoning,
+        betStatus: 'posted',
+        deepLink: bet.deep_link,
+        promovidaManual: bet.promovida_manual,
+        postAt: assignment.post_at || null,
+        generatedCopy: assignment.generated_copy || null,
+        homeTeamName: bet.league_matches.home_team_name,
+        awayTeamName: bet.league_matches.away_team_name,
+        kickoffTime: bet.league_matches.kickoff_time,
+      };
+    });
 
     // 2. Calcular slots disponíveis
     const slotsDisponiveis = Math.max(0, config.betting.maxActiveBets - ativas.length);
@@ -1384,6 +1410,7 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
     // 3. Buscar NOVAS apostas elegíveis para preencher slots
     let novas = [];
     if (slotsDisponiveis > 0) {
+      // GURU-46: Query novas via bet_group_assignments (posting_status='ready')
       let novasQuery = supabase
         .from('suggested_bets')
         .select(`
@@ -1391,22 +1418,24 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           bet_market,
           bet_pick,
           odds,
-          bet_status,
           deep_link,
           reasoning,
           elegibilidade,
           promovida_manual,
-          post_at,
-          generated_copy,
           league_matches!inner (
             home_team_name,
             away_team_name,
             kickoff_time
+          ),
+          bet_group_assignments!inner (
+            posting_status,
+            post_at,
+            generated_copy
           )
         `)
         .eq('elegibilidade', 'elegivel')
         .not('deep_link', 'is', null)
-        .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready'])
+        .eq('bet_group_assignments.posting_status', 'ready')
         .gte('league_matches.kickoff_time', now.toISOString());
 
       // Manual post-now bypasses maxDaysAhead — operator explicitly chose the bets
@@ -1414,9 +1443,9 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
         novasQuery = novasQuery.lte('league_matches.kickoff_time', twoDaysLater.toISOString());
       }
 
-      // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+      // GURU-46: Filter by group via junction table
       if (effectiveGroupId) {
-        novasQuery = novasQuery.eq('group_id', effectiveGroupId);
+        novasQuery = novasQuery.eq('bet_group_assignments.group_id', effectiveGroupId);
       }
 
       const { data: eligibleBets, error: eligibleError } = await novasQuery
@@ -1433,42 +1462,52 @@ async function getFilaStatus(groupIdParam = undefined, postTimesParam = undefine
           bet.promovida_manual === true || (bet.odds && bet.odds >= config.betting.minOdds)
         );
 
-        novas = filteredNew.slice(0, slotsDisponiveis).map(bet => ({
-          id: bet.id,
-          betMarket: bet.bet_market,
-          betPick: bet.bet_pick,
-          odds: bet.odds,
-          reasoning: bet.reasoning,
-          betStatus: bet.bet_status,
-          deepLink: bet.deep_link,
-          promovidaManual: bet.promovida_manual,
-          postAt: bet.post_at || null,
-          generatedCopy: bet.generated_copy || null,
-          homeTeamName: bet.league_matches.home_team_name,
-          awayTeamName: bet.league_matches.away_team_name,
-          kickoffTime: bet.league_matches.kickoff_time,
-        }));
+        novas = filteredNew.slice(0, slotsDisponiveis).map(bet => {
+          const assignment = bet.bet_group_assignments[0];
+          return {
+            id: bet.id,
+            betMarket: bet.bet_market,
+            betPick: bet.bet_pick,
+            odds: bet.odds,
+            reasoning: bet.reasoning,
+            betStatus: 'ready',
+            deepLink: bet.deep_link,
+            promovidaManual: bet.promovida_manual,
+            postAt: assignment.post_at || null,
+            generatedCopy: assignment.generated_copy || null,
+            homeTeamName: bet.league_matches.home_team_name,
+            awayTeamName: bet.league_matches.away_team_name,
+            kickoffTime: bet.league_matches.kickoff_time,
+          };
+        });
       }
     }
 
     // 4. Montar fila completa: ativas primeiro, depois novas
     const filaCompleta = [...ativas, ...novas];
 
-    // 5. Contar por elegibilidade (todas as apostas com jogos futuros)
-    let countsQuery = supabase
-      .from('suggested_bets')
-      .select(`
-        elegibilidade,
-        promovida_manual,
-        bet_status,
-        league_matches!inner (
-          kickoff_time
-        )
-      `)
-      .gte('league_matches.kickoff_time', now.toISOString());
-
+    // 5. Contar por elegibilidade (GURU-46: filter via junction table when group is set)
+    let countsQuery;
     if (effectiveGroupId) {
-      countsQuery = countsQuery.eq('group_id', effectiveGroupId);
+      countsQuery = supabase
+        .from('suggested_bets')
+        .select(`
+          elegibilidade,
+          promovida_manual,
+          league_matches!inner (kickoff_time),
+          bet_group_assignments!inner (group_id)
+        `)
+        .eq('bet_group_assignments.group_id', effectiveGroupId)
+        .gte('league_matches.kickoff_time', now.toISOString());
+    } else {
+      countsQuery = supabase
+        .from('suggested_bets')
+        .select(`
+          elegibilidade,
+          promovida_manual,
+          league_matches!inner (kickoff_time)
+        `)
+        .gte('league_matches.kickoff_time', now.toISOString());
     }
 
     const { data: allBets, error: countError } = await countsQuery;
@@ -1784,29 +1823,31 @@ async function swapPostedBet(oldBetId, newBetId) {
 }
 
 /**
- * Persist generated copy for a bet (fire-and-forget)
+ * Persist generated copy for an assignment (GURU-46: writes to bet_group_assignments)
  * @param {number} betId
  * @param {string|null} copy - The sanitized copy to persist, or null to clear
+ * @param {string} groupId - Group ID for the assignment
  */
-async function updateGeneratedCopy(betId, copy) {
+async function updateGeneratedCopy(betId, copy, groupId) {
   const { error } = await supabase
-    .from('suggested_bets')
+    .from('bet_group_assignments')
     .update({ generated_copy: copy })
-    .eq('id', betId);
+    .eq('bet_id', betId)
+    .eq('group_id', groupId);
   if (error) {
-    logger.warn('[betService] Failed to persist generated_copy', { betId, error: error.message });
+    logger.warn('[betService] Failed to persist generated_copy', { betId, groupId, error: error.message });
   }
 }
 
 /**
- * Clear generated_copy for all non-posted bets of a group
+ * Clear generated_copy for all assignments of a group (GURU-46)
  * Called when tone config changes to force regeneration.
  * @param {string} groupId
  */
 async function clearGeneratedCopyByGroup(groupId) {
-  // Clears ALL bets (including posted) so reposted bets also regenerate with new tone
+  // Clears ALL assignments (including posted) so reposted bets also regenerate with new tone
   const { error } = await supabase
-    .from('suggested_bets')
+    .from('bet_group_assignments')
     .update({ generated_copy: null })
     .eq('group_id', groupId);
   if (error) {

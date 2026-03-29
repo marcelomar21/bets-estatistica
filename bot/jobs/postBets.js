@@ -269,9 +269,10 @@ function formatBetPreview(bet, type, toneConfig = null) {
  * @param {object} bet - Bet object (must include generatedCopy field)
  * @param {object|null} toneConfig - Tone configuration
  * @param {number} betIndex - Index for template cycling
+ * @param {string} groupId - Group ID for persisting copy to assignment (GURU-46)
  * @returns {Promise<string>}
  */
-async function getOrGenerateMessage(bet, toneConfig, betIndex) {
+async function getOrGenerateMessage(bet, toneConfig, betIndex, groupId) {
   // Only persist/reuse in full-message mode (LLM generates entire post).
   // Template mode uses position-dependent headers/footers that must cycle per betIndex.
   const isFullMessageMode = !!(toneConfig?.examplePost || toneConfig?.examplePosts?.length > 0);
@@ -287,8 +288,9 @@ async function getOrGenerateMessage(bet, toneConfig, betIndex) {
   const message = await formatBetMessage(bet, template, toneConfig, betIndex);
 
   // 3. Persist only full-message mode (fire-and-forget, catch to avoid unhandled rejection)
+  // GURU-46: persist to bet_group_assignments via groupId
   if (isFullMessageMode) {
-    updateGeneratedCopy(bet.id, message).catch(err => {
+    updateGeneratedCopy(bet.id, message, groupId).catch(err => {
       logger.warn('[postBets] Failed to persist generated_copy', { betId: bet.id, error: err.message });
     });
   }
@@ -546,19 +548,28 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
 
-  // Load toneConfig: ALWAYS from DB to ensure latest settings are used
+  // Load toneConfig + enabled_modules: ALWAYS from DB to ensure latest settings are used
   let toneConfig = null;
   if (groupId) {
     const { data: groupData, error: toneError } = await supabase
       .from('groups')
-      .select('copy_tone_config')
+      .select('copy_tone_config, enabled_modules')
       .eq('id', groupId)
       .single();
     if (toneError) {
       logger.warn('[postBets] Failed to load toneConfig from DB', { groupId, error: toneError.message });
-    } else if (groupData?.copy_tone_config) {
-      toneConfig = groupData.copy_tone_config;
-      logger.debug('[postBets] Loaded toneConfig from DB', { groupId });
+    } else {
+      // Check if posting module is enabled for this group
+      // Default to all modules if null/undefined (backward compat for groups created before migration)
+      const modules = groupData?.enabled_modules || ['analytics', 'distribution', 'posting', 'members', 'tone'];
+      if (!modules.includes('posting')) {
+        logger.info('[postBets] Posting module disabled for group, skipping', { groupId, enabled_modules: modules });
+        return { reposted: 0, posted: 0, skipped: 0, sendFailed: 0, totalSent: 0, cancelled: false };
+      }
+      if (groupData?.copy_tone_config) {
+        toneConfig = groupData.copy_tone_config;
+        logger.debug('[postBets] Loaded toneConfig from DB', { groupId });
+      }
     }
   }
 
@@ -698,14 +709,15 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         message = previewMessages.get(bet.id);
         logger.debug('[postBets] Using preview message for active bet', { betId: bet.id, groupId });
       } else {
-        message = await getOrGenerateMessage(bet, toneConfig, betIndex);
+        message = await getOrGenerateMessage(bet, toneConfig, betIndex, groupId);
       }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
       if (sendResult.success) {
         // Registrar repost no histórico (não muda status, já é posted)
-        await registrarPostagem(bet.id);
+        // GURU-46: pass groupId to update assignment's historico_postagens
+        await registrarPostagem(bet.id, groupId);
         reposted++;
         logger.info('[postBets] Bet reposted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), channels: sendResult.results });
 
@@ -750,16 +762,16 @@ async function runPostBets(skipConfirmation = false, options = {}) {
         message = previewMessages.get(bet.id);
         logger.debug('[postBets] Using preview message for new bet', { betId: bet.id, groupId });
       } else {
-        message = await getOrGenerateMessage(bet, toneConfig, betIndex);
+        message = await getOrGenerateMessage(bet, toneConfig, betIndex, groupId);
       }
 
       const sendResult = await postToAllChannels(groupId, message, botCtx);
 
       if (sendResult.success) {
-        // Mark as posted (uses Telegram messageId for backwards compat)
-        await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds);
-        // Registrar postagem no histórico
-        await registrarPostagem(bet.id);
+        // GURU-46: Mark assignment as posted (pass groupId)
+        await markBetAsPosted(bet.id, sendResult.data.messageId, bet.odds, groupId);
+        // Registrar postagem no histórico (GURU-46: pass groupId)
+        await registrarPostagem(bet.id, groupId);
         posted++;
         logger.info('[postBets] Bet posted successfully', { betId: bet.id, groupId, postedAt: new Date().toISOString(), channels: sendResult.results });
 

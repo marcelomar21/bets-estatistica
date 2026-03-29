@@ -20,6 +20,7 @@ const sampleGroup: GroupListItem = {
   checkout_url: null,
   posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
   is_test: false,
+  enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'],
   created_at: '2026-02-06T12:00:00Z',
 };
 
@@ -130,6 +131,7 @@ describe('GroupEditForm', () => {
       telegram_admin_group_id: -1009876543210,
       status: 'paused',
       is_test: false,
+      enabled_modules: ['analytics', 'distribution', 'posting', 'members', 'tone'],
       additional_invitee_ids: [],
       posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] },
     });

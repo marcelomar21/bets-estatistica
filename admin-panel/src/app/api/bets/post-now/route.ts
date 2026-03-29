@@ -40,7 +40,7 @@ export const POST = createApiHandler(
 
     const { data: group, error: groupError } = await supabase
       .from('groups')
-      .select('id')
+      .select('id, enabled_modules')
       .eq('id', groupId)
       .neq('status', 'deleted')
       .single();
@@ -64,6 +64,15 @@ export const POST = createApiHandler(
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
         { status: 404 },
+      );
+    }
+
+    // Validate group has posting module enabled
+    const modules: string[] = group.enabled_modules ?? [];
+    if (!modules.includes('posting')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Grupo nao tem o modulo de postagem habilitado' } },
+        { status: 403 },
       );
     }
 

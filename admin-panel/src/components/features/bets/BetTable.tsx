@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import type { SuggestedBetListItem, BetPagination } from '@/types/database';
+import React, { useState } from 'react';
+import type { SuggestedBetListItem, BetPagination, BetGroupAssignmentListItem, PostingStatus } from '@/types/database';
 import { BetStatusBadge } from './BetStatusBadge';
 import type { BetStatus } from '@/types/database';
 import { categorizeMarket, CATEGORY_STYLES, formatPickDisplay } from '@/lib/bet-categories';
@@ -52,14 +52,32 @@ export function BetTable({
   const allSelected = bets.length > 0 && bets.every((b) => selectedIds.has(b.id));
   const [showHitRateTooltip, setShowHitRateTooltip] = useState(false);
 
-  function getDistributionStatus(bet: SuggestedBetListItem): { label: string; className: string } {
-    if (bet.group_id && bet.groups?.name) {
-      return { label: bet.groups.name, className: 'bg-emerald-100 text-emerald-800' };
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  const postingStatusStyles: Record<PostingStatus, string> = {
+    ready: 'bg-green-100 text-green-800',
+    posted: 'bg-blue-100 text-blue-800',
+    cancelled: 'bg-gray-100 text-gray-600',
+  };
+
+  const postingStatusLabels: Record<PostingStatus, string> = {
+    ready: 'Pronta',
+    posted: 'Postada',
+    cancelled: 'Cancelada',
+  };
+
+  function hasAssignments(bet: SuggestedBetListItem): boolean {
+    return (bet.bet_group_assignments?.length ?? 0) > 0;
+  }
+
+  function toggleExpand(betId: number) {
+    const next = new Set(expandedRows);
+    if (next.has(betId)) {
+      next.delete(betId);
+    } else {
+      next.add(betId);
     }
-    if (bet.group_id) {
-      return { label: 'Distribuida', className: 'bg-emerald-100 text-emerald-800' };
-    }
-    return { label: 'Pool', className: 'bg-gray-100 text-gray-700' };
+    setExpandedRows(next);
   }
 
   function toggleAll() {
@@ -157,7 +175,7 @@ export function BetTable({
               <SortHeader field="odds">Odds</SortHeader>
               <SortHeader field="deep_link">Link</SortHeader>
               <SortHeader field="bet_status">Status</SortHeader>
-              <SortHeader field="group_id">Distribuicao</SortHeader>
+              <SortHeader field="distributed_at">Distribuicao</SortHeader>
               <SortHeader field="created_at">Criada</SortHeader>
               {isSuperAdmin && (
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Acoes</th>
@@ -167,7 +185,8 @@ export function BetTable({
           <tbody className="divide-y divide-gray-100">
             {bets.map((bet) => {
               const match = bet.league_matches;
-              const distribution = getDistributionStatus(bet);
+              const assignments = bet.bet_group_assignments ?? [];
+              const isExpanded = expandedRows.has(bet.id);
               const category = categorizeMarket(bet.bet_market);
               const categoryStyle = CATEGORY_STYLES[category] || CATEGORY_STYLES['Outros'];
               const pickDisplay = formatPickDisplay(bet.bet_market, bet.bet_pick);
@@ -175,8 +194,8 @@ export function BetTable({
               const isActive = activeBetId === bet.id;
 
               return (
+                <React.Fragment key={bet.id}>
                 <tr
-                  key={bet.id}
                   id={`bet-row-${bet.id}`}
                   className={`hover:bg-gray-50 ${isActive ? 'bg-amber-50 ring-2 ring-amber-300 ring-inset' : selectedIds.has(bet.id) ? 'bg-blue-50' : ''}`}
                 >
@@ -250,9 +269,28 @@ export function BetTable({
                     <BetStatusBadge status={bet.bet_status as BetStatus} />
                   </td>
                   <td className="px-3 py-3">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${distribution.className}`}>
-                      {distribution.label}
-                    </span>
+                    {assignments.length > 0 ? (
+                      <button
+                        type="button"
+                        className="flex flex-wrap gap-1 items-center cursor-pointer"
+                        onClick={() => toggleExpand(bet.id)}
+                        aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} detalhes de distribuicao`}
+                      >
+                        {assignments.map((a: BetGroupAssignmentListItem) => (
+                          <span
+                            key={a.id}
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${postingStatusStyles[a.posting_status] ?? 'bg-gray-100 text-gray-700'}`}
+                          >
+                            {a.groups?.name ?? 'Grupo'}
+                          </span>
+                        ))}
+                        <span className="ml-0.5 text-gray-400 text-xs">{isExpanded ? '\u25B2' : '\u25BC'}</span>
+                      </button>
+                    ) : (
+                      <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">
+                        Pool
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-xs text-gray-500">
                     {formatDateTimeShort(bet.created_at)}
@@ -291,13 +329,45 @@ export function BetTable({
                             onClick={() => onDistribute(bet)}
                             className="rounded px-2 py-1 text-xs font-medium text-emerald-600 hover:bg-emerald-50"
                           >
-                            {bet.group_id ? 'Redistribuir' : 'Distribuir'}
+                            {hasAssignments(bet) ? 'Redistribuir' : 'Distribuir'}
                           </button>
                         )}
                       </div>
                     </td>
                   )}
                 </tr>
+                {isExpanded && assignments.length > 0 && (
+                  <tr key={`${bet.id}-details`} className="bg-gray-50">
+                    <td colSpan={isSuperAdmin ? 15 : 13} className="px-6 py-3">
+                      <div className="text-xs font-semibold text-gray-600 mb-2">Detalhes de Distribuicao</div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-gray-500">
+                            <th className="text-left py-1 pr-4">Grupo</th>
+                            <th className="text-left py-1 pr-4">Status</th>
+                            <th className="text-left py-1 pr-4">Agendado</th>
+                            <th className="text-left py-1">Postado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {assignments.map((a: BetGroupAssignmentListItem) => (
+                            <tr key={a.id}>
+                              <td className="py-1 pr-4 font-medium text-gray-700">{a.groups?.name ?? '\u2014'}</td>
+                              <td className="py-1 pr-4">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${postingStatusStyles[a.posting_status] ?? 'bg-gray-100 text-gray-700'}`}>
+                                  {postingStatusLabels[a.posting_status] ?? a.posting_status}
+                                </span>
+                              </td>
+                              <td className="py-1 pr-4 text-gray-600">{a.post_at ? formatDateTime(a.post_at) : '\u2014'}</td>
+                              <td className="py-1 text-gray-600">{a.telegram_posted_at ? formatDateTime(a.telegram_posted_at) : '\u2014'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
           </tbody>

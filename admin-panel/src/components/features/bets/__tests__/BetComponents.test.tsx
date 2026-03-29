@@ -8,7 +8,6 @@ import { BetTable } from '../BetTable';
 import { OddsEditModal } from '../OddsEditModal';
 import { BulkOddsModal } from '../BulkOddsModal';
 import { DistributeModal } from '../DistributeModal';
-import { BulkDistributeModal } from '../BulkDistributeModal';
 import type { SuggestedBetListItem, BetPagination, BetCounters } from '@/types/database';
 
 const sampleBet: SuggestedBetListItem = {
@@ -36,6 +35,16 @@ const sampleBet: SuggestedBetListItem = {
     },
   },
   groups: { name: 'Grupo Alpha' },
+  bet_group_assignments: [
+    {
+      id: 100,
+      group_id: 'group-uuid-1',
+      posting_status: 'ready',
+      post_at: '2026-02-10T19:00:00Z',
+      telegram_posted_at: null,
+      groups: { name: 'Grupo Alpha' },
+    },
+  ],
 };
 
 const sampleCounters: BetCounters = {
@@ -299,16 +308,53 @@ describe('BetTable', () => {
     expect(onSort).toHaveBeenCalledWith('odds');
   });
 
-  it('shows Distribuir button when onDistribute is provided', () => {
+  it('shows Redistribuir button when bet has assignments', () => {
     render(<BetTable {...defaultProps} role="super_admin" onDistribute={vi.fn()} />);
-    // sampleBet has group_id so button text should be "Redistribuir"
+    // sampleBet has bet_group_assignments so button text should be "Redistribuir"
     expect(screen.getByText('Redistribuir')).toBeInTheDocument();
   });
 
-  it('shows Distribuir for pool bets', () => {
-    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null };
+  it('shows Distribuir for pool bets (no assignments)', () => {
+    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null, bet_group_assignments: [] };
     render(<BetTable {...defaultProps} bets={[poolBet]} role="super_admin" onDistribute={vi.fn()} />);
     expect(screen.getByText('Distribuir')).toBeInTheDocument();
+  });
+
+  it('renders Pool badge when bet has zero assignments', () => {
+    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null, bet_group_assignments: [] };
+    render(<BetTable {...defaultProps} bets={[poolBet]} role="super_admin" />);
+    expect(screen.getByText('Pool')).toBeInTheDocument();
+  });
+
+  it('renders group chips with posting_status colors for assigned bets', () => {
+    const multiBet: SuggestedBetListItem = {
+      ...sampleBet,
+      bet_group_assignments: [
+        { id: 100, group_id: 'g1', posting_status: 'ready', post_at: null, telegram_posted_at: null, groups: { name: 'Grupo A' } },
+        { id: 101, group_id: 'g2', posting_status: 'posted', post_at: null, telegram_posted_at: '2026-02-10T20:00:00Z', groups: { name: 'Grupo B' } },
+      ],
+    };
+    render(<BetTable {...defaultProps} bets={[multiBet]} role="super_admin" />);
+    expect(screen.getByText('Grupo A')).toBeInTheDocument();
+    expect(screen.getByText('Grupo B')).toBeInTheDocument();
+    // Group A chip should have green (ready) styling
+    const chipA = screen.getByText('Grupo A');
+    expect(chipA.className).toContain('bg-green-100');
+    // Group B chip should have blue (posted) styling
+    const chipB = screen.getByText('Grupo B');
+    expect(chipB.className).toContain('bg-blue-100');
+  });
+
+  it('shows expandable assignment details on click', async () => {
+    const user = userEvent.setup();
+    render(<BetTable {...defaultProps} role="super_admin" />);
+    // Click the distribution chips to expand
+    const expandBtn = screen.getByLabelText(/Expandir detalhes/i);
+    await user.click(expandBtn);
+    expect(screen.getByText('Detalhes de Distribuicao')).toBeInTheDocument();
+    // "Pronta" appears in BetStatusBadge (bet_status) and in assignment detail
+    const prontaElements = screen.getAllByText('Pronta');
+    expect(prontaElements.length).toBeGreaterThanOrEqual(2);
   });
 
   it('calls onDistribute when distribute button clicked', async () => {
@@ -384,105 +430,268 @@ describe('OddsEditModal', () => {
 });
 
 // ============================================================
-// DistributeModal (Story 4-2)
+// DistributeModal (Story 2.7 -- GURU-48: Multi-select)
 // ============================================================
 describe('DistributeModal', () => {
   const groups = [
     { id: 'group-uuid-1', name: 'Guru da Bet' },
     { id: 'group-uuid-2', name: 'Osmar Palpites' },
+    { id: 'group-uuid-3', name: 'Cap 1000' },
   ];
 
-  const poolBet: SuggestedBetListItem = {
-    ...sampleBet,
-    group_id: null,
-    distributed_at: null,
-    groups: null,
-  };
+  // Mock fetch for groups and existing assignments
+  function mockFetch(options?: {
+    existingAssignments?: Array<{ bet_id: number; group_id: string }>;
+    distributeResult?: { created: number; alreadyExisted: number };
+  }) {
+    const existing = options?.existingAssignments ?? [];
+    const result = options?.distributeResult ?? { created: 2, alreadyExisted: 0 };
 
-  it('renders group select with options', () => {
-    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
-    expect(screen.getByLabelText(/Grupo destino/i)).toBeInTheDocument();
-    expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
-    expect(screen.getByText('Osmar Palpites')).toBeInTheDocument();
+    return vi.fn((url: string, init?: RequestInit) => {
+      if (typeof url === 'string' && url.includes('/api/groups')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: groups }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/api/bets/distribute') && (!init || init.method !== 'POST')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: existing }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/api/bets/distribute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: result }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data: [] }) });
+    });
+  }
+
+  beforeEach(() => {
+    global.fetch = mockFetch() as unknown as typeof fetch;
   });
 
-  it('shows "Distribuir" title for pool bet', () => {
-    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
-    expect(screen.getByText('Distribuir Aposta')).toBeInTheDocument();
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
-  it('shows "Redistribuir" title for already-distributed bet', () => {
-    render(<DistributeModal bet={sampleBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
-    expect(screen.getByText('Redistribuir Aposta')).toBeInTheDocument();
-  });
-
-  it('shows current group info for redistribution', () => {
-    render(<DistributeModal bet={sampleBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
-    expect(screen.getByText(/Atualmente distribuida para/i)).toBeInTheDocument();
-    expect(screen.getByText('Grupo Alpha')).toBeInTheDocument();
-  });
-
-  it('calls onDistribute with betId and groupId', async () => {
-    const user = userEvent.setup();
-    const onDistribute = vi.fn().mockResolvedValue(undefined);
-    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={onDistribute} />);
-
-    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-2');
-    await user.click(screen.getByText('Distribuir'));
-
-    expect(onDistribute).toHaveBeenCalledWith(poolBet.id, 'group-uuid-2');
-  });
-
-  it('shows error when no group selected', async () => {
-    const user = userEvent.setup();
-    render(<DistributeModal bet={poolBet} groups={groups} onClose={vi.fn()} onDistribute={vi.fn()} />);
-
-    // Submit button should be disabled when no group is selected
-    const submitBtn = screen.getByRole('button', { name: /Distribuir/i });
-    expect(submitBtn).toBeDisabled();
-
-    // Force a submit by selecting then deselecting
-    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-1');
-    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), '');
-
-    expect(submitBtn).toBeDisabled();
-  });
-});
-
-// ============================================================
-// BulkDistributeModal (Story 4-3)
-// ============================================================
-describe('BulkDistributeModal', () => {
-  const groups = [
-    { id: 'group-uuid-1', name: 'Guru da Bet' },
-    { id: 'group-uuid-2', name: 'Osmar Palpites' },
-  ];
-
-  it('renders selected count and group selector', () => {
-    render(<BulkDistributeModal selectedCount={5} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
-    const paragraph = screen.getByText((_content, element) =>
-      element?.tagName === 'P' && /5.*apostas selecionadas/i.test(element.textContent ?? ''),
+  it('renders multi-select checkbox list of groups', async () => {
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
     );
-    expect(paragraph).toBeInTheDocument();
-    expect(screen.getByLabelText(/Grupo destino/i)).toBeInTheDocument();
-    expect(screen.getByText('Guru da Bet')).toBeInTheDocument();
+
+    expect(await screen.findByText('Guru da Bet')).toBeInTheDocument();
+    expect(screen.getByText('Osmar Palpites')).toBeInTheDocument();
+    expect(screen.getByText('Cap 1000')).toBeInTheDocument();
+
+    const checkboxes = screen.getAllByRole('checkbox');
+    expect(checkboxes.length).toBe(3);
   });
 
-  it('calls onSave with groupId', async () => {
+  it('shows "Distribuir Aposta" title for single bet', async () => {
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    expect(await screen.findByText('Distribuir Aposta')).toBeInTheDocument();
+  });
+
+  it('shows "Distribuir Apostas" title for multiple bets', async () => {
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1, 2, 3]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    expect(await screen.findByText('Distribuir Apostas')).toBeInTheDocument();
+  });
+
+  it('shows already-assigned groups as disabled with "ja distribuido"', async () => {
+    // Bet 1 is already assigned to group-uuid-1
+    global.fetch = mockFetch({
+      existingAssignments: [{ bet_id: 1, group_id: 'group-uuid-1' }],
+    }) as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    expect(await screen.findByText('ja distribuido')).toBeInTheDocument();
+  });
+
+  it('shows preview counter when groups are selected', async () => {
     const user = userEvent.setup();
-    const onSave = vi.fn().mockResolvedValue(undefined);
-    render(<BulkDistributeModal selectedCount={3} groups={groups} onClose={vi.fn()} onSave={onSave} />);
 
-    await user.selectOptions(screen.getByLabelText(/Grupo destino/i), 'group-uuid-2');
-    await user.click(screen.getByText(/Distribuir 3 Apostas/i));
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1, 2]} onDistributed={vi.fn()} role="super_admin" />,
+    );
 
-    expect(onSave).toHaveBeenCalledWith('group-uuid-2');
+    await screen.findByText('Guru da Bet');
+
+    // Select 2 groups
+    const checkboxes = screen.getAllByRole('checkbox');
+    await user.click(checkboxes[0]); // Guru da Bet
+    await user.click(checkboxes[1]); // Osmar Palpites
+
+    // Preview: 2 bets x 2 groups = 4 new assignments
+    expect(screen.getByText(/4 novos assignments/)).toBeInTheDocument();
   });
 
-  it('disables submit when no group selected', () => {
-    render(<BulkDistributeModal selectedCount={2} groups={groups} onClose={vi.fn()} onSave={vi.fn()} />);
-    const submitBtn = screen.getByRole('button', { name: /Distribuir 2 Apostas/i });
-    expect(submitBtn).toBeDisabled();
+  it('calls bulk distribute API with correct payload on confirm', async () => {
+    const user = userEvent.setup();
+    const fetchMock = mockFetch({ distributeResult: { created: 2, alreadyExisted: 0 } });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+
+    await user.click(screen.getAllByRole('checkbox')[0]); // Select Guru da Bet
+    await user.click(screen.getByText('Confirmar'));
+
+    // Find the POST call
+    const postCall = fetchMock.mock.calls.find(
+      (c: [string, RequestInit?]) => c[1]?.method === 'POST',
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(postCall![1]!.body as string);
+    expect(body.betIds).toEqual([1]);
+    expect(body.groupIds).toEqual(['group-uuid-1']);
+  });
+
+  it('shows success result with created/alreadyExisted counts', async () => {
+    const user = userEvent.setup();
+    global.fetch = mockFetch({ distributeResult: { created: 3, alreadyExisted: 1 } }) as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1, 2]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByText('Confirmar'));
+
+    expect(await screen.findByText(/3 criados/)).toBeInTheDocument();
+    expect(screen.getByText(/1 ja existia/)).toBeInTheDocument();
+  });
+
+  it('calls onDistributed callback on success close', async () => {
+    const user = userEvent.setup();
+    const onDistributed = vi.fn();
+    global.fetch = mockFetch({ distributeResult: { created: 1, alreadyExisted: 0 } }) as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={onDistributed} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByText('Confirmar'));
+
+    // Wait for result, then click Fechar
+    await screen.findByText(/1 criado/);
+    await user.click(screen.getByText('Fechar'));
+
+    expect(onDistributed).toHaveBeenCalled();
+  });
+
+  it('does not render when isOpen is false', () => {
+    render(
+      <DistributeModal isOpen={false} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    expect(screen.queryByText('Distribuir Aposta')).not.toBeInTheDocument();
+  });
+
+  it('disables confirm button when no groups selected', async () => {
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    const confirmBtn = screen.getByText('Confirmar');
+    expect(confirmBtn).toBeDisabled();
+  });
+
+  it('shows error when API fails', async () => {
+    const user = userEvent.setup();
+    global.fetch = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          json: () => Promise.resolve({ success: false, error: { message: 'Server error' } }),
+        });
+      }
+      // Groups + assignments
+      if (typeof url === 'string' && url.includes('/api/groups')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: groups }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data: [] }) });
+    }) as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByText('Confirmar'));
+
+    expect(await screen.findByText('Server error')).toBeInTheDocument();
+  });
+
+  it('shows loading state during API call', async () => {
+    const user = userEvent.setup();
+    // Make the POST hang
+    global.fetch = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return new Promise(() => {}); // Never resolves
+      }
+      if (typeof url === 'string' && url.includes('/api/groups')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ success: true, data: groups }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true, data: [] }) });
+    }) as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={vi.fn()} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    await user.click(screen.getAllByRole('checkbox')[0]);
+    await user.click(screen.getByText('Confirmar'));
+
+    expect(screen.getByText('Distribuindo...')).toBeInTheDocument();
+  });
+
+  it('cancel does not trigger API call', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(
+      <DistributeModal isOpen={true} onClose={onClose} selectedBetIds={[1]} onDistributed={vi.fn()} role="super_admin" />,
+    );
+
+    await screen.findByText('Guru da Bet');
+    await user.click(screen.getByText('Cancelar'));
+
+    expect(onClose).toHaveBeenCalled();
+    // No POST calls
+    const postCalls = fetchMock.mock.calls.filter(
+      (c: [string, RequestInit?]) => c[1]?.method === 'POST',
+    );
+    expect(postCalls).toHaveLength(0);
   });
 });
 

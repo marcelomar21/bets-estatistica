@@ -1,10 +1,11 @@
 /**
  * Job: Distribute bets to active groups via round-robin
  * Story 5.1: Distribuição Round-robin de Apostas entre Grupos
+ * Story 2.4 (GURU-45): Refactored to use bet_group_assignments junction table
  *
- * Distributes eligible bets (elegibilidade='elegivel', group_id IS NULL,
- * distributed_at IS NULL, bet_status != 'posted') among active groups
- * using a deterministic round-robin algorithm.
+ * Distributes eligible bets among active groups using a deterministic
+ * round-robin algorithm. Assignments are created in bet_group_assignments
+ * (junction table) as the sole source of truth for distribution.
  *
  * Must run AFTER pipeline generates bets and BEFORE postBets.js
  *
@@ -24,9 +25,9 @@ async function getActiveGroups() {
   try {
     const { data, error } = await supabase
       .from('groups')
-      .select('id, name, status, created_at, is_test')
+      .select('id, name, status, created_at, enabled_modules')
       .eq('status', 'active')
-      .neq('is_test', true)
+      .contains('enabled_modules', ['distribution'])
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -67,7 +68,8 @@ function getDistributionWindow() {
 
 /**
  * Get undistributed eligible bets ordered by kickoff_time ASC
- * Only returns bets with group_id IS NULL and distributed_at IS NULL
+ * Uses two-step query: first get assigned bet IDs from bet_group_assignments,
+ * then query suggested_bets excluding those IDs.
  * Filtered to today+tomorrow window (BRT timezone)
  * @returns {Promise<{success: boolean, data?: Array, error?: object}>}
  */
@@ -75,16 +77,34 @@ async function getUndistributedBets() {
   try {
     const { startOfToday, endOfTomorrow } = getDistributionWindow();
 
-    const { data, error } = await supabase
+    // Step 1: Get all bet IDs that already have assignments in the junction table
+    const { data: assignedRows, error: assignedError } = await supabase
+      .from('bet_group_assignments')
+      .select('bet_id');
+
+    if (assignedError) {
+      logger.error('[bets:distribute] Erro ao buscar assignments existentes', { error: assignedError.message });
+      return { success: false, error: { code: 'DB_ERROR', message: assignedError.message } };
+    }
+
+    const assignedBetIds = (assignedRows || []).map((r) => r.bet_id);
+
+    // Step 2: Query suggested_bets excluding assigned IDs
+    let query = supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
+      .select('id, match_id, elegibilidade, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
       .eq('elegibilidade', 'elegivel')
-      .is('group_id', null)
       .is('distributed_at', null)
       .neq('bet_status', 'posted')
       .gte('league_matches.kickoff_time', startOfToday)
       .lte('league_matches.kickoff_time', endOfTomorrow)
       .order('kickoff_time', { referencedTable: 'league_matches', ascending: true });
+
+    if (assignedBetIds.length > 0) {
+      query = query.not('id', 'in', `(${assignedBetIds.join(',')})`);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       logger.error('[bets:distribute] Erro ao buscar apostas não distribuídas', { error: error.message });
@@ -100,21 +120,14 @@ async function getUndistributedBets() {
 }
 
 /**
- * Count distributed bets per group in the current window
+ * Count distributed bets per group from the junction table
  * Used to balance distribution fairly
  * @returns {Promise<object>} { groupId: count }
  */
 async function getGroupBetCounts() {
-  const { startOfToday, endOfTomorrow } = getDistributionWindow();
-
   const { data, error } = await supabase
-    .from('suggested_bets')
-    .select('group_id, league_matches!inner(kickoff_time)')
-    .eq('elegibilidade', 'elegivel')
-    .not('group_id', 'is', null)
-    .not('distributed_at', 'is', null)
-    .gte('league_matches.kickoff_time', startOfToday)
-    .lte('league_matches.kickoff_time', endOfTomorrow);
+    .from('bet_group_assignments')
+    .select('group_id');
 
   if (error) {
     logger.warn('[bets:distribute] Erro ao contar apostas por grupo', { error: error.message });
@@ -122,8 +135,8 @@ async function getGroupBetCounts() {
   }
 
   const counts = {};
-  for (const bet of (data || [])) {
-    counts[bet.group_id] = (counts[bet.group_id] || 0) + 1;
+  for (const row of (data || [])) {
+    counts[row.group_id] = (counts[row.group_id] || 0) + 1;
   }
   return counts;
 }
@@ -198,36 +211,32 @@ function getBetLeagueName(bet) {
 
 /**
  * Rebalance distributed bets if new groups were added.
- * Checks if all active groups have bets in the current window.
- * If any active group has no bets, undistributes all non-posted bets
+ * Checks if all active groups have assignments in the junction table.
+ * If any active group has no assignments, deletes all non-posted assignments
  * so the round-robin can redistribute them evenly.
  * @param {Array} activeGroups - Active groups
  * @returns {Promise<{rebalanced: boolean, undistributed?: number, error?: object}>}
  */
 async function rebalanceIfNeeded(activeGroups) {
-  const { startOfToday, endOfTomorrow } = getDistributionWindow();
   const activeGroupIds = activeGroups.map((g) => g.id);
 
   try {
-    const { data: distributedBets, error } = await supabase
-      .from('suggested_bets')
-      .select('id, group_id, league_matches!inner(kickoff_time)')
-      .eq('elegibilidade', 'elegivel')
-      .not('group_id', 'is', null)
-      .neq('bet_status', 'posted')
-      .gte('league_matches.kickoff_time', startOfToday)
-      .lte('league_matches.kickoff_time', endOfTomorrow);
+    // Query non-posted assignments from the junction table
+    const { data: assignments, error } = await supabase
+      .from('bet_group_assignments')
+      .select('id, bet_id, group_id, posting_status')
+      .neq('posting_status', 'posted');
 
     if (error) {
       logger.error('[bets:distribute] Erro ao verificar rebalanceamento', { error: error.message });
       return { rebalanced: false, error };
     }
 
-    if (!distributedBets || distributedBets.length === 0) {
+    if (!assignments || assignments.length === 0) {
       return { rebalanced: false };
     }
 
-    const groupsWithBets = new Set(distributedBets.map((b) => b.group_id));
+    const groupsWithBets = new Set(assignments.map((a) => a.group_id));
     const groupsWithoutBets = activeGroupIds.filter((id) => !groupsWithBets.has(id));
 
     if (groupsWithoutBets.length === 0) {
@@ -236,23 +245,23 @@ async function rebalanceIfNeeded(activeGroups) {
 
     logger.info('[bets:distribute] Rebalanceamento: grupos sem apostas detectados', {
       groupsWithoutBets,
-      totalToRedistribute: distributedBets.length,
+      totalToRedistribute: assignments.length,
     });
 
-    const betIds = distributedBets.map((b) => b.id);
-    const { error: updateError } = await supabase
-      .from('suggested_bets')
-      .update({ group_id: null, distributed_at: null })
-      .in('id', betIds)
-      .neq('bet_status', 'posted');
+    // Delete non-posted assignments from junction table
+    const assignmentIds = assignments.map((a) => a.id);
+    const { error: deleteError } = await supabase
+      .from('bet_group_assignments')
+      .delete()
+      .in('id', assignmentIds);
 
-    if (updateError) {
-      logger.error('[bets:distribute] Erro no rebalanceamento', { error: updateError.message });
-      return { rebalanced: false, error: updateError };
+    if (deleteError) {
+      logger.error('[bets:distribute] Erro no rebalanceamento', { error: deleteError.message });
+      return { rebalanced: false, error: deleteError };
     }
 
-    logger.info('[bets:distribute] Rebalanceamento concluído', { undistributed: betIds.length });
-    return { rebalanced: true, undistributed: betIds.length };
+    logger.info('[bets:distribute] Rebalanceamento concluído', { undistributed: assignmentIds.length });
+    return { rebalanced: true, undistributed: assignmentIds.length };
   } catch (err) {
     logger.error('[bets:distribute] Erro inesperado no rebalanceamento', { error: err.message });
     return { rebalanced: false, error: { code: 'REBALANCE_ERROR', message: err.message } };
@@ -316,7 +325,7 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
 }
 
 /**
- * Assign a single bet to a group (idempotent via group_id IS NULL check)
+ * Assign a single bet to a group via junction table (idempotent via ON CONFLICT DO NOTHING)
  * @param {string} betId - Bet UUID
  * @param {string} groupId - Group UUID
  * @param {string|null} postAt - Optional posting time (HH:MM)
@@ -324,20 +333,19 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
  */
 async function assignBetToGroup(betId, groupId, postAt = null) {
   try {
-    const updatePayload = {
+    const insertPayload = {
+      bet_id: betId,
       group_id: groupId,
-      distributed_at: new Date().toISOString(),
+      posting_status: 'ready',
     };
     if (postAt) {
-      updatePayload.post_at = postAt;
+      insertPayload.post_at = postAt;
     }
 
     const { data, error } = await supabase
-      .from('suggested_bets')
-      .update(updatePayload)
-      .eq('id', betId)
-      .is('group_id', null)
-      .select('id, group_id, distributed_at, post_at');
+      .from('bet_group_assignments')
+      .upsert(insertPayload, { onConflict: 'bet_id,group_id', ignoreDuplicates: true })
+      .select('id, bet_id, group_id, posting_status, post_at, created_at');
 
     if (error) {
       logger.error('[bets:distribute] Erro ao atribuir aposta', { betId, groupId, error: error.message });
@@ -345,9 +353,16 @@ async function assignBetToGroup(betId, groupId, postAt = null) {
     }
 
     if (!data || data.length === 0) {
-      logger.warn('[bets:distribute] Aposta já distribuída ou não encontrada', { betId });
+      logger.warn('[bets:distribute] Aposta já distribuída para este grupo', { betId, groupId });
       return { success: true, data: { alreadyDistributed: true } };
     }
+
+    // Also update distributed_at on suggested_bets for backward compatibility
+    await supabase
+      .from('suggested_bets')
+      .update({ distributed_at: new Date().toISOString() })
+      .eq('id', betId)
+      .is('distributed_at', null);
 
     logger.info('[bets:distribute] Aposta atribuída', { betId, groupId });
     return { success: true, data: data[0] };
@@ -401,7 +416,7 @@ function getFuturePostingTimes(times) {
 }
 
 /**
- * Count bets already scheduled per time slot for a group
+ * Count bets already scheduled per time slot for a group from the junction table
  * @param {string} groupId - Group UUID
  * @param {string[]} times - Available posting times
  * @returns {Promise<object>} { "10:00": 3, "15:00": 1, ... }
@@ -414,15 +429,15 @@ async function getScheduledCountsPerTime(groupId, times) {
 
   try {
     const { data } = await supabase
-      .from('suggested_bets')
+      .from('bet_group_assignments')
       .select('post_at')
       .eq('group_id', groupId)
       .not('post_at', 'is', null)
-      .neq('bet_status', 'posted');
+      .neq('posting_status', 'posted');
 
-    for (const bet of (data || [])) {
-      if (counts[bet.post_at] !== undefined) {
-        counts[bet.post_at]++;
+    for (const row of (data || [])) {
+      if (counts[row.post_at] !== undefined) {
+        counts[row.post_at]++;
       }
     }
   } catch {
@@ -653,4 +668,5 @@ module.exports = {
   rebalanceIfNeeded,
   distributeRoundRobin,
   assignBetToGroup,
+  getScheduledCountsPerTime,
 };
