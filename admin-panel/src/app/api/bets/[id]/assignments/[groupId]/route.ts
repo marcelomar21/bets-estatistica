@@ -3,13 +3,14 @@ import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const TIME_RE = /^\d{2}:\d{2}$/;
+// #3: semantic time validation (00:00 to 23:59)
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const patchSchema = z
   .object({
     postAt: z
       .string()
-      .regex(TIME_RE, 'postAt deve estar no formato HH:MM')
+      .regex(TIME_RE, 'postAt deve estar no formato HH:MM (00:00 a 23:59)')
       .nullable()
       .optional(),
     postingStatus: z.enum(['ready', 'cancelled']).optional(),
@@ -18,12 +19,23 @@ const patchSchema = z
     message: 'Pelo menos um campo deve ser fornecido (postAt ou postingStatus)',
   });
 
-type ValidationOk = { ok: true; betId: number };
+// #10: return both validated values
+type ValidationOk = { ok: true; betId: number; groupId: string };
 type ValidationFail = { ok: false; response: NextResponse };
 
 function validateParams(id: string, groupId: string): ValidationOk | ValidationFail {
+  // #11: reject non-numeric input like "42abc"
+  if (!/^\d+$/.test(id)) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'ID de aposta invalido' } },
+        { status: 400 },
+      ),
+    };
+  }
   const betId = Number.parseInt(id, 10);
-  if (Number.isNaN(betId) || betId <= 0) {
+  if (betId <= 0) {
     return {
       ok: false,
       response: NextResponse.json(
@@ -41,7 +53,7 @@ function validateParams(id: string, groupId: string): ValidationOk | ValidationF
       ),
     };
   }
-  return { ok: true, betId };
+  return { ok: true, betId, groupId };
 }
 
 /**
@@ -51,36 +63,43 @@ function validateParams(id: string, groupId: string): ValidationOk | ValidationF
 export const DELETE = createApiHandler(
   async (_req, context, routeContext) => {
     const { supabase, groupFilter } = context;
-    const { id, groupId } = await routeContext.params;
+    const params = await routeContext.params;
 
-    const validation = validateParams(id, groupId);
+    const validation = validateParams(params.id, params.groupId);
     if (!validation.ok) return validation.response;
-    const { betId } = validation;
+    const { betId, groupId } = validation;
 
-    // Group admin can only manage their own group
+    // #13: consistent Portuguese
     if (groupFilter && groupFilter !== groupId) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Sem permissao para este grupo' } },
         { status: 403 },
       );
     }
 
-    // Fetch assignment to confirm it exists
+    // #14: fetch only needed columns + #6: check posting_status
     const { data: assignment, error: fetchError } = await supabase
       .from('bet_group_assignments')
-      .select('*')
+      .select('id, bet_id, group_id, posting_status, telegram_message_id')
       .eq('bet_id', betId)
       .eq('group_id', groupId)
       .single();
 
     if (fetchError || !assignment) {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Assignment not found' } },
+        { success: false, error: { code: 'NOT_FOUND', message: 'Assignment nao encontrado' } },
         { status: 404 },
       );
     }
 
-    // Delete the assignment
+    // #6: cannot delete posted assignments
+    if (assignment.posting_status === 'posted') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Nao e possivel remover uma aposta ja postada' } },
+        { status: 400 },
+      );
+    }
+
     const { error: deleteError } = await supabase
       .from('bet_group_assignments')
       .delete()
@@ -89,7 +108,7 @@ export const DELETE = createApiHandler(
 
     if (deleteError) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: deleteError.message } },
+        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao remover assignment' } },
         { status: 500 },
       );
     }
@@ -109,73 +128,72 @@ export const DELETE = createApiHandler(
 export const PATCH = createApiHandler(
   async (req, context, routeContext) => {
     const { supabase, groupFilter } = context;
-    const { id, groupId } = await routeContext.params;
+    const params = await routeContext.params;
 
-    const validation = validateParams(id, groupId);
+    const validation = validateParams(params.id, params.groupId);
     if (!validation.ok) return validation.response;
-    const { betId } = validation;
+    const { betId, groupId } = validation;
 
-    // Group admin can only manage their own group
     if (groupFilter && groupFilter !== groupId) {
       return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Insufficient permissions' } },
+        { success: false, error: { code: 'FORBIDDEN', message: 'Sem permissao para este grupo' } },
         { status: 403 },
       );
     }
 
-    // Parse and validate body
     let body: z.infer<typeof patchSchema>;
     try {
       body = patchSchema.parse(await req.json());
     } catch (err) {
-      const message =
-        err instanceof z.ZodError ? err.issues[0]?.message : 'Corpo da requisicao invalido';
+      const message = err instanceof z.ZodError ? err.issues[0]?.message : 'Corpo da requisicao invalido';
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION_ERROR', message } },
         { status: 400 },
       );
     }
 
-    // Verify assignment exists
+    // #14: fetch only needed columns + #5: check status
     const { data: assignment, error: fetchError } = await supabase
       .from('bet_group_assignments')
-      .select('*')
+      .select('id, bet_id, group_id, posting_status, post_at')
       .eq('bet_id', betId)
       .eq('group_id', groupId)
       .single();
 
     if (fetchError || !assignment) {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Assignment not found' } },
+        { success: false, error: { code: 'NOT_FOUND', message: 'Assignment nao encontrado' } },
         { status: 404 },
       );
     }
 
-    // Build update payload
+    // #5: cannot modify posted assignments
+    if (assignment.posting_status === 'posted') {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Nao e possivel alterar uma aposta ja postada' } },
+        { status: 400 },
+      );
+    }
+
     const updatePayload: Record<string, unknown> = {};
     if (body.postAt !== undefined) updatePayload.post_at = body.postAt;
     if (body.postingStatus !== undefined) updatePayload.posting_status = body.postingStatus;
 
-    const { error: updateError } = await supabase
+    // #2: use .select().single() on update to get actual result in one query
+    const { data: updated, error: updateError } = await supabase
       .from('bet_group_assignments')
       .update(updatePayload)
       .eq('bet_id', betId)
-      .eq('group_id', groupId);
+      .eq('group_id', groupId)
+      .select('id, bet_id, group_id, posting_status, post_at, distributed_at')
+      .single();
 
     if (updateError) {
       return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: updateError.message } },
+        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao atualizar assignment' } },
         { status: 500 },
       );
     }
-
-    // Re-fetch updated assignment
-    const { data: updated } = await supabase
-      .from('bet_group_assignments')
-      .select('*')
-      .eq('bet_id', betId)
-      .eq('group_id', groupId)
-      .single();
 
     return NextResponse.json({
       success: true,
