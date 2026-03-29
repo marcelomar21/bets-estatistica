@@ -5,8 +5,7 @@
  *
  * Distributes eligible bets among active groups using a deterministic
  * round-robin algorithm. Assignments are created in bet_group_assignments
- * (junction table) instead of updating suggested_bets.group_id directly.
- * A dual-write trigger syncs changes back to suggested_bets for backward compat.
+ * (junction table) as the sole source of truth for distribution.
  *
  * Must run AFTER pipeline generates bets and BEFORE postBets.js
  *
@@ -93,7 +92,7 @@ async function getUndistributedBets() {
     // Step 2: Query suggested_bets excluding assigned IDs
     let query = supabase
       .from('suggested_bets')
-      .select('id, match_id, elegibilidade, group_id, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
+      .select('id, match_id, elegibilidade, distributed_at, bet_status, league_matches!inner(kickoff_time, league_seasons!inner(league_name))')
       .eq('elegibilidade', 'elegivel')
       .is('distributed_at', null)
       .neq('bet_status', 'posted')
@@ -249,7 +248,7 @@ async function rebalanceIfNeeded(activeGroups) {
       totalToRedistribute: assignments.length,
     });
 
-    // Delete non-posted assignments from junction table (dual-write trigger handles suggested_bets sync)
+    // Delete non-posted assignments from junction table
     const assignmentIds = assignments.map((a) => a.id);
     const { error: deleteError } = await supabase
       .from('bet_group_assignments')
@@ -327,7 +326,6 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
 
 /**
  * Assign a single bet to a group via junction table (idempotent via ON CONFLICT DO NOTHING)
- * The dual-write trigger syncs group_id back to suggested_bets automatically.
  * @param {string} betId - Bet UUID
  * @param {string} groupId - Group UUID
  * @param {string|null} postAt - Optional posting time (HH:MM)

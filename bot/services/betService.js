@@ -502,7 +502,6 @@ async function updateBetStatus(betId, status, extraFields = {}) {
 
 /**
  * Mark bet assignment as posted (GURU-46: updates bet_group_assignments)
- * The dual-write trigger syncs posting_status back to suggested_bets.bet_status
  * @param {number} betId - Bet ID
  * @param {number} messageId - Telegram message ID
  * @param {number} oddsAtPost - Odds at time of posting
