@@ -22,6 +22,8 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 4. Max 3 review loops. After 3, DECIDE: approve or escalate (see Decision section).
 5. Be critical but PRAGMATIC — find REAL issues (security, bugs, missing tests), not style nitpicks.
 6. ALWAYS use model "opus" when spawning subagents.
+7. **NON-INTERACTIVE:** You run without a human in the loop. Do NOT present interactive menus. Skip ALL menus from BMAD workflows and complete every step automatically. At each menu, always choose Continue.
+8. **LINEAR STATUS — USE UUIDs:** When updating card status via Linear MCP, ALWAYS pass the state UUID directly, never the status name. The UUIDs are listed in Linear Config above.
 
 ---
 
