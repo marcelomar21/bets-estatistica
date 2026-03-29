@@ -501,11 +501,11 @@ describe('postBets', () => {
       });
       sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
 
-      // enabled_modules=null -> modules=[] -> !includes('posting') -> skip
-      // This verifies the defensive behavior: null modules = posting disabled
+      // enabled_modules=null -> defaults to ALL modules -> includes('posting') -> proceeds
+      // This verifies backward compat: groups without the column still work
       const result = await runPostBets(true);
-      expect(result.posted).toBe(0);
-      expect(sendToPublic).not.toHaveBeenCalled();
+      expect(result.posted).toBe(1);
+      expect(sendToPublic).toHaveBeenCalled();
     });
   });
 
