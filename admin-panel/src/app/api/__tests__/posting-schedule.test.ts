@@ -32,6 +32,7 @@ function createMockSupabase(config: Record<string, any> = {}) {
     chain.in = vi.fn(() => chain);
     chain.gt = vi.fn(() => chain);
     chain.not = vi.fn(() => chain);
+    chain.range = vi.fn(() => chain);
     chain.order = vi.fn(() => ({
       data: config[`${table}_list`] ?? [],
       error: config[`${table}_list_error`] ?? null,
