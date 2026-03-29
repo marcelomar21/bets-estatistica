@@ -83,7 +83,7 @@ Output: Tech Spec with Root Cause, Fix, ACs, Affected Files.
 
 **Update description:** Original + `---` + FULL tech spec with real Markdown.
 
-**Move to Ready to Dev** (15f01b59-2eaa-4c97-8834-535780fa9846).
+**Move to Ready to Dev** — use the state UUID directly: `15f01b59-2eaa-4c97-8834-535780fa9846` (do NOT pass the name "Ready to Dev" or "Todo" — use the UUID to avoid state mapping errors).
 
 **Apply label:** `workflow:quick-spec` (7cb88bdd-a39c-4132-adb1-ae6c3eb8ad90). Keep existing labels.
 
