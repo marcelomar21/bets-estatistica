@@ -10,7 +10,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 const VALID_BET_STATUSES = new Set(['generated', 'pending_link', 'pending_odds', 'ready', 'posted']);
 const VALID_ELEGIBILIDADE = new Set(['elegivel', 'removida', 'expirada']);
-const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'group_id', 'distributed_at']);
+const VALID_SORT_FIELDS = new Set(['kickoff_time', 'odds', 'created_at', 'bet_status', 'bet_market', 'bet_pick', 'deep_link', 'distributed_at']);
 const VALID_SORT_DIRS = new Set(['asc', 'desc']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
@@ -29,10 +29,9 @@ function dbErrorResponse() {
 
 const BET_SELECT = `
   id, bet_market, bet_pick, odds, deep_link, bet_status,
-  elegibilidade, promovida_manual, group_id, distributed_at,
+  elegibilidade, promovida_manual, distributed_at,
   created_at, odds_at_post, notes,
   league_matches!inner(home_team_name, away_team_name, kickoff_time, status, league_seasons!inner(league_name, country)),
-  groups(name),
   bet_group_assignments(id, group_id, posting_status, post_at, telegram_posted_at, groups(name))
 `;
 

@@ -175,7 +175,7 @@ export function BetTable({
               <SortHeader field="odds">Odds</SortHeader>
               <SortHeader field="deep_link">Link</SortHeader>
               <SortHeader field="bet_status">Status</SortHeader>
-              <SortHeader field="group_id">Distribuicao</SortHeader>
+              <SortHeader field="distributed_at">Distribuicao</SortHeader>
               <SortHeader field="created_at">Criada</SortHeader>
               {isSuperAdmin && (
                 <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Acoes</th>
