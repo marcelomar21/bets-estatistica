@@ -560,7 +560,8 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       logger.warn('[postBets] Failed to load toneConfig from DB', { groupId, error: toneError.message });
     } else {
       // Check if posting module is enabled for this group
-      const modules = groupData?.enabled_modules || [];
+      // Default to all modules if null/undefined (backward compat for groups created before migration)
+      const modules = groupData?.enabled_modules || ['analytics', 'distribution', 'posting', 'members', 'tone'];
       if (!modules.includes('posting')) {
         logger.info('[postBets] Posting module disabled for group, skipping', { groupId, enabled_modules: modules });
         return { reposted: 0, posted: 0, skipped: 0, sendFailed: 0, totalSent: 0, cancelled: false };

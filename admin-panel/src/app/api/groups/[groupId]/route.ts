@@ -102,6 +102,14 @@ export const PUT = createApiHandler(
       );
     }
 
+    // Only super_admin can change enabled_modules
+    if (parsed.data.enabled_modules && context.role !== 'super_admin') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Apenas super_admin pode alterar modulos' } },
+        { status: 403 },
+      );
+    }
+
     // Fetch current data for audit log comparison
     const { data: currentGroup } = await context.supabase
       .from('groups')
