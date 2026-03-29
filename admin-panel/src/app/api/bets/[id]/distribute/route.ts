@@ -1,13 +1,20 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { z } from 'zod';
+import { buildPostTimeContext, pickPostTime } from '@/lib/distribute-utils';
 
 // Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const distributeSchema = z.object({
-  groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido'),
-});
+  // New multi-group field
+  groupIds: z.array(z.string().regex(UUID_RE, 'Cada groupId deve ser um UUID valido')).min(1).optional(),
+  // Backward compat: single groupId (wrapped to array internally)
+  groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido').optional(),
+}).refine(
+  (data) => data.groupIds || data.groupId,
+  { message: 'groupIds ou groupId e obrigatorio' },
+);
 
 export const POST = createApiHandler(
   async (req, context, routeContext) => {
@@ -34,22 +41,25 @@ export const POST = createApiHandler(
       );
     }
 
-    const { groupId } = body;
+    // Normalize to array of group IDs
+    const groupIds = body.groupIds ?? [body.groupId!];
 
-    // Validate group exists and is not deleted + load posting_schedule for post_at
-    const { data: group, error: groupError } = await supabase
+    // Validate all groups exist and are active
+    const { data: groups, error: groupsError } = await supabase
       .from('groups')
       .select('id, name, posting_schedule')
-      .eq('id', groupId)
-      .neq('status', 'deleted')
-      .single();
+      .in('id', groupIds)
+      .neq('status', 'deleted');
 
-    if (groupError || !group) {
+    if (groupsError || !groups || groups.length === 0) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Group not found' } },
         { status: 400 },
       );
     }
+
+    // Build a map of valid groups for quick lookup
+    const groupMap = new Map(groups.map((g: { id: string; name: string; posting_schedule: unknown }) => [g.id, g]));
 
     // Fetch current bet
     const { data: currentBet, error: fetchError } = await supabase
@@ -66,88 +76,112 @@ export const POST = createApiHandler(
     }
 
     const oldGroupId = currentBet.group_id;
-    const isRedistribution = oldGroupId !== null;
 
-    // Auto-assign post_at from posting_schedule (pick time with fewest bets)
-    let postAt: string | null = null;
-    const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
-    if (schedule?.times && schedule.times.length > 0) {
-      const now = new Date();
-      const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-      const currentMin = brTime.getHours() * 60 + brTime.getMinutes();
-      const futureTimes = schedule.times.filter((t: string) => {
-        const [h, m] = t.split(':').map(Number);
-        return (h * 60 + m) > currentMin;
+    // Check existing assignments in bet_group_assignments
+    const { data: existingAssignments } = await supabase
+      .from('bet_group_assignments')
+      .select('group_id')
+      .eq('bet_id', betId)
+      .in('group_id', groupIds);
+
+    const existingGroupIds = new Set(
+      (existingAssignments || []).map((a: { group_id: string }) => a.group_id),
+    );
+
+    // Categorize groups
+    const created: Array<{ groupId: string; groupName: string; postAt: string | null }> = [];
+    const alreadyExisted: Array<{ groupId: string; groupName: string }> = [];
+    const skipped: Array<{ groupId: string; reason: string }> = [];
+
+    // Build rows to upsert and compute post_at for each new group
+    const upsertRows: Array<{ bet_id: number; group_id: string; assigned_at: string; post_at: string | null }> = [];
+
+    for (const gId of groupIds) {
+      const group = groupMap.get(gId);
+      if (!group) {
+        skipped.push({ groupId: gId, reason: 'Grupo nao encontrado ou inativo' });
+        continue;
+      }
+
+      if (existingGroupIds.has(gId)) {
+        alreadyExisted.push({ groupId: gId, groupName: group.name });
+        continue;
+      }
+
+      // Compute post_at from posting_schedule
+      const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
+      let postAt: string | null = null;
+      if (schedule?.times && schedule.times.length > 0) {
+        const postTimeContext = await buildPostTimeContext(supabase, gId, schedule);
+        const availableTimes = Object.keys(postTimeContext);
+        postAt = pickPostTime(postTimeContext, availableTimes);
+      }
+
+      upsertRows.push({
+        bet_id: betId,
+        group_id: gId,
+        assigned_at: new Date().toISOString(),
+        post_at: postAt,
       });
-      const availableTimes = futureTimes.length > 0 ? futureTimes : schedule.times;
 
-      // Count already-scheduled bets per time slot
-      const { data: scheduled } = await supabase
-        .from('suggested_bets')
-        .select('post_at')
-        .eq('group_id', groupId)
-        .not('post_at', 'is', null)
-        .neq('bet_status', 'posted');
-
-      const counts: Record<string, number> = {};
-      for (const t of availableTimes) counts[t] = 0;
-      for (const s of (scheduled || [])) {
-        if (s.post_at && counts[s.post_at] !== undefined) counts[s.post_at]++;
-      }
-
-      // Pick time with fewest bets
-      let minTime = availableTimes[0];
-      let minCount = counts[minTime] ?? 0;
-      for (const t of availableTimes) {
-        if ((counts[t] ?? 0) < minCount) { minTime = t; minCount = counts[t] ?? 0; }
-      }
-      postAt = minTime;
+      created.push({ groupId: gId, groupName: group.name, postAt });
     }
 
-    // Update bet: set group_id, bet_status='ready', distributed_at=now, post_at (D4)
-    const updatePayload: Record<string, unknown> = {
-      group_id: groupId,
-      bet_status: 'ready',
-      distributed_at: new Date().toISOString(),
-    };
-    if (postAt) updatePayload.post_at = postAt;
+    // Upsert new assignments (ignoreDuplicates handles race conditions)
+    if (upsertRows.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('bet_group_assignments')
+        .upsert(upsertRows, { onConflict: 'bet_id,group_id', ignoreDuplicates: true });
 
-    const { error: updateError } = await supabase
-      .from('suggested_bets')
-      .update(updatePayload)
-      .eq('id', betId);
+      if (upsertError) {
+        return NextResponse.json(
+          { success: false, error: { code: 'DB_ERROR', message: 'Erro ao distribuir aposta' } },
+          { status: 500 },
+        );
+      }
 
-    if (updateError) {
-      return NextResponse.json(
-        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao distribuir aposta' } },
-        { status: 500 },
-      );
+      // Update bet status to 'ready' if it was in pool (no group_id yet)
+      // The dual-write trigger (sync_bga_to_suggested_bets) auto-syncs suggested_bets.group_id
+      if (currentBet.bet_status !== 'ready' && currentBet.bet_status !== 'posted') {
+        await supabase
+          .from('suggested_bets')
+          .update({
+            bet_status: 'ready',
+            distributed_at: new Date().toISOString(),
+          })
+          .eq('id', betId);
+      }
     }
 
-    // Audit log for redistribution (P5)
+    // Audit log for redistribution (if bet was already assigned to a different group)
+    const isRedistribution = oldGroupId !== null && created.length > 0;
     if (isRedistribution) {
       await supabase.from('audit_log').insert({
         table_name: 'suggested_bets',
         record_id: betId.toString(),
         action: 'redistribute',
         changed_by: context.user.id,
-        changes: { old_group_id: oldGroupId, new_group_id: groupId },
+        changes: {
+          old_group_id: oldGroupId,
+          new_group_ids: created.map((c) => c.groupId),
+        },
       });
     }
 
-    // Fetch updated bet
-    const { data: updatedBet } = await supabase
-      .from('suggested_bets')
-      .select('id, group_id, bet_status, distributed_at')
-      .eq('id', betId)
-      .single();
+    // First group info for backward compat fields
+    const firstGroup = created.length > 0 ? created[0] : alreadyExisted[0];
+    const firstGroupName = firstGroup?.groupName ?? groups[0]?.name ?? '';
 
     return NextResponse.json({
       success: true,
       data: {
-        bet: updatedBet ?? currentBet,
+        // New multi-group response
+        created,
+        alreadyExisted,
+        skipped,
+        // Backward compat fields (for existing frontend)
         redistributed: isRedistribution,
-        groupName: group.name,
+        groupName: firstGroupName,
       },
     });
   },
