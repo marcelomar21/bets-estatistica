@@ -25,6 +25,9 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 3. ALWAYS use model "opus" when spawning subagents.
 4. **FORMATTING — CRITICAL:** Linear descriptions must use REAL newlines. NEVER pass a description as a single-line string with `\n` or `\\n`. If you see `\\n` in the returned description after saving, it's BROKEN — re-save immediately. Tables: `| col | col |` with `| -- | -- |`. Code blocks: triple backticks.
 5. Read actual codebase files when building specs. Don't guess file paths or function signatures.
+6. **NON-INTERACTIVE:** You run without a human in the loop. Do NOT present interactive menus (Select: [C] Continue, [E] Edit, etc.). Skip ALL menus from BMAD workflows and complete every step automatically.
+7. **NO LOCAL FILES:** Do NOT save specs, PRDs, or outputs to local files. The repo is ephemeral. All output must go to Linear (card description, comments, or project/issues).
+8. **APPEND, NEVER REPLACE:** When updating a Linear card description, ALWAYS read the current description first, then update with: existing content + `---` separator + your new content. Never overwrite what was already there.
 
 ---
 
