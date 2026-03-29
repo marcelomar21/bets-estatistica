@@ -94,7 +94,7 @@ describe('GET /api/remarketing/segments', () => {
       label: 'Trial expirado',
       description: 'Oferta de conversao',
       count: 42,
-      membersLink: '/members?status=trial',
+      membersLink: null,
     });
     expect(body.data.segments[4]).toMatchObject({
       key: 'inadimplente',

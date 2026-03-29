@@ -205,6 +205,64 @@ describe('GET /api/remarketing/export', () => {
     expect(text).toContain('"Grupo ""Test"""');
   });
 
+  it('passa { count: exact } no select para detectar truncamento', async () => {
+    const supabase = createExportSupabaseMock({ data: [], error: null, count: 0 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/remarketing/export/route');
+    await GET(
+      createMockRequest('http://localhost/api/remarketing/export?segment=trial_expired'),
+    );
+
+    expect(supabase.query.select).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ count: 'exact' }),
+    );
+  });
+
+  it('define headers de truncamento quando count excede o limite', async () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      telegram_id: i,
+      telegram_username: `user${i}`,
+      channel: 'telegram',
+      channel_user_id: null,
+      status: 'trial',
+      trial_ends_at: null,
+      subscription_ends_at: null,
+      last_payment_at: null,
+      created_at: '2026-03-01T00:00:00Z',
+      groups: { name: 'Grupo' },
+    }));
+    const supabase = createExportSupabaseMock({ data: rows, error: null, count: 7500 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/remarketing/export/route');
+    const response = await GET(
+      createMockRequest('http://localhost/api/remarketing/export?segment=trial_expired'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Export-Truncated')).toBe('true');
+    expect(response.headers.get('X-Export-Total')).toBe('7500');
+  });
+
+  it('nao define headers de truncamento quando count esta dentro do limite', async () => {
+    const supabase = createExportSupabaseMock({ data: [], error: null, count: 100 });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/remarketing/export/route');
+    const response = await GET(
+      createMockRequest('http://localhost/api/remarketing/export?segment=trial_expired'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-Export-Truncated')).toBeNull();
+    expect(response.headers.get('X-Export-Total')).toBeNull();
+  });
+
   it('aplica filtros corretos para cada tipo de segmento', async () => {
     const segmentFilters: Record<string, { status: string; method?: string }> = {
       trial_expired: { status: 'trial', method: 'lt' },
