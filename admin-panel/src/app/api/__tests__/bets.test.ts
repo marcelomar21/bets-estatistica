@@ -27,18 +27,26 @@ function createListQueryBuilder(options: {
   mainError?: { message: string } | null;
   mainCount?: number;
   counterCounts?: Record<string, number>;
+  assignedBetIds?: number[];
+  bgaCounterCounts?: Record<string, number>;
 } = {}) {
   const {
     mainData = [],
     mainError = null,
     mainCount = 0,
     counterCounts = {},
+    assignedBetIds = [],
+    bgaCounterCounts = {},
   } = options;
 
-  let fromCallIndex = 0;
+  let sbCallIndex = 0;
+  let bgaCallIndex = 0;
+  const counterKeys = Object.keys(counterCounts);
+  const bgaCounterKeys = Object.keys(bgaCounterCounts);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function createChain(isCounter = false): Record<string, any> {
+  function createChain(opts: { isCounter?: boolean; isPrefetch?: boolean; counterKey?: string } = {}): Record<string, any> {
+    const { isCounter = false, isPrefetch = false, counterKey } = opts;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: Record<string, any> = {};
     chain.select = vi.fn(() => chain);
@@ -57,25 +65,39 @@ function createListQueryBuilder(options: {
       count: mainCount,
     }));
 
+    if (isPrefetch) {
+      chain.data = assignedBetIds.map(id => ({ bet_id: id }));
+      chain.error = null;
+    }
+
     if (isCounter) {
-      // Counter queries: all methods chain, and the chain itself has result props
-      // This way it works as both a chainable query and a resolved result
-      const counterKey = Object.keys(counterCounts)[fromCallIndex - 1] ?? 'unknown';
       chain.data = null;
       chain.error = null;
-      chain.count = counterCounts[counterKey] ?? 0;
-      // Override eq/is to also return chainable+result
-      chain.eq = vi.fn(() => chain);
-      chain.is = vi.fn(() => chain);
+      chain.count = (counterKey ? (counterCounts[counterKey] ?? bgaCounterCounts[counterKey] ?? 0) : 0);
     }
 
     return chain;
   }
 
-  const mockFrom = vi.fn(() => {
-    fromCallIndex++;
-    // First call is the main query, rest are counters/pair-stats
-    return createChain(fromCallIndex > 1);
+  const mockFrom = vi.fn((table?: string) => {
+    if (table === 'bet_group_assignments') {
+      bgaCallIndex++;
+      if (bgaCallIndex === 1) {
+        // Pre-fetch: returns assigned bet IDs
+        return createChain({ isPrefetch: true });
+      }
+      // Counter queries (distributed, posted_assignments)
+      const key = bgaCounterKeys[bgaCallIndex - 2] ?? 'unknown';
+      return createChain({ isCounter: true, counterKey: key });
+    }
+    // suggested_bets or pair stats table
+    sbCallIndex++;
+    if (sbCallIndex === 1) {
+      return createChain();
+    }
+    // Counter queries
+    const key = counterKeys[sbCallIndex - 2] ?? 'unknown';
+    return createChain({ isCounter: true, counterKey: key });
   });
 
   return { from: mockFrom };
@@ -196,7 +218,9 @@ describe('GET /api/bets', () => {
     const qb = createListQueryBuilder({
       mainData: [sampleBet],
       mainCount: 1,
-      counterCounts: { ready: 1, posted: 0, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0 },
+      counterCounts: { ready: 1, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 0 },
+      bgaCounterCounts: { distributed: 1, posted_assignments: 0 },
+      assignedBetIds: [1],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -275,38 +299,52 @@ describe('GET /api/bets', () => {
     expect(response.status).toBe(400);
   });
 
-  it('group_admin sees only their group bets', async () => {
-    const eqCalls: Array<[string, unknown]> = [];
-    let fromCallIndex = 0;
+  it('group_admin sees only their group bets (via junction table)', async () => {
+    const inCalls: Array<[string, unknown]> = [];
+    let sbCallIndex = 0;
+    let bgaCallIndex = 0;
 
-    const mockFrom = vi.fn(() => {
-      fromCallIndex++;
-      const isMainQuery = fromCallIndex === 1;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn((table?: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
-      chain.eq = vi.fn((column: string, value: unknown) => {
-        eqCalls.push([column, value]);
-        return chain;
-      });
+      chain.eq = vi.fn(() => chain);
       chain.not = vi.fn(() => chain);
       chain.is = vi.fn(() => chain);
-      chain.in = vi.fn(() => chain);
+      chain.in = vi.fn((column: string, value: unknown) => {
+        inCalls.push([column, value]);
+        return chain;
+      });
       chain.gte = vi.fn(() => chain);
       chain.lte = vi.fn(() => chain);
       chain.or = vi.fn(() => chain);
       chain.ilike = vi.fn(() => chain);
       chain.order = vi.fn(() => chain);
       chain.range = vi.fn(() => ({
-        data: isMainQuery ? [sampleBet] : null,
+        data: [sampleBet],
         error: null,
-        count: isMainQuery ? 1 : 0,
+        count: 1,
       }));
 
-      if (!isMainQuery) {
-        chain.data = null;
-        chain.error = null;
-        chain.count = 0;
+      if (table === 'bet_group_assignments') {
+        bgaCallIndex++;
+        if (bgaCallIndex <= 2) {
+          // Pre-fetch calls: return bet_ids for all and for group
+          chain.data = [{ bet_id: 1 }];
+          chain.error = null;
+        } else {
+          chain.data = null;
+          chain.error = null;
+          chain.count = 0;
+        }
+      } else {
+        sbCallIndex++;
+        if (sbCallIndex > 1) {
+          chain.data = null;
+          chain.error = null;
+          chain.count = 0;
+        }
       }
 
       return chain;
@@ -323,7 +361,8 @@ describe('GET /api/bets', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(eqCalls).toContainEqual(['group_id', 'group-uuid-1']);
+    // group_admin scoping now uses .in('id', groupBetIds) instead of .eq('group_id', ...)
+    expect(inCalls).toContainEqual(['id', [1]]);
   });
 
   it('super_admin can filter by specific group_id', async () => {
@@ -356,7 +395,9 @@ describe('GET /api/bets', () => {
     const qb = createListQueryBuilder({
       mainData: [],
       mainCount: 10,
-      counterCounts: { ready: 3, posted: 2, pending_link: 1, pending_odds: 1, sem_odds: 2, sem_link: 1 },
+      counterCounts: { ready: 3, pending_link: 1, pending_odds: 1, sem_odds: 2, sem_link: 1, pool: 5 },
+      bgaCounterCounts: { distributed: 4, posted_assignments: 2 },
+      assignedBetIds: [1, 2, 3, 4, 5],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -371,6 +412,107 @@ describe('GET /api/bets', () => {
     expect(body.data.counters).toBeDefined();
     expect(typeof body.data.counters.total).toBe('number');
     expect(typeof body.data.counters.ready).toBe('number');
+  });
+
+  it('pool counter counts bets with zero assignments', async () => {
+    // Bets 1,2 are assigned; pool counter should exclude them
+    const qb = createListQueryBuilder({
+      mainData: [],
+      mainCount: 5,
+      counterCounts: { ready: 1, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 3 },
+      bgaCounterCounts: { distributed: 2, posted_assignments: 0 },
+      assignedBetIds: [1, 2],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.counters.pool).toBe(3);
+    // Verify pool query queries suggested_bets (not bet_group_assignments)
+    const fromCalls = qb.from.mock.calls.map((c: unknown[]) => c[0]);
+    expect(fromCalls).toContain('bet_group_assignments');
+    expect(fromCalls).toContain('suggested_bets');
+  });
+
+  it('distributed/posted counters come from bet_group_assignments', async () => {
+    const qb = createListQueryBuilder({
+      mainData: [],
+      mainCount: 0,
+      counterCounts: { ready: 0, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 0 },
+      bgaCounterCounts: { distributed: 5, posted_assignments: 3 },
+      assignedBetIds: [1, 2, 3],
+    });
+    const context = createMockContext('super_admin', qb);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets');
+
+    const response = await GET(req);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.counters.distributed).toBe(5);
+    expect(body.data.counters.posted).toBe(3);
+  });
+
+  it('__pool__ filter returns only bets with zero assignments', async () => {
+    const notCalls: Array<[string, string, string]> = [];
+    let sbCallIndex = 0;
+    let bgaCallIndex = 0;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn((table?: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const chain: Record<string, any> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.not = vi.fn((col: string, op: string, val: string) => {
+        notCalls.push([col, op, val]);
+        return chain;
+      });
+      chain.is = vi.fn(() => chain);
+      chain.in = vi.fn(() => chain);
+      chain.gte = vi.fn(() => chain);
+      chain.lte = vi.fn(() => chain);
+      chain.or = vi.fn(() => chain);
+      chain.ilike = vi.fn(() => chain);
+      chain.order = vi.fn(() => chain);
+      chain.range = vi.fn(() => ({ data: [], error: null, count: 0 }));
+
+      if (table === 'bet_group_assignments') {
+        bgaCallIndex++;
+        chain.data = bgaCallIndex === 1 ? [{ bet_id: 10 }, { bet_id: 20 }] : null;
+        chain.error = null;
+        chain.count = 0;
+      } else {
+        sbCallIndex++;
+        if (sbCallIndex > 1) {
+          chain.data = null;
+          chain.error = null;
+          chain.count = 0;
+        }
+      }
+      return chain;
+    });
+
+    const context = createMockContext('super_admin', { from: mockFrom });
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/bets/route');
+    const req = createMockRequest('GET', 'http://localhost/api/bets?group_id=__pool__');
+
+    const response = await GET(req);
+
+    expect(response.status).toBe(200);
+    // Should call .not('id', 'in', '(10,20)') to exclude assigned bets
+    expect(notCalls).toContainEqual(['id', 'in', '(10,20)']);
   });
 });
 
@@ -1222,7 +1364,9 @@ describe('Story 4-1: Pool and distribution visibility', () => {
     const qb = createListQueryBuilder({
       mainData: [sampleBet],
       mainCount: 1,
-      counterCounts: { ready: 1, posted: 0, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 5, distributed: 10 },
+      counterCounts: { ready: 1, pending_link: 0, pending_odds: 0, sem_odds: 0, sem_link: 0, pool: 5 },
+      bgaCounterCounts: { distributed: 10, posted_assignments: 0 },
+      assignedBetIds: [1],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
@@ -1240,40 +1384,43 @@ describe('Story 4-1: Pool and distribution visibility', () => {
     expect(typeof body.data.counters.distributed).toBe('number');
   });
 
-  it('accepts __pool__ as valid group_id filter', async () => {
-    const isCalls: Array<[string, unknown]> = [];
-    let fromCallIndex = 0;
+  it('accepts __pool__ as valid group_id filter (uses NOT IN assigned IDs)', async () => {
+    const notCalls: Array<[string, string, string]> = [];
+    let sbCallIndex = 0;
+    let bgaCallIndex = 0;
 
-    const mockFrom = vi.fn(() => {
-      fromCallIndex++;
-      const isMainQuery = fromCallIndex === 1;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn((table?: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
-      chain.not = vi.fn(() => chain);
-      chain.is = vi.fn((column: string, value: unknown) => {
-        isCalls.push([column, value]);
+      chain.not = vi.fn((col: string, op: string, val: string) => {
+        notCalls.push([col, op, val]);
         return chain;
       });
+      chain.is = vi.fn(() => chain);
       chain.in = vi.fn(() => chain);
       chain.gte = vi.fn(() => chain);
       chain.lte = vi.fn(() => chain);
       chain.or = vi.fn(() => chain);
       chain.ilike = vi.fn(() => chain);
       chain.order = vi.fn(() => chain);
-      chain.range = vi.fn(() => ({
-        data: isMainQuery ? [] : null,
-        error: null,
-        count: 0,
-      }));
+      chain.range = vi.fn(() => ({ data: [], error: null, count: 0 }));
 
-      if (!isMainQuery) {
-        chain.data = null;
+      if (table === 'bet_group_assignments') {
+        bgaCallIndex++;
+        chain.data = bgaCallIndex === 1 ? [{ bet_id: 5 }, { bet_id: 10 }] : null;
         chain.error = null;
         chain.count = 0;
+      } else {
+        sbCallIndex++;
+        if (sbCallIndex > 1) {
+          chain.data = null;
+          chain.error = null;
+          chain.count = 0;
+        }
       }
-
       return chain;
     });
 
@@ -1286,17 +1433,17 @@ describe('Story 4-1: Pool and distribution visibility', () => {
     const response = await GET(req);
 
     expect(response.status).toBe(200);
-    // Should have called .is('group_id', null) for main query
-    expect(isCalls).toContainEqual(['group_id', null]);
+    // Pool filter now uses NOT IN to exclude assigned bet IDs
+    expect(notCalls).toContainEqual(['id', 'in', '(5,10)']);
   });
 
-  it('filters by specific group_id UUID', async () => {
+  it('filters by specific group_id UUID via junction table', async () => {
     const eqCalls: Array<[string, unknown]> = [];
-    let fromCallIndex = 0;
+    let bgaCallIndex = 0;
+    let sbCallIndex = 0;
 
-    const mockFrom = vi.fn(() => {
-      fromCallIndex++;
-      const isMainQuery = fromCallIndex === 1;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mockFrom = vi.fn((table?: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: Record<string, any> = {};
       chain.select = vi.fn(() => chain);
@@ -1312,18 +1459,21 @@ describe('Story 4-1: Pool and distribution visibility', () => {
       chain.or = vi.fn(() => chain);
       chain.ilike = vi.fn(() => chain);
       chain.order = vi.fn(() => chain);
-      chain.range = vi.fn(() => ({
-        data: isMainQuery ? [] : null,
-        error: null,
-        count: 0,
-      }));
+      chain.range = vi.fn(() => ({ data: [], error: null, count: 0 }));
 
-      if (!isMainQuery) {
-        chain.data = null;
+      if (table === 'bet_group_assignments') {
+        bgaCallIndex++;
+        chain.data = bgaCallIndex === 1 ? [{ bet_id: 1 }] : null;
         chain.error = null;
         chain.count = 0;
+      } else {
+        sbCallIndex++;
+        if (sbCallIndex > 1) {
+          chain.data = null;
+          chain.error = null;
+          chain.count = 0;
+        }
       }
-
       return chain;
     });
 
@@ -1336,6 +1486,7 @@ describe('Story 4-1: Pool and distribution visibility', () => {
     const response = await GET(req);
 
     expect(response.status).toBe(200);
-    expect(eqCalls).toContainEqual(['group_id', '550e8400-e29b-41d4-a716-446655440000']);
+    // Now filters via bet_group_assignments.group_id
+    expect(eqCalls).toContainEqual(['bet_group_assignments.group_id', '550e8400-e29b-41d4-a716-446655440000']);
   });
 });

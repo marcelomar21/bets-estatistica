@@ -36,6 +36,16 @@ const sampleBet: SuggestedBetListItem = {
     },
   },
   groups: { name: 'Grupo Alpha' },
+  bet_group_assignments: [
+    {
+      id: 100,
+      group_id: 'group-uuid-1',
+      posting_status: 'ready',
+      post_at: '2026-02-10T19:00:00Z',
+      telegram_posted_at: null,
+      groups: { name: 'Grupo Alpha' },
+    },
+  ],
 };
 
 const sampleCounters: BetCounters = {
@@ -299,16 +309,53 @@ describe('BetTable', () => {
     expect(onSort).toHaveBeenCalledWith('odds');
   });
 
-  it('shows Distribuir button when onDistribute is provided', () => {
+  it('shows Redistribuir button when bet has assignments', () => {
     render(<BetTable {...defaultProps} role="super_admin" onDistribute={vi.fn()} />);
-    // sampleBet has group_id so button text should be "Redistribuir"
+    // sampleBet has bet_group_assignments so button text should be "Redistribuir"
     expect(screen.getByText('Redistribuir')).toBeInTheDocument();
   });
 
-  it('shows Distribuir for pool bets', () => {
-    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null };
+  it('shows Distribuir for pool bets (no assignments)', () => {
+    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null, bet_group_assignments: [] };
     render(<BetTable {...defaultProps} bets={[poolBet]} role="super_admin" onDistribute={vi.fn()} />);
     expect(screen.getByText('Distribuir')).toBeInTheDocument();
+  });
+
+  it('renders Pool badge when bet has zero assignments', () => {
+    const poolBet: SuggestedBetListItem = { ...sampleBet, group_id: null, groups: null, bet_group_assignments: [] };
+    render(<BetTable {...defaultProps} bets={[poolBet]} role="super_admin" />);
+    expect(screen.getByText('Pool')).toBeInTheDocument();
+  });
+
+  it('renders group chips with posting_status colors for assigned bets', () => {
+    const multiBet: SuggestedBetListItem = {
+      ...sampleBet,
+      bet_group_assignments: [
+        { id: 100, group_id: 'g1', posting_status: 'ready', post_at: null, telegram_posted_at: null, groups: { name: 'Grupo A' } },
+        { id: 101, group_id: 'g2', posting_status: 'posted', post_at: null, telegram_posted_at: '2026-02-10T20:00:00Z', groups: { name: 'Grupo B' } },
+      ],
+    };
+    render(<BetTable {...defaultProps} bets={[multiBet]} role="super_admin" />);
+    expect(screen.getByText('Grupo A')).toBeInTheDocument();
+    expect(screen.getByText('Grupo B')).toBeInTheDocument();
+    // Group A chip should have green (ready) styling
+    const chipA = screen.getByText('Grupo A');
+    expect(chipA.className).toContain('bg-green-100');
+    // Group B chip should have blue (posted) styling
+    const chipB = screen.getByText('Grupo B');
+    expect(chipB.className).toContain('bg-blue-100');
+  });
+
+  it('shows expandable assignment details on click', async () => {
+    const user = userEvent.setup();
+    render(<BetTable {...defaultProps} role="super_admin" />);
+    // Click the distribution chips to expand
+    const expandBtn = screen.getByLabelText(/Expandir detalhes/i);
+    await user.click(expandBtn);
+    expect(screen.getByText('Detalhes de Distribuicao')).toBeInTheDocument();
+    // "Pronta" appears in BetStatusBadge (bet_status) and in assignment detail
+    const prontaElements = screen.getAllByText('Pronta');
+    expect(prontaElements.length).toBeGreaterThanOrEqual(2);
   });
 
   it('calls onDistribute when distribute button clicked', async () => {

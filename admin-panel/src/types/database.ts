@@ -245,6 +245,7 @@ export type SuggestedBetListItem = Pick<
     } | null;
   } | null;
   groups: { name: string } | null;
+  bet_group_assignments?: BetGroupAssignmentListItem[];
   hit_rate?: { rate: number; wins: number; total: number } | null;
 };
 
@@ -463,3 +464,10 @@ export interface BetGroupAssignment {
   created_at: string;
   updated_at: string;
 }
+
+export type BetGroupAssignmentListItem = Pick<
+  BetGroupAssignment,
+  'id' | 'group_id' | 'posting_status' | 'post_at' | 'telegram_posted_at'
+> & {
+  groups: { name: string } | null;
+};
