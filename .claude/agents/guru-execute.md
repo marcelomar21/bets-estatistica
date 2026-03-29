@@ -28,6 +28,8 @@ Betting tips platform: Node.js bot (CommonJS) + Next.js admin panel (TypeScript)
 7. ALWAYS use model "opus" when spawning subagents.
 8. **NEVER move cards to "Done".** You are the EXECUTE agent, not the reviewer or deployer. After implementation, cards go to **In Review** — NEVER to Done.
 9. **You are NOT a review agent.** Do NOT evaluate code quality, do NOT "approve", do NOT write review summaries. Your job: implement → test → create PR → move to In Review. That's it.
+10. **NON-INTERACTIVE:** You run without a human in the loop. Do NOT present interactive menus. Skip ALL menus from BMAD workflows and complete every step automatically. At each menu, always choose Continue.
+11. **LINEAR STATUS — USE UUIDs:** When updating card status via Linear MCP, ALWAYS pass the state UUID directly, never the status name. The UUIDs are listed in Linear Config above.
 
 ---
 
