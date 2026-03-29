@@ -29,9 +29,10 @@ const updateGroupSchema = z.object({
   status: z.enum(['creating', 'active', 'paused', 'inactive', 'failed']).optional(),
   posting_schedule: postingScheduleSchema.optional(),
   is_test: z.boolean().optional(),
+  enabled_modules: z.array(z.enum(['analytics', 'distribution', 'posting', 'members', 'tone'])).optional(),
 });
 
-const GROUP_SELECT_FIELDS = 'id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, mp_plan_id, render_service_id, posting_schedule, is_test, created_at';
+const GROUP_SELECT_FIELDS = 'id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, mp_plan_id, render_service_id, posting_schedule, is_test, enabled_modules, created_at';
 
 export const GET = createApiHandler(
   async (_req: NextRequest, context, routeContext) => {
@@ -104,7 +105,7 @@ export const PUT = createApiHandler(
     // Fetch current data for audit log comparison
     const { data: currentGroup } = await context.supabase
       .from('groups')
-      .select('id, name, status, telegram_group_id, telegram_admin_group_id, posting_schedule, is_test')
+      .select('id, name, status, telegram_group_id, telegram_admin_group_id, posting_schedule, is_test, enabled_modules')
       .eq('id', groupId)
       .single();
 
@@ -133,7 +134,7 @@ export const PUT = createApiHandler(
     if (currentGroup) {
       const changedFields: Record<string, unknown> = {};
       const oldFields: Record<string, unknown> = {};
-      const auditKeys = ['name', 'status', 'telegram_group_id', 'telegram_admin_group_id', 'posting_schedule', 'is_test'] as const;
+      const auditKeys = ['name', 'status', 'telegram_group_id', 'telegram_admin_group_id', 'posting_schedule', 'is_test', 'enabled_modules'] as const;
 
       for (const key of auditKeys) {
         const oldVal = currentGroup[key as keyof typeof currentGroup];

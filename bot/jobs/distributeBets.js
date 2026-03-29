@@ -26,9 +26,9 @@ async function getActiveGroups() {
   try {
     const { data, error } = await supabase
       .from('groups')
-      .select('id, name, status, created_at, is_test')
+      .select('id, name, status, created_at, enabled_modules')
       .eq('status', 'active')
-      .neq('is_test', true)
+      .contains('enabled_modules', ['distribution'])
       .order('created_at', { ascending: true });
 
     if (error) {

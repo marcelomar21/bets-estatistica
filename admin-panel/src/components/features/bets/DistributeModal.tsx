@@ -16,6 +16,7 @@ interface DistributeModalProps {
 interface GroupOption {
   id: string;
   name: string;
+  enabled_modules?: string[];
 }
 
 export function DistributeModal({
@@ -59,7 +60,13 @@ export function DistributeModal({
           const groupList = Array.isArray(groupsJson.data)
             ? groupsJson.data
             : groupsJson.data?.items ?? [];
-          setGroups(groupList.map((g: { id: string; name: string }) => ({ id: g.id, name: g.name })));
+          setGroups(
+            groupList
+              .filter((g: { id: string; name: string; enabled_modules?: string[] }) =>
+                !g.enabled_modules || g.enabled_modules.includes('distribution'))
+              .map((g: { id: string; name: string; enabled_modules?: string[] }) =>
+                ({ id: g.id, name: g.name, enabled_modules: g.enabled_modules })),
+          );
         }
 
         // Existing assignments: count how many selected bets are already in each group

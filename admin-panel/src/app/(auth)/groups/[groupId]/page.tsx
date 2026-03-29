@@ -24,7 +24,7 @@ export default async function GroupDetailPage({
 
   const { data: group } = await supabase
     .from('groups')
-    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, whatsapp_group_jid, whatsapp_invite_link, channels, is_test, created_at')
+    .select('id, name, status, telegram_group_id, telegram_admin_group_id, checkout_url, whatsapp_group_jid, whatsapp_invite_link, channels, is_test, enabled_modules, created_at')
     .eq('id', groupId)
     .single();
 
@@ -32,7 +32,7 @@ export default async function GroupDetailPage({
     notFound();
   }
 
-  const typedGroup = group as GroupListItem & { whatsapp_group_jid: string | null; whatsapp_invite_link: string | null; channels: string[] | null; is_test: boolean };
+  const typedGroup = group as GroupListItem & { whatsapp_group_jid: string | null; whatsapp_invite_link: string | null; channels: string[] | null; is_test: boolean; enabled_modules: string[] };
   const status = statusConfig[typedGroup.status];
   const channels = typedGroup.channels || ['telegram'];
   const hasWhatsApp = !!typedGroup.whatsapp_group_jid;
@@ -110,16 +110,19 @@ export default async function GroupDetailPage({
             </dd>
           </div>
 
-          {typedGroup.is_test && (
-            <div>
-              <dt className="text-sm font-medium text-gray-500">Modo</dt>
-              <dd className="mt-1">
-                <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-                  Grupo de teste
+          <div>
+            <dt className="text-sm font-medium text-gray-500">Modulos</dt>
+            <dd className="mt-1 flex flex-wrap gap-1.5">
+              {(typedGroup.enabled_modules || ['analytics', 'distribution', 'posting', 'members', 'tone']).map((mod) => (
+                <span
+                  key={mod}
+                  className="inline-flex rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800"
+                >
+                  {mod}
                 </span>
-              </dd>
-            </div>
-          )}
+              ))}
+            </dd>
+          </div>
 
           <InviteLinkManager
             groupId={typedGroup.id}
