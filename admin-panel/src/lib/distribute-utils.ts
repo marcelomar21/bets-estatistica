@@ -1,0 +1,50 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+/**
+ * Pick the posting time slot with fewest scheduled bets for a given group.
+ * Uses the group's posting_schedule and counts pending assignments in bet_group_assignments.
+ */
+export async function pickPostTime(
+  supabase: SupabaseClient,
+  groupId: string,
+  postingSchedule: { enabled?: boolean; times?: string[] } | null,
+): Promise<string | null> {
+  if (!postingSchedule?.times || postingSchedule.times.length === 0) {
+    return null;
+  }
+
+  const now = new Date();
+  const brTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  const currentMin = brTime.getHours() * 60 + brTime.getMinutes();
+
+  const futureTimes = postingSchedule.times.filter((t: string) => {
+    const [h, m] = t.split(':').map(Number);
+    return (h * 60 + m) > currentMin;
+  });
+  const availableTimes = futureTimes.length > 0 ? futureTimes : postingSchedule.times;
+
+  // Count already-scheduled bets per time slot from bet_group_assignments (new source of truth)
+  const { data: scheduled } = await supabase
+    .from('bet_group_assignments')
+    .select('post_at')
+    .eq('group_id', groupId)
+    .eq('posting_status', 'ready');
+
+  const counts: Record<string, number> = {};
+  for (const t of availableTimes) counts[t] = 0;
+  for (const s of (scheduled || [])) {
+    if (s.post_at && counts[s.post_at] !== undefined) counts[s.post_at]++;
+  }
+
+  // Pick time with fewest bets
+  let minTime = availableTimes[0];
+  let minCount = counts[minTime] ?? 0;
+  for (const t of availableTimes) {
+    if ((counts[t] ?? 0) < minCount) {
+      minTime = t;
+      minCount = counts[t] ?? 0;
+    }
+  }
+
+  return minTime;
+}
