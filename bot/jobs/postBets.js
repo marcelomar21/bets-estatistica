@@ -548,19 +548,28 @@ async function runPostBets(skipConfirmation = false, options = {}) {
   const now = new Date().toISOString();
   const groupId = botCtx?.groupId || config.membership.groupId;
 
-  // Load toneConfig: ALWAYS from DB to ensure latest settings are used
+  // Load toneConfig + enabled_modules: ALWAYS from DB to ensure latest settings are used
   let toneConfig = null;
   if (groupId) {
     const { data: groupData, error: toneError } = await supabase
       .from('groups')
-      .select('copy_tone_config')
+      .select('copy_tone_config, enabled_modules')
       .eq('id', groupId)
       .single();
     if (toneError) {
       logger.warn('[postBets] Failed to load toneConfig from DB', { groupId, error: toneError.message });
-    } else if (groupData?.copy_tone_config) {
-      toneConfig = groupData.copy_tone_config;
-      logger.debug('[postBets] Loaded toneConfig from DB', { groupId });
+    } else {
+      // Check if posting module is enabled for this group
+      // Default to all modules if null/undefined (backward compat for groups created before migration)
+      const modules = groupData?.enabled_modules || ['analytics', 'distribution', 'posting', 'members', 'tone'];
+      if (!modules.includes('posting')) {
+        logger.info('[postBets] Posting module disabled for group, skipping', { groupId, enabled_modules: modules });
+        return { reposted: 0, posted: 0, skipped: 0, sendFailed: 0, totalSent: 0, cancelled: false };
+      }
+      if (groupData?.copy_tone_config) {
+        toneConfig = groupData.copy_tone_config;
+        logger.debug('[postBets] Loaded toneConfig from DB', { groupId });
+      }
     }
   }
 

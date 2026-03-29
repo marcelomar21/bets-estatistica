@@ -52,7 +52,7 @@ export default function BetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [role, setRole] = useState<'super_admin' | 'group_admin'>('group_admin');
-  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; enabled_modules?: string[] }>>([]);
 
   // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -165,7 +165,7 @@ export default function BetsPage() {
 
         if (res.ok && json.success && json.data) {
           const groupList = Array.isArray(json.data) ? json.data : json.data.items ?? [];
-          setGroups(groupList.map((g: { id: string; name: string }) => ({ id: g.id, name: g.name })));
+          setGroups(groupList.map((g: { id: string; name: string; enabled_modules?: string[] }) => ({ id: g.id, name: g.name, enabled_modules: g.enabled_modules })));
           setRole('super_admin');
           return;
         }

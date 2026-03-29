@@ -176,7 +176,7 @@ export const GET = createApiHandler(async (req, context) => {
     .from('groups')
     .select('id, name, status, channels, created_at')
     .neq('status', 'deleted')
-    .neq('is_test', true);
+    .contains('enabled_modules', ['analytics']);
   if (channelFilter) {
     groupsQuery = groupsQuery.contains('channels', [channelFilter]);
   }

@@ -73,6 +73,7 @@ function createChainMock(resolveValue) {
   chain.is = jest.fn().mockReturnValue(chain);
   chain.neq = jest.fn().mockReturnValue(chain);
   chain.not = jest.fn().mockReturnValue(chain);
+  chain.contains = jest.fn().mockReturnValue(chain);
   chain.gte = jest.fn().mockReturnValue(chain);
   chain.lte = jest.fn().mockReturnValue(chain);
   chain.in = jest.fn().mockReturnValue(chain);
@@ -190,6 +191,9 @@ function setupRunDistributeMock(groups, bets, assignedBets, opts = {}) {
       return {
         select: jest.fn().mockReturnValue({
           eq: jest.fn().mockReturnValue({
+            contains: jest.fn().mockReturnValue({
+              order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+            }),
             neq: jest.fn().mockReturnValue({
               order: jest.fn().mockResolvedValue({ data: groups, error: null }),
             }),
@@ -471,6 +475,9 @@ describe('distributeBets job', () => {
           return {
             select: jest.fn().mockReturnValue({
               eq: jest.fn().mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
                 neq: jest.fn().mockReturnValue({
                   order: jest.fn().mockResolvedValue({ data: groups, error: null }),
                 }),
@@ -609,6 +616,9 @@ describe('distributeBets job', () => {
           const groupsMock = {
             select: jest.fn().mockReturnValue({
               eq: eqMock.mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: activeGroups, error: null }),
+                }),
                 neq: jest.fn().mockReturnValue({
                   order: jest.fn().mockResolvedValue({ data: activeGroups, error: null }),
                 }),
@@ -999,6 +1009,9 @@ describe('distributeBets job', () => {
           return {
             select: jest.fn().mockReturnValue({
               eq: jest.fn().mockReturnValue({
+                contains: jest.fn().mockReturnValue({
+                  order: jest.fn().mockResolvedValue({ data: groups, error: null }),
+                }),
                 neq: jest.fn().mockReturnValue({
                   order: jest.fn().mockResolvedValue({ data: groups, error: null }),
                 }),
