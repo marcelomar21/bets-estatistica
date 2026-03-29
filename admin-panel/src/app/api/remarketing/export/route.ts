@@ -15,10 +15,12 @@ const VALID_SEGMENTS = new Set([
 ]);
 
 function csvEscape(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`;
+  // Prevent CSV formula injection: prefix with single quote if cell starts with =, +, -, @
+  const sanitized = /^[=+\-@]/.test(val) ? `'${val}` : val;
+  if (sanitized.includes(',') || sanitized.includes('"') || sanitized.includes('\n')) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
   }
-  return val;
+  return sanitized;
 }
 
 export const GET = createApiHandler(

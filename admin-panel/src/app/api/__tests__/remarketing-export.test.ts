@@ -263,6 +263,49 @@ describe('GET /api/remarketing/export', () => {
     expect(response.headers.get('X-Export-Total')).toBeNull();
   });
 
+  it('sanitiza valores com formula injection (=, +, -, @)', async () => {
+    const rows = [
+      {
+        telegram_id: 50,
+        telegram_username: '=CMD("calc")',
+        channel: 'telegram',
+        channel_user_id: '+HYPERLINK("http://evil.com")',
+        status: 'trial',
+        trial_ends_at: null,
+        subscription_ends_at: null,
+        last_payment_at: null,
+        created_at: '2026-03-01T00:00:00Z',
+        groups: { name: '@admin-group' },
+      },
+    ];
+    const supabase = createExportSupabaseMock({ data: rows, error: null });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/remarketing/export/route');
+    const response = await GET(
+      createMockRequest('http://localhost/api/remarketing/export?segment=trial_expired'),
+    );
+
+    const text = await response.text();
+    // Formula-starting characters should be prefixed with single quote
+    // The raw =CMD should never appear without the ' prefix
+    expect(text).toContain("'=CMD");
+    expect(text).toContain("'+HYPERLINK");
+    expect(text).toContain("'@admin-group");
+    // Verify no unprotected formula injection (cell starting with = without ' prefix)
+    const lines = text.split('\n').slice(1); // skip header
+    for (const line of lines) {
+      const cells = line.split(',');
+      for (const cell of cells) {
+        const unquoted = cell.replace(/^"|"$/g, '');
+        if (/^[=+@]/.test(unquoted)) {
+          expect(unquoted).toMatch(/^'/);
+        }
+      }
+    }
+  });
+
   it('aplica filtros corretos para cada tipo de segmento', async () => {
     const segmentFilters: Record<string, { status: string; method?: string }> = {
       trial_expired: { status: 'trial', method: 'lt' },
