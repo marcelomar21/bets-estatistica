@@ -76,6 +76,12 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
       return;
     }
 
+    // GURU-16: Validate at least one module is enabled
+    if (enabledModules.length === 0) {
+      setValidationError('Selecione pelo menos um modulo');
+      return;
+    }
+
     // Story 5.5: Validate posting times
     if (postingTimes.length === 0) {
       setValidationError('Defina pelo menos 1 horario de postagem');
@@ -220,6 +226,11 @@ export function GroupEditForm({ initialData, onSubmit, loading, error }: GroupEd
             </label>
           ))}
         </div>
+        {enabledModules.length === 0 && (
+          <p className="mt-2 text-sm text-amber-600">
+            Nenhum modulo selecionado. O grupo ficara inativo em todas as funcionalidades.
+          </p>
+        )}
       </div>
 
       <div>

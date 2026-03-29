@@ -68,6 +68,7 @@ function createChainMock(resolveValue) {
   chain.is = jest.fn().mockReturnValue(chain);
   chain.neq = jest.fn().mockReturnValue(chain);
   chain.not = jest.fn().mockReturnValue(chain);
+  chain.contains = jest.fn().mockReturnValue(chain);
   chain.gte = jest.fn().mockReturnValue(chain);
   chain.lte = jest.fn().mockReturnValue(chain);
   chain.in = jest.fn().mockReturnValue(chain);
@@ -84,6 +85,7 @@ function createRebalanceSelectChainMock(resolveValue) {
   chain.eq = jest.fn().mockReturnValue(chain);
   chain.not = jest.fn().mockReturnValue(chain);
   chain.neq = jest.fn().mockReturnValue(chain);
+  chain.contains = jest.fn().mockReturnValue(chain);
   chain.gte = jest.fn().mockReturnValue(chain);
   chain.lte = jest.fn().mockResolvedValue(resolveValue);
   chain.in = jest.fn().mockReturnValue(chain);
@@ -363,6 +365,7 @@ describe('distributeBets job', () => {
           chain.eq = jest.fn().mockReturnValue(chain);
           chain.is = jest.fn().mockReturnValue(chain);
           chain.neq = jest.fn().mockReturnValue(chain);
+          chain.contains = jest.fn().mockReturnValue(chain);
           chain.gte = jest.fn().mockReturnValue(chain);
           chain.lte = jest.fn().mockReturnValue(chain);
           // .not() is only called by rebalanceIfNeeded

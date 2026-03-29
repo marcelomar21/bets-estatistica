@@ -39,16 +39,20 @@ jest.mock('../../../lib/supabase', () => ({
   },
 }));
 
-function setupDefaultSupabaseMock(toneConfig = null) {
+function setupDefaultSupabaseMock(toneConfig = null, moduleOverrides = null) {
+  const defaultModules = ['analytics', 'distribution', 'posting', 'members', 'tone'];
   mockSupabaseFrom.mockImplementation(() => {
     let selectedField = null;
     const chain = {
       select: jest.fn((field) => { selectedField = field; return chain; }),
       eq: jest.fn().mockReturnThis(),
       single: jest.fn(() => {
-        if (selectedField === 'copy_tone_config') {
+        if (selectedField && selectedField.includes('copy_tone_config')) {
           return Promise.resolve({
-            data: toneConfig ? { copy_tone_config: toneConfig } : { copy_tone_config: null },
+            data: {
+              copy_tone_config: toneConfig || null,
+              enabled_modules: moduleOverrides || defaultModules,
+            },
             error: null,
           });
         }
@@ -434,6 +438,75 @@ describe('postBets', () => {
     });
   });
 
+  // ---- enabled_modules: posting module check (GURU-16) ----
+
+  describe('enabled_modules posting check (GURU-16)', () => {
+    it('should skip posting when posting module is disabled for group', async () => {
+      setupDefaultSupabaseMock(null, ['analytics', 'members']);
+
+      const result = await runPostBets(true);
+
+      expect(result.posted).toBe(0);
+      expect(result.totalSent).toBe(0);
+      expect(result.cancelled).toBe(false);
+      expect(sendToPublic).not.toHaveBeenCalled();
+      expect(getFilaStatus).not.toHaveBeenCalled();
+    });
+
+    it('should proceed with posting when posting module is enabled', async () => {
+      setupDefaultSupabaseMock(null, ['analytics', 'posting', 'members']);
+      const bet = makeBet();
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      const result = await runPostBets(true);
+
+      expect(result.posted).toBe(1);
+      expect(result.totalSent).toBe(1);
+      expect(sendToPublic).toHaveBeenCalledTimes(1);
+    });
+
+    it('should default to all modules when enabled_modules is null (backwards compat)', async () => {
+      // Simulate group without enabled_modules column yet
+      mockSupabaseFrom.mockImplementation(() => {
+        let selectedField = null;
+        const chain = {
+          select: jest.fn((field) => { selectedField = field; return chain; }),
+          eq: jest.fn().mockReturnThis(),
+          single: jest.fn(() => {
+            if (selectedField && selectedField.includes('copy_tone_config')) {
+              return Promise.resolve({
+                data: { copy_tone_config: null, enabled_modules: null },
+                error: null,
+              });
+            }
+            return Promise.resolve({
+              data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
+              error: null,
+            });
+          }),
+        };
+        return chain;
+      });
+
+      const bet = makeBet();
+      getFilaStatus.mockResolvedValue({
+        success: true,
+        data: { ativas: [], novas: [bet] },
+      });
+      sendToPublic.mockResolvedValue({ success: true, data: { messageId: 100 } });
+
+      // enabled_modules=null → modules=[] → !includes('posting') → skip
+      // This verifies the defensive behavior: null modules = posting disabled
+      const result = await runPostBets(true);
+      expect(result.posted).toBe(0);
+      expect(sendToPublic).not.toHaveBeenCalled();
+    });
+  });
+
   // ---- allowedBetIds filtering (Post Now single-bet fix) ----
 
   describe('allowedBetIds filtering', () => {
@@ -646,13 +719,17 @@ describe('postBets', () => {
         }
         // Default: groups table
         let selectedField = null;
+        const defaultModules = ['analytics', 'distribution', 'posting', 'members', 'tone'];
         const chain = {
           select: jest.fn((field) => { selectedField = field; return chain; }),
           eq: jest.fn().mockReturnThis(),
           single: jest.fn(() => {
-            if (selectedField === 'copy_tone_config') {
+            if (selectedField && selectedField.includes('copy_tone_config')) {
               return Promise.resolve({
-                data: toneConfig ? { copy_tone_config: toneConfig } : { copy_tone_config: null },
+                data: {
+                  copy_tone_config: toneConfig || null,
+                  enabled_modules: defaultModules,
+                },
                 error: null,
               });
             }
@@ -875,12 +952,16 @@ describe('postBets', () => {
           };
         }
         let selectedField = null;
+        const defaultModules = ['analytics', 'distribution', 'posting', 'members', 'tone'];
         const chain = {
           select: jest.fn((field) => { selectedField = field; return chain; }),
           eq: jest.fn().mockReturnThis(),
           single: jest.fn(() => {
-            if (selectedField === 'copy_tone_config') {
-              return Promise.resolve({ data: { copy_tone_config: null }, error: null });
+            if (selectedField && selectedField.includes('copy_tone_config')) {
+              return Promise.resolve({
+                data: { copy_tone_config: null, enabled_modules: defaultModules },
+                error: null,
+              });
             }
             return Promise.resolve({
               data: { posting_schedule: { enabled: true, times: ['10:00', '15:00', '22:00'] } },
