@@ -1,4 +1,4 @@
--- Migration 061: Add enabled_modules column to groups
+-- Migration 063: Add enabled_modules column to groups
 -- GURU-16: Modularizar funcionalidades por grupo com feature flags
 --
 -- Modules: analytics, distribution, posting, members, tone
