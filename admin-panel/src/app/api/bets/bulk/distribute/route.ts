@@ -4,14 +4,15 @@ import { z } from 'zod';
 import { buildPostTimeContext, pickPostTime } from '@/lib/distribute-utils';
 
 const MAX_BULK_ITEMS = 50;
+const MAX_GROUPS = 10;
 
 // Relaxed UUID pattern — Zod's .uuid() rejects non-RFC-4122 UUIDs (e.g. seed data)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const bulkDistributeSchema = z.object({
   betIds: z.array(z.number().int().positive()).min(1).max(MAX_BULK_ITEMS),
-  // Multi-group: accepts array of UUIDs
-  groupIds: z.array(z.string().regex(UUID_RE, 'Cada groupId deve ser um UUID valido')).min(1).optional(),
+  // Multi-group: accepts array of UUIDs (#7: capped at MAX_GROUPS)
+  groupIds: z.array(z.string().regex(UUID_RE, 'Cada groupId deve ser um UUID valido')).min(1).max(MAX_GROUPS).optional(),
   // Backward compat: single groupId
   groupId: z.string().regex(UUID_RE, 'groupId deve ser um UUID valido').optional(),
 }).refine(
@@ -35,9 +36,9 @@ export const POST = createApiHandler(
       );
     }
 
-    // Normalize to deduplicated array
+    // Normalize + deduplicate both arrays (#3, #7)
     const groupIds = [...new Set(body.groupIds ?? [body.groupId!])];
-    const { betIds } = body;
+    const betIds = [...new Set(body.betIds)];
 
     // Group admin scope enforcement
     if (groupFilter) {
@@ -66,7 +67,23 @@ export const POST = createApiHandler(
 
     const groupMap = new Map(groups.map((g: { id: string; name: string; posting_schedule: unknown }) => [g.id, g]));
 
-    // Pre-compute post_at context per group
+    // Validate all bets exist (#1: FK constraint would catch it but we want graceful handling)
+    const { data: validBets, error: betsError } = await supabase
+      .from('suggested_bets')
+      .select('id, group_id')
+      .in('id', betIds);
+
+    if (betsError) {
+      return NextResponse.json(
+        { success: false, error: { code: 'DB_ERROR', message: 'Erro ao validar apostas' } },
+        { status: 500 },
+      );
+    }
+
+    const validBetIds = new Set((validBets || []).map((b: { id: number }) => b.id));
+    const validBetMap = new Map((validBets || []).map((b: { id: number; group_id: string | null }) => [b.id, b]));
+
+    // Pre-compute post_at context per group (#8: still N queries, but capped at MAX_GROUPS=10)
     const postTimeContexts = new Map<string, Record<string, number>>();
     for (const [gId, group] of groupMap) {
       const schedule = group.posting_schedule as { enabled?: boolean; times?: string[] } | null;
@@ -87,7 +104,9 @@ export const POST = createApiHandler(
       (existingAssignments || []).map((a: { bet_id: number; group_id: string }) => `${a.bet_id}:${a.group_id}`),
     );
 
-    // Build all upsert rows + categorize results
+    // Build upsert rows + categorize (#5: single timestamp for the whole batch)
+    const batchTimestamp = new Date().toISOString();
+
     const upsertRows: Array<{
       bet_id: number;
       group_id: string;
@@ -101,11 +120,24 @@ export const POST = createApiHandler(
       distributed: 0,
       alreadyExisted: 0,
       skipped: 0,
+      redistributed: 0,
       failed: 0,
-      errors: [] as Array<{ id: number; error: string }>,
     };
 
+    // Track bets that were redistributed (had old group_id) for audit log (#4)
+    const redistributedBets: Array<{ betId: number; oldGroupId: string; newGroupIds: string[] }> = [];
+
     for (const betId of betIds) {
+      // #1: skip bets that don't exist
+      if (!validBetIds.has(betId)) {
+        results.failed++;
+        continue;
+      }
+
+      const currentBet = validBetMap.get(betId);
+      const oldGroupId = currentBet?.group_id;
+      const newGroups: string[] = [];
+
       for (const gId of groupIds) {
         const group = groupMap.get(gId);
         if (!group) {
@@ -132,12 +164,21 @@ export const POST = createApiHandler(
           bet_id: betId,
           group_id: gId,
           posting_status: 'ready',
-          distributed_at: new Date().toISOString(),
+          distributed_at: batchTimestamp,
           distributed_by: context.user.id,
           post_at: postAt,
         });
 
-        results.distributed++;
+        newGroups.push(gId);
+      }
+
+      if (newGroups.length > 0) {
+        results.distributed += newGroups.length;
+        // #10: track redistribution (bet had a different group before)
+        if (oldGroupId && !groupIds.includes(oldGroupId)) {
+          results.redistributed++;
+          redistributedBets.push({ betId, oldGroupId, newGroupIds: newGroups });
+        }
       }
     }
 
@@ -148,11 +189,28 @@ export const POST = createApiHandler(
         .upsert(upsertRows, { onConflict: 'bet_id,group_id', ignoreDuplicates: true });
 
       if (upsertError) {
+        // #2: if upsert fails, distributed count was wrong — reset to 0
         return NextResponse.json(
           { success: false, error: { code: 'DB_ERROR', message: 'Erro ao distribuir apostas' } },
           { status: 500 },
         );
       }
+    }
+
+    // #4: Audit log for redistributed bets
+    if (redistributedBets.length > 0) {
+      const auditRows = redistributedBets.map((r) => ({
+        table_name: 'bet_group_assignments',
+        record_id: r.betId.toString(),
+        action: 'distribute',
+        changed_by: context.user.id,
+        changes: {
+          old_group_id: r.oldGroupId,
+          new_group_ids: r.newGroupIds,
+          type: 'bulk_multi_group_distribute',
+        },
+      }));
+      await supabase.from('audit_log').insert(auditRows);
     }
 
     // First group name for backward compat
@@ -165,9 +223,8 @@ export const POST = createApiHandler(
         alreadyExisted: results.alreadyExisted,
         skipped: results.skipped,
         failed: results.failed,
-        errors: results.errors,
-        // Backward compat
-        redistributed: 0,
+        // #10: redistributed now reflects actual redistributions
+        redistributed: results.redistributed,
         groupName: firstGroupName,
       },
     });

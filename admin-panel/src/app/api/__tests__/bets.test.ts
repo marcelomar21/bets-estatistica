@@ -1011,6 +1011,8 @@ describe('POST /api/bets/bulk/distribute', () => {
   function createBulkDistributeQueryBuilder(options: {
     groupsData?: unknown[];
     groupsError?: { message: string } | null;
+    betsData?: unknown[];
+    betsError?: { message: string } | null;
     existingAssignments?: unknown[];
     upsertError?: { message: string } | null;
   } = {}) {
@@ -1027,7 +1029,6 @@ describe('POST /api/bets/bulk/distribute', () => {
       chain.upsert = vi.fn(() => ({ data: null, error: options.upsertError ?? null }));
 
       if (table === 'groups') {
-        // .select().in().neq() chain
         chain.in = vi.fn(() => ({
           ...chain,
           neq: vi.fn(() => ({
@@ -1035,8 +1036,13 @@ describe('POST /api/bets/bulk/distribute', () => {
             error: options.groupsError ?? null,
           })),
         }));
+      } else if (table === 'suggested_bets') {
+        // .select().in('id', betIds) for bet validation
+        chain.in = vi.fn(() => ({
+          data: options.betsData ?? options.groupsData?.map(() => ({})) ?? [],
+          error: options.betsError ?? null,
+        }));
       } else if (table === 'bet_group_assignments') {
-        // .select().in('bet_id').in('group_id') for existing check
         chain.in = vi.fn(() => ({
           in: vi.fn(() => ({
             data: options.existingAssignments ?? [],
@@ -1059,6 +1065,7 @@ describe('POST /api/bets/bulk/distribute', () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createBulkDistributeQueryBuilder({
       groupsData: [{ id: groupUuid, name: 'Guru da Bet', posting_schedule: null }],
+      betsData: [{ id: 1, group_id: null }, { id: 2, group_id: null }, { id: 3, group_id: null }],
       existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
@@ -1084,6 +1091,7 @@ describe('POST /api/bets/bulk/distribute', () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createBulkDistributeQueryBuilder({
       groupsData: [{ id: groupUuid, name: 'Guru da Bet', posting_schedule: null }],
+      betsData: [{ id: 1, group_id: groupUuid }, { id: 2, group_id: groupUuid }],
       existingAssignments: [
         { bet_id: 1, group_id: groupUuid },
         { bet_id: 2, group_id: groupUuid },
@@ -1181,6 +1189,7 @@ describe('POST /api/bets/bulk/distribute', () => {
         { id: g1, name: 'Guru da Bet', posting_schedule: null },
         { id: g2, name: 'Osmar Palpites', posting_schedule: null },
       ],
+      betsData: [{ id: 1, group_id: null }, { id: 2, group_id: null }],
       existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
