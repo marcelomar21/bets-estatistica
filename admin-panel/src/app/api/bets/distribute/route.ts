@@ -56,7 +56,7 @@ const distributeSchema = z.object({
 
 export const POST = createApiHandler(
   async (req, context) => {
-    const { supabase } = context;
+    const { supabase, groupFilter } = context;
 
     let body: z.infer<typeof distributeSchema>;
     try {
@@ -70,6 +70,17 @@ export const POST = createApiHandler(
     }
 
     const { betIds, groupIds } = body;
+
+    // Group admin scope enforcement
+    if (groupFilter) {
+      const unauthorized = groupIds.filter((gId) => gId !== groupFilter);
+      if (unauthorized.length > 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'FORBIDDEN', message: 'Sem permissao para distribuir para esses grupos' } },
+          { status: 403 },
+        );
+      }
+    }
 
     // Validate all groups exist and are not deleted
     const { data: groups, error: groupsError } = await supabase
@@ -175,5 +186,5 @@ export const POST = createApiHandler(
       data: { created, alreadyExisted },
     });
   },
-  { allowedRoles: ['super_admin'] },
+  { allowedRoles: ['super_admin', 'group_admin'] },
 );
