@@ -378,13 +378,19 @@ export default function BetsPage() {
       throw new Error(json.error?.message ?? 'Erro ao distribuir');
     }
 
-    const { redistributed, groupName } = json.data;
-    showToast(
-      redistributed
-        ? `Aposta redistribuida para ${groupName}`
-        : `Aposta distribuida para ${groupName}`,
-      'success',
-    );
+    const data = json.data;
+    const groupName = data.groupName || '';
+    if (data.created && data.created.length > 0) {
+      showToast(`Aposta distribuida para ${data.created[0].groupName || groupName}`, 'success');
+    } else if (data.alreadyExisted && data.alreadyExisted.length > 0) {
+      showToast(`Ja distribuida para ${data.alreadyExisted[0].groupName || groupName}`, 'success');
+    } else if (data.redistributed) {
+      showToast(`Aposta redistribuida para ${groupName}`, 'success');
+    } else {
+      showToast(`Aposta distribuida para ${groupName}`,
+        'success',
+      );
+    }
 
     setDistributeBet(null);
     fetchBets(pagination.page);
