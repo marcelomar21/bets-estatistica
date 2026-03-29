@@ -74,8 +74,10 @@ Move to Refinando (5bfd2c15-415d-46f3-b814-fee31c7949f3). Remember workflow choi
 ## Step 5: QUICK-SPEC workflow
 
 Read and follow `_bmad/bmm/workflows/bmad-quick-flow/quick-spec/workflow.md`.
-Execute all steps. Read actual codebase files.
+Execute ALL steps autonomously. At each menu or "Select:" prompt, always choose **[C] Continue** automatically — never stop and wait. Read actual codebase files.
 Output: Tech Spec with Root Cause, Fix, ACs, Affected Files.
+
+**CRITICAL:** After generating the spec, you MUST proceed to "Finalize quick-spec" below. Do NOT stop after outputting the spec. The workflow is only complete after updating Linear.
 
 ### Finalize quick-spec:
 
