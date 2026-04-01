@@ -238,8 +238,9 @@ async function generatePreview(groupId, betId = null, betIds = null) {
   const bets = rawBets.map(mapBet);
 
   // 3. Generate previews in parallel (LLM calls are independent)
-  // forceRegenerate: true for tone test (no betIds), false for posting queue preview
-  const forceRegenerate = !betIds || betIds.length === 0;
+  // Always force regenerate: previews should reflect the CURRENT tone config,
+  // not stale cached copies from before a tone change.
+  const forceRegenerate = true;
   const previews = await Promise.all(bets.map(async (bet) => {
     const betInfo = {
       homeTeam: bet.homeTeamName,
