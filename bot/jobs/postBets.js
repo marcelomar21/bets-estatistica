@@ -204,21 +204,15 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
         parts.push(copyResult.data.copy);
         logger.debug('Using extracted data bullets', { betId: bet.id, groupId: getLogGroupId() });
       } else if (bet.reasoning) {
-        // Fallback: usar reasoning direto (truncado)
-        const truncated = bet.reasoning.length > 200
-          ? bet.reasoning.substring(0, 197) + '...'
-          : bet.reasoning;
+        // Fallback: usar reasoning direto (sem truncamento)
         parts.push('');
-        parts.push(sanitizeTelegramMarkdown(`_${truncated}_`));
+        parts.push(sanitizeTelegramMarkdown(`_${bet.reasoning}_`));
       }
     } catch (err) {
       logger.warn('Failed to extract data bullets', { betId: bet.id, groupId: getLogGroupId(), error: err.message });
       if (bet.reasoning) {
-        const truncated = bet.reasoning.length > 200
-          ? bet.reasoning.substring(0, 197) + '...'
-          : bet.reasoning;
         parts.push('');
-        parts.push(sanitizeTelegramMarkdown(`_${truncated}_`));
+        parts.push(sanitizeTelegramMarkdown(`_${bet.reasoning}_`));
       }
     }
   }

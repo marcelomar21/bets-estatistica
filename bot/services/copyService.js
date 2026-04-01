@@ -180,7 +180,6 @@ ${bet.reasoning || 'Sem analise disponivel'}
 Regras:
 - Extraia APENAS dados numericos/percentuais do texto
 - Maximo 4-5 bullets
-- Cada bullet deve ter no maximo 40 caracteres
 - Use "•" como marcador
 - Abrevie nomes de times (ex: "Sampaio Correa RJ" → "Sampaio")
 - Formato: "• Time: XX% dado" ou "• Dado: X,XX valor"
