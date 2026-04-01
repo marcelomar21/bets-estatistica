@@ -60,7 +60,8 @@ export const GET = createApiHandler(
           elegibilidade,
           bet_group_assignments!inner (
             posting_status,
-            post_at
+            post_at,
+            telegram_posted_at
           ),
           league_matches!inner (
             home_team_name,
@@ -70,7 +71,7 @@ export const GET = createApiHandler(
           )
         `)
         .eq('bet_group_assignments.group_id', effectiveGroupId)
-        .eq('bet_group_assignments.posting_status', 'ready')
+        .in('bet_group_assignments.posting_status', ['ready', 'posted'])
         .in('elegibilidade', ['elegivel', 'removida'])
         .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
         .gt('league_matches.kickoff_time', new Date().toISOString())
@@ -114,6 +115,8 @@ export const GET = createApiHandler(
           promovida_manual: b.promovida_manual ?? false,
           elegibilidade: b.elegibilidade ?? 'elegivel',
           post_at: b.bet_group_assignments?.[0]?.post_at ?? null,
+          posting_status: b.bet_group_assignments?.[0]?.posting_status ?? 'ready',
+          telegram_posted_at: b.bet_group_assignments?.[0]?.telegram_posted_at ?? null,
           hit_rate: enrichWithHitRate(b, pairStats),
           match: {
             home_team_name: b.league_matches.home_team_name,
