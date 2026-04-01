@@ -70,7 +70,8 @@ function renderWelcomeTemplate(template, vars) {
     .replace(/\{data_expiracao\}/g, vars.data_expiracao || '—')
     .replace(/\{taxa_acerto\}/g, vars.taxa_acerto || '0')
     .replace(/\{preco\}/g, vars.preco || '')
-    .replace(/\{linha_preco\}/g, priceLine);
+    .replace(/\{linha_preco\}/g, priceLine)
+    .replace(/\{operador\}/g, vars.operador || 'operador');
 }
 
 /**
@@ -832,6 +833,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
       data_expiracao: trialEndsAt,
       taxa_acerto: successRateText,
       preco: formatBRL(subscriptionPrice) || '',
+      operador: operatorUsername,
     });
 
     inlineKeyboard = [
@@ -888,6 +890,7 @@ ${priceLineMp}
       data_expiracao: member.trial_ends_at ? formatFullDateBR(member.trial_ends_at) || '—' : '—',
       taxa_acerto: successRateText,
       preco: formatBRL(subscriptionPrice) || '',
+      operador: operatorUsername,
     });
     await bot.sendMessage(chatId, fallbackMessage, {
       parse_mode: 'Markdown',

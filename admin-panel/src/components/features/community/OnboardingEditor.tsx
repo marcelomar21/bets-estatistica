@@ -27,6 +27,7 @@ const PLACEHOLDERS = [
   { tag: '{taxa_acerto}', description: 'Taxa de acerto (%)', example: '66.6' },
   { tag: '{preco}', description: 'Preço assinatura', example: '' },
   { tag: '{linha_preco}', description: 'Linha de preço completa', example: '' },
+  { tag: '{operador}', description: 'Username do operador', example: 'operador' },
 ];
 
 // F1: Allowlist-based HTML sanitizer — only permit tags produced by markdown conversion
