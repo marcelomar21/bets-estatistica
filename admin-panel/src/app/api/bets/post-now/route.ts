@@ -122,7 +122,7 @@ export const POST = createApiHandler(
         )
       `)
       .eq('bet_group_assignments.group_id', groupId)
-      .eq('bet_group_assignments.posting_status', 'ready')
+      .in('bet_group_assignments.posting_status', ['ready', 'posted'])
       .eq('elegibilidade', 'elegivel')
       .not('deep_link', 'is', null)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
