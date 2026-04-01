@@ -17,6 +17,8 @@ interface QueueBet {
   promovida_manual?: boolean;
   elegibilidade?: string;
   post_at?: string | null;
+  posting_status?: string;
+  telegram_posted_at?: string | null;
   hit_rate?: { rate: number; wins: number; total: number } | null;
   match: {
     home_team_name: string;
@@ -45,7 +47,7 @@ function getStatusBadge(bet: QueueBet) {
   if (bet.elegibilidade === 'removida') {
     return { label: 'removida', className: 'bg-gray-100 text-gray-800' };
   }
-  if (bet.bet_status === 'posted') {
+  if (bet.posting_status === 'posted' || bet.bet_status === 'posted') {
     return { label: 'postada', className: 'bg-emerald-100 text-emerald-800' };
   }
   if (!bet.has_link) {

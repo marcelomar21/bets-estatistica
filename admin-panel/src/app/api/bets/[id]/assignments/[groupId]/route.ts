@@ -167,14 +167,6 @@ export const PATCH = createApiHandler(
       );
     }
 
-    // #5: cannot modify posted assignments
-    if (assignment.posting_status === 'posted') {
-      return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION_ERROR', message: 'Nao e possivel alterar uma aposta ja postada' } },
-        { status: 400 },
-      );
-    }
-
     const updatePayload: Record<string, unknown> = {};
     if (body.postAt !== undefined) updatePayload.post_at = body.postAt;
     if (body.postingStatus !== undefined) updatePayload.posting_status = body.postingStatus;
