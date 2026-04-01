@@ -814,19 +814,36 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
   // Story 2-2: Check TRIAL_MODE for customized welcome message
   const trialMode = await getConfig('TRIAL_MODE', 'mercadopago');
   const checkoutUrl = groupConfig?.checkoutUrl || null;
+  const customTemplate = groupConfig?.welcomeMessageTemplate || null;
 
   let welcomeMessage;
   let inlineKeyboard;
 
-  if (trialMode === 'internal' && isTrialMember) {
-    // Internal trial: show expiration date and checkout link
-    const trialEndsAt = member.trial_ends_at
-      ? formatFullDateBR(member.trial_ends_at) || '—'
-      : '—';
+  const trialEndsAt = member.trial_ends_at
+    ? formatFullDateBR(member.trial_ends_at) || '—'
+    : '—';
 
-    const template = groupConfig?.welcomeMessageTemplate || DEFAULT_WELCOME_TEMPLATE;
+  if (customTemplate) {
+    // Group has a custom welcome template — use it for all members
+    welcomeMessage = renderWelcomeTemplate(customTemplate, {
+      nome: firstName || 'apostador',
+      grupo: getGroupName(botCtx),
+      dias_trial: trialDays,
+      data_expiracao: trialEndsAt,
+      taxa_acerto: successRateText,
+      preco: formatBRL(subscriptionPrice) || '',
+      operador: operatorUsername,
+    });
 
-    welcomeMessage = renderWelcomeTemplate(template, {
+    inlineKeyboard = [
+      [{ text: '🚀 ENTRAR NO GRUPO', url: inviteLink }]
+    ];
+    if (checkoutUrl) {
+      inlineKeyboard.push([{ text: '💳 ASSINAR AGORA', url: checkoutUrl }]);
+    }
+  } else if (trialMode === 'internal' && isTrialMember) {
+    // Default internal trial template (no custom template configured)
+    welcomeMessage = renderWelcomeTemplate(DEFAULT_WELCOME_TEMPLATE, {
       nome: firstName || 'apostador',
       grupo: getGroupName(botCtx),
       dias_trial: trialDays,
@@ -843,7 +860,7 @@ Por favor, entre em contato com @${operatorUsername} para receber acesso ao grup
       inlineKeyboard.push([{ text: '💳 ASSINAR AGORA', url: checkoutUrl }]);
     }
   } else {
-    // Mercadopago flow: original welcome message
+    // Default mercadopago flow (no custom template)
     const priceLineMp = subscriptionPrice
       ? `\n💰 Após o trial, continue por apenas *${formatBRL(subscriptionPrice)}*.`
       : '\n💰 Após o trial, consulte o operador para assinar.';
