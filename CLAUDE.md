@@ -1,5 +1,15 @@
 # Project: bets-estatistica (GuruBet)
 
+## Regra: Sem truncamento de conteudo (OBRIGATORIO)
+
+**NUNCA** truncar, cortar ou limitar conteudo por contagem de caracteres. Isso causa perda de informacao.
+
+- Sem `.substring()`, `.slice()`, `.substr()` para cortar texto de mensagens, reasoning, copy ou analise
+- Sem limites artificiais de caracteres em prompts LLM (ex: "maximo 40 caracteres por bullet")
+- Sem "..." ou ellipsis para indicar texto cortado
+- O unico limite aceitavel e o do Telegram (4096 chars por mensagem) — nesse caso, dividir em multiplas mensagens, nunca truncar
+- Se encontrar truncamento existente no codigo, remover
+
 ## LLM Models
 
 Configurados em `lib/config.js:84`:
