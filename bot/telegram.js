@@ -215,6 +215,41 @@ async function initBots(supabaseClient) {
 }
 
 /**
+ * Refresh groupConfig for a specific bot from the database.
+ * Updates the cached BotContext in botRegistry so subsequent calls use fresh values.
+ * @param {object} supabaseClient - Supabase client instance
+ * @param {string} groupId - Group UUID
+ * @returns {Promise<object|null>} Updated groupConfig or null on failure
+ */
+async function refreshGroupConfig(supabaseClient, groupId) {
+  const ctx = botRegistry.get(groupId);
+  if (!ctx) return null;
+
+  const { data, error } = await supabaseClient
+    .from('groups')
+    .select('subscription_price, trial_days, welcome_message_template, checkout_url, operator_username')
+    .eq('id', groupId)
+    .single();
+
+  if (error || !data) {
+    logger.warn('Failed to refresh groupConfig', { groupId, error: error?.message });
+    return ctx.groupConfig;
+  }
+
+  ctx.groupConfig = {
+    ...ctx.groupConfig,
+    subscriptionPrice: data.subscription_price ?? null,
+    trialDays: data.trial_days || 7,
+    welcomeMessageTemplate: data.welcome_message_template || null,
+    checkoutUrl: data.checkout_url || null,
+    operatorUsername: data.operator_username || null,
+  };
+
+  logger.debug('groupConfig refreshed from DB', { groupId });
+  return ctx.groupConfig;
+}
+
+/**
  * Get BotContext for a specific group
  * @param {string} groupId - Group UUID
  * @returns {BotContext|null}
@@ -454,6 +489,7 @@ module.exports = {
 
   // Multi-bot management (Phase 2)
   initBots,
+  refreshGroupConfig,
   getBotForGroup,
   getAllBots,
   getDefaultBotCtx,

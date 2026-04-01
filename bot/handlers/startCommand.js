@@ -14,7 +14,7 @@
  * not via Telegram deep links. The /start command is simplified.
  */
 const logger = require('../../lib/logger');
-const { getBot, getDefaultBotCtx } = require('../telegram');
+const { getBot, getDefaultBotCtx, refreshGroupConfig } = require('../telegram');
 const { supabase } = require('../../lib/supabase');
 const { getConfig } = require('../lib/configHelper');
 const {
@@ -179,6 +179,12 @@ async function handleStartCommand(msg, botCtx = null) {
   // Extract payload from /start command (e.g., /start join → payload = "join")
   const text = msg.text || '';
   const payload = text.replace('/start', '').trim();
+
+  // Refresh groupConfig from DB so admin changes take effect without restart
+  const groupId = (botCtx || getDefaultBotCtx())?.groupId;
+  if (groupId) {
+    await refreshGroupConfig(supabase, groupId);
+  }
 
   logger.info('[membership:start-command] Received /start', {
     telegramId,
@@ -588,6 +594,12 @@ async function handleEmailInput(msg, botCtx = null) {
   const firstName = msg.from.first_name;
   const chatId = msg.chat.id;
   const text = (msg.text || '').trim().toLowerCase();
+
+  // Refresh groupConfig from DB so admin changes take effect without restart
+  const refreshGroupId = (botCtx || getDefaultBotCtx())?.groupId;
+  if (refreshGroupId) {
+    await refreshGroupConfig(supabase, refreshGroupId);
+  }
 
   // Clear conversation state
   clearConversationState(telegramId);

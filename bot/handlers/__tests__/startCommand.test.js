@@ -33,6 +33,7 @@ jest.mock('../../telegram', () => ({
     editMessageText: mockEditMessageText,
   }),
   getDefaultBotCtx: () => ({ publicGroupId: '-1001234567890', groupId: 'test-group-uuid', groupConfig: { trialDays: 7 } }),
+  refreshGroupConfig: jest.fn().mockResolvedValue(null),
 }));
 
 const mockGetMemberByTelegramId = jest.fn();
