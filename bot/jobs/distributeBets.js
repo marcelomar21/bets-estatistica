@@ -120,14 +120,17 @@ async function getUndistributedBets() {
 }
 
 /**
- * Count distributed bets per group from the junction table
- * Used to balance distribution fairly
+ * Count distributed bets per group for TODAY only (BRT timezone).
+ * Round-robin balances daily — historical counts are irrelevant.
  * @returns {Promise<object>} { groupId: count }
  */
 async function getGroupBetCounts() {
+  const { startOfToday } = getDistributionWindow();
+
   const { data, error } = await supabase
     .from('bet_group_assignments')
-    .select('group_id');
+    .select('group_id')
+    .gte('created_at', startOfToday);
 
   if (error) {
     logger.warn('[bets:distribute] Erro ao contar apostas por grupo', { error: error.message });
@@ -219,13 +222,15 @@ function getBetLeagueName(bet) {
  */
 async function rebalanceIfNeeded(activeGroups) {
   const activeGroupIds = activeGroups.map((g) => g.id);
+  const { startOfToday } = getDistributionWindow();
 
   try {
-    // Query non-posted assignments from the junction table
+    // Query non-posted assignments from today only
     const { data: assignments, error } = await supabase
       .from('bet_group_assignments')
       .select('id, bet_id, group_id, posting_status')
-      .neq('posting_status', 'posted');
+      .neq('posting_status', 'posted')
+      .gte('created_at', startOfToday);
 
     if (error) {
       logger.error('[bets:distribute] Erro ao verificar rebalanceamento', { error: error.message });
