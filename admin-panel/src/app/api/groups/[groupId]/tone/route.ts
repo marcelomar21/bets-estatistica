@@ -221,10 +221,11 @@ export const PUT = createApiHandler(
       .single();
 
     if (!error) {
-      // Invalidate persisted generated_copy for ALL bets of this group
+      // Invalidate persisted generated_copy for ALL assignments of this group
       // (including posted) so reposted bets also regenerate with new tone
+      // GURU-46: generated_copy lives in bet_group_assignments, not suggested_bets
       const { error: clearError } = await supabase
-        .from('suggested_bets')
+        .from('bet_group_assignments')
         .update({ generated_copy: null })
         .eq('group_id', groupId);
       if (clearError) {

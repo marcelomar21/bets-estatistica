@@ -50,8 +50,8 @@ async function fetchSampleBets(groupId) {
   const { data: futureBets } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
-      bet_group_assignments!inner ( group_id ),
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      bet_group_assignments!inner ( group_id, generated_copy ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('bet_group_assignments.group_id', groupId)
@@ -68,8 +68,8 @@ async function fetchSampleBets(groupId) {
   const { data: recentBets, error } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
-      bet_group_assignments!inner ( group_id ),
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      bet_group_assignments!inner ( group_id, generated_copy ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('bet_group_assignments.group_id', groupId)
@@ -89,6 +89,9 @@ async function fetchSampleBets(groupId) {
  * Map raw DB bet to the shape formatBetMessage/generateBetCopy expects
  */
 function mapBet(raw) {
+  const assignment = Array.isArray(raw.bet_group_assignments)
+    ? raw.bet_group_assignments[0]
+    : raw.bet_group_assignments;
   return {
     id: raw.id,
     betMarket: raw.bet_market,
@@ -97,7 +100,7 @@ function mapBet(raw) {
     deepLink: raw.deep_link,
     reasoning: raw.reasoning,
     promovidaManual: raw.promovida_manual,
-    generatedCopy: raw.generated_copy || null,
+    generatedCopy: assignment?.generated_copy || null,
     homeTeamName: raw.league_matches.home_team_name,
     awayTeamName: raw.league_matches.away_team_name,
     kickoffTime: raw.league_matches.kickoff_time,
@@ -165,8 +168,8 @@ async function fetchBetById(groupId, betId) {
   const { data, error } = await supabase
     .from('suggested_bets')
     .select(`
-      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
-      bet_group_assignments!inner ( group_id ),
+      id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+      bet_group_assignments!inner ( group_id, generated_copy ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
     .eq('bet_group_assignments.group_id', groupId)
@@ -201,8 +204,8 @@ async function generatePreview(groupId, betId = null, betIds = null) {
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
-        id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
-        bet_group_assignments!inner ( group_id ),
+        id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual,
+        bet_group_assignments!inner ( group_id, generated_copy ),
         league_matches!inner ( home_team_name, away_team_name, kickoff_time )
       `)
       .eq('bet_group_assignments.group_id', groupId)
