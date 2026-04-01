@@ -10,14 +10,16 @@ interface RawBet {
   bet_result: string;
   bet_status: string;
   result_updated_at: string | null;
-  group_id: string | null;
+  bet_group_assignments: Array<{
+    group_id: string;
+    groups: { name: string } | null;
+  }>;
   league_matches: {
     league_seasons: {
       league_name: string;
       country: string;
     } | null;
   } | null;
-  groups: { name: string } | null;
 }
 
 interface AccuracyBucket {
@@ -46,20 +48,6 @@ export const GET = createApiHandler(
     const dateTo = url.searchParams.get('date_to')?.trim() || null;
     const postingFilter = url.searchParams.get('posting_filter')?.trim() || 'all';
 
-    // Build query: fetch all bets with resolved results (regardless of posting status)
-    let query = supabase
-      .from('suggested_bets')
-      .select(`
-        bet_market,
-        bet_result,
-        bet_status,
-        result_updated_at,
-        group_id,
-        league_matches(league_seasons(league_name, country)),
-        groups(name)
-      `)
-      .in('bet_result', ['success', 'failure']);
-
     // Validate group_id param if provided
     if (groupIdParam && !UUID_PATTERN.test(groupIdParam)) {
       return NextResponse.json(
@@ -68,11 +56,24 @@ export const GET = createApiHandler(
       );
     }
 
-    // RLS: group admin can only see own group
-    if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
-    } else if (groupIdParam) {
-      query = query.eq('group_id', groupIdParam);
+    // Build query: use junction table for group scoping
+    const effectiveGroup = groupFilter || groupIdParam;
+    const selectStr = effectiveGroup
+      ? `bet_market, bet_result, bet_status, result_updated_at,
+         bet_group_assignments!inner(group_id, groups(name)),
+         league_matches(league_seasons(league_name, country))`
+      : `bet_market, bet_result, bet_status, result_updated_at,
+         bet_group_assignments(group_id, groups(name)),
+         league_matches(league_seasons(league_name, country))`;
+
+    let query = supabase
+      .from('suggested_bets')
+      .select(selectStr)
+      .in('bet_result', ['success', 'failure']);
+
+    // RLS: group admin can only see own group (via junction table)
+    if (effectiveGroup) {
+      query = query.eq('bet_group_assignments.group_id', effectiveGroup);
     }
 
     // Date filters on result_updated_at
@@ -174,15 +175,17 @@ export const GET = createApiHandler(
     for (const bet of breakdownBets) {
       const isWin = bet.bet_result === 'success';
 
-      // Group buckets
-      if (bet.group_id) {
-        if (!groupBuckets.has(bet.group_id)) {
-          groupBuckets.set(bet.group_id, {
-            group_name: bet.groups?.name ?? 'Desconhecido',
+      // Group buckets (via junction table assignments)
+      for (const assignment of (bet.bet_group_assignments || [])) {
+        const gid = assignment.group_id;
+        if (!gid) continue;
+        if (!groupBuckets.has(gid)) {
+          groupBuckets.set(gid, {
+            group_name: assignment.groups?.name ?? 'Desconhecido',
             wins: 0, losses: 0, total: 0,
           });
         }
-        const gb = groupBuckets.get(bet.group_id)!;
+        const gb = groupBuckets.get(gid)!;
         gb.total++;
         if (isWin) gb.wins++;
         else gb.losses++;

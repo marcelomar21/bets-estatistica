@@ -21,15 +21,27 @@ export const POST = createApiHandler(
       );
     }
 
-    // Verify bet exists and belongs to the admin's group
-    let query = supabase
-      .from('suggested_bets')
-      .select('id, group_id, bet_status, elegibilidade')
-      .eq('id', betId);
-
+    // Verify group access via junction table (for group_admin)
     if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
+      const { data: assignment } = await supabase
+        .from('bet_group_assignments')
+        .select('id')
+        .eq('bet_id', betId)
+        .eq('group_id', groupFilter)
+        .limit(1);
+      if (!assignment || assignment.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'NOT_FOUND', message: 'Aposta nao encontrada' } },
+          { status: 404 },
+        );
+      }
     }
+
+    // Fetch bet
+    const query = supabase
+      .from('suggested_bets')
+      .select('id, bet_status, elegibilidade')
+      .eq('id', betId);
 
     const { data: bet, error: fetchError } = await query.single();
 

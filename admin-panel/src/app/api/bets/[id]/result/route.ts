@@ -40,15 +40,27 @@ export const PATCH = createApiHandler(
       );
     }
 
-    // Verify bet exists and user has access
-    let checkQuery = supabase
-      .from('suggested_bets')
-      .select('id, group_id')
-      .eq('id', betId);
-
+    // Verify group access via junction table (for group_admin)
     if (groupFilter) {
-      checkQuery = checkQuery.eq('group_id', groupFilter);
+      const { data: assignment } = await supabase
+        .from('bet_group_assignments')
+        .select('id')
+        .eq('bet_id', betId)
+        .eq('group_id', groupFilter)
+        .limit(1);
+      if (!assignment || assignment.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'NOT_FOUND', message: 'Aposta nao encontrada' } },
+          { status: 404 },
+        );
+      }
     }
+
+    // Verify bet exists
+    const checkQuery = supabase
+      .from('suggested_bets')
+      .select('id')
+      .eq('id', betId);
 
     const { data: bet, error: checkError } = await checkQuery.single();
 

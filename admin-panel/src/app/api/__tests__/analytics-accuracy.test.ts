@@ -145,7 +145,7 @@ describe('GET /api/analytics/accuracy', () => {
     await GET(req, { params: Promise.resolve({}) });
 
     const hasGroupFilter = mock.eqCalls.some(
-      ([col, val]) => col === 'group_id' && val === 'group-uuid-1',
+      ([col, val]) => col === 'bet_group_assignments.group_id' && val === 'group-uuid-1',
     );
     expect(hasGroupFilter).toBe(true);
   });
