@@ -83,18 +83,25 @@ function createChainMock(resolveValue) {
 }
 
 // Helper: creates a mock for bet_group_assignments select that resolves immediately at .select()
+// Supports .select().gte() chain for getGroupBetCounts (daily filter)
 function createBgaSelectMock(resolveValue) {
   return {
-    select: jest.fn().mockResolvedValue(resolveValue),
+    select: jest.fn().mockReturnValue({
+      gte: jest.fn().mockResolvedValue(resolveValue),
+      then: (resolve) => resolve(resolveValue),
+      catch: () => {},
+    }),
   };
 }
 
 // Helper: creates a mock for rebalanceIfNeeded's first query
-// bet_group_assignments.select(...).neq('posting_status', 'posted')
+// bet_group_assignments.select(...).neq('posting_status', 'posted').gte('created_at', ...)
 function createRebalanceSelectMock(resolveValue) {
   return {
     select: jest.fn().mockReturnValue({
-      neq: jest.fn().mockResolvedValue(resolveValue),
+      neq: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue(resolveValue),
+      }),
     }),
   };
 }
@@ -222,19 +229,22 @@ function setupRunDistributeMock(groups, bets, assignedBets, opts = {}) {
             neq: jest.fn().mockResolvedValue({ data: [], error: null }),
           }),
         }),
-        // For rebalanceIfNeeded: .neq('posting_status', 'posted')
-        neq: jest.fn().mockResolvedValue({
-          data: rebalanceAssignments,
-          error: null,
+        // For rebalanceIfNeeded: .neq('posting_status', 'posted').gte(...)
+        neq: jest.fn().mockReturnValue({
+          gte: jest.fn().mockResolvedValue({
+            data: rebalanceAssignments,
+            error: null,
+          }),
+          then: (resolve) => resolve({ data: rebalanceAssignments, error: null }),
+          catch: () => {},
         }),
-        // For getUndistributedBets step 1 or getGroupBetCounts:
+        // For getGroupBetCounts: .select('group_id').gte('created_at', ...)
+        gte: jest.fn().mockResolvedValue({ data: [], error: null }),
+        // For getUndistributedBets step 1:
         // .select('bet_id') resolves immediately — handled by mockResolvedValue below
         then: (resolve) => resolve({ data: [], error: null }),
         catch: () => {},
       });
-      // Override select to also be directly resolvable for simple selects
-      bgaMock.select.mockResolvedValue({ data: [], error: null });
-
       // For upsert (assignBetToGroup)
       bgaMock.upsert = jest.fn().mockImplementation((payload) => {
         if (assignedBets) {
@@ -495,11 +505,14 @@ describe('distributeBets job', () => {
                 neq: jest.fn().mockResolvedValue({ data: [], error: null }),
               }),
             }),
-            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            neq: jest.fn().mockReturnValue({
+              gte: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            gte: jest.fn().mockResolvedValue({ data: [], error: null }),
             then: (resolve) => resolve({ data: [], error: null }),
             catch: () => {},
           });
-          bgaMock.select.mockResolvedValue({ data: [], error: null });
+          // select() is awaitable via then/catch in mockReturnValue
 
           bgaMock.upsert = jest.fn().mockImplementation((payload) => {
             assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
@@ -637,11 +650,14 @@ describe('distributeBets job', () => {
                 neq: jest.fn().mockResolvedValue({ data: [], error: null }),
               }),
             }),
-            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            neq: jest.fn().mockReturnValue({
+              gte: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            gte: jest.fn().mockResolvedValue({ data: [], error: null }),
             then: (resolve) => resolve({ data: [], error: null }),
             catch: () => {},
           });
-          bgaMock.select.mockResolvedValue({ data: [], error: null });
+          // select() is awaitable via then/catch in mockReturnValue
           bgaMock.upsert = jest.fn().mockImplementation((payload) => {
             assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });
             return {
@@ -1026,9 +1042,11 @@ describe('distributeBets job', () => {
           const bgaMock = {};
 
           if (bgaCallCount === 1) {
-            // rebalanceIfNeeded select: .select(...).neq('posting_status', 'posted')
+            // rebalanceIfNeeded select: .select(...).neq('posting_status', 'posted').gte(...)
             bgaMock.select = jest.fn().mockReturnValue({
-              neq: jest.fn().mockResolvedValue({ data: rebalanceData, error: null }),
+              neq: jest.fn().mockReturnValue({
+                gte: jest.fn().mockResolvedValue({ data: rebalanceData, error: null }),
+              }),
             });
             return bgaMock;
           }
@@ -1048,11 +1066,14 @@ describe('distributeBets job', () => {
                 neq: jest.fn().mockResolvedValue({ data: [], error: null }),
               }),
             }),
-            neq: jest.fn().mockResolvedValue({ data: [], error: null }),
+            neq: jest.fn().mockReturnValue({
+              gte: jest.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            gte: jest.fn().mockResolvedValue({ data: [], error: null }),
             then: (resolve) => resolve({ data: [], error: null }),
             catch: () => {},
           });
-          bgaMock.select.mockResolvedValue({ data: [], error: null });
+          // select() is awaitable via then/catch in mockReturnValue
 
           bgaMock.upsert = jest.fn().mockImplementation((payload) => {
             assignedBets.push({ betId: payload.bet_id, groupId: payload.group_id });

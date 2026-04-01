@@ -436,15 +436,17 @@ describe('assignBetToGroup (junction table)', () => {
 });
 
 describe('getGroupBetCounts (junction table)', () => {
-  it('counts from bet_group_assignments', async () => {
+  it('counts from bet_group_assignments for today only', async () => {
     const chain = {
-      select: jest.fn().mockResolvedValue({
-        data: [
-          { group_id: 'group-a' },
-          { group_id: 'group-a' },
-          { group_id: 'group-b' },
-        ],
-        error: null,
+      select: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: [
+            { group_id: 'group-a' },
+            { group_id: 'group-a' },
+            { group_id: 'group-b' },
+          ],
+          error: null,
+        }),
       }),
     };
 
@@ -458,9 +460,11 @@ describe('getGroupBetCounts (junction table)', () => {
 
   it('returns empty object on error', async () => {
     const chain = {
-      select: jest.fn().mockResolvedValue({
-        data: null,
-        error: { message: 'timeout' },
+      select: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'timeout' },
+        }),
       }),
     };
 
@@ -474,15 +478,17 @@ describe('getGroupBetCounts (junction table)', () => {
 
 describe('rebalanceIfNeeded (junction table)', () => {
   it('DELETEs non-posted assignments when groups without bets detected', async () => {
-    // Query non-posted assignments
+    // Query non-posted assignments for today: .select(...).neq(...).gte(...)
     const selectChain = {
       select: jest.fn().mockReturnThis(),
-      neq: jest.fn().mockResolvedValue({
-        data: [
-          { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-a', posting_status: 'ready' },
-          { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-a', posting_status: 'ready' },
-        ],
-        error: null,
+      neq: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: [
+            { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-a', posting_status: 'ready' },
+            { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-a', posting_status: 'ready' },
+          ],
+          error: null,
+        }),
       }),
     };
     // Delete assignments
@@ -505,13 +511,15 @@ describe('rebalanceIfNeeded (junction table)', () => {
   });
 
   it('preserves posted assignments (never deletes posting_status=posted)', async () => {
-    // The query already filters .neq('posting_status', 'posted'),
+    // The query already filters .neq('posting_status', 'posted').gte(today),
     // so posted assignments never appear in the delete set
     const selectChain = {
       select: jest.fn().mockReturnThis(),
-      neq: jest.fn().mockResolvedValue({
-        data: [], // no non-posted assignments
-        error: null,
+      neq: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: [], // no non-posted assignments
+          error: null,
+        }),
       }),
     };
 
@@ -527,12 +535,14 @@ describe('rebalanceIfNeeded (junction table)', () => {
   it('does not rebalance when all groups have assignments', async () => {
     const selectChain = {
       select: jest.fn().mockReturnThis(),
-      neq: jest.fn().mockResolvedValue({
-        data: [
-          { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-a', posting_status: 'ready' },
-          { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-b', posting_status: 'ready' },
-        ],
-        error: null,
+      neq: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: [
+            { id: 'bga-1', bet_id: 'bet-1', group_id: 'group-a', posting_status: 'ready' },
+            { id: 'bga-2', bet_id: 'bet-2', group_id: 'group-b', posting_status: 'ready' },
+          ],
+          error: null,
+        }),
       }),
     };
 
@@ -546,9 +556,11 @@ describe('rebalanceIfNeeded (junction table)', () => {
   it('returns error on query failure', async () => {
     const selectChain = {
       select: jest.fn().mockReturnThis(),
-      neq: jest.fn().mockResolvedValue({
-        data: null,
-        error: { message: 'connection lost' },
+      neq: jest.fn().mockReturnValue({
+        gte: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'connection lost' },
+        }),
       }),
     };
 
