@@ -11,29 +11,27 @@ function createMockRequest(url = 'http://localhost/api/bets/posting-history'): N
   return new NextRequest(new Request(url, { method: 'GET' }));
 }
 
-// Build a mock supabase that returns data for posting-history queries
+// Build a flexible chainable mock supabase for posting-history queries
 function createMockSupabase(data: unknown[] = [], count = 0) {
-  const mockRange = vi.fn().mockResolvedValue({ data, count, error: null });
-  const mockOrder = vi.fn().mockReturnValue({ range: mockRange });
-  // Main query chain: .not('group_id', ...).eq('bet_status', 'posted') → .order → .range
-  const mockMainEq = vi.fn().mockReturnValue({ order: mockOrder, eq: vi.fn().mockReturnValue({ order: mockOrder }) });
-  const mockNotNull = vi.fn().mockReturnValue({ eq: mockMainEq });
-
-  // Counter chain: .eq('bet_result', ...).eq('bet_status', 'posted').not('group_id', 'is', null)
-  const mockCounterEq = vi.fn().mockResolvedValue({ count, error: null });
-  const mockCounterNot = vi.fn().mockReturnValue({ eq: mockCounterEq });
-  const mockCounterBetStatusEq = vi.fn().mockReturnValue({ not: mockCounterNot });
+  // Creates a chainable proxy that resolves to { data, count, error: null }
+  // for terminal calls (range, then) and returns self for everything else
+  function createChain(resolveValue: unknown = { data, count, error: null }): Record<string, ReturnType<typeof vi.fn>> {
+    const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+    const methods = ['select', 'eq', 'not', 'in', 'gt', 'gte', 'lte', 'ilike', 'is', 'order', 'range', 'single', 'limit'];
+    for (const method of methods) {
+      if (method === 'range') {
+        chain[method] = vi.fn().mockResolvedValue(resolveValue);
+      } else {
+        chain[method] = vi.fn().mockReturnValue(chain);
+      }
+    }
+    // Counter queries resolve directly (no .range)
+    chain.then = vi.fn((resolve) => resolve(resolveValue));
+    return chain;
+  }
 
   return {
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        not: mockNotNull,
-        eq: vi.fn().mockReturnValue({
-          eq: mockCounterBetStatusEq,
-          not: mockCounterNot,
-        }),
-      }),
-    }),
+    from: vi.fn().mockImplementation(() => createChain()),
   };
 }
 
@@ -113,8 +111,9 @@ describe('GET /api/bets/posting-history', () => {
     expect(body.data).toBeDefined();
     expect(body.data.pagination).toBeDefined();
     expect(body.data.counters).toBeDefined();
-    // Verify from() was called
+    // Verify from() was called for both main query and counters
     expect(mockSupabase.from).toHaveBeenCalledWith('suggested_bets');
+    expect(mockSupabase.from).toHaveBeenCalledWith('bet_group_assignments');
   });
 
   it('returns correct response shape with counters', async () => {

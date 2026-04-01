@@ -17,12 +17,16 @@ function parsePositiveInt(rawValue: string | null, fallback: number): number {
 }
 
 const HISTORY_SELECT = `
-  id, bet_market, bet_pick, odds, odds_at_post, bet_status,
-  telegram_posted_at, telegram_message_id, group_id,
-  historico_postagens, created_at,
+  id, bet_market, bet_pick, odds, bet_status,
+  created_at,
   bet_result, result_reason, result_source, result_confidence, result_updated_at,
-  league_matches!inner(home_team_name, away_team_name, kickoff_time, league_seasons(league_name, country)),
-  groups(name)
+  bet_group_assignments!inner(
+    group_id, posting_status, odds_at_post,
+    telegram_posted_at, telegram_message_id,
+    historico_postagens,
+    groups(name)
+  ),
+  league_matches!inner(home_team_name, away_team_name, kickoff_time, league_seasons(league_name, country))
 `;
 
 export const GET = createApiHandler(
@@ -73,18 +77,17 @@ export const GET = createApiHandler(
       );
     }
 
-    // Build query: only bets that were actually posted
+    // Build query: only bets posted to a group (via junction table)
     let query = supabase
       .from('suggested_bets')
       .select(HISTORY_SELECT, { count: 'exact' })
-      .not('group_id', 'is', null)
-      .eq('bet_status', 'posted');
+      .eq('bet_group_assignments.posting_status', 'posted');
 
-    // Multi-tenant filter
+    // Multi-tenant filter via junction table
     if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
+      query = query.eq('bet_group_assignments.group_id', groupFilter);
     } else if (groupIdParam) {
-      query = query.eq('group_id', groupIdParam);
+      query = query.eq('bet_group_assignments.group_id', groupIdParam);
     }
 
     // Result filter
@@ -112,35 +115,34 @@ export const GET = createApiHandler(
       query = query.lte('league_matches.kickoff_time', `${dateToParam}T23:59:59Z`);
     }
 
-    // Sorting
+    // Sorting (telegram_posted_at and odds_at_post now live on bet_group_assignments)
     const ascending = sortDir === 'asc';
     if (sortBy === 'kickoff_time') {
       query = query.order('league_matches(kickoff_time)', { ascending });
     } else if (sortBy === 'telegram_posted_at') {
-      query = query.order('telegram_posted_at', { ascending, nullsFirst: false });
+      query = query.order('bet_group_assignments(telegram_posted_at)', { ascending, nullsFirst: false });
+    } else if (sortBy === 'odds_at_post') {
+      query = query.order('bet_group_assignments(odds_at_post)', { ascending });
     } else {
       query = query.order(sortBy, { ascending });
     }
 
-    // Counter queries
+    // Counter queries via junction table
     const tenantCol = groupFilter || groupIdParam;
 
-    let successQuery = supabase.from('suggested_bets')
-      .select('*', { count: 'exact', head: true })
-      .eq('bet_result', 'success')
-      .eq('bet_status', 'posted')
-      .not('group_id', 'is', null);
+    let successQuery = supabase.from('bet_group_assignments')
+      .select('*, suggested_bets!inner(bet_result)', { count: 'exact', head: true })
+      .eq('posting_status', 'posted')
+      .eq('suggested_bets.bet_result', 'success');
 
-    let failureQuery = supabase.from('suggested_bets')
-      .select('*', { count: 'exact', head: true })
-      .eq('bet_result', 'failure')
-      .eq('bet_status', 'posted')
-      .not('group_id', 'is', null);
+    let failureQuery = supabase.from('bet_group_assignments')
+      .select('*, suggested_bets!inner(bet_result)', { count: 'exact', head: true })
+      .eq('posting_status', 'posted')
+      .eq('suggested_bets.bet_result', 'failure');
 
-    let postedQuery = supabase.from('suggested_bets')
+    let postedQuery = supabase.from('bet_group_assignments')
       .select('*', { count: 'exact', head: true })
-      .eq('bet_status', 'posted')
-      .not('group_id', 'is', null);
+      .eq('posting_status', 'posted');
 
     if (tenantCol) {
       successQuery = successQuery.eq('group_id', tenantCol);
@@ -170,10 +172,26 @@ export const GET = createApiHandler(
     const evaluated = successCount + failureCount;
     const hitRate = evaluated > 0 ? Math.round((successCount / evaluated) * 100) : 0;
 
+    // Flatten bet_group_assignments fields for backward compatibility
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (mainResult.data ?? []).map((item: any) => {
+      const assignment = item.bet_group_assignments?.[0];
+      const { bet_group_assignments: _bga, ...rest } = item;
+      return {
+        ...rest,
+        telegram_posted_at: assignment?.telegram_posted_at ?? null,
+        telegram_message_id: assignment?.telegram_message_id ?? null,
+        odds_at_post: assignment?.odds_at_post ?? null,
+        historico_postagens: assignment?.historico_postagens ?? [],
+        group_id: assignment?.group_id ?? null,
+        groups: assignment?.groups ?? null,
+      };
+    });
+
     return NextResponse.json({
       success: true,
       data: {
-        items: mainResult.data ?? [],
+        items,
         pagination: {
           page,
           per_page: perPage,

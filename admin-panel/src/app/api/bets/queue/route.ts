@@ -45,7 +45,7 @@ export const GET = createApiHandler(
 
     const postingSchedule = group?.posting_schedule || { enabled: true, times: ['10:00', '15:00', '22:00'] };
 
-    // Query bets in active posting states for this group (include league_seasons for hit_rate)
+    // Query bets assigned to this group via junction table (migration 061)
     const [betsResult, pairStats] = await Promise.all([
       supabase
         .from('suggested_bets')
@@ -58,7 +58,10 @@ export const GET = createApiHandler(
           deep_link,
           promovida_manual,
           elegibilidade,
-          post_at,
+          bet_group_assignments!inner (
+            posting_status,
+            post_at
+          ),
           league_matches!inner (
             home_team_name,
             away_team_name,
@@ -66,7 +69,8 @@ export const GET = createApiHandler(
             league_seasons!inner (league_name, country)
           )
         `)
-        .eq('group_id', effectiveGroupId)
+        .eq('bet_group_assignments.group_id', effectiveGroupId)
+        .eq('bet_group_assignments.posting_status', 'ready')
         .in('elegibilidade', ['elegivel', 'removida'])
         .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
         .gt('league_matches.kickoff_time', new Date().toISOString())
@@ -109,7 +113,7 @@ export const GET = createApiHandler(
           deep_link: b.deep_link,
           promovida_manual: b.promovida_manual ?? false,
           elegibilidade: b.elegibilidade ?? 'elegivel',
-          post_at: b.post_at ?? null,
+          post_at: b.bet_group_assignments?.[0]?.post_at ?? null,
           hit_rate: enrichWithHitRate(b, pairStats),
           match: {
             home_team_name: b.league_matches.home_team_name,

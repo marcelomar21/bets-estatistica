@@ -22,15 +22,27 @@ export const GET = createApiHandler(
       );
     }
 
+    // Verify group access via junction table (for group_admin)
+    if (groupFilter) {
+      const { data: assignment } = await supabase
+        .from('bet_group_assignments')
+        .select('id')
+        .eq('bet_id', betId)
+        .eq('group_id', groupFilter)
+        .limit(1);
+      if (!assignment || assignment.length === 0) {
+        return NextResponse.json(
+          { success: false, error: { code: 'NOT_FOUND', message: 'Aposta nao encontrada' } },
+          { status: 404 },
+        );
+      }
+    }
+
     // Fetch bet with joins
-    let query = supabase
+    const query = supabase
       .from('suggested_bets')
       .select(BET_SELECT)
       .eq('id', betId);
-
-    if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
-    }
 
     const { data: bet, error: betError } = await query.single();
 

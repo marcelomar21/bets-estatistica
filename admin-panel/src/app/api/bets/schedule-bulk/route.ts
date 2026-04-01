@@ -29,15 +29,22 @@ export const PATCH = createApiHandler(
       );
     }
 
-    // Update all bets at once
-    let query = supabase
-      .from('suggested_bets')
-      .update({ post_at: postAt })
-      .in('id', bet_ids);
+    // Determine effective group for the assignment update
+    const effectiveGroupId = groupFilter || body.group_id;
 
-    if (groupFilter) {
-      query = query.eq('group_id', groupFilter);
+    if (!effectiveGroupId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'group_id is required' } },
+        { status: 400 },
+      );
     }
+
+    // Update post_at on assignments (source of truth since migration 061)
+    let query = supabase
+      .from('bet_group_assignments')
+      .update({ post_at: postAt })
+      .in('bet_id', bet_ids)
+      .eq('group_id', effectiveGroupId);
 
     const { error: updateError } = await query;
 

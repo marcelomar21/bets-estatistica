@@ -30,30 +30,39 @@ export const PATCH = createApiHandler(
       );
     }
 
-    // Verify the bet exists and belongs to the admin's group
-    let betQuery = supabase
-      .from('suggested_bets')
-      .select('id')
-      .eq('id', betId);
+    // Determine effective group for the assignment update
+    const url = new URL(req.url);
+    const queryGroupId = url.searchParams.get('group_id');
+    const effectiveGroupId = groupFilter || queryGroupId || body.group_id;
 
-    if (groupFilter) {
-      betQuery = betQuery.eq('group_id', groupFilter);
+    if (!effectiveGroupId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION_ERROR', message: 'group_id is required' } },
+        { status: 400 },
+      );
     }
 
-    const { data: bet, error: betError } = await betQuery.single();
+    // Verify the assignment exists for this bet + group
+    const { data: assignment, error: assignmentError } = await supabase
+      .from('bet_group_assignments')
+      .select('id')
+      .eq('bet_id', betId)
+      .eq('group_id', effectiveGroupId)
+      .single();
 
-    if (betError || !bet) {
+    if (assignmentError || !assignment) {
       return NextResponse.json(
         { success: false, error: { code: 'NOT_FOUND', message: 'Aposta nao encontrada' } },
         { status: 404 },
       );
     }
 
-    // Update post_at
+    // Update post_at on the assignment (source of truth since migration 061)
     const { error: updateError } = await supabase
-      .from('suggested_bets')
+      .from('bet_group_assignments')
       .update({ post_at: postAt })
-      .eq('id', betId);
+      .eq('bet_id', betId)
+      .eq('group_id', effectiveGroupId);
 
     if (updateError) {
       return NextResponse.json(

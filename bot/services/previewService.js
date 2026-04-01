@@ -51,9 +51,10 @@ async function fetchSampleBets(groupId) {
     .from('suggested_bets')
     .select(`
       id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
+      bet_group_assignments!inner ( group_id ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
-    .eq('group_id', groupId)
+    .eq('bet_group_assignments.group_id', groupId)
     .eq('elegibilidade', 'elegivel')
     .gt('league_matches.kickoff_time', now)
     .order('league_matches(kickoff_time)', { ascending: true })
@@ -68,9 +69,10 @@ async function fetchSampleBets(groupId) {
     .from('suggested_bets')
     .select(`
       id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
+      bet_group_assignments!inner ( group_id ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
-    .eq('group_id', groupId)
+    .eq('bet_group_assignments.group_id', groupId)
     .eq('elegibilidade', 'elegivel')
     .order('league_matches(kickoff_time)', { ascending: false })
     .limit(1);
@@ -164,9 +166,10 @@ async function fetchBetById(groupId, betId) {
     .from('suggested_bets')
     .select(`
       id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
+      bet_group_assignments!inner ( group_id ),
       league_matches!inner ( home_team_name, away_team_name, kickoff_time )
     `)
-    .eq('group_id', groupId)
+    .eq('bet_group_assignments.group_id', groupId)
     .eq('id', betId)
     .limit(1);
 
@@ -194,14 +197,15 @@ async function generatePreview(groupId, betId = null, betIds = null) {
   // 2. Fetch bets: specific IDs from queue, single bet, or sample fallback
   let rawBets;
   if (betIds && betIds.length > 0) {
-    // Batch mode: fetch specific bets from the posting queue
+    // Batch mode: fetch specific bets from the posting queue (via junction table)
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
         id, bet_market, bet_pick, odds, deep_link, reasoning, promovida_manual, generated_copy,
+        bet_group_assignments!inner ( group_id ),
         league_matches!inner ( home_team_name, away_team_name, kickoff_time )
       `)
-      .eq('group_id', groupId)
+      .eq('bet_group_assignments.group_id', groupId)
       .in('id', betIds);
 
     if (error) {

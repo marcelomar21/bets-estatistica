@@ -259,7 +259,7 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getEligibleBets();
 
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-uuid-abc');
+      const groupIdFilters = eqCalls.filter(c => c.col === 'bet_group_assignments.group_id' && c.val === 'group-uuid-abc');
       expect(groupIdFilters).toHaveLength(1);
     });
 
@@ -317,7 +317,7 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getBetsReadyForPosting();
 
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-uuid-xyz');
+      const groupIdFilters = eqCalls.filter(c => c.col === 'bet_group_assignments.group_id' && c.val === 'group-uuid-xyz');
       expect(groupIdFilters).toHaveLength(1);
     });
   });
@@ -349,7 +349,7 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getActiveBetsForRepost();
 
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-uuid-repost');
+      const groupIdFilters = eqCalls.filter(c => c.col === 'bet_group_assignments.group_id' && c.val === 'group-uuid-repost');
       expect(groupIdFilters).toHaveLength(1);
     });
   });
@@ -381,7 +381,7 @@ describe('betService multi-tenant filtering (Story 5.1)', () => {
 
       await getAvailableBets();
 
-      const groupIdFilters = eqCalls.filter(c => c.col === 'group_id' && c.val === 'group-uuid-avail');
+      const groupIdFilters = eqCalls.filter(c => c.col === 'bet_group_assignments.group_id' && c.val === 'group-uuid-avail');
       expect(groupIdFilters).toHaveLength(1);
     });
   });

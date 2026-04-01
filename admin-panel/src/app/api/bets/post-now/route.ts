@@ -111,13 +111,18 @@ export const POST = createApiHandler(
         odds,
         deep_link,
         promovida_manual,
+        bet_group_assignments!inner (
+          group_id,
+          posting_status
+        ),
         league_matches!inner (
           home_team_name,
           away_team_name,
           kickoff_time
         )
       `)
-      .eq('group_id', groupId)
+      .eq('bet_group_assignments.group_id', groupId)
+      .eq('bet_group_assignments.posting_status', 'ready')
       .eq('elegibilidade', 'elegivel')
       .not('deep_link', 'is', null)
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])

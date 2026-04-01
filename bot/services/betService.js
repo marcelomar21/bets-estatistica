@@ -30,6 +30,7 @@ async function getEligibleBets(limit = 10) {
         deep_link,
         eligible,
         created_at,
+        ${groupId ? 'bet_group_assignments!inner(group_id),' : ''}
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -44,9 +45,9 @@ async function getEligibleBets(limit = 10) {
       .gte('league_matches.kickoff_time', new Date().toISOString())
       .lte('league_matches.kickoff_time', new Date(Date.now() + config.betting.maxDaysAhead * 24 * 60 * 60 * 1000).toISOString());
 
-    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    // Multi-tenant via junction table
     if (groupId) {
-      query = query.eq('group_id', groupId);
+      query = query.eq('bet_group_assignments.group_id', groupId);
     }
 
     const { data, error } = await query
@@ -124,6 +125,7 @@ async function getBetsReadyForPosting() {
         bet_status,
         elegibilidade,
         promovida_manual,
+        ${groupId ? 'bet_group_assignments!inner(group_id),' : ''}
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -136,9 +138,9 @@ async function getBetsReadyForPosting() {
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', maxDate.toISOString());
 
-    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    // Multi-tenant via junction table
     if (groupId) {
-      query = query.eq('group_id', groupId);
+      query = query.eq('bet_group_assignments.group_id', groupId);
     }
 
     const { data, error } = await query
@@ -325,19 +327,23 @@ async function getActiveBetsForRepost() {
         odds_at_post,
         reasoning,
         deep_link,
+        ${groupId ? 'bet_group_assignments!inner(group_id, posting_status),' : ''}
         league_matches!inner (
           home_team_name,
           away_team_name,
           kickoff_time
         )
       `)
-      .eq('bet_status', 'posted')
       .gte('league_matches.kickoff_time', now.toISOString())
       .lte('league_matches.kickoff_time', maxKickoffTime.toISOString());
 
-    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    // Multi-tenant via junction table
     if (groupId) {
-      query = query.eq('group_id', groupId);
+      query = query
+        .eq('bet_group_assignments.group_id', groupId)
+        .eq('bet_group_assignments.posting_status', 'posted');
+    } else {
+      query = query.eq('bet_status', 'posted');
     }
 
     const { data, error } = await query
@@ -395,6 +401,7 @@ async function getAvailableBets() {
         eligible,
         elegibilidade,
         promovida_manual,
+        ${groupId ? 'bet_group_assignments!inner(group_id),' : ''}
         league_matches!inner (
           home_team_name,
           away_team_name,
@@ -405,9 +412,9 @@ async function getAvailableBets() {
       .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
       .gte('league_matches.kickoff_time', now.toISOString());
 
-    // Story 5.1: Multi-tenant — filtrar por group_id quando definido
+    // Multi-tenant via junction table
     if (groupId) {
-      query = query.eq('group_id', groupId);
+      query = query.eq('bet_group_assignments.group_id', groupId);
     }
 
     const { data, error } = await query
