@@ -19,7 +19,7 @@ function getOpenAI() {
   return new ChatOpenAI({
     openAIApiKey: process.env.OPENAI_API_KEY,
     modelName: config.llm.lightModel,
-    reasoning: { effort: 'low' },
+    reasoning: { effort: 'none' },
   });
 }
 
