@@ -31,10 +31,11 @@ export const GET = createApiHandler(
       );
     }
 
-    const { data: bets, error } = await supabase
-      .from('suggested_bets')
-      .select('id, bet_status')
-      .in('id', betIds);
+    const { data: assignments, error } = await supabase
+      .from('bet_group_assignments')
+      .select('bet_id, posting_status')
+      .in('bet_id', betIds)
+      .eq('group_id', groupId);
 
     if (error) {
       return NextResponse.json(
@@ -43,8 +44,8 @@ export const GET = createApiHandler(
       );
     }
 
-    const posted = (bets || []).filter(b => b.bet_status === 'posted').map(b => b.id);
-    const pending = (bets || []).filter(b => b.bet_status !== 'posted').map(b => b.id);
+    const posted = (assignments || []).filter(a => a.posting_status === 'posted').map(a => a.bet_id);
+    const pending = betIds.filter(id => !posted.includes(id));
 
     // Check if bot already cleared the flag (processed but maybe posted 0)
     let botProcessed = false;
