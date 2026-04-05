@@ -163,4 +163,3 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 11. O backend precisa de `--isolated` para multiplas sessoes (sem isso: "Browser already in use"). Patch manual no `dist/index.js` do pacote npx
 12. `browser_run_code` da timeout no `playwright-parallel-mcp` — usar `browser_evaluate` com `Promise` + `setTimeout` para operacoes async
 13. Sessoes paralelas abrem na aba "Principais" — clicar "Todos" + "Expand all" ANTES de buscar odds de escanteios/cartoes
-14. Cartoes linha 3.5 indisponivel na Betano em 100% dos jogos testados (3/3). Minimo disponivel: 4.5
