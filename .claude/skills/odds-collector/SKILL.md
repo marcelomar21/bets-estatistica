@@ -18,6 +18,11 @@ Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo po
 
 Consultar `suggested_bets` com `odds IS NULL` e `deep_link IS NULL`, status != posted, kickoff nos proximos 3 dias. Agrupar por `match_id`. Filtrar **somente jogos com exatamente 4 apostas pendentes** (menos indica enrichment parcial — pular). Pegar o mais proximo automaticamente (nao perguntar).
 
+Apresentar antes de prosseguir:
+```
+Resolvendo: Corinthians vs Internacional (05/04 19:30) — jogo 1 de 5 restantes
+```
+
 ### 2. Abrir Betano e navegar ate o jogo
 
 1. `browser_navigate` -> `https://www.betano.bet.br/sport/futebol/`
