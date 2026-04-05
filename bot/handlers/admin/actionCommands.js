@@ -3,11 +3,13 @@
  * Handles /postar, /atualizar, /trocar, /adicionar commands
  */
 const logger = require('../../../lib/logger');
+const { config } = require('../../../lib/config');
 const { isValidBookmakerUrl } = require('../../../lib/utils');
 const { createManualBet, swapPostedBet } = require('../../services/betService');
 const { runEnrichment } = require('../../jobs/enrichOdds');
 const { runPostBets, hasPendingConfirmation, getPendingConfirmationInfo } = require('../../jobs/postBets');
 const { withExecutionLogging } = require('../../services/jobExecutionService');
+const { getBotForGroup } = require('../../telegram');
 
 // Regex patterns
 const POSTAR_PATTERN = /^\/postar$/i;
@@ -41,7 +43,8 @@ async function handlePostarCommand(bot, msg) {
 
   try {
     // Log execution to job_executions table for visibility
-    const result = await withExecutionLogging('post-bets-manual', () => runPostBets());
+    const botCtx = getBotForGroup(config.membership.groupId);
+    const result = await withExecutionLogging('post-bets-manual', () => runPostBets(false, { botCtx }));
 
     // Delete "working" message
     try {

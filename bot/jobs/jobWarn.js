@@ -174,9 +174,10 @@ function formatPostedBetsList(bets) {
  * @param {Array} postedBets - Bets that were posted
  * @param {Array} upcomingBets - Bets for next 2 days
  * @param {Array} pendingActions - Actions needed (sem link, sem odds)
+ * @param {object} botCtx - BotContext for the group (required)
  * @returns {Promise<{success: boolean}>}
  */
-async function sendPostWarn(period, postedBets = [], _upcomingBets = [], _pendingActions = []) {
+async function sendPostWarn(period, postedBets = [], _upcomingBets = [], _pendingActions = [], botCtx = null) {
   const periodName = getPeriodName(period);
 
   const ids = (postedBets || []).map((b) => `#${b.id}`).join(', ');
@@ -187,7 +188,7 @@ async function sendPostWarn(period, postedBets = [], _upcomingBets = [], _pendin
 
   logger.info('Sending post warn', { period, postedCount: postedBets.length });
 
-  return sendToAdmin(text);
+  return sendToAdmin(text, botCtx);
 }
 
 /**
@@ -195,9 +196,10 @@ async function sendPostWarn(period, postedBets = [], _upcomingBets = [], _pendin
  * @param {Array} updatedBets - [{id, oldOdds, newOdds}]
  * @param {Array} failedBets - [{id, error}]
  * @param {object} statusForNextPost - Summary for next posting
+ * @param {object} botCtx - BotContext for the group (required)
  * @returns {Promise<{success: boolean}>}
  */
-async function sendScrapingWarn(updatedBets = [], failedBets = [], statusForNextPost = {}) {
+async function sendScrapingWarn(updatedBets = [], failedBets = [], statusForNextPost = {}, botCtx = null) {
   let text = '\ud83d\udd0d *SCRAPING CONCLUIDO*\n\n';
 
   // Updated bets section
@@ -236,15 +238,16 @@ async function sendScrapingWarn(updatedBets = [], failedBets = [], statusForNext
     failedCount: failedBets.length,
   });
 
-  return sendToAdmin(text);
+  return sendToAdmin(text, botCtx);
 }
 
 /**
  * Send warn after analysis job creates new bets
  * @param {Array} newBets - Array of new bet objects or IDs
+ * @param {object} botCtx - BotContext for the group (required)
  * @returns {Promise<{success: boolean}>}
  */
-async function sendAnalysisWarn(newBets = []) {
+async function sendAnalysisWarn(newBets = [], botCtx = null) {
   let text = '\ud83e\udde0 *ANALISE CONCLUIDA*\n\n';
 
   if (newBets && newBets.length > 0) {
@@ -261,7 +264,7 @@ async function sendAnalysisWarn(newBets = []) {
 
   logger.info('Sending analysis warn', { newBetsCount: newBets.length });
 
-  return sendToAdmin(text);
+  return sendToAdmin(text, botCtx);
 }
 
 module.exports = {

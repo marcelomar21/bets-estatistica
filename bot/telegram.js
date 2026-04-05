@@ -289,23 +289,20 @@ function getDefaultBotCtx() {
 async function sendToAdmin(text, botCtxOrOptions, options) {
   let targetBot, targetChatId, sendOptions;
 
-  // Detect if second arg is a BotContext or legacy options
+  // Require a valid BotContext with adminGroupId + bot instance
   if (botCtxOrOptions && botCtxOrOptions.adminGroupId && botCtxOrOptions.bot) {
-    // New multi-bot call: sendToAdmin(text, botCtx, options?)
     targetBot = botCtxOrOptions.bot;
     targetChatId = botCtxOrOptions.adminGroupId;
     sendOptions = options || {};
   } else {
-    // Legacy call: sendToAdmin(text, options?)
-    if (!botCtxOrOptions || !botCtxOrOptions.adminGroupId) {
-      // Log backward-compat warning only if registry has entries
-      if (botRegistry.size > 0) {
-        logger.warn('sendToAdmin called without botCtx, using legacy singleton');
-      }
-    }
-    targetBot = getBot();
-    targetChatId = config.telegram.adminGroupId;
-    sendOptions = botCtxOrOptions || {};
+    // No valid botCtx — refuse to send to avoid cross-group leaks
+    logger.error('sendToAdmin called without valid botCtx — message NOT sent', {
+      hasBotCtx: !!botCtxOrOptions,
+      hasAdminGroupId: !!botCtxOrOptions?.adminGroupId,
+      hasBot: !!botCtxOrOptions?.bot,
+      textPreview: text?.substring(0, 80),
+    });
+    return { success: false, error: { code: 'NO_BOT_CTX', message: 'sendToAdmin requires a valid botCtx with adminGroupId and bot' } };
   }
 
   try {
@@ -338,14 +335,14 @@ async function sendToPublic(text, botCtxOrOptions, options) {
     targetChatId = botCtxOrOptions.publicGroupId;
     sendOptions = options || {};
   } else {
-    if (!botCtxOrOptions || !botCtxOrOptions.publicGroupId) {
-      if (botRegistry.size > 0) {
-        logger.warn('sendToPublic called without botCtx, using legacy singleton');
-      }
-    }
-    targetBot = getBot();
-    targetChatId = config.telegram.publicGroupId;
-    sendOptions = botCtxOrOptions || {};
+    // No valid botCtx — refuse to send to avoid cross-group leaks
+    logger.error('sendToPublic called without valid botCtx — message NOT sent', {
+      hasBotCtx: !!botCtxOrOptions,
+      hasPublicGroupId: !!botCtxOrOptions?.publicGroupId,
+      hasBot: !!botCtxOrOptions?.bot,
+      textPreview: text?.substring(0, 80),
+    });
+    return { success: false, error: { code: 'NO_BOT_CTX', message: 'sendToPublic requires a valid botCtx with publicGroupId and bot' } };
   }
 
   try {
