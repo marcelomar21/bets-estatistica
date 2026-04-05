@@ -18,6 +18,8 @@ Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo po
 
 Consultar `suggested_bets` com `odds IS NULL` **OU** `deep_link IS NULL`, status != posted, kickoff nos proximos 3 dias. Agrupar por `match_id`. Filtrar jogos com **4 apostas onde QUALQUER uma tenha pendencia** (sem odds, sem link, ou ambos). Pegar o mais proximo automaticamente (nao perguntar).
 
+**IMPORTANTE na query**: usar `order=id.desc&limit=500` — existem milhares de apostas pendentes antigas no banco. Limit baixo (50-80) nao pega jogos recentes. Filtrar kickoff no Python apos receber os dados.
+
 **BUG CONHECIDO**: O banco grava kickoff_time como se fosse UTC, mas o valor real e BRT (UTC-3). Ao filtrar `kickoff > now`, usar `now - 3h` para compensar. Na query Python: `if kt <= (now - timedelta(hours=3))` ao inves de `if kt <= now`.
 
 Tipos de pendencia por aposta:
