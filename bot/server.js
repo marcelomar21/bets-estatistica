@@ -463,16 +463,21 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
-    // Morning prep - 08:00 São Paulo
-    cron.schedule('0 8 * * *', async () => {
-      logger.info('[scheduler] Running morning-prep jobs');
-      try {
-        await withExecutionLogging('enrich-odds', runEnrichment);
-        logger.info('[scheduler] morning-prep complete');
-      } catch (err) {
-        logger.error('[scheduler] morning-prep failed', { error: err.message });
-      }
-    }, { timezone: TZ });
+    // Morning prep - enrichOdds via The Odds API
+    // Toggle: ENRICH_ODDS_ENABLED=true to enable (default: off, replaced by /odds-collector)
+    if (config.jobs.enrichOdds) {
+      cron.schedule('0 8 * * *', async () => {
+        logger.info('[scheduler] Running morning-prep jobs');
+        try {
+          await withExecutionLogging('enrich-odds', runEnrichment);
+          logger.info('[scheduler] morning-prep complete');
+        } catch (err) {
+          logger.error('[scheduler] morning-prep failed', { error: err.message });
+        }
+      }, { timezone: TZ });
+    } else {
+      logger.info('[scheduler] enrichOdds DISABLED (ENRICH_ODDS_ENABLED != true)');
+    }
 
     // Webhook processing - every 30 seconds (Story 16.3)
     setInterval(async () => {
