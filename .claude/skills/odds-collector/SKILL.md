@@ -9,7 +9,8 @@ Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo po
 ## Pre-requisitos
 
 - Playwright MCP conectado (`/mcp`)
-- Pacote: `@playwright/mcp@latest` no `.mcp.json`
+- Pacote: `playwright-parallel-mcp@latest` no `.mcp.json` (com patch `--isolated` no backend)
+- O backend `@playwright/mcp` deve ter `--isolated` nos args para multiplas sessoes sem conflito de perfil Chrome
 
 ## Fluxo
 
@@ -37,18 +38,24 @@ Extrair odds via `browser_evaluate` parseando `document.body.innerText`:
 - Mercados de cartoes/escanteios podem ter linhas limitadas (ex: Betano oferece 4.5+ cartoes mas nao 3.5)
 - Se a linha exata nao existir, marcar como INDISPONIVEL
 
-### 4. Pegar bookingcode (para cada aposta disponivel)
+### 4. Pegar bookingcodes (PARALELO — multiplas sessoes)
 
-Ciclo SEQUENCIAL por aposta — clicar odd → Compartilhar → Link → extrair do Facebook share href:
+Usar `playwright-parallel-mcp` com `create_session` para coletar bookingcodes em paralelo. Uma sessao por aposta.
 
-```js
-const fb = document.querySelector('a[href*="facebook.com/sharer"]');
-const bookingcode = new URL(fb.href).searchParams.get('u');
-```
+**Fluxo:**
 
-Depois: Escape (fechar modal) → clicar mesma odd de novo (desselecionar) → repetir proxima aposta.
+1. Criar N sessoes com `create_session` em **uma unica mensagem** (paralelo real)
+2. Em cada sessao, via `browser_navigate(sessionId=X)`: ir para a URL do jogo
+3. Em cada sessao, via `browser_evaluate(sessionId=X)`: dismiss popups (Sim + cookies)
+4. Em cada sessao, via `browser_run_code(sessionId=X)`:
+   - Clicar na odd especifica da aposta
+   - Clicar "Compartilhar" → "Link"
+   - Extrair bookingcode: `document.querySelector('a[href*="facebook.com/sharer"]')` → `new URL(fb.href).searchParams.get('u')`
+5. Fechar todas: `close_session` por sessao
 
-> **Nota**: `playwright-mcp-parallel` foi testado para paralelizar esta etapa, mas a Betano bloqueia instancias headless multiplas (anti-bot). Coleta sequencial no browser unico e obrigatoria.
+**IMPORTANTE**: Cada sessao tem browser isolado (flag `--isolated` no backend). Nao compartilham cookies nem perfil Chrome.
+
+**Todas as tools `browser_*` aceitam `sessionId`.** Chamar operacoes em sessoes diferentes na mesma mensagem = paralelo real.
 
 ### 5. Validacao pre-gravacao (3 agentes paralelos, model: sonnet)
 
@@ -128,7 +135,8 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 4. Mercados colapsados ("CA") — clicar "Expand all" apos aba "Todos"
 5. Clipboard nao funciona no headless — extrair link do Facebook share href
 6. Deep link = bookingcode (`/bookingcode/XXX`), NAO URL da pagina
-7. Uma aposta por vez no cupom (adicionar → compartilhar → desselecionar → repetir). Coleta sequencial obrigatoria
+7. Coleta paralela via `playwright-parallel-mcp` (sumyapp) com backend `@playwright/mcp --isolated`. Cada sessao tem browser independente
 8. Mercados de cartoes/escanteios podem nao ter a linha exata (ex: 3.5 cartoes nao existe, min=4.5)
 9. Mesmo mercado aparece duplicado na pagina — a 2a ocorrencia tem todas as linhas alternativas
-10. `playwright-mcp-parallel` e bloqueado pela Betano (anti-bot). Usar `@playwright/mcp` padrao (browser unico, sequencial)
+10. `playwright-mcp-parallel` (wangkouzhun) e bloqueado pela Betano (anti-bot). O correto e `playwright-parallel-mcp` (sumyapp) que usa `@playwright/mcp` como backend
+11. O backend precisa de `--isolated` para multiplas sessoes (sem isso: "Browser already in use"). Patch manual no `dist/index.js` do pacote npx
