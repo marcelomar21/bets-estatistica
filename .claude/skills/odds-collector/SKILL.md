@@ -1,6 +1,7 @@
 # Odds Collector (Betano)
 
 Coleta odds e deep links (links de compartilhamento) da Betano para apostas sem esses dados no banco.
+**Escopo**: resolve UM jogo por execucao (tipicamente ~4 apostas por jogo).
 
 ## Quando usar
 
@@ -13,16 +14,38 @@ Quando houver apostas em `suggested_bets` com `odds IS NULL` ou `deep_link IS NU
 
 ## Fluxo Completo (testado e validado)
 
-### 1. Buscar apostas sem odds/link
+### 1. Escolher o proximo jogo para resolver
+
+Buscar jogos nos proximos 3 dias que tenham apostas sem odds ou link, agrupados por jogo:
 
 ```bash
 SUPABASE_SERVICE_KEY="<ver CLAUDE.md>" && \
-curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/suggested_bets?select=id,match_id,bet_market,bet_pick,odds,deep_link,bet_status,created_at,league_matches(home_team_name,away_team_name,kickoff_time)&or=(odds.is.null,deep_link.is.null)&bet_status=neq.posted&order=created_at.desc&limit=20" \
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/suggested_bets?select=id,match_id,bet_market,bet_pick,odds,deep_link,bet_status,created_at,league_matches(home_team_name,away_team_name,kickoff_time)&or=(odds.is.null,deep_link.is.null)&bet_status=neq.posted&league_matches.kickoff_time=lt.$(date -u -v+3d '+%Y-%m-%dT%H:%M:%S')&order=league_matches.kickoff_time.asc&limit=50" \
   -H "apikey: $SUPABASE_SERVICE_KEY" \
   -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" | python3 -m json.tool
 ```
 
-### 2. Abrir Betano e passar pelos popups
+Agrupar os resultados por `match_id` e apresentar ao usuario:
+
+```
+Jogos com apostas pendentes (proximos 3 dias):
+
+1. Augsburg vs Hoffenheim (10/04 15:30) — 4 apostas sem odds/link
+2. RB Leipzig vs Borussia M'gladbach (11/04 10:30) — 4 apostas sem odds/link
+3. RCD Mallorca vs Rayo Vallecano (12/04 11:15) — 4 apostas sem odds/link
+
+Qual jogo resolver agora?
+```
+
+Se o usuario nao escolher, pegar o mais proximo (menor kickoff_time).
+
+Depois de resolver um jogo, perguntar se quer continuar com o proximo.
+
+### 2. Identificar a liga do jogo escolhido
+
+Com base nos times do jogo, determinar qual liga e necessaria na Betano (ver tabela de IDs no passo 4).
+
+### 3. Abrir Betano e passar pelos popups
 
 ```
 browser_navigate -> https://www.betano.bet.br/sport/futebol/
@@ -48,7 +71,7 @@ Na primeira visita, dois popups aparecem. Usar `browser_evaluate` para clicar:
 }
 ```
 
-### 3. Navegar ate a liga e encontrar o jogo
+### 4. Navegar ate a liga e encontrar o jogo
 
 **NAO usar URLs amigaveis** (ex: `/sport/futebol/alemanha/bundesliga/`) — elas redirecionam para `/sport/futebol/`.
 
@@ -88,7 +111,7 @@ Resultado retorna links no padrao: `/odds/<slug>/<betano-id>/`
 
 > Se nao souber o ID da liga, navegar para `/sport/futebol/` e usar `browser_evaluate` para buscar links com o nome do pais.
 
-### 4. Entrar na pagina do jogo
+### 5. Entrar na pagina do jogo
 
 ```
 browser_navigate -> https://www.betano.bet.br/odds/<slug>/<betano-id>/
@@ -96,7 +119,7 @@ browser_navigate -> https://www.betano.bet.br/odds/<slug>/<betano-id>/
 
 Exemplo: `https://www.betano.bet.br/odds/rb-leipzig-borussia-monchengladbach/82020330/`
 
-### 5. Expandir todos os mercados
+### 6. Expandir todos os mercados
 
 A pagina do jogo tem abas: Principais, Mais/Menos, Gols, Intervalo, Especiais, Handicap, Todos.
 
@@ -123,7 +146,7 @@ async (page) => {
 }
 ```
 
-### 6. Extrair odds
+### 7. Extrair odds
 
 **Listar TODOS os mercados disponiveis:**
 ```js
@@ -156,7 +179,7 @@ async (page) => {
 
 As odds aparecem em trios: `"Mais de"`, `"2.5"`, `"1.50"` (direcao/linha/odd).
 
-### 7. Pegar o LINK DE COMPARTILHAMENTO (deep_link)
+### 8. Pegar o LINK DE COMPARTILHAMENTO (deep_link)
 
 **IMPORTANTE**: O deep_link NAO e a URL da pagina. E o link de compartilhamento gerado pela Betano (bookingcode).
 
@@ -214,7 +237,7 @@ async (page) => {
 
 **Truque**: O link de compartilhamento esta no href do Facebook share button como parametro `u`. Formato: `https://www.betano.bet.br/bookingcode/<CODE>`
 
-### 8. Confirmar com o usuario
+### 9. Confirmar com o usuario
 
 **SEMPRE** apresentar os dados ao usuario antes de atualizar o banco:
 
@@ -226,7 +249,7 @@ async (page) => {
 
 So atualizar no Supabase apos confirmacao do usuario.
 
-### 9. Atualizar no banco (apos confirmacao)
+### 10. Atualizar no banco (apos confirmacao)
 
 ```bash
 SUPABASE_SERVICE_KEY="<ver CLAUDE.md>" && \
