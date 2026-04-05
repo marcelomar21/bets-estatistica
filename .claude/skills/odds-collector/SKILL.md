@@ -243,7 +243,7 @@ Antes de apresentar ao usuario, spawnar **3 agentes em paralelo** (via Agent too
 
 **TODOS os 3 devem retornar VALIDO para prosseguir.** Se qualquer um retornar INVALIDO, abortar e reportar o erro ao usuario.
 
-Os 3 agentes devem ser spawnados em uma **unica mensagem** (paralelo real):
+Os 3 agentes devem ser spawnados em uma **unica mensagem** (paralelo real), usando `model: "sonnet"`:
 
 #### Agente 1 — Verificador de Mercado
 
