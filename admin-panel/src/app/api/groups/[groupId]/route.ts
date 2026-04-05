@@ -138,6 +138,55 @@ export const PUT = createApiHandler(
       );
     }
 
+    // Reassign post_at for unposted bets when posting_schedule.times changes
+    if (parsed.data.posting_schedule && currentGroup) {
+      const oldTimes = (currentGroup.posting_schedule as { times?: string[] } | null)?.times ?? [];
+      const newTimes = parsed.data.posting_schedule.times;
+      const timesChanged = JSON.stringify([...oldTimes].sort()) !== JSON.stringify([...newTimes].sort());
+
+      if (timesChanged && newTimes.length > 0) {
+        const supabaseAdmin = getSupabaseAdmin();
+        // Fetch unposted bets with stale post_at (not in new schedule)
+        const { data: staleBets } = await supabaseAdmin
+          .from('bet_group_assignments')
+          .select('id, post_at')
+          .eq('group_id', groupId)
+          .eq('posting_status', 'ready');
+
+        if (staleBets && staleBets.length > 0) {
+          // Count bets per new time slot for round-robin
+          const timeCounts: Record<string, number> = {};
+          for (const t of newTimes) timeCounts[t] = 0;
+          for (const bet of staleBets) {
+            if (bet.post_at && newTimes.includes(bet.post_at)) {
+              timeCounts[bet.post_at]++;
+            }
+          }
+
+          // Reassign bets whose post_at is not in the new schedule
+          for (const bet of staleBets) {
+            if (bet.post_at && newTimes.includes(bet.post_at)) continue;
+
+            // Pick time with fewest bets (round-robin)
+            let minTime = newTimes[0];
+            let minCount = timeCounts[minTime] ?? 0;
+            for (const t of newTimes) {
+              if ((timeCounts[t] ?? 0) < minCount) {
+                minTime = t;
+                minCount = timeCounts[t] ?? 0;
+              }
+            }
+
+            await supabaseAdmin
+              .from('bet_group_assignments')
+              .update({ post_at: minTime })
+              .eq('id', bet.id);
+            timeCounts[minTime] = (timeCounts[minTime] ?? 0) + 1;
+          }
+        }
+      }
+    }
+
     // Insert audit log — non-blocking (failure does not affect the update response)
     if (currentGroup) {
       const changedFields: Record<string, unknown> = {};
