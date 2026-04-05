@@ -136,6 +136,24 @@ async function updateHeartbeat(status = 'online', errorMessage = null) {
     if (error) {
       logger.warn('[healthCheck] Failed to update heartbeat', { error: error.message });
     }
+
+    // Update per-group bot_health records (created by onboarding).
+    // Without this, the dashboard sees per-group records as eternally offline
+    // because the unified bot only updates the group_id=null record above.
+    const { getAllBots } = require('../telegram');
+    const allBots = getAllBots();
+
+    if (allBots.size > 0) {
+      const groupIds = [...allBots.keys()];
+      const { error: groupError } = await supabase
+        .from('bot_health')
+        .update({ status, last_heartbeat: now, error_message: errorMessage, updated_at: now })
+        .in('group_id', groupIds);
+
+      if (groupError) {
+        logger.warn('[healthCheck] Failed to update per-group heartbeats', { error: groupError.message });
+      }
+    }
   } catch (err) {
     logger.warn('[healthCheck] Heartbeat error (non-blocking)', { error: err.message });
   }
