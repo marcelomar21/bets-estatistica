@@ -381,7 +381,7 @@ Flamengo vs Santos — 3/3 validados, banco atualizado
 | 3554 | Mais de 3.5 cartoes | - | - | INDISPONIVEL (min=4.5) |
 ```
 
-### 11. Atualizar no banco (apos confirmacao)
+### 11. Atualizar no banco
 
 ```bash
 SUPABASE_SERVICE_KEY="<ver CLAUDE.md>" && \
@@ -392,6 +392,54 @@ curl -s -X PATCH "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/suggested_bet
   -H "Prefer: return=minimal" \
   -d '{"odds": <VALOR>, "deep_link": "<BOOKINGCODE_URL>", "bet_status": "ready"}'
 ```
+
+### 12. Verificacao pos-gravacao (OBRIGATORIO)
+
+Apos atualizar o banco, spawnar **1 agente** (Sonnet) que consulta o Supabase e verifica se os dados foram gravados corretamente.
+
+O agente recebe:
+- Lista de IDs atualizados
+- Valores esperados (odds, deep_link, bet_status)
+- SUPABASE_SERVICE_KEY (do CLAUDE.md)
+
+O agente deve:
+1. Consultar cada ID via REST API do Supabase
+2. Comparar campo a campo: odds, deep_link, bet_status
+3. Retornar VALIDO ou INVALIDO por aposta
+
+```
+Prompt:
+Voce e um verificador de persistencia. Sua tarefa e consultar o Supabase e confirmar que os dados foram gravados corretamente.
+
+Para CADA aposta abaixo, execute o curl e compare os valores retornados com os esperados.
+
+SUPABASE_SERVICE_KEY: {key do CLAUDE.md}
+SUPABASE_URL: https://vqrcuttvcgmozabsqqja.supabase.co
+
+APOSTAS PARA VERIFICAR:
+
+ID: {id}
+- odds esperado: {valor}
+- deep_link esperado: "{bookingcode_url}"
+- bet_status esperado: "ready"
+
+Comando para consultar:
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/suggested_bets?id=eq.{ID}&select=id,odds,deep_link,bet_status" \
+  -H "apikey: {SUPABASE_SERVICE_KEY}" \
+  -H "Authorization: Bearer {SUPABASE_SERVICE_KEY}"
+
+Para CADA aposta, responda:
+APOSTA {ID}:
+VEREDICTO: VALIDO ou INVALIDO
+ODDS_DB: {valor no banco} == ODDS_ESPERADO: {valor esperado} -> OK/ERRO
+LINK_DB: {link no banco} == LINK_ESPERADO: {link esperado} -> OK/ERRO
+STATUS_DB: {status no banco} == STATUS_ESPERADO: "ready" -> OK/ERRO
+
+Se QUALQUER campo nao bater, VEREDICTO = INVALIDO e reportar imediatamente.
+```
+
+- Se VALIDO: apresentar resumo final ao usuario
+- Se INVALIDO: reportar erro, tentar corrigir e re-verificar
 
 ## Mapeamento de mercados (Betano data-qa IDs)
 
