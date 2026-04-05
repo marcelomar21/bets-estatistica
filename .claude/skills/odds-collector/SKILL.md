@@ -25,21 +25,22 @@ curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/suggested_bets?select=
   -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" | python3 -m json.tool
 ```
 
-Agrupar os resultados por `match_id` e apresentar ao usuario:
+Agrupar os resultados por `match_id` e filtrar:
+- **Somente jogos com EXATAMENTE 4 apostas pendentes** (todas sem odds E sem link). Jogos com 1, 2 ou 3 pendentes indicam que o job de enrichment ja passou parcialmente — pular esses.
+- **Somente jogos futuros** (kickoff > agora). Jogos ja iniciados sao inuteis.
+
+Pegar automaticamente o jogo mais proximo que atende os criterios (menor kickoff_time). **NAO perguntar ao usuario qual jogo** — ir direto.
+
+Apresentar o jogo escolhido e suas 4 apostas antes de prosseguir:
 
 ```
-Jogos com apostas pendentes (proximos 3 dias):
+Resolvendo: Flamengo vs Santos (05/04 20:30) — 4 apostas pendentes
 
-1. Augsburg vs Hoffenheim (10/04 15:30) — 4 apostas sem odds/link
-2. RB Leipzig vs Borussia M'gladbach (11/04 10:30) — 4 apostas sem odds/link
-3. RCD Mallorca vs Rayo Vallecano (12/04 11:15) — 4 apostas sem odds/link
-
-Qual jogo resolver agora?
+[3553] Mais de 2.5 gols
+[3556] Flamengo mais de 0.5 gol
+[3555] Mais de 8.5 escanteios
+[3554] Mais de 3.5 cartoes
 ```
-
-Se o usuario nao escolher, pegar o mais proximo (menor kickoff_time).
-
-Depois de resolver um jogo, perguntar se quer continuar com o proximo.
 
 ### 2. Identificar a liga do jogo escolhido
 
@@ -100,14 +101,19 @@ Resultado retorna links no padrao: `/odds/<slug>/<betano-id>/`
 
 **IDs de ligas conhecidas:**
 
-| Liga | URL |
-|---|---|
-| Bundesliga | `/sport/futebol/competicoes/alemanha/24/` |
-| La Liga | `/sport/futebol/competicoes/espanha/8/` |
-| Premier League | `/sport/futebol/competicoes/inglaterra/1/` |
-| Serie A (Italia) | `/sport/futebol/competicoes/italia/4/` |
-| Ligue 1 | `/sport/futebol/competicoes/franca/3/` |
-| Brasileirao Serie A | `/sport/futebol/competicoes/brasil/102/` |
+| Liga | URL | Validado? |
+|---|---|---|
+| Bundesliga | `/sport/futebol/competicoes/alemanha/24/?bt=matchresult` | SIM |
+| Brasileirao Serie A | `/sport/futebol/competicoes/brasil/10004/?sl=10016&bt=matchresult` | SIM |
+| Copa do Brasil | `/sport/futebol/competicoes/brasil/10004/?sl=10008&bt=matchresult` | NAO |
+| Brasileirao Serie B | `/sport/futebol/competicoes/brasil/10004/?sl=10017&bt=matchresult` | NAO |
+| La Liga | `/sport/futebol/competicoes/espanha/8/?bt=matchresult` | NAO |
+| Premier League | `/sport/futebol/competicoes/inglaterra/1/?bt=matchresult` | NAO |
+| Serie A (Italia) | `/sport/futebol/competicoes/italia/4/?bt=matchresult` | NAO |
+| Ligue 1 | `/sport/futebol/competicoes/franca/3/?bt=matchresult` | NAO |
+| Champions League | a descobrir | NAO |
+
+**ATENCAO**: O ID 102 para Brasileirao NAO funciona (redireciona). O correto e `10004/?sl=10016`.
 
 > Se nao souber o ID da liga, navegar para `/sport/futebol/` e usar `browser_evaluate` para buscar links com o nome do pais.
 
@@ -357,24 +363,23 @@ Apos os 3 agentes retornarem, montar tabela de validacao:
 - Se QUALQUER agente retornar INVALIDO: reportar ao usuario com detalhes e NAO atualizar o banco
 - Se um agente tiver ALERTA mas VALIDO: prosseguir, mas mencionar o alerta ao usuario
 
-### 10. Confirmar com o usuario
+### 10. Decidir: auto-aprovar ou pedir confirmacao
 
-**SEMPRE** apresentar os dados validados ao usuario antes de atualizar o banco:
+- **3/3 VALIDO sem alertas**: atualizar o banco automaticamente (sem perguntar ao usuario)
+- **3/3 VALIDO com alertas**: mostrar resumo com alertas e atualizar automaticamente
+- **Qualquer INVALIDO**: parar, mostrar detalhes e pedir instrucoes ao usuario
+
+Apresentar resumo ao usuario (informativo, nao bloqueante quando tudo valido):
 
 ```
-## Coleta — {home_team} vs {away_team}
-Validacao: 3/3 agentes aprovaram
+Flamengo vs Santos — 3/3 validados, banco atualizado
 
 | ID | Aposta | Odd | Link | Status |
 |---|---|---|---|---|
-| 3593 | Mais de 2.5 gols | 1.50 | https://www.betano.bet.br/bookingcode/C7S4KYQH | VALIDO |
-| 3596 | Leipzig +1.5 gols | 1.45 | https://www.betano.bet.br/bookingcode/XSDSWGNP | VALIDO |
-| 3594 | Mais de 2.5 cartoes | - | - | INDISPONIVEL na Betano |
-
-Deseja atualizar no banco? (IDs 3593 e 3596)
+| 3553 | Mais de 2.5 gols | 1.78 | betano.bet.br/bookingcode/FDBPDTEJ | ATUALIZADO |
+| 3555 | Mais de 8.5 escanteios | 1.38 | betano.bet.br/bookingcode/77TDTMHR | ATUALIZADO |
+| 3554 | Mais de 3.5 cartoes | - | - | INDISPONIVEL (min=4.5) |
 ```
-
-So atualizar no Supabase apos confirmacao do usuario.
 
 ### 11. Atualizar no banco (apos confirmacao)
 
