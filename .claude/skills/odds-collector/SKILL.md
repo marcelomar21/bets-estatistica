@@ -105,13 +105,15 @@ Spawnar agente que executa `curl` no Supabase para cada ID atualizado e compara 
 ```
 Flamengo vs Santos — 3 atualizadas, 1 indisponivel
 
-| ID | Aposta | Odd | Bookingcode | Status |
+| ID | Aposta | Odd | Status | Link |
 |---|---|---|---|---|
-| 3553 | +2.5 gols | 1.78 | FDBPDTEJ | OK |
-| 3556 | Flamengo +0.5 | 1.11 | MG3ANNJ7 | OK |
-| 3555 | +8.5 escanteios | 1.38 | 77TDTMHR | OK |
-| 3554 | +3.5 cartoes | - | - | INDISPONIVEL |
+| 3553 | +2.5 gols | 1.78 | OK | https://www.betano.bet.br/bookingcode/FDBPDTEJ |
+| 3556 | Flamengo +0.5 | 1.11 | OK | https://www.betano.bet.br/bookingcode/MG3ANNJ7 |
+| 3555 | +8.5 escanteios | 1.38 | OK | https://www.betano.bet.br/bookingcode/77TDTMHR |
+| 3554 | +3.5 cartoes | - | INDISPONIVEL | - |
 ```
+
+**SEMPRE incluir a coluna Link com URL completa no resumo final.**
 
 ---
 
