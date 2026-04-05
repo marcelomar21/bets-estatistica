@@ -16,7 +16,12 @@ Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo po
 
 ### 1. Selecionar jogo
 
-Consultar `suggested_bets` com `odds IS NULL` e `deep_link IS NULL`, status != posted, kickoff nos proximos 3 dias. Agrupar por `match_id`. Filtrar **somente jogos com exatamente 4 apostas pendentes** (menos indica enrichment parcial — pular). Pegar o mais proximo automaticamente (nao perguntar).
+Consultar `suggested_bets` com `odds IS NULL` **OU** `deep_link IS NULL`, status != posted, kickoff nos proximos 3 dias. Agrupar por `match_id`. Filtrar jogos com **4 apostas onde QUALQUER uma tenha pendencia** (sem odds, sem link, ou ambos). Pegar o mais proximo automaticamente (nao perguntar).
+
+Tipos de pendencia por aposta:
+- **Full**: sem odds E sem link → pegar ambos
+- **Só link**: tem odds mas sem link → só pegar bookingcode
+- **Só odds**: tem link mas sem odds → só pegar odd na Betano
 
 Apresentar antes de prosseguir:
 ```
