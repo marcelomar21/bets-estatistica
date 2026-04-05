@@ -30,7 +30,11 @@ Consultar `suggested_bets` com `odds IS NULL` e `deep_link IS NULL`, status != p
 
 ### 3. Expandir mercados e extrair odds
 
-Via `browser_run_code`: clicar aba "Todos" (`span` dentro de `[data-qa="pre-event-details-market-tabs"]`), depois "Expand all".
+Via `browser_evaluate` (NAO usar `browser_run_code` — da timeout no playwright-parallel-mcp):
+
+1. Clicar aba "Todos" (`span` dentro de `[data-qa="pre-event-details-market-tabs"]`)
+2. Clicar "Expand all" (pode precisar de 2 cliques — verificar se mercados sairam de "CA")
+3. Se ainda mostrar "CA", clicar headers individuais `.table-market-header` para expandir
 
 Extrair odds via `browser_evaluate` parseando `document.body.innerText`:
 - Odds aparecem em trios: `"Mais de"`, `"2.5"`, `"1.78"` (direcao/linha/odd)
@@ -47,10 +51,27 @@ Usar `playwright-parallel-mcp` com `create_session` para coletar bookingcodes em
 1. Criar N sessoes com `create_session` em **uma unica mensagem** (paralelo real)
 2. Em cada sessao, via `browser_navigate(sessionId=X)`: ir para a URL do jogo
 3. Em cada sessao, via `browser_evaluate(sessionId=X)`: dismiss popups (Sim + cookies)
-4. Em cada sessao, via `browser_run_code(sessionId=X)`:
+4. Em cada sessao, via `browser_evaluate(sessionId=X)` (NAO browser_run_code — da timeout):
+   - Clicar aba "Todos" + "Expand all" (sessoes novas abrem em "Principais" — odds de escanteios/cartoes nao aparecem)
    - Clicar na odd especifica da aposta
-   - Clicar "Compartilhar" → "Link"
-   - Extrair bookingcode: `document.querySelector('a[href*="facebook.com/sharer"]')` → `new URL(fb.href).searchParams.get('u')`
+   - Clicar "Compartilhar" → usar `Promise` + `setTimeout` para esperar → clicar "Link" → extrair bookingcode do Facebook share href
+   ```js
+   // Pattern para Compartilhar + Link + extrair (tudo em 1 evaluate com Promise)
+   () => {
+     const share = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Compartilhar'));
+     if (share) share.click();
+     return new Promise(resolve => {
+       setTimeout(() => {
+         const linkBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Link');
+         if (linkBtn) linkBtn.click();
+         setTimeout(() => {
+           const fb = document.querySelector('a[href*="facebook.com/sharer"]');
+           resolve(fb ? new URL(fb.href).searchParams.get('u') : 'not found');
+         }, 2000);
+       }, 2000);
+     });
+   }
+   ```
 5. Fechar todas: `close_session` por sessao
 
 **IMPORTANTE**: Cada sessao tem browser isolado (flag `--isolated` no backend). Nao compartilham cookies nem perfil Chrome.
@@ -64,7 +85,7 @@ Spawnar **3 agentes em uma unica mensagem**. Cada um recebe ZERO contexto — ap
 | Agente | Verifica | Retorna |
 |---|---|---|
 | **Mercado** | bet_market do DB descreve o mesmo mercado que o encontrado na Betano | VALIDO/INVALIDO + motivo |
-| **Odds** | Valor numerico valido (>1, <100), dentro de faixa tipica para o mercado | VALIDO/INVALIDO + faixa esperada + alertas |
+| **Odds** | Valor numerico valido (>1, <100). Odds extraidas da Betano sao validas por definicao — NUNCA retornar INVALIDO por faixa. Apenas ALERTA se fora da faixa tipica | VALIDO + faixa esperada + alertas (nunca INVALIDO por faixa) |
 | **Link** | URL comeca com `/bookingcode/`, 6-12 chars alfanum, sem duplicatas entre apostas | VALIDO/INVALIDO + formato + duplicata |
 
 Enviar TODAS as apostas do jogo para cada agente (nao 1 agente por aposta).
@@ -132,7 +153,7 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 1. `browser_snapshot` estoura (>100k chars) — usar `browser_evaluate`
 2. URLs amigaveis (`/alemanha/bundesliga/`) redirecionam — usar `/competicoes/pais/ID/`
 3. Liga mostra so 3 jogos — adicionar `?bt=matchresult`
-4. Mercados colapsados ("CA") — clicar "Expand all" apos aba "Todos"
+4. Mercados colapsados ("CA") — clicar "Expand all" apos aba "Todos". Pode precisar de 2 cliques ou clicar headers `.table-market-header` individuais
 5. Clipboard nao funciona no headless — extrair link do Facebook share href
 6. Deep link = bookingcode (`/bookingcode/XXX`), NAO URL da pagina
 7. Coleta paralela via `playwright-parallel-mcp` (sumyapp) com backend `@playwright/mcp --isolated`. Cada sessao tem browser independente
@@ -140,3 +161,6 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 9. Mesmo mercado aparece duplicado na pagina — a 2a ocorrencia tem todas as linhas alternativas
 10. `playwright-mcp-parallel` (wangkouzhun) e bloqueado pela Betano (anti-bot). O correto e `playwright-parallel-mcp` (sumyapp) que usa `@playwright/mcp` como backend
 11. O backend precisa de `--isolated` para multiplas sessoes (sem isso: "Browser already in use"). Patch manual no `dist/index.js` do pacote npx
+12. `browser_run_code` da timeout no `playwright-parallel-mcp` — usar `browser_evaluate` com `Promise` + `setTimeout` para operacoes async
+13. Sessoes paralelas abrem na aba "Principais" — clicar "Todos" + "Expand all" ANTES de buscar odds de escanteios/cartoes
+14. Cartoes linha 3.5 indisponivel na Betano em 100% dos jogos testados (3/3). Minimo disponivel: 4.5
