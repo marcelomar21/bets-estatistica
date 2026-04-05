@@ -237,19 +237,146 @@ async (page) => {
 
 **Truque**: O link de compartilhamento esta no href do Facebook share button como parametro `u`. Formato: `https://www.betano.bet.br/bookingcode/<CODE>`
 
-### 9. Confirmar com o usuario
+### 9. Validacao com agentes paralelos (OBRIGATORIO)
 
-**SEMPRE** apresentar os dados ao usuario antes de atualizar o banco:
+Antes de apresentar ao usuario, spawnar **3 agentes em paralelo** (via Agent tool) para validar os dados coletados. Cada agente recebe ZERO contexto da conversa — apenas os dados crus para verificar.
+
+**TODOS os 3 devem retornar VALIDO para prosseguir.** Se qualquer um retornar INVALIDO, abortar e reportar o erro ao usuario.
+
+Os 3 agentes devem ser spawnados em uma **unica mensagem** (paralelo real):
+
+#### Agente 1 — Verificador de Mercado
+
+Verifica se o `bet_market` do banco descreve o mesmo mercado que foi encontrado na Betano.
 
 ```
-| ID | Aposta | Odd | Link | 
-|---|---|---|---|
-| 3593 | Mais de 2.5 gols | 1.50 | https://www.betano.bet.br/bookingcode/C7S4KYQH |
+Prompt:
+Voce e um verificador de apostas. Sua UNICA tarefa e comparar dois textos e dizer se descrevem o MESMO mercado de apostas.
+
+DADOS DO BANCO:
+- bet_market: "{bet_market do DB}"
+- bet_pick: "{bet_pick do DB}"
+- Jogo: "{home_team} vs {away_team}"
+
+DADOS DA BETANO:
+- Nome do mercado na Betano: "{nome do mercado encontrado}"
+- Selecao clicada: "{texto do botao clicado}"
+
+Responda EXATAMENTE neste formato:
+VEREDICTO: VALIDO ou INVALIDO
+MOTIVO: (uma frase explicando)
+
+Exemplos de VALIDO:
+- DB "Mais de 2.5 gols" → Betano "Total de Gols Mais/Menos - Mais de 2.5" = VALIDO
+- DB "Leipzig acima de 1.5 gols" → Betano "RB Leipzig - Total de Gols - Mais de 1.5" = VALIDO
+
+Exemplos de INVALIDO:
+- DB "Mais de 2.5 gols" → Betano "Mais de 2.5 cartoes" = INVALIDO (gols != cartoes)
+- DB "Ambas marcam" → Betano "Total de Gols - Mais de 2.5" = INVALIDO (mercados diferentes)
+```
+
+#### Agente 2 — Verificador de Odds
+
+Verifica se o valor da odd e valido e faz sentido para o tipo de mercado.
+
+```
+Prompt:
+Voce e um verificador de odds de apostas esportivas. Sua UNICA tarefa e verificar se um valor de odd faz sentido.
+
+DADOS:
+- Odd coletada: {valor}
+- Mercado: "{bet_market}"
+- Jogo: "{home_team} vs {away_team}"
+- Data do jogo: "{kickoff_time}"
+
+REGRAS DE VALIDACAO:
+1. Odd deve ser um numero valido > 1.00
+2. Odd deve ser < 100.00 (odds acima disso sao anomalas)
+3. Odd deve ter no maximo 2 casas decimais
+4. Verificacao de sanidade por tipo de mercado:
+   - "Mais de 2.5 gols" em ligas top: tipicamente entre 1.30 e 2.50
+   - "Ambas marcam": tipicamente entre 1.40 e 2.20
+   - "Resultado final (favorito)": tipicamente entre 1.20 e 3.00
+   - Odds fora dessas faixas NAO sao automaticamente invalidas, mas devem ser sinalizadas
+
+Responda EXATAMENTE neste formato:
+VEREDICTO: VALIDO ou INVALIDO
+ODD: {valor}
+FAIXA_ESPERADA: {min}-{max} para este tipo de mercado
+ALERTA: (se a odd estiver fora da faixa tipica mas ainda valida, explicar)
+MOTIVO: (uma frase)
+```
+
+#### Agente 3 — Verificador de Link
+
+Verifica se o bookingcode URL tem formato valido e corresponde ao jogo correto.
+
+```
+Prompt:
+Voce e um verificador de links de apostas da Betano. Sua UNICA tarefa e validar o link de compartilhamento.
+
+DADOS:
+- Link coletado: "{bookingcode_url}"
+- Jogo esperado: "{home_team} vs {away_team}"
+- Mercado esperado: "{bet_market}"
+- Odd esperada: {odds}
+
+REGRAS DE VALIDACAO:
+1. URL deve comecar com "https://www.betano.bet.br/bookingcode/"
+2. O codigo apos /bookingcode/ deve ter entre 6 e 12 caracteres alfanumericos
+3. URL nao deve conter espacos ou caracteres especiais alem de letras e numeros no codigo
+4. Cada aposta DEVE ter um bookingcode DIFERENTE (se duas apostas tiverem o mesmo codigo, INVALIDO)
+5. O link NAO pode ser null ou vazio
+
+LISTA DE TODOS OS LINKS COLETADOS NESTA SESSAO (para verificar duplicatas):
+{lista de todos os bookingcodes coletados ate agora}
+
+Responda EXATAMENTE neste formato:
+VEREDICTO: VALIDO ou INVALIDO
+URL: {url verificada}
+FORMATO_OK: SIM/NAO
+DUPLICATA: SIM/NAO
+MOTIVO: (uma frase)
+```
+
+#### Como processar os resultados
+
+Apos os 3 agentes retornarem, montar tabela de validacao:
+
+```
+## Validacao — {home_team} vs {away_team}
+
+| Aposta | Agente 1 (Mercado) | Agente 2 (Odds) | Agente 3 (Link) | Status |
+|---|---|---|---|---|
+| Mais de 2.5 gols @ 1.50 | VALIDO | VALIDO | VALIDO | OK |
+| Leipzig +1.5 gols @ 1.45 | VALIDO | VALIDO (alerta: faixa) | VALIDO | OK |
+| Mais de 2.5 cartoes | - | - | - | INDISPONIVEL |
+```
+
+- Se TODOS os agentes retornarem VALIDO: prosseguir para o passo 10
+- Se QUALQUER agente retornar INVALIDO: reportar ao usuario com detalhes e NAO atualizar o banco
+- Se um agente tiver ALERTA mas VALIDO: prosseguir, mas mencionar o alerta ao usuario
+
+### 10. Confirmar com o usuario
+
+**SEMPRE** apresentar os dados validados ao usuario antes de atualizar o banco:
+
+```
+## Coleta — {home_team} vs {away_team}
+Validacao: 3/3 agentes aprovaram
+
+| ID | Aposta | Odd | Link | Status |
+|---|---|---|---|---|
+| 3593 | Mais de 2.5 gols | 1.50 | https://www.betano.bet.br/bookingcode/C7S4KYQH | VALIDO |
+| 3596 | Leipzig +1.5 gols | 1.45 | https://www.betano.bet.br/bookingcode/XSDSWGNP | VALIDO |
+| 3594 | Mais de 2.5 cartoes | - | - | INDISPONIVEL na Betano |
+
+Deseja atualizar no banco? (IDs 3593 e 3596)
 ```
 
 So atualizar no Supabase apos confirmacao do usuario.
 
-### 10. Atualizar no banco (apos confirmacao)
+### 11. Atualizar no banco (apos confirmacao)
 
 ```bash
 SUPABASE_SERVICE_KEY="<ver CLAUDE.md>" && \
