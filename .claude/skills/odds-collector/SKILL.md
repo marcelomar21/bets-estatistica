@@ -120,6 +120,16 @@ Flamengo vs Santos — 3 atualizadas, 1 indisponivel
 
 **SEMPRE incluir a coluna Link com URL completa no resumo final.**
 
+### 9. Ajuste dinamico do loop (quando rodando via /loop)
+
+Apos o resumo final, re-consultar quantos jogos elegiveis restam (mesma query do passo 1).
+
+- **Se restam jogos**: manter intervalo de 15 minutos (nao fazer nada)
+- **Se ZERO jogos restantes**: deletar o cron atual (`CronDelete`) e criar novo com intervalo de 2 horas (`0 */2 * * *`). Informar ao usuario: "Sem jogos pendentes — loop ajustado para 2h"
+- **Se estava em modo 2h e encontrou jogos novos**: deletar o cron de 2h e criar novo de 15 min (`*/15 * * * *`). Informar: "Novos jogos detectados — loop ajustado para 15min"
+
+Para saber o modo atual, verificar com `CronList` qual cron esta ativo.
+
 ---
 
 ## Referencia rapida
