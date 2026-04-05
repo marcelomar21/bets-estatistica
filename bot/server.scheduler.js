@@ -18,6 +18,7 @@ const logger = require('../lib/logger');
 const { withExecutionLogging } = require('./services/jobExecutionService');
 const { runPostBets } = require('./jobs/postBets');
 const { runDistributeBets } = require('./jobs/distributeBets');
+const { getBotForGroup } = require('./telegram');
 
 const TZ = 'America/Sao_Paulo';
 const DEFAULT_SCHEDULE = { enabled: true, times: ['10:00', '15:00', '22:00'] };
@@ -142,8 +143,9 @@ async function checkScheduledBets() {
 
     isPerMinutePostInProgress = true;
     try {
+      const legacyBotCtx = getBotForGroup(config.membership.groupId);
       await withExecutionLogging('post-bets', () =>
-        runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: currentTime })
+        runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: currentTime, botCtx: legacyBotCtx })
       );
       logger.info('[scheduler] Per-minute post complete', { currentTime });
     } catch (err) {
@@ -215,7 +217,8 @@ function setupDynamicScheduler(schedule) {
         groupId: config.membership.groupId,
       });
       try {
-        await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: time }));
+        const legacyBotCtx = getBotForGroup(config.membership.groupId);
+        await withExecutionLogging('post-bets', () => runPostBets(true, { postTimes: currentSchedule?.times, currentPostTime: time, botCtx: legacyBotCtx }));
         logger.info('[scheduler] post-bets (dynamic) complete', { postTime: time });
       } catch (err) {
         logger.error('[scheduler] post-bets (dynamic) failed', {
@@ -306,7 +309,8 @@ async function checkPostNow() {
 
     isManualPostInProgress = true;
     try {
-      await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: currentSchedule?.times, allowedBetIds, previewId }));
+      const legacyBotCtx = getBotForGroup(config.membership.groupId);
+      await withExecutionLogging('post-bets-manual', () => runPostBets(true, { postTimes: currentSchedule?.times, allowedBetIds, previewId, botCtx: legacyBotCtx }));
       logger.info('[scheduler] Post Now completed successfully', {
         groupId: config.membership.groupId,
       });

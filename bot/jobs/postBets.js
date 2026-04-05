@@ -827,7 +827,7 @@ async function runPostBets(skipConfirmation = false, options = {}) {
       }
     }
 
-    await sendPostWarn(period, postedBetsArray, upcomingBets, pendingActions);
+    await sendPostWarn(period, postedBetsArray, upcomingBets, pendingActions, botCtx);
     logger.info('[postBets] Post warn sent successfully', { groupId });
   } catch (warnErr) {
     // Warn failure should not fail the job
