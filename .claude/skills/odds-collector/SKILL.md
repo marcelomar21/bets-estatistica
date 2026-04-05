@@ -9,6 +9,7 @@ Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo po
 ## Pre-requisitos
 
 - Playwright MCP conectado (`/mcp`)
+- Pacote: `playwright-mcp-parallel@latest` no `.mcp.json` (suporta multiplas instancias de browser)
 
 ## Fluxo
 
@@ -36,18 +37,37 @@ Extrair odds via `browser_evaluate` parseando `document.body.innerText`:
 - Mercados de cartoes/escanteios podem ter linhas limitadas (ex: Betano oferece 4.5+ cartoes mas nao 3.5)
 - Se a linha exata nao existir, marcar como INDISPONIVEL
 
-### 4. Pegar bookingcode (para cada aposta disponivel)
+### 4. Pegar bookingcodes (PARALELO — 4 instancias de browser)
 
-Ciclo por aposta — clicar odd → Compartilhar → Link → extrair do Facebook share href:
+Usar `playwright-mcp-parallel` para coletar bookingcodes em paralelo. Uma instancia por aposta.
 
-```js
-// Extrair bookingcode do href do Facebook share
-const fbLink = document.querySelector('a[href*="facebook.com/sharer"]');
-const bookingcode = new URL(fbLink.href).searchParams.get('u');
-// Resultado: "https://www.betano.bet.br/bookingcode/XXXXXXXX"
-```
+**Fluxo:**
 
-Depois: Escape (fechar modal) → clicar mesma odd de novo (desselecionar) → repetir proxima aposta.
+1. Criar N instancias com `instance_create`, cada uma navegando direto para a URL do jogo:
+   ```
+   instance_create(instanceId="bet-1", url="https://www.betano.bet.br/odds/<slug>/<id>/")
+   instance_create(instanceId="bet-2", url="https://www.betano.bet.br/odds/<slug>/<id>/")
+   ...
+   ```
+   Criar todas em **uma unica mensagem** (paralelo real).
+
+2. Em cada instancia, via `page_browser_evaluate` (paralelo):
+   - Dismiss popups (Sim + cookies)
+   
+3. Em cada instancia, via `page_browser_run_code` (paralelo):
+   - Clicar na odd especifica da aposta
+   - Clicar "Compartilhar" → "Link"
+   - Extrair bookingcode do Facebook share href:
+     ```js
+     const fb = document.querySelector('a[href*="facebook.com/sharer"]');
+     const code = new URL(fb.href).searchParams.get('u');
+     ```
+
+4. Fechar todas: `instance_close_all`
+
+**IMPORTANTE**: Todas as tools `page_browser_*` aceitam `instanceId`. Chamar operacoes em instancias diferentes na mesma mensagem = paralelo real.
+
+**Cuidado**: cada instancia precisa ter os popups dismissados independentemente (nao compartilham cookies).
 
 ### 5. Validacao pre-gravacao (3 agentes paralelos, model: sonnet)
 
@@ -127,6 +147,6 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 4. Mercados colapsados ("CA") — clicar "Expand all" apos aba "Todos"
 5. Clipboard nao funciona no headless — extrair link do Facebook share href
 6. Deep link = bookingcode (`/bookingcode/XXX`), NAO URL da pagina
-7. Uma aposta por vez no cupom (adicionar → compartilhar → desselecionar → repetir)
+7. Com `playwright-mcp-parallel`: criar 1 instancia por aposta, coletar bookingcodes em paralelo. Cada instancia tem cupom independente
 8. Mercados de cartoes/escanteios podem nao ter a linha exata (ex: 3.5 cartoes nao existe, min=4.5)
 9. Mesmo mercado aparece duplicado na pagina — a 2a ocorrencia tem todas as linhas alternativas
