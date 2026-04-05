@@ -2,6 +2,10 @@
 
 Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo por execucao** (~4 apostas).
 
+## REGRA CRITICA: Execucao continua
+
+**Executar TODOS os 8 passos de uma vez, sem parar no meio.** Nao pausar para mostrar progresso, nao esperar confirmacao entre passos. A unica razao para parar e se um agente de validacao retornar INVALIDO. O usuario so ve o resumo final (passo 8).
+
 ## Pre-requisitos
 
 - Playwright MCP conectado (`/mcp`)
