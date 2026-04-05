@@ -938,7 +938,7 @@ describe('POST /api/bets/[id]/distribute', () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createDistributeQueryBuilder({
       groupsData: [{ id: groupUuid, name: 'Guru da Bet', posting_schedule: null }],
-      currentBet: { id: 1, group_id: null, bet_status: 'generated' },
+      currentBet: { id: 1, bet_status: 'generated' },
       existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
@@ -972,7 +972,7 @@ describe('POST /api/bets/[id]/distribute', () => {
         { id: g1, name: 'Guru da Bet', posting_schedule: null },
         { id: g2, name: 'Osmar Palpites', posting_schedule: null },
       ],
-      currentBet: { id: 1, group_id: null, bet_status: 'generated' },
+      currentBet: { id: 1, bet_status: 'generated' },
       existingAssignments: [],
     });
     const context = createMockContext('super_admin', qb);
@@ -999,7 +999,7 @@ describe('POST /api/bets/[id]/distribute', () => {
     const groupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const qb = createDistributeQueryBuilder({
       groupsData: [{ id: groupUuid, name: 'Guru da Bet', posting_schedule: null }],
-      currentBet: { id: 1, group_id: groupUuid, bet_status: 'ready' },
+      currentBet: { id: 1, bet_status: 'ready' },
       existingAssignments: [{ group_id: groupUuid }],
     });
     const context = createMockContext('super_admin', qb);
@@ -1022,19 +1022,22 @@ describe('POST /api/bets/[id]/distribute', () => {
   });
 
   it('redistributes a bet and writes audit_log', async () => {
-    const oldGroupUuid = '550e8400-e29b-41d4-a716-446655440001';
+    const existingGroupUuid = '550e8400-e29b-41d4-a716-446655440001';
     const newGroupUuid = '550e8400-e29b-41d4-a716-446655440002';
     const qb = createDistributeQueryBuilder({
-      groupsData: [{ id: newGroupUuid, name: 'Osmar Palpites', posting_schedule: null }],
-      currentBet: { id: 1, group_id: oldGroupUuid, bet_status: 'ready' },
-      existingAssignments: [],
+      groupsData: [
+        { id: existingGroupUuid, name: 'Guru da Bet', posting_schedule: null },
+        { id: newGroupUuid, name: 'Osmar Palpites', posting_schedule: null },
+      ],
+      currentBet: { id: 1, bet_status: 'ready' },
+      existingAssignments: [{ group_id: existingGroupUuid }],
     });
     const context = createMockContext('super_admin', qb);
     mockWithTenant.mockResolvedValue({ success: true, context });
 
     const { POST } = await import('@/app/api/bets/[id]/distribute/route');
     const req = createMockRequest('POST', 'http://localhost/api/bets/1/distribute', {
-      groupId: newGroupUuid,
+      groupIds: [existingGroupUuid, newGroupUuid],
     });
     const routeCtx = createRouteContext({ id: '1' });
 
@@ -1044,6 +1047,8 @@ describe('POST /api/bets/[id]/distribute', () => {
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
     expect(body.data.redistributed).toBe(true);
+    expect(body.data.created).toHaveLength(1);
+    expect(body.data.alreadyExisted).toHaveLength(1);
     // Verify audit_log was called (from was called for audit_log insert)
     expect(qb.from).toHaveBeenCalledWith('audit_log');
   });

@@ -92,64 +92,88 @@ ON CONFLICT (match_id) DO NOTHING;
 -- ============================================
 
 -- Bet 1: posted + success (old match 1)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (1, 900001, 'Resultado Final', 'Flamengo Vence', 1.85, 0.72, 'Flamengo em boa fase, jogando em casa.', 'SAFE', 'posted', 'success', 'https://betano.com.br/event/123', NOW() - INTERVAL '7 days 1 hour', 10001, 1.85, '11111111-1111-1111-1111-111111111111')
+  (1, 900001, 'Resultado Final', 'Flamengo Vence', 1.85, 0.72, 'Flamengo em boa fase, jogando em casa.', 'SAFE', 'posted', 'success', 'https://betano.com.br/event/123')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 2: posted + failure (old match 2)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (2, 900002, 'Ambos Marcam', 'Sim', 2.10, 0.65, 'Historico de gols no classico.', 'OPORTUNIDADE', 'posted', 'failure', 'https://bet365.com/event/456', NOW() - INTERVAL '5 days 1 hour', 10002, 2.10, '11111111-1111-1111-1111-111111111111')
+  (2, 900002, 'Ambos Marcam', 'Sim', 2.10, 0.65, 'Historico de gols no classico.', 'OPORTUNIDADE', 'posted', 'failure', 'https://bet365.com/event/456')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 3: posted + pending (tracking window — needs result evaluation)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (3, 900003, 'Over/Under', 'Over 2.5', 1.90, 0.68, 'Classico mineiro costuma ter gols.', 'SAFE', 'posted', 'pending', 'https://betano.com.br/event/789', NOW() - INTERVAL '3 hours 30 minutes', 10003, 1.90, '11111111-1111-1111-1111-111111111111')
+  (3, 900003, 'Over/Under', 'Over 2.5', 1.90, 0.68, 'Classico mineiro costuma ter gols.', 'SAFE', 'posted', 'pending', 'https://betano.com.br/event/789')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 4: posted + pending (tracking window)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (4, 900004, 'Resultado Final', 'Grêmio Vence', 2.30, 0.60, 'Grenal com vantagem do mandante.', 'OPORTUNIDADE', 'posted', 'pending', 'https://betano.com.br/event/101', NOW() - INTERVAL '3 hours', 10004, 2.30, '11111111-1111-1111-1111-111111111111')
+  (4, 900004, 'Resultado Final', 'Grêmio Vence', 2.30, 0.60, 'Grenal com vantagem do mandante.', 'OPORTUNIDADE', 'posted', 'pending', 'https://betano.com.br/event/101')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 5: posted + pending (recovery window — >8h, sweep candidate)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (5, 900005, 'Resultado Final', 'Empate', 3.20, 0.55, 'Classico carioca equilibrado.', 'OPORTUNIDADE', 'posted', 'pending', 'https://bet365.com/event/202', NOW() - INTERVAL '10 hours 30 minutes', 10005, 3.20, '22222222-2222-2222-2222-222222222222')
+  (5, 900005, 'Resultado Final', 'Empate', 3.20, 0.55, 'Classico carioca equilibrado.', 'OPORTUNIDADE', 'posted', 'pending', 'https://bet365.com/event/202')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 6: ready (future match, ready to post)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (6, 900006, 'Resultado Final', 'Santos Vence', 1.75, 0.70, 'Santos favorito em casa.', 'SAFE', 'ready', 'pending', 'https://betano.com.br/event/303', '11111111-1111-1111-1111-111111111111')
+  (6, 900006, 'Resultado Final', 'Santos Vence', 1.75, 0.70, 'Santos favorito em casa.', 'SAFE', 'ready', 'pending', 'https://betano.com.br/event/303')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 7: ready (future match, second group)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (7, 900007, 'Over/Under', 'Over 1.5', 1.65, 0.75, 'Ambos os times marcam regularmente.', 'SAFE', 'ready', 'pending', 'https://betano.com.br/event/404', '22222222-2222-2222-2222-222222222222')
+  (7, 900007, 'Over/Under', 'Over 1.5', 1.65, 0.75, 'Ambos os times marcam regularmente.', 'SAFE', 'ready', 'pending', 'https://betano.com.br/event/404')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 8: generated (future match, still in pipeline)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result)
 VALUES
-  (8, 900006, 'Ambos Marcam', 'Sim', 2.00, 0.62, 'Santos e Vasco tem defesas falhando.', 'OPORTUNIDADE', 'generated', 'pending', '11111111-1111-1111-1111-111111111111')
+  (8, 900006, 'Ambos Marcam', 'Sim', 2.00, 0.62, 'Santos e Vasco tem defesas falhando.', 'OPORTUNIDADE', 'generated', 'pending')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 9: pending_link (awaiting deep link)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result)
 VALUES
-  (9, 900007, 'Resultado Final', 'Bahia Vence', 2.15, 0.63, 'Bahia tem melhor campanha em casa.', 'SAFE', 'pending_link', 'pending', '22222222-2222-2222-2222-222222222222')
+  (9, 900007, 'Resultado Final', 'Bahia Vence', 2.15, 0.63, 'Bahia tem melhor campanha em casa.', 'SAFE', 'pending_link', 'pending')
 ON CONFLICT (id) DO NOTHING;
 
 -- Bet 10: posted + success (second group, old match)
-INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link, telegram_posted_at, telegram_message_id, odds_at_post, group_id)
+INSERT INTO suggested_bets (id, match_id, bet_market, bet_pick, odds, confidence, reasoning, bet_category, bet_status, bet_result, deep_link)
 VALUES
-  (10, 900001, 'Handicap', 'Flamengo -0.5', 2.05, 0.66, 'Flamengo dominou os ultimos confrontos.', 'OPORTUNIDADE', 'posted', 'success', 'https://bet365.com/event/505', NOW() - INTERVAL '7 days 1 hour', 10006, 2.05, '22222222-2222-2222-2222-222222222222')
+  (10, 900001, 'Handicap', 'Flamengo -0.5', 2.05, 0.66, 'Flamengo dominou os ultimos confrontos.', 'OPORTUNIDADE', 'posted', 'success', 'https://bet365.com/event/505')
 ON CONFLICT (id) DO NOTHING;
+
+-- ============================================
+-- 6b. BET_GROUP_ASSIGNMENTS (maps bets to groups)
+-- ============================================
+
+-- Bets 1-4, 6, 8: assigned to group 1 (Guru da Bet)
+INSERT INTO bet_group_assignments (bet_id, group_id, posting_status, telegram_posted_at, telegram_message_id, odds_at_post)
+VALUES
+  (1, '11111111-1111-1111-1111-111111111111', 'posted', NOW() - INTERVAL '7 days 1 hour', 10001, 1.85),
+  (2, '11111111-1111-1111-1111-111111111111', 'posted', NOW() - INTERVAL '5 days 1 hour', 10002, 2.10),
+  (3, '11111111-1111-1111-1111-111111111111', 'posted', NOW() - INTERVAL '3 hours 30 minutes', 10003, 1.90),
+  (4, '11111111-1111-1111-1111-111111111111', 'posted', NOW() - INTERVAL '3 hours', 10004, 2.30),
+  (6, '11111111-1111-1111-1111-111111111111', 'ready', NULL, NULL, NULL),
+  (8, '11111111-1111-1111-1111-111111111111', 'ready', NULL, NULL, NULL)
+ON CONFLICT (bet_id, group_id) DO NOTHING;
+
+-- Bets 5, 7, 9, 10: assigned to group 2 (Osmar Palpites)
+INSERT INTO bet_group_assignments (bet_id, group_id, posting_status, telegram_posted_at, telegram_message_id, odds_at_post)
+VALUES
+  (5, '22222222-2222-2222-2222-222222222222', 'posted', NOW() - INTERVAL '10 hours 30 minutes', 10005, 3.20),
+  (7, '22222222-2222-2222-2222-222222222222', 'ready', NULL, NULL, NULL),
+  (9, '22222222-2222-2222-2222-222222222222', 'ready', NULL, NULL, NULL),
+  (10, '22222222-2222-2222-2222-222222222222', 'posted', NOW() - INTERVAL '7 days 1 hour', 10006, 2.05)
+ON CONFLICT (bet_id, group_id) DO NOTHING;
 
 -- ============================================
 -- 7. MEMBERS (5 members with varied statuses)

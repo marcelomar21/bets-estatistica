@@ -70,7 +70,7 @@ export const POST = createApiHandler(
     // Validate all bets exist (#1: FK constraint would catch it but we want graceful handling)
     const { data: validBets, error: betsError } = await supabase
       .from('suggested_bets')
-      .select('id, group_id')
+      .select('id')
       .in('id', betIds);
 
     if (betsError) {
@@ -81,7 +81,6 @@ export const POST = createApiHandler(
     }
 
     const validBetIds = new Set((validBets || []).map((b: { id: number }) => b.id));
-    const validBetMap = new Map((validBets || []).map((b: { id: number; group_id: string | null }) => [b.id, b]));
 
     // Pre-compute post_at context per group (#8: still N queries, but capped at MAX_GROUPS=10)
     const postTimeContexts = new Map<string, Record<string, number>>();
@@ -124,9 +123,6 @@ export const POST = createApiHandler(
       failed: 0,
     };
 
-    // Track bets that were redistributed (had old group_id) for audit log (#4)
-    const redistributedBets: Array<{ betId: number; oldGroupId: string; newGroupIds: string[] }> = [];
-
     for (const betId of betIds) {
       // #1: skip bets that don't exist
       if (!validBetIds.has(betId)) {
@@ -134,8 +130,6 @@ export const POST = createApiHandler(
         continue;
       }
 
-      const currentBet = validBetMap.get(betId);
-      const oldGroupId = currentBet?.group_id;
       const newGroups: string[] = [];
 
       for (const gId of groupIds) {
@@ -174,11 +168,6 @@ export const POST = createApiHandler(
 
       if (newGroups.length > 0) {
         results.distributed += newGroups.length;
-        // #10: track redistribution (bet had a different group before)
-        if (oldGroupId && !groupIds.includes(oldGroupId)) {
-          results.redistributed++;
-          redistributedBets.push({ betId, oldGroupId, newGroupIds: newGroups });
-        }
       }
     }
 
@@ -195,22 +184,6 @@ export const POST = createApiHandler(
           { status: 500 },
         );
       }
-    }
-
-    // #4: Audit log for redistributed bets
-    if (redistributedBets.length > 0) {
-      const auditRows = redistributedBets.map((r) => ({
-        table_name: 'bet_group_assignments',
-        record_id: r.betId.toString(),
-        action: 'distribute',
-        changed_by: context.user.id,
-        changes: {
-          old_group_id: r.oldGroupId,
-          new_group_ids: r.newGroupIds,
-          type: 'bulk_multi_group_distribute',
-        },
-      }));
-      await supabase.from('audit_log').insert(auditRows);
     }
 
     // First group name for backward compat
