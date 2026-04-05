@@ -689,6 +689,47 @@ export default function PostagemPage() {
         </div>
       )}
 
+      {/* Posting Schedule Info */}
+      {queueData && !isPreviewActive && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-gray-900">Postagem Automatica</h3>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                scheduleForGroup.enabled
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-red-100 text-red-700'
+              }`}>
+                {scheduleForGroup.enabled ? 'Habilitada' : 'Desabilitada'}
+              </span>
+            </div>
+            {selectedGroupId && (
+              <a
+                href={`/groups/${selectedGroupId}/edit`}
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+              >
+                Editar config
+              </a>
+            )}
+          </div>
+          <div className="mt-2 flex items-center gap-4 text-sm text-gray-600">
+            <span>
+              Horarios: {scheduleForGroup.times.sort().join(', ') || 'Nenhum'}
+            </span>
+            {queueData.nextPostTime && scheduleForGroup.enabled && (
+              <span className="text-xs text-gray-500">
+                Proximo: {queueData.nextPostTime.time} ({queueData.nextPostTime.diff})
+              </span>
+            )}
+          </div>
+          {!scheduleForGroup.enabled && (
+            <p className="mt-2 text-xs text-red-600">
+              A postagem automatica esta desabilitada para este grupo. Apostas nao serao postadas nos horarios configurados.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Error */}
       {error && !isPreviewActive && (
         <div className="rounded-lg bg-red-50 p-4 text-sm text-red-700">

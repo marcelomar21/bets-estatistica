@@ -123,13 +123,13 @@ async function checkScheduledBets() {
 
   try {
     // Check if any non-posted bets have post_at for this minute
+    // Source of truth is bet_group_assignments (migration 061), not suggested_bets
     const { data, error } = await supabase
-      .from('suggested_bets')
-      .select('id')
+      .from('bet_group_assignments')
+      .select('bet_id')
       .eq('group_id', groupId)
       .eq('post_at', currentTime)
-      .in('elegibilidade', ['elegivel'])
-      .in('bet_status', ['generated', 'pending_link', 'pending_odds', 'ready', 'posted'])
+      .eq('posting_status', 'ready')
       .limit(1);
 
     if (error || !data || data.length === 0) return;
