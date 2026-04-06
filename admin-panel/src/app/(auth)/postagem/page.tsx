@@ -718,7 +718,7 @@ export default function PostagemPage() {
             </span>
             {queueData.nextPostTime && scheduleForGroup.enabled && (
               <span className="text-xs text-gray-500">
-                Proximo: {queueData.nextPostTime.time} ({queueData.nextPostTime.diff})
+                Proximo: {queueData.nextPostTime.time}
               </span>
             )}
           </div>
