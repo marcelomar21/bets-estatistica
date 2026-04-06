@@ -217,7 +217,7 @@ export default function PostagemPage() {
       const res = await fetch(`/api/bets/${betId}/schedule`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ post_at: postAt }),
+        body: JSON.stringify({ post_at: postAt, group_id: selectedGroupId }),
       });
       const json = await res.json();
       if (!json.success) {
