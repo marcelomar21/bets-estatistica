@@ -164,3 +164,70 @@ O SUPABASE_SERVICE_KEY esta em `admin-panel/.env.local` (variavel `SUPABASE_SERV
 | CAP 1000 Tips | `-1003836475731` |
 | Rajizito Tips (publico) | `-1003581390882` |
 | Zebrismos Tips | `-1003761566384` |
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**GuruBet**
+
+Plataforma SaaS multi-tenant para gestão de grupos de apostas esportivas no Telegram e WhatsApp. Influencers operam seus próprios grupos, o sistema usa IA (GPT via LangChain) para analisar partidas e gerar recomendações, distribui apostas automaticamente nos canais, e gerencia membros com cobrança via Mercado Pago. Admin Panel completo em Next.js para dashboard, configuração e operação.
+
+**Core Value:** Influencers recebem apostas analisadas por IA e as entregam automaticamente aos seus grupos com qualidade consistente — sem esforço manual, sem erro humano, sem downtime.
+
+### Constraints
+
+- **Multi-tenancy**: Toda query deve respeitar RLS e filtrar por group_id — isolamento de tenant é inviolável
+- **Telegram API**: Limite de 4096 chars por mensagem — dividir em múltiplas, nunca truncar
+- **WhatsApp (Baileys)**: Rate limit ~10-20 msgs/min por número, sessões WebSocket persistentes 24/7
+- **LLM Models**: Sempre via `config.llm.*`, nunca hardcodar — heavy/light model configuráveis
+- **Conventional Commits**: Obrigatório para todos os commits
+- **Testes obrigatórios**: Vitest (admin-panel) + Jest (bot) + Playwright E2E antes de qualquer PR
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:STACK.md -->
+## Technology Stack
+
+Technology stack not yet documented. Will populate after codebase mapping or first phase.
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+Conventions not yet established. Will populate as patterns emerge during development.
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+Architecture not yet mapped. Follow existing patterns found in the codebase.
+<!-- GSD:architecture-end -->
+
+<!-- GSD:skills-start source:skills/ -->
+## Project Skills
+
+| Skill | Description | Path |
+|-------|-------------|------|
+| odds-collector |  | `.claude/skills/odds-collector/SKILL.md` |
+| pre-merge |  | `.claude/skills/pre-merge/SKILL.md` |
+| vault-explore |  | `.claude/skills/vault-explore/SKILL.md` |
+<!-- GSD:skills-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->

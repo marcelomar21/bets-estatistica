@@ -46,21 +46,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| POST-01 | Pending | Pending |
-| POST-02 | Pending | Pending |
-| POST-03 | Pending | Pending |
-| POST-04 | Pending | Pending |
-| QUEUE-01 | Pending | Pending |
-| LEAGUE-01 | Pending | Pending |
-| LEAGUE-02 | Pending | Pending |
-| LEAGUE-03 | Pending | Pending |
-| LEAGUE-04 | Pending | Pending |
+| POST-01 | Phase 1 | Pending |
+| POST-02 | Phase 1 | Pending |
+| POST-03 | Phase 1 | Pending |
+| POST-04 | Phase 1 | Pending |
+| QUEUE-01 | Phase 2 | Pending |
+| LEAGUE-01 | Phase 3 | Pending |
+| LEAGUE-02 | Phase 3 | Pending |
+| LEAGUE-03 | Phase 3 | Pending |
+| LEAGUE-04 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-07*
-*Last updated: 2026-04-07 after initial definition*
+*Last updated: 2026-04-07 after roadmap creation*
