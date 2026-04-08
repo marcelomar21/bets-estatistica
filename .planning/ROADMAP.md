@@ -59,10 +59,10 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01-PLAN.md — Database schema (tier column, pricing, subscriptions, discounts tables) + admin APIs
-- [ ] 03-02-PLAN.md — Super admin league management UI (tier classification, pricing, discounts tabs)
-- [ ] 03-03-PLAN.md — Group admin checkout flow (checkout API, subscriptions API, checkout UI page)
-- [ ] 03-04-PLAN.md — Distribution enforcement (webhook processor for activation/cancellation, subscription check in distribution)
+- [x] 03-01-PLAN.md — Database schema (tier column, pricing, subscriptions, discounts tables) + admin APIs
+- [x] 03-02-PLAN.md — Super admin league management UI (tier classification, pricing, discounts tabs)
+- [x] 03-03-PLAN.md — Group admin checkout flow (checkout API, subscriptions API, checkout UI page)
+- [x] 03-04-PLAN.md — Distribution enforcement (webhook processor for activation/cancellation, subscription check in distribution)
 
 ## Progress
 
