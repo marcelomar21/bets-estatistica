@@ -214,11 +214,10 @@ Responda APENAS com os bullets, sem texto adicional.`;
       };
     }
 
-    // Limitar a 5 bullets e limpar formatação
+    // Filtrar bullets da resposta LLM (quantidade controlada pelo prompt)
     const bullets = copy
       .split('\n')
       .filter(line => line.trim().startsWith('•'))
-      .slice(0, 5)
       .join('\n');
 
     const finalCopy = bullets || copy;
@@ -286,7 +285,7 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       }
     }
 
-    const winsList = winsData.wins.map(w => {
+    const winsList = (winsData.wins || []).map(w => {
       const home = w.league_matches?.home_team_name || '?';
       const away = w.league_matches?.away_team_name || '?';
       // Prefer per-group posting odds (bet_group_assignments), fall back to original analysis odds (suggested_bets.odds)
@@ -328,8 +327,7 @@ Regras:
     // The CTA content should appear, but the technical label "CTA" must never be visible to end users
     const sanitizedCopy = copy
       .replace(/\bCTA\s*:\s*/gi, '')
-      .replace(/\bCTA\s*-\s*/gi, '')
-      .replace(/\bCTA\b\s*/gi, '');
+      .replace(/\bCTA\s*-\s*/gi, '');
 
     logger.info('Generated wins recap copy', {
       winCount: winsData.winCount,
