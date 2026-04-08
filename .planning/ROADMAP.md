@@ -40,11 +40,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Super admin sees a list of queued bets with individual checkboxes (all selected by default)
   2. Super admin can deselect specific bets and post only the selected ones
-**Plans**: TBD
+**Plans**: 1 plan
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Add checkbox selection to PostingQueueTable + wire selection state in postagem page
 
 ### Phase 3: League Upsell
 **Goal**: Influencers can monetize extra leagues as paid add-ons, with flexible pricing and per-client discounts
