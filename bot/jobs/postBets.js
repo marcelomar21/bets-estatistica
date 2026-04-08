@@ -232,7 +232,9 @@ async function formatBetMessage(bet, template, toneConfig = null, betIndex = 0) 
   parts.push('');
   parts.push(template.footer);
 
-  return sanitizeTelegramMarkdown(parts.join('\n'));
+  let finalMessage = parts.join('\n');
+  finalMessage = enforceOddLabel(finalMessage, toneConfig?.oddLabel);
+  return sanitizeTelegramMarkdown(finalMessage);
 }
 
 /**
