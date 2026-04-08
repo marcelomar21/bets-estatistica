@@ -44,7 +44,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01-PLAN.md — Add checkbox selection to PostingQueueTable + wire selection state in postagem page
+- [x] 02-01-PLAN.md — Add checkbox selection to PostingQueueTable + wire selection state in postagem page
 
 ### Phase 3: League Upsell
 **Goal**: Influencers can monetize extra leagues as paid add-ons, with flexible pricing and per-client discounts
