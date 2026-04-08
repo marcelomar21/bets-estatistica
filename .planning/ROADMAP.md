@@ -27,11 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Send confirmations appear only in the admin group, never in client-facing groups
   3. Victory posts do not display CTA labels when no CTA applies
   4. Victory posts show the correct odds values from the original bet
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md — Tone enforcement in template mode + dailyWinsRecap fresh toneConfig + confirmation routing audit
+- [ ] 01-02-PLAN.md — CTA label sanitization in LLM prompts + victory post odds reading fix
 
 ### Phase 2: Queue Selection
 **Goal**: Super admin has granular control over which bets get posted from the queue
