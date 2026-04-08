@@ -30,8 +30,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Tone enforcement in template mode + dailyWinsRecap fresh toneConfig + confirmation routing audit
-- [ ] 01-02-PLAN.md — CTA label sanitization in LLM prompts + victory post odds reading fix
+- [x] 01-01-PLAN.md — Tone enforcement in template mode + dailyWinsRecap fresh toneConfig + confirmation routing audit
+- [x] 01-02-PLAN.md — CTA label sanitization in LLM prompts + victory post odds reading fix
 
 ### Phase 2: Queue Selection
 **Goal**: Super admin has granular control over which bets get posted from the queue
