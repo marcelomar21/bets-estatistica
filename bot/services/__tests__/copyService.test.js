@@ -233,7 +233,7 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
     expect(humanMessage[1]).not.toContain('1.50');
   });
 
-  it('falls back to suggested_bets.odds when assignment odds is null', async () => {
+  it('falls back to suggested_bets.odds_at_post when assignment odds is null', async () => {
     mockInvoke.mockResolvedValue({
       content: 'Recap dos acertos!',
     });
@@ -246,8 +246,7 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
         {
           bet_market: 'Moneyline',
           bet_pick: 'Home',
-          odds_at_post: null,
-          odds: 1.85,
+          odds_at_post: 1.85,
           bet_group_assignments: [{ odds_at_post: null }],
           league_matches: { home_team_name: 'Santos', away_team_name: 'Palmeiras' },
         },
