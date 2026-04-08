@@ -55,12 +55,14 @@ Plans:
   2. Clients can purchase extra leagues through a checkout flow at the configured price (default R$200/month)
   3. Super admin can change the price of any individual extra league
   4. Super admin can apply a discount on extra leagues for a specific client
-**Plans**: TBD
+**Plans**: 4 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md — Database schema (tier column, pricing, subscriptions, discounts tables) + admin APIs
+- [ ] 03-02-PLAN.md — Super admin league management UI (tier classification, pricing, discounts tabs)
+- [ ] 03-03-PLAN.md — Group admin checkout flow (checkout API, subscriptions API, checkout UI page)
+- [ ] 03-04-PLAN.md — Distribution enforcement (webhook processor for activation/cancellation, subscription check in distribution)
 
 ## Progress
 
@@ -71,4 +73,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|----------------|--------|-----------|
 | 1. Posting Fixes | 0/2 | Not started | - |
 | 2. Queue Selection | 0/1 | Not started | - |
-| 3. League Upsell | 0/2 | Not started | - |
+| 3. League Upsell | 0/4 | Not started | - |
