@@ -140,7 +140,9 @@ async function initBots(supabaseClient) {
         welcome_message_template,
         status,
         channels,
-        whatsapp_group_jid
+        whatsapp_group_jid,
+        telegram_group_id,
+        telegram_admin_group_id
       )
     `)
     .eq('is_active', true)
@@ -181,6 +183,16 @@ async function initBots(supabaseClient) {
         channels: row.groups?.channels || ['telegram'],
         whatsappGroupJid: row.groups?.whatsapp_group_jid || null,
       };
+
+      // Warn if admin and public group IDs are the same (misconfiguration)
+      if (ctx.adminGroupId && ctx.publicGroupId && String(ctx.adminGroupId) === String(ctx.publicGroupId)) {
+        logger.warn('Bot has adminGroupId === publicGroupId — admin messages will go to public group', {
+          groupId: row.group_id,
+          adminGroupId: ctx.adminGroupId,
+          publicGroupId: ctx.publicGroupId,
+          groupName: groupConfig.name,
+        });
+      }
 
       botRegistry.set(row.group_id, ctx);
       logger.info('Bot registered', {

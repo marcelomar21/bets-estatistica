@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createApiHandler } from '@/middleware/api-handler';
 import { deactivateSubscriptionPlan } from '@/lib/mercadopago';
-import { suspendBotService } from '@/lib/render';
+import { suspendBotService, toBotApiGroupId } from '@/lib/render';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
 
 type GroupRouteContext = { params: Promise<{ groupId: string }> };
@@ -212,6 +212,35 @@ export const PUT = createApiHandler(
         });
         if (auditError) {
           console.warn('[audit_log] Failed to insert audit log for group update', groupId, auditError.message);
+        }
+      }
+    }
+
+    // Sync telegram_admin_group_id and telegram_group_id changes to bot_pool
+    if (parsed.data.telegram_admin_group_id !== undefined || parsed.data.telegram_group_id !== undefined) {
+      const supabaseAdmin = getSupabaseAdmin();
+      const botPoolUpdate: Record<string, unknown> = {};
+
+      if (parsed.data.telegram_admin_group_id !== undefined) {
+        botPoolUpdate.admin_group_id = parsed.data.telegram_admin_group_id !== null
+          ? Number(toBotApiGroupId(parsed.data.telegram_admin_group_id))
+          : null;
+      }
+
+      if (parsed.data.telegram_group_id !== undefined) {
+        botPoolUpdate.public_group_id = parsed.data.telegram_group_id !== null
+          ? Number(toBotApiGroupId(parsed.data.telegram_group_id))
+          : null;
+      }
+
+      if (Object.keys(botPoolUpdate).length > 0) {
+        const { error: syncError } = await supabaseAdmin
+          .from('bot_pool')
+          .update(botPoolUpdate)
+          .eq('group_id', groupId);
+
+        if (syncError) {
+          console.warn('[group-update] Failed to sync chat IDs to bot_pool', groupId, syncError.message);
         }
       }
     }

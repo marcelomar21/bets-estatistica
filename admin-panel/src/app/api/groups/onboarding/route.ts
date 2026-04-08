@@ -333,10 +333,11 @@ async function handleDeployingBot(data: z.infer<typeof deployingBotSchema>, cont
   }
 
   // Activate the bot in bot_pool with the Telegram group IDs
+  // admin_group_id is only set if explicitly configured — never falls back to public group
   const publicGroupId = toBotApiGroupId(group.telegram_group_id);
   const adminGroupId = group.telegram_admin_group_id
     ? toBotApiGroupId(group.telegram_admin_group_id)
-    : publicGroupId;
+    : null;
 
   const { error: botUpdateError } = await context.supabase
     .from('bot_pool')
@@ -556,7 +557,7 @@ async function handleCreatingTelegramGroup(data: z.infer<typeof creatingTelegram
     }
   }
 
-  // 4. Create full group
+  // 4. Create full group (public only — admin group is shared, configured separately)
   try {
     const result = await withMtprotoSession(context.supabase, async (client) => {
       // Create supergroup
@@ -575,12 +576,11 @@ async function handleCreatingTelegramGroup(data: z.infer<typeof creatingTelegram
       return { telegramGroupId, inviteLink };
     });
 
-    // 5. Save to database (admin group = public group for now)
+    // 5. Save to database (only public group — admin group must be configured via group edit)
     await context.supabase
       .from('groups')
       .update({
         telegram_group_id: result.telegramGroupId,
-        telegram_admin_group_id: result.telegramGroupId,
         telegram_invite_link: result.inviteLink,
       })
       .eq('id', group_id);
