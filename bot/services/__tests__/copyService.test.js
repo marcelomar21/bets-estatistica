@@ -170,3 +170,150 @@ describe('POST-03: CTA label sanitization', () => {
     expect(result.data.copy).not.toMatch(/\bCTA\b/);
   });
 });
+
+describe('POST-04: Odds reading from bet_group_assignments', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    capturedMessages = [];
+  });
+
+  it('reads odds from bet_group_assignments.odds_at_post (primary source)', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Over 2.5',
+          bet_pick: 'Over',
+          odds_at_post: null,
+          odds: 1.50,
+          bet_group_assignments: [{ odds_at_post: 2.10 }],
+          league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
+        },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('2.10');
+    expect(humanMessage[1]).not.toContain('1.50');
+  });
+
+  it('falls back to suggested_bets.odds when assignment odds is null', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Moneyline',
+          bet_pick: 'Home',
+          odds_at_post: null,
+          odds: 1.85,
+          bet_group_assignments: [{ odds_at_post: null }],
+          league_matches: { home_team_name: 'Santos', away_team_name: 'Palmeiras' },
+        },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('1.85');
+  });
+
+  it('omits odds entirely when both sources are null', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Both Teams Score',
+          bet_pick: 'Yes',
+          odds_at_post: null,
+          odds: null,
+          bet_group_assignments: [{ odds_at_post: null }],
+          league_matches: { home_team_name: 'Corinthians', away_team_name: 'Sao Paulo' },
+        },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).not.toContain('Odd:');
+    expect(humanMessage[1]).not.toContain('N/A');
+  });
+
+  it('formats odds with 2 decimal places', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Over 1.5',
+          bet_pick: 'Over',
+          odds_at_post: null,
+          odds: null,
+          bet_group_assignments: [{ odds_at_post: 3 }],
+          league_matches: { home_team_name: 'Botafogo', away_team_name: 'Fluminense' },
+        },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('3.00');
+  });
+
+  it('uses oddLabel from toneConfig in odds display', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Over 2.5',
+          bet_pick: 'Over',
+          odds_at_post: null,
+          odds: null,
+          bet_group_assignments: [{ odds_at_post: 2.50 }],
+          league_matches: { home_team_name: 'Gremio', away_team_name: 'Internacional' },
+        },
+      ],
+    };
+
+    const toneConfig = { oddLabel: 'Cotacao' };
+
+    await generateWinsRecapCopy(winsData, toneConfig);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('Cotacao: 2.50');
+    expect(humanMessage[1]).not.toContain('Odd:');
+  });
+});
