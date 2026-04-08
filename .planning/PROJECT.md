@@ -31,7 +31,7 @@ Influencers recebem apostas analisadas por IA e as entregam automaticamente aos 
 - [x] Fix: Confirmação de envio não deve ser enviada para grupos de clientes (apenas admin) — Validated in Phase 1: Posting Fixes
 - [x] Fix: Post de vitória — remover label CTA indevida e corrigir leitura de odds — Validated in Phase 1: Posting Fixes
 - [x] Feature: Seleção individual na fila de postagem (escolher quais apostas postar, default = todas) — Validated in Phase 2: Queue Selection
-- [ ] Feature: Checkout de ligas extras (upsell) — liga adicional por R$200/mês, definir padrão vs extra, valor modificável por liga, desconto por cliente
+- [x] Feature: Checkout de ligas extras (upsell) — liga adicional por R$200/mês, definir padrão vs extra, valor modificável por liga, desconto por cliente — Validated in Phase 3: League Upsell
 
 ### Out of Scope
 
@@ -90,4 +90,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-08 after Phase 2 completion*
+*Last updated: 2026-04-08 after Phase 3 completion — all v1 requirements complete*
