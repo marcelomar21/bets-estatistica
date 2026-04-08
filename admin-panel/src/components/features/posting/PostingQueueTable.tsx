@@ -29,6 +29,8 @@ interface QueueBet {
 
 interface PostingQueueTableProps {
   bets: QueueBet[];
+  selectedIds?: Set<number>;
+  onSelectionChange?: (ids: Set<number>) => void;
   onRemove?: (betId: number) => Promise<void>;
   onEditOdds?: (bet: QueueBet) => void;
   onEditLink?: (bet: QueueBet) => void;
@@ -119,13 +121,36 @@ function compareBets(a: QueueBet, b: QueueBet, field: SortField, dir: SortDir): 
   return dir === 'asc' ? result : -result;
 }
 
-export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPromote, onPreview, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
+export function PostingQueueTable({ bets, selectedIds, onSelectionChange, onRemove, onEditOdds, onEditLink, onPromote, onPreview, onScheduleBet, emptyMessage }: PostingQueueTableProps) {
   const { resolve } = useTeamDisplayNames();
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [promotingId, setPromotingId] = useState<number | null>(null);
   const [sortField, setSortField] = useState<SortField>('kickoff_time');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const hasSelection = !!selectedIds && !!onSelectionChange;
+  const allSelected = hasSelection && bets.length > 0 && bets.every((b) => selectedIds.has(b.id));
+
+  function toggleAll() {
+    if (!onSelectionChange || !selectedIds) return;
+    if (allSelected) {
+      onSelectionChange(new Set());
+    } else {
+      onSelectionChange(new Set(bets.map((b) => b.id)));
+    }
+  }
+
+  function toggleOne(id: number) {
+    if (!onSelectionChange || !selectedIds) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    onSelectionChange(next);
+  }
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -187,6 +212,17 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
+            {hasSelection && (
+              <th className="w-10 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                  aria-label="Selecionar todas"
+                />
+              </th>
+            )}
             <SortHeader field="id">ID</SortHeader>
             <SortHeader field="match">Jogo</SortHeader>
             <SortHeader field="market">Mercado</SortHeader>
@@ -210,7 +246,18 @@ export function PostingQueueTable({ bets, onRemove, onEditOdds, onEditLink, onPr
             const pickDisplay = formatPickDisplay(bet.bet_market, bet.bet_pick);
 
             return (
-              <tr key={bet.id} className="hover:bg-gray-50">
+              <tr key={bet.id} className={`hover:bg-gray-50 ${hasSelection && selectedIds!.has(bet.id) ? 'bg-blue-50' : ''}`}>
+                {hasSelection && (
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds!.has(bet.id)}
+                      onChange={() => toggleOne(bet.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                      aria-label={`Selecionar aposta ${bet.id}`}
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3 text-xs font-mono text-gray-500">
                   {bet.id}
                 </td>
