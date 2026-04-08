@@ -899,6 +899,57 @@ describe('postBets', () => {
     });
   });
 
+  // ---- formatBetMessage template mode oddLabel enforcement (POST-01) ----
+
+  describe('formatBetMessage template mode oddLabel enforcement', () => {
+    it('should replace "Odd:" with configured oddLabel in LLM-generated template bullets', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet({ reasoning: 'Good historical data' });
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const tc = { oddLabel: 'Cotacao' };
+
+      // Mock generateBetCopy to return template bullets containing "Odd:"
+      generateBetCopy.mockResolvedValueOnce({
+        success: true,
+        data: { copy: '- Time: 50% dado\n- Odd: 1.85', fullMessage: false },
+      });
+
+      const msg = await formatBetMessage(bet, template, tc, 0);
+      expect(msg).toContain('Cotacao:');
+      expect(msg).not.toMatch(/\bOdd:/);
+    });
+
+    it('should leave "Odd:" unchanged in template mode when oddLabel is null', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet({ reasoning: 'Good historical data' });
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+
+      generateBetCopy.mockResolvedValueOnce({
+        success: true,
+        data: { copy: '- Time: 50% dado\n- Odd: 1.85', fullMessage: false },
+      });
+
+      const msg = await formatBetMessage(bet, template, null, 0);
+      expect(msg).toContain('Odd:');
+    });
+
+    it('should still apply enforceOddLabel in full-message mode (regression)', async () => {
+      const { formatBetMessage } = require('../postBets');
+      const bet = makeBet({ reasoning: 'Good stats' });
+      const template = { header: '🎯 TEST', footer: '🍀 GL' };
+      const tc = { oddLabel: 'Cotacao', examplePost: '🔥 Example post...' };
+
+      generateBetCopy.mockResolvedValueOnce({
+        success: true,
+        data: { copy: '🔥 Full message with Odd: 2.10', fullMessage: true },
+      });
+
+      const msg = await formatBetMessage(bet, template, tc, 0);
+      expect(msg).toContain('Cotacao:');
+      expect(msg).not.toMatch(/\bOdd:/);
+    });
+  });
+
   // ---- getOrGenerateMessage (copy persistence) ----
 
   describe('getOrGenerateMessage', () => {

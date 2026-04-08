@@ -118,7 +118,7 @@ describe('copyService', () => {
       expect(result.error.code).toBe('INVALID_FORMAT');
     });
 
-    test('limita a 5 bullets no máximo', async () => {
+    test('preserva todos os bullets sem truncamento', async () => {
       const manyBullets = '• Bullet 1\n• Bullet 2\n• Bullet 3\n• Bullet 4\n• Bullet 5\n• Bullet 6\n• Bullet 7';
       mockInvoke.mockResolvedValueOnce({
         content: manyBullets,
@@ -128,7 +128,7 @@ describe('copyService', () => {
 
       expect(result.success).toBe(true);
       const bulletCount = (result.data.copy.match(/•/g) || []).length;
-      expect(bulletCount).toBeLessThanOrEqual(5);
+      expect(bulletCount).toBe(7);
     });
 
     test('retorna erro quando LLM falha', async () => {

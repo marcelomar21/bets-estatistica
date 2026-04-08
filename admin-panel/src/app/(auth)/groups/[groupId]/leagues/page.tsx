@@ -7,6 +7,8 @@ import Link from 'next/link';
 interface LeaguePreference {
   league_name: string;
   country: string;
+  tier: 'standard' | 'extra';
+  monthly_price: number | null;
   enabled: boolean;
 }
 
@@ -98,6 +100,7 @@ export default function LeaguePreferencesPage() {
   }, {});
 
   const enabledCount = leagues.filter((l) => l.enabled).length;
+  const extraCount = leagues.filter((l) => l.tier === 'extra').length;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -130,6 +133,11 @@ export default function LeaguePreferencesPage() {
             <span className="text-sm text-gray-600">
               <span className="font-semibold text-gray-900">{enabledCount}</span> de{' '}
               <span className="font-semibold text-gray-900">{leagues.length}</span> ligas ativas
+              {extraCount > 0 && (
+                <>
+                  {' '}| <span className="font-semibold text-orange-600">{extraCount}</span> ligas extras
+                </>
+              )}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -162,7 +170,14 @@ export default function LeaguePreferencesPage() {
                     key={league.league_name}
                     className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50"
                   >
-                    <span className="text-sm text-gray-900">{league.league_name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-900">{league.league_name}</span>
+                      {league.tier === 'extra' && (
+                        <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                          Extra {league.monthly_price ? `R$${league.monthly_price}/mes` : 'R$200/mes'}
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       role="switch"

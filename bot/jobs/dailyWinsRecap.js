@@ -8,6 +8,7 @@
  * Mode: Runs in GROUP mode (runGroup)
  */
 const logger = require('../../lib/logger');
+const { supabase } = require('../../lib/supabase');
 const { getAllBots } = require('../telegram');
 const { sendToPublic } = require('../telegram');
 const { getYesterdayWins } = require('../services/metricsService');
@@ -49,8 +50,23 @@ async function runDailyWinsRecap() {
         continue;
       }
 
-      // 3. Generate recap copy using group's tone config
-      const toneConfig = botCtx.groupConfig?.copyToneConfig || null;
+      // 3. Load toneConfig fresh from DB to ensure latest settings (not stale BotContext cache)
+      let toneConfig = null;
+      try {
+        const { data: groupData, error: toneError } = await supabase
+          .from('groups')
+          .select('copy_tone_config')
+          .eq('id', groupId)
+          .single();
+        if (toneError) {
+          logger.warn('[daily-wins-recap] Failed to load toneConfig from DB, using null', { groupId, error: toneError.message });
+        } else if (groupData?.copy_tone_config) {
+          toneConfig = groupData.copy_tone_config;
+          logger.debug('[daily-wins-recap] Loaded toneConfig from DB', { groupId });
+        }
+      } catch (err) {
+        logger.warn('[daily-wins-recap] Error loading toneConfig, using null', { groupId, error: err.message });
+      }
       const copyResult = await generateWinsRecapCopy(winsResult.data, toneConfig);
       if (!copyResult.success) {
         logger.error('[daily-wins-recap] Failed to generate copy', { groupId, error: copyResult.error });

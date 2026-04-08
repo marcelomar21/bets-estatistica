@@ -155,6 +155,12 @@ export default async function GroupDetailPage({
           >
             Campeonatos
           </Link>
+          <Link
+            href={`/groups/${typedGroup.id}/league-checkout`}
+            className="inline-block rounded-md border border-orange-300 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100"
+          >
+            Ligas Extras
+          </Link>
           {isSuperAdmin && <CreateWhatsAppButton groupId={typedGroup.id} hasWhatsApp={hasWhatsApp} />}
           {isSuperAdmin && <DeleteGroupButton groupId={typedGroup.id} groupName={typedGroup.name} />}
         </div>

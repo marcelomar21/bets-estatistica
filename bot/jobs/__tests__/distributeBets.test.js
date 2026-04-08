@@ -614,3 +614,147 @@ describe('getScheduledCountsPerTime (junction table)', () => {
     expect(counts).toEqual({ '10:00': 0, '15:00': 0 });
   });
 });
+
+// ============================================================
+// Phase 3 Plan 04: League subscription enforcement tests
+// ============================================================
+
+describe('isGroupEligibleForBet with league tiers', () => {
+  it('allows standard tier league for all groups (no subscription check)', () => {
+    const prefs = new Map();
+    expect(isGroupEligibleForBet(prefs, 'Premier League', 'standard', null)).toBe(true);
+  });
+
+  it('blocks extra tier league without active subscription', () => {
+    const prefs = new Map();
+    const subs = new Set(); // No subscriptions
+    expect(isGroupEligibleForBet(prefs, 'Champions League', 'extra', subs)).toBe(false);
+  });
+
+  it('allows extra tier league with active subscription', () => {
+    const prefs = new Map();
+    const subs = new Set(['Champions League']);
+    expect(isGroupEligibleForBet(prefs, 'Champions League', 'extra', subs)).toBe(true);
+  });
+
+  it('blocks extra tier league when subscribed to different league', () => {
+    const prefs = new Map();
+    const subs = new Set(['La Liga']);
+    expect(isGroupEligibleForBet(prefs, 'Champions League', 'extra', subs)).toBe(false);
+  });
+
+  it('treats unknown/undefined tier as standard (backward compat)', () => {
+    const prefs = new Map();
+    expect(isGroupEligibleForBet(prefs, 'Unknown League', undefined, null)).toBe(true);
+  });
+
+  it('treats null tier as standard (backward compat)', () => {
+    const prefs = new Map();
+    expect(isGroupEligibleForBet(prefs, 'Unknown League', null, null)).toBe(true);
+  });
+
+  it('respects league preference disabled even for subscribed extra league', () => {
+    const prefs = new Map([['Champions League', false]]);
+    const subs = new Set(['Champions League']);
+    expect(isGroupEligibleForBet(prefs, 'Champions League', 'extra', subs)).toBe(false);
+  });
+
+  it('allows extra tier when activeLeagueSubs is null (fallback = no restriction)', () => {
+    const prefs = new Map();
+    expect(isGroupEligibleForBet(prefs, 'Champions League', 'extra', null)).toBe(false);
+  });
+});
+
+describe('distributeRoundRobin with league tiers and subscriptions', () => {
+  it('blocks extra tier bets for groups without subscription', () => {
+    const bets = [
+      makeBet('1', 'Champions League'),
+      makeBet('2', 'Premier League'),
+    ];
+    const groups = [groupA, groupB];
+
+    const leaguePrefs = new Map([
+      ['group-a', new Map()],
+      ['group-b', new Map()],
+    ]);
+    const leagueTiers = new Map([
+      ['Champions League', 'extra'],
+      ['Premier League', 'standard'],
+    ]);
+    const leagueSubs = new Map([
+      ['group-a', new Set()], // No subscription
+      ['group-b', new Set()], // No subscription
+    ]);
+
+    const assignments = distributeRoundRobin(bets, groups, {}, leaguePrefs, leagueTiers, leagueSubs);
+
+    // Champions League (extra) should be skipped (no group subscribed)
+    // Premier League (standard) should be assigned
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0].betId).toBe('2');
+  });
+
+  it('allows extra tier bets for groups with active subscription', () => {
+    const bets = [
+      makeBet('1', 'Champions League'),
+      makeBet('2', 'Premier League'),
+    ];
+    const groups = [groupA, groupB];
+
+    const leaguePrefs = new Map([
+      ['group-a', new Map()],
+      ['group-b', new Map()],
+    ]);
+    const leagueTiers = new Map([
+      ['Champions League', 'extra'],
+      ['Premier League', 'standard'],
+    ]);
+    const leagueSubs = new Map([
+      ['group-a', new Set(['Champions League'])], // Subscribed
+      ['group-b', new Set()], // Not subscribed
+    ]);
+
+    const assignments = distributeRoundRobin(bets, groups, {}, leaguePrefs, leagueTiers, leagueSubs);
+
+    // Both bets should be assigned
+    expect(assignments).toHaveLength(2);
+    // Champions League should go to group-a only (only one subscribed)
+    const clAssignment = assignments.find(a => a.betId === '1');
+    expect(clAssignment.groupId).toBe('group-a');
+  });
+
+  it('standard tier bets unaffected by subscription data', () => {
+    const bets = [
+      makeBet('1', 'Premier League'),
+      makeBet('2', 'La Liga'),
+    ];
+    const groups = [groupA, groupB];
+
+    const leaguePrefs = new Map([
+      ['group-a', new Map()],
+      ['group-b', new Map()],
+    ]);
+    const leagueTiers = new Map([
+      ['Premier League', 'standard'],
+      ['La Liga', 'standard'],
+    ]);
+    const leagueSubs = new Map([
+      ['group-a', new Set()],
+      ['group-b', new Set()],
+    ]);
+
+    const assignments = distributeRoundRobin(bets, groups, {}, leaguePrefs, leagueTiers, leagueSubs);
+    expect(assignments).toHaveLength(2);
+  });
+
+  it('backward compatible when leagueTiers and leagueSubs are null', () => {
+    const bets = [
+      makeBet('1', 'Premier League'),
+      makeBet('2', 'La Liga'),
+    ];
+    const groups = [groupA, groupB];
+
+    const assignments = distributeRoundRobin(bets, groups, {}, null, null, null);
+    expect(assignments).toHaveLength(2);
+  });
+});

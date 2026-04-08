@@ -34,7 +34,7 @@ export const GET = createApiHandler(
     // 1. Fetch all active leagues from league_seasons (deduplicated by league_name)
     const { data: leagueSeasons, error: leagueError } = await supabase
       .from('league_seasons')
-      .select('league_name, country')
+      .select('league_name, country, tier')
       .eq('active', true);
 
     if (leagueError) {
@@ -45,11 +45,20 @@ export const GET = createApiHandler(
     }
 
     // Deduplicate by league_name (multiple seasons per league possible)
-    const leagueMap = new Map<string, string>();
+    const leagueMap = new Map<string, { country: string; tier: string }>();
     for (const ls of leagueSeasons || []) {
       if (!leagueMap.has(ls.league_name)) {
-        leagueMap.set(ls.league_name, ls.country);
+        leagueMap.set(ls.league_name, { country: ls.country, tier: ls.tier || 'standard' });
       }
+    }
+
+    // Fetch pricing for extra leagues
+    const { data: pricing } = await supabase
+      .from('league_pricing')
+      .select('league_name, monthly_price');
+    const priceMap = new Map<string, number>();
+    for (const p of pricing || []) {
+      priceMap.set(p.league_name, Number(p.monthly_price));
     }
 
     // 2. Fetch group preferences
@@ -72,9 +81,11 @@ export const GET = createApiHandler(
     }
 
     // 3. Merge: default enabled=true if no preference exists
-    const leagues = Array.from(leagueMap.entries()).map(([league_name, country]) => ({
+    const leagues = Array.from(leagueMap.entries()).map(([league_name, info]) => ({
       league_name,
-      country,
+      country: info.country,
+      tier: info.tier as 'standard' | 'extra',
+      monthly_price: info.tier === 'extra' ? (priceMap.get(league_name) ?? 200) : null,
       enabled: prefMap.has(league_name) ? prefMap.get(league_name)! : true,
     }));
 

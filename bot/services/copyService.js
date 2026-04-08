@@ -55,9 +55,9 @@ async function generateBetCopy(bet, toneConfig = null) {
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
@@ -159,9 +159,9 @@ Regras:
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules && toneConfig.customRules.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => `- ${r}`).join('\n')}`);
@@ -214,11 +214,10 @@ Responda APENAS com os bullets, sem texto adicional.`;
       };
     }
 
-    // Limitar a 5 bullets e limpar formatação
+    // Filtrar bullets da resposta LLM (quantidade controlada pelo prompt)
     const bullets = copy
       .split('\n')
       .filter(line => line.trim().startsWith('•'))
-      .slice(0, 5)
       .join('\n');
 
     const finalCopy = bullets || copy;
@@ -270,9 +269,9 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
@@ -286,11 +285,15 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       }
     }
 
-    const winsList = winsData.wins.map(w => {
+    const winsList = (winsData.wins || []).map(w => {
       const home = w.league_matches?.home_team_name || '?';
       const away = w.league_matches?.away_team_name || '?';
-      const odds = w.odds_at_post ? parseFloat(w.odds_at_post).toFixed(2) : 'N/A';
-      return `- ${home} x ${away} | Mercado: ${w.bet_market} | Pick: ${w.bet_pick || 'N/A'} | ${toneConfig?.oddLabel || 'Odd'}: ${odds}`;
+      // Prefer per-group posting odds (bet_group_assignments), fall back to original analysis odds (suggested_bets.odds)
+      const rawOdds = w.bet_group_assignments?.[0]?.odds_at_post ?? w.odds ?? null;
+      const oddsSegment = rawOdds != null
+        ? ` | ${toneConfig?.oddLabel || 'Odd'}: ${parseFloat(rawOdds).toFixed(2)}`
+        : '';
+      return `- ${home} x ${away} | Mercado: ${w.bet_market} | Pick: ${w.bet_pick || 'N/A'}${oddsSegment}`;
     }).join('\n');
 
     const humanMessage = `Gere uma mensagem de RECAP celebrando os acertos de ontem para o grupo de Telegram.
@@ -305,7 +308,7 @@ Regras:
 - Mencione cada jogo acertado com mercado, pick e odd
 - Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
 - Emojis moderados (nao exagere)
-- Inclua um CTA no final
+- Inclua um chamado para acao no final convidando o leitor a continuar acompanhando ou apostar
 - Formato: Markdown do Telegram (*bold*, _italic_)
 - Portugues BR
 - A mensagem deve estar PRONTA para enviar no Telegram
@@ -320,13 +323,20 @@ Regras:
     const response = await chain.invoke({});
     const copy = response.content.trim();
 
+    // Strip literal "CTA" label from LLM output (safety net)
+    // The CTA content should appear, but the technical label "CTA" must never be visible to end users
+    const sanitizedCopy = copy
+      .replace(/\bCTA\s*:\s*/gi, '')
+      .replace(/\bCTA\s*-\s*/gi, '')
+      .replace(/^CTA\b\s*/gim, '');
+
     logger.info('Generated wins recap copy', {
       winCount: winsData.winCount,
       totalCount: winsData.totalCount,
-      copyLength: copy.length,
+      copyLength: sanitizedCopy.length,
     });
 
-    return { success: true, data: { copy } };
+    return { success: true, data: { copy: sanitizedCopy } };
   } catch (error) {
     logger.error('Failed to generate wins recap copy', { error: error.message });
     return { success: false, error: { code: 'LLM_ERROR', message: error.message } };
