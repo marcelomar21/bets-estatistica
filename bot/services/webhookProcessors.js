@@ -1437,6 +1437,102 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
 }
 
 // ============================================
+// Phase 3: LEAGUE SUBSCRIPTION LIFECYCLE
+// ============================================
+
+/**
+ * Check if an MP subscription (preapproval) is a league extras subscription.
+ * League extras subscriptions have their plan_id stored in group_league_subscriptions.
+ * @param {string} planId - MP preapproval_plan_id
+ * @returns {Promise<{isLeague: boolean, groupId?: string, leagues?: string[]}>}
+ */
+async function checkLeagueSubscription(planId) {
+  if (!planId) return { isLeague: false };
+
+  const { data, error } = await supabase
+    .from('group_league_subscriptions')
+    .select('group_id, league_name')
+    .eq('mp_plan_id', planId);
+
+  if (error || !data || data.length === 0) {
+    return { isLeague: false };
+  }
+
+  return {
+    isLeague: true,
+    groupId: data[0].group_id,
+    leagues: data.map(r => r.league_name),
+  };
+}
+
+/**
+ * Handle league subscription activation.
+ * Updates group_league_subscriptions status to 'active'.
+ * @param {string} planId - MP preapproval_plan_id
+ * @param {string} groupId - Group UUID
+ * @param {string[]} leagues - League names
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function handleLeagueSubscriptionActivated(planId, groupId, leagues) {
+  logger.info('[webhookProcessors] Activating league subscriptions', {
+    planId, groupId, leagues
+  });
+
+  const { error } = await supabase
+    .from('group_league_subscriptions')
+    .update({
+      status: 'active',
+      activated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('mp_plan_id', planId)
+    .eq('group_id', groupId);
+
+  if (error) {
+    logger.error('[webhookProcessors] Failed to activate league subscriptions', {
+      planId, groupId, error: error.message
+    });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  logger.info('[webhookProcessors] League subscriptions activated', {
+    planId, groupId, leagueCount: leagues.length
+  });
+  return { success: true };
+}
+
+/**
+ * Handle league subscription cancellation.
+ * Updates group_league_subscriptions status to 'cancelled'.
+ * @param {string} planId - MP preapproval_plan_id
+ * @param {string} groupId - Group UUID
+ * @returns {Promise<{success: boolean, error?: object}>}
+ */
+async function handleLeagueSubscriptionCancelled(planId, groupId) {
+  logger.info('[webhookProcessors] Cancelling league subscriptions', { planId, groupId });
+
+  const { error } = await supabase
+    .from('group_league_subscriptions')
+    .update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('mp_plan_id', planId)
+    .eq('group_id', groupId);
+
+  if (error) {
+    logger.error('[webhookProcessors] Failed to cancel league subscriptions', {
+      planId, groupId, error: error.message
+    });
+    return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+  }
+
+  logger.info('[webhookProcessors] League subscriptions cancelled', { planId, groupId });
+  return { success: true };
+}
+
+// ============================================
 // ROUTER DE EVENTOS
 // Story 4.3: Pass eventContext to handlers
 // ============================================
@@ -1458,6 +1554,25 @@ async function processWebhookEvent({ event_type, payload, eventId }) {
       const subscriptionResult = await mercadoPagoService.getSubscription(subscriptionId);
       const isExpiredOrCancelledAction = action === 'cancelled' || action === 'expired';
 
+      // Phase 3: Check if this is a league extras subscription (intercept before regular handlers)
+      if (subscriptionResult.success) {
+        const mpPlanId = subscriptionResult.data.preapproval_plan_id;
+        const leagueCheck = await checkLeagueSubscription(mpPlanId);
+
+        if (leagueCheck.isLeague) {
+          const mpStatus = subscriptionResult.data.status;
+          if (mpStatus === 'authorized' || action === 'created') {
+            return await handleLeagueSubscriptionActivated(mpPlanId, leagueCheck.groupId, leagueCheck.leagues);
+          }
+          if (mpStatus === 'cancelled' || mpStatus === 'expired' || action === 'cancelled' || action === 'expired') {
+            return await handleLeagueSubscriptionCancelled(mpPlanId, leagueCheck.groupId);
+          }
+          logger.info('[webhookProcessors] Ignoring league subscription event', { mpPlanId, mpStatus, action });
+          return { success: true };
+        }
+      }
+
+      // Regular (non-league) subscription handling
       if (action === 'created' ||
           (subscriptionResult.success && subscriptionResult.data.status === 'authorized')) {
         return await handleSubscriptionCreated(payload, eventContext);
@@ -1554,4 +1669,8 @@ module.exports = {
   resolveGroupFromSubscription,
   resolveGroupFromPayment,
   notifyAdminPayment,
+  // Phase 3: League subscription lifecycle
+  checkLeagueSubscription,
+  handleLeagueSubscriptionActivated,
+  handleLeagueSubscriptionCancelled,
 };
