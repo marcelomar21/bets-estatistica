@@ -43,7 +43,7 @@ export const GET = createApiHandler(
       data: { discounts: discounts || [] },
     });
   },
-  { allowedRoles: ['super_admin'] },
+  { allowedRoles: ['super_admin', 'group_admin'] },
 );
 
 /**
