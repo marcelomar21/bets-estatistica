@@ -184,19 +184,102 @@ async function getAllGroupLeaguePreferences(groupIds) {
 }
 
 /**
- * Check if a group is eligible for a bet based on league preferences.
+ * Get league tier classification for all active leagues.
+ * Returns Map<league_name, tier ('standard' | 'extra')>
+ * @returns {Promise<Map<string, string>>}
+ */
+async function getLeagueTiers() {
+  const tierMap = new Map();
+
+  try {
+    const { data, error } = await supabase
+      .from('league_seasons')
+      .select('league_name, tier')
+      .eq('active', true);
+
+    if (error) {
+      logger.warn('[bets:distribute] Erro ao carregar tiers de liga', { error: error.message });
+      return tierMap; // Fallback: no tier info = treat all as standard
+    }
+
+    for (const row of (data || [])) {
+      tierMap.set(row.league_name, row.tier || 'standard');
+    }
+  } catch (err) {
+    logger.warn('[bets:distribute] Erro inesperado ao carregar tiers de liga', { error: err.message });
+  }
+
+  return tierMap;
+}
+
+/**
+ * Get active league subscriptions for all groups.
+ * Returns Map<groupId, Set<league_name>> for leagues with active subscription.
+ * @param {string[]} groupIds - Array of group UUIDs
+ * @returns {Promise<Map<string, Set<string>>>}
+ */
+async function getActiveLeagueSubscriptions(groupIds) {
+  const subsMap = new Map();
+  for (const gid of groupIds) {
+    subsMap.set(gid, new Set());
+  }
+
+  if (groupIds.length === 0) return subsMap;
+
+  try {
+    const { data, error } = await supabase
+      .from('group_league_subscriptions')
+      .select('group_id, league_name')
+      .eq('status', 'active')
+      .in('group_id', groupIds);
+
+    if (error) {
+      logger.warn('[bets:distribute] Erro ao carregar subscriptions de liga', { error: error.message });
+      return subsMap; // Fallback: empty = no access to extras
+    }
+
+    for (const row of (data || [])) {
+      const groupSubs = subsMap.get(row.group_id);
+      if (groupSubs) {
+        groupSubs.add(row.league_name);
+      }
+    }
+  } catch (err) {
+    logger.warn('[bets:distribute] Erro inesperado ao carregar subscriptions', { error: err.message });
+  }
+
+  return subsMap;
+}
+
+/**
+ * Check if a group is eligible for a bet based on league preferences AND subscription status.
  * - If group has no preferences → eligible (retrocompatible)
  * - If league_name not in preferences → eligible (new league default)
  * - If league_name has enabled=false → NOT eligible
+ * - If leagueTier='extra' and group has no active subscription → NOT eligible
  * @param {Map<string, boolean>} groupPrefs - Group's league preferences
  * @param {string|null} leagueName - The bet's league name
+ * @param {string} [leagueTier='standard'] - The league's tier ('standard' or 'extra')
+ * @param {Set<string>|null} [activeLeagueSubs=null] - Set of league names this group has active subscription for
  * @returns {boolean}
  */
-function isGroupEligibleForBet(groupPrefs, leagueName) {
-  // No preferences configured → accept all
-  if (groupPrefs.size === 0) return true;
+function isGroupEligibleForBet(groupPrefs, leagueName, leagueTier = 'standard', activeLeagueSubs = null) {
+  // Step 1: Check league preference (existing logic)
+  if (groupPrefs.size > 0 && leagueName && groupPrefs.has(leagueName) && !groupPrefs.get(leagueName)) {
+    return false; // Explicitly disabled
+  }
+
+  // Step 2: Check league subscription for extra tiers
+  if (leagueTier === 'extra' && leagueName) {
+    if (!activeLeagueSubs || !activeLeagueSubs.has(leagueName)) {
+      return false; // Extra league without active subscription = blocked
+    }
+  }
+
   // No league name on bet → accept (edge case)
   if (!leagueName) return true;
+  // No preferences configured → accept all (for standard tiers)
+  if (groupPrefs.size === 0) return true;
   // League not in preferences → treat as enabled (new league)
   if (!groupPrefs.has(leagueName)) return true;
   // Explicit preference
@@ -277,14 +360,17 @@ async function rebalanceIfNeeded(activeGroups) {
  * Distribute bets among groups using fair round-robin algorithm.
  * Supports per-group league filtering: each bet is only assigned to groups
  * that have the bet's league enabled (or have no preferences = accept all).
+ * Phase 3: Also enforces league subscription checks for extra tier leagues.
  *
  * @param {Array} bets - Undistributed bets (with league_matches.league_seasons.league_name)
  * @param {Array} groups - Active groups
  * @param {object} [groupCounts={}] - Existing bet counts per group { groupId: count }
  * @param {Map<string, Map<string, boolean>>} [leaguePrefs=null] - Per-group league preferences
+ * @param {Map<string, string>} [leagueTiers=null] - Map<league_name, tier ('standard'|'extra')>
+ * @param {Map<string, Set<string>>} [leagueSubs=null] - Map<groupId, Set<league_name>> active subscriptions
  * @returns {Array<{betId: string, groupId: string}>} Assignment list
  */
-function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null) {
+function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null, leagueTiers = null, leagueSubs = null) {
   if (!bets.length || !groups.length) return [];
 
   // Track running counts during assignment
@@ -296,13 +382,15 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
   const assignments = [];
   for (const bet of bets) {
     const leagueName = getBetLeagueName(bet);
+    const leagueTier = (leagueTiers && leagueName) ? (leagueTiers.get(leagueName) || 'standard') : 'standard';
 
-    // Filter groups eligible for this bet based on league preferences
+    // Filter groups eligible for this bet based on league preferences and subscription status
     let eligibleGroups = groups;
-    if (leaguePrefs) {
+    if (leaguePrefs || leagueTier === 'extra') {
       eligibleGroups = groups.filter((g) => {
-        const prefs = leaguePrefs.get(g.id) || new Map();
-        return isGroupEligibleForBet(prefs, leagueName);
+        const prefs = leaguePrefs ? (leaguePrefs.get(g.id) || new Map()) : new Map();
+        const subs = leagueSubs ? (leagueSubs.get(g.id) || new Set()) : null;
+        return isGroupEligibleForBet(prefs, leagueName, leagueTier, subs);
       });
     }
 
@@ -566,7 +654,24 @@ async function _runDistributeBetsInternal() {
     });
   }
 
-  const assignments = distributeRoundRobin(bets, groups, groupCounts, leaguePrefs);
+  // Load league tiers (Phase 3: League Upsell)
+  const leagueTiers = await getLeagueTiers();
+  const extraLeagueCount = Array.from(leagueTiers.values()).filter(t => t === 'extra').length;
+  if (extraLeagueCount > 0) {
+    logger.info('[bets:distribute] Ligas extras carregadas', { extraLeagueCount });
+  }
+
+  // Load active league subscriptions per group
+  const leagueSubs = await getActiveLeagueSubscriptions(groupIds);
+  const groupsWithSubs = Array.from(leagueSubs.entries()).filter(([, subs]) => subs.size > 0);
+  if (groupsWithSubs.length > 0) {
+    logger.info('[bets:distribute] Subscriptions de ligas extras carregadas', {
+      groupsWithSubs: groupsWithSubs.length,
+      details: Object.fromEntries(groupsWithSubs.map(([gid, subs]) => [gid, Array.from(subs)])),
+    });
+  }
+
+  const assignments = distributeRoundRobin(bets, groups, groupCounts, leaguePrefs, leagueTiers, leagueSubs);
 
   // Log skipped bets (no eligible group due to league preferences)
   const skippedCount = bets.length - assignments.length;
@@ -674,4 +779,7 @@ module.exports = {
   distributeRoundRobin,
   assignBetToGroup,
   getScheduledCountsPerTime,
+  // Phase 3: League upsell
+  getLeagueTiers,
+  getActiveLeagueSubscriptions,
 };
