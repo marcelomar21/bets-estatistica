@@ -63,6 +63,9 @@ export default function PostagemPage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
   // Bulk schedule
   const [bulkScheduleTime, setBulkScheduleTime] = useState<string>('');
   const [bulkScheduling, setBulkScheduling] = useState(false);
@@ -238,7 +241,7 @@ export default function PostagemPage() {
 
   async function handleBulkSchedule() {
     if (!bulkScheduleTime || !queueData) return;
-    const betIds = postableBets.map(b => b.id);
+    const betIds = selectedBets.map(b => b.id);
     if (betIds.length === 0) return;
 
     setBulkScheduling(true);
@@ -369,7 +372,7 @@ export default function PostagemPage() {
         payload.bet_id = betId;
       } else {
         // Batch mode: send the specific betIds from the posting queue
-        const queueBetIds = postableBets.map(b => b.id);
+        const queueBetIds = selectedBets.map(b => b.id);
         if (queueBetIds.length > 0) payload.bet_ids = queueBetIds;
       }
 
@@ -629,6 +632,15 @@ export default function PostagemPage() {
   }
   const postableBets = queueData?.bets.filter(isPostable) ?? [];
   const pendingBets = queueData?.bets.filter(b => !isPostable(b)) ?? [];
+
+  // Reset selection to all postable bets when queue data changes
+  useEffect(() => {
+    setSelectedIds(new Set(postableBets.map(b => b.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueData]);
+
+  const selectedBets = postableBets.filter(b => selectedIds.has(b.id));
+  const selectedCount = selectedBets.length;
 
   const isPreviewActive = previewPhase !== 'idle';
   const progressPct = totalSendCount > 0 ? Math.round((postedCount / totalSendCount) * 100) : 0;
@@ -1028,10 +1040,14 @@ export default function PostagemPage() {
                     {bulkScheduling ? '...' : 'Aplicar a todas'}
                   </button>
                 </div>
+                <span className="text-sm text-gray-600">
+                  {selectedCount} de {postableBets.length} selecionada{postableBets.length !== 1 ? 's' : ''}
+                </span>
                 <button
                   onClick={() => handlePreparePreview()}
-                  title={`Preparar postagem de ${postableBets.length} aposta(s)`}
-                  className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                  disabled={selectedCount === 0}
+                  title={selectedCount === 0 ? 'Selecione ao menos uma aposta' : `Preparar postagem de ${selectedCount} aposta(s)`}
+                  className="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Preparar Postagem
                 </button>
@@ -1040,6 +1056,8 @@ export default function PostagemPage() {
           </div>
           <PostingQueueTable
             bets={postableBets}
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
             onRemove={handleRemoveBet}
             onPreview={(betId) => handlePreparePreview(betId)}
             onScheduleBet={handleScheduleBet}
