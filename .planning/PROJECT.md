@@ -27,9 +27,9 @@ Influencers recebem apostas analisadas por IA e as entregam automaticamente aos 
 
 ### Active
 
-- [ ] Fix: Postagem automática deve respeitar tom de voz configurado por grupo/influencer
-- [ ] Fix: Confirmação de envio não deve ser enviada para grupos de clientes (apenas admin)
-- [ ] Fix: Post de vitória — remover label CTA indevida e corrigir leitura de odds
+- [x] Fix: Postagem automática deve respeitar tom de voz configurado por grupo/influencer — Validated in Phase 1: Posting Fixes
+- [x] Fix: Confirmação de envio não deve ser enviada para grupos de clientes (apenas admin) — Validated in Phase 1: Posting Fixes
+- [x] Fix: Post de vitória — remover label CTA indevida e corrigir leitura de odds — Validated in Phase 1: Posting Fixes
 - [ ] Feature: Seleção individual na fila de postagem (escolher quais apostas postar, default = todas)
 - [ ] Feature: Checkout de ligas extras (upsell) — liga adicional por R$200/mês, definir padrão vs extra, valor modificável por liga, desconto por cliente
 
@@ -90,4 +90,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-07 after initialization*
+*Last updated: 2026-04-08 after Phase 1 completion*
