@@ -327,7 +327,8 @@ Regras:
     // The CTA content should appear, but the technical label "CTA" must never be visible to end users
     const sanitizedCopy = copy
       .replace(/\bCTA\s*:\s*/gi, '')
-      .replace(/\bCTA\s*-\s*/gi, '');
+      .replace(/\bCTA\s*-\s*/gi, '')
+      .replace(/^CTA\b\s*/gim, '');
 
     logger.info('Generated wins recap copy', {
       winCount: winsData.winCount,

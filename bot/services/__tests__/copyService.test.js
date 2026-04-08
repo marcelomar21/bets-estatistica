@@ -169,6 +169,34 @@ describe('POST-03: CTA label sanitization', () => {
     expect(result.data.copy).toContain('Venha apostar com a gente!');
     expect(result.data.copy).not.toMatch(/\bCTA\b/);
   });
+
+  it('strips standalone "CTA" at line start without colon or dash', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Acertamos tudo ontem!\n\nCTA Aposte agora no grupo!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        {
+          bet_market: 'Over 2.5',
+          bet_pick: 'Over',
+          odds_at_post: null,
+          odds: 1.80,
+          bet_group_assignments: [{ odds_at_post: 1.80 }],
+          league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
+        },
+      ],
+    };
+
+    const result = await generateWinsRecapCopy(winsData, null);
+
+    expect(result.success).toBe(true);
+    expect(result.data.copy).toContain('Aposte agora no grupo!');
+    expect(result.data.copy).not.toMatch(/^CTA\b/m);
+  });
 });
 
 describe('POST-04: Odds reading from bet_group_assignments', () => {
