@@ -55,9 +55,9 @@ async function generateBetCopy(bet, toneConfig = null) {
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
@@ -159,9 +159,9 @@ Regras:
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules && toneConfig.customRules.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => `- ${r}`).join('\n')}`);
@@ -270,9 +270,9 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
         parts.push(`Palavras SUGERIDAS (tente usar quando apropriado): ${toneConfig.suggestedWords.join(', ')}`);
       }
       if (toneConfig.ctaTexts?.length > 0) {
-        parts.push(`CTAs disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
+        parts.push(`Chamados para acao disponiveis (varie entre eles): ${toneConfig.ctaTexts.join(', ')}`);
       } else if (toneConfig.ctaText) {
-        parts.push(`CTA padrao: ${toneConfig.ctaText}`);
+        parts.push(`Chamado para acao padrao: ${toneConfig.ctaText}`);
       }
       if (toneConfig.customRules?.length > 0) {
         parts.push(`Regras customizadas:\n${toneConfig.customRules.map(r => '- ' + r).join('\n')}`);
@@ -305,7 +305,7 @@ Regras:
 - Mencione cada jogo acertado com mercado, pick e odd
 - Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
 - Emojis moderados (nao exagere)
-- Inclua um CTA no final
+- Inclua um chamado para acao no final convidando o leitor a continuar acompanhando ou apostar
 - Formato: Markdown do Telegram (*bold*, _italic_)
 - Portugues BR
 - A mensagem deve estar PRONTA para enviar no Telegram
@@ -320,13 +320,20 @@ Regras:
     const response = await chain.invoke({});
     const copy = response.content.trim();
 
+    // Strip literal "CTA" label from LLM output (safety net)
+    // The CTA content should appear, but the technical label "CTA" must never be visible to end users
+    const sanitizedCopy = copy
+      .replace(/\bCTA\s*:\s*/gi, '')
+      .replace(/\bCTA\s*-\s*/gi, '')
+      .replace(/\bCTA\b\s*/gi, '');
+
     logger.info('Generated wins recap copy', {
       winCount: winsData.winCount,
       totalCount: winsData.totalCount,
-      copyLength: copy.length,
+      copyLength: sanitizedCopy.length,
     });
 
-    return { success: true, data: { copy } };
+    return { success: true, data: { copy: sanitizedCopy } };
   } catch (error) {
     logger.error('Failed to generate wins recap copy', { error: error.message });
     return { success: false, error: { code: 'LLM_ERROR', message: error.message } };
