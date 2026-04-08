@@ -289,7 +289,7 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       const home = w.league_matches?.home_team_name || '?';
       const away = w.league_matches?.away_team_name || '?';
       // Prefer per-group posting odds (bet_group_assignments), fall back to original analysis odds (suggested_bets.odds)
-      const rawOdds = w.bet_group_assignments?.[0]?.odds_at_post ?? w.odds ?? null;
+      const rawOdds = w.bet_group_assignments?.[0]?.odds_at_post ?? w.odds_at_post ?? null;
       const oddsSegment = rawOdds != null
         ? ` | ${toneConfig?.oddLabel || 'Odd'}: ${parseFloat(rawOdds).toFixed(2)}`
         : '';

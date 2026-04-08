@@ -132,6 +132,31 @@ describe('getYesterdayWins', () => {
     expect(result.error.message).toBe('connection refused');
   });
 
+  it('should filter by bet_group_assignments.telegram_posted_at (not result_updated_at)', async () => {
+    const chain = buildMockChain({ data: [], error: null });
+
+    await getYesterdayWins('group-abc');
+
+    const gteCalls = chain.gte.mock.calls;
+    expect(gteCalls).toHaveLength(1);
+    expect(gteCalls[0][0]).toBe('bet_group_assignments.telegram_posted_at');
+
+    // lt is the terminal call in the chain mock, check it was called with correct field
+    // (lt resolves the promise, so we check its mock.calls)
+    const ltCalls = chain.lt.mock.calls;
+    expect(ltCalls).toHaveLength(1);
+    expect(ltCalls[0][0]).toBe('bet_group_assignments.telegram_posted_at');
+  });
+
+  it('should include telegram_posted_at in bet_group_assignments select', async () => {
+    const chain = buildMockChain({ data: [], error: null });
+
+    await getYesterdayWins('group-abc');
+
+    const selectArg = chain.select.mock.calls[0][0];
+    expect(selectArg).toContain('telegram_posted_at');
+  });
+
   it('should return CALC_ERROR on unexpected exception', async () => {
     mockFrom.mockImplementation(() => { throw new Error('unexpected'); });
 
