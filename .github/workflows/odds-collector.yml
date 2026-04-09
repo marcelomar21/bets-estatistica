@@ -74,7 +74,6 @@ jobs:
           Se zero jogos: STATUS=EMPTY. Se erro: STATUS=ERROR com ERROR_MSG=<desc>.
           PROMPT
           )" \
-            --bare \
             --model claude-sonnet-4-6 \
             --max-turns 300 \
             --output-format stream-json \
