@@ -32,6 +32,8 @@ jobs:
         id: collect
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           SCOPE="${{ inputs.scope || 'jogos do dia' }}"
           echo "🎯 Escopo: $SCOPE"
@@ -69,8 +71,28 @@ jobs:
           )" \
             --model claude-sonnet-4-6 \
             --max-turns 300 \
+            --output-format stream-json \
             --allowedTools "Bash(read_only=false),Read,Write,Glob,Grep,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
-            2>&1 | tee /tmp/claude-output.txt || true
+            2>&1 | tee /tmp/claude-raw.txt | python3 -u -c "
+          import sys, json
+          for line in sys.stdin:
+              line = line.strip()
+              if not line: continue
+              try:
+                  obj = json.loads(line)
+                  t = obj.get('type','')
+                  if t == 'assistant' and 'message' in obj:
+                      for block in obj['message'].get('content',[]):
+                          if block.get('type') == 'text':
+                              print(f'[Claude] {block[\"text\"][:200]}', flush=True)
+                  elif t == 'tool_use':
+                      name = obj.get('tool','')
+                      print(f'[Tool] {name}', flush=True)
+                  elif t == 'result':
+                      txt = obj.get('result','')[:150]
+                      print(f'[Result] {txt}', flush=True)
+              except: pass
+          " || true
 
           # Verificar se summary foi gerado
           if [ -f /tmp/odds-summary.txt ]; then
