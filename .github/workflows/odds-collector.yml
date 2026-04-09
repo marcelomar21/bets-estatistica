@@ -1,0 +1,147 @@
+name: Odds Collector
+
+on:
+  schedule:
+    # 11:00 BRT — coleta matinal (jogos do dia)
+    - cron: '0 14 * * *'
+    # 15:00 BRT — coleta tarde (recheck + jogos noturnos)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Escopo da coleta (ex: "jogos do dia", "jogos de amanha")'
+        default: 'jogos do dia'
+        type: string
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Odds Collector via Claude Code
+        id: collect
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          SCOPE="${{ inputs.scope || 'jogos do dia' }}"
+          echo "🎯 Escopo: $SCOPE"
+
+          # Claude Code CLI executa a skill do odds-collector
+          # --print (-p): modo nao-interativo
+          # --model: sonnet para custo menor
+          # --max-turns: suficiente para ~10 jogos
+          npx -y @anthropic-ai/claude-code -p "$(cat <<PROMPT
+          Voce e o Odds Collector automatizado rodando em CI.
+
+          1. Leia a skill em .claude/skills/odds-collector/SKILL.md
+          2. Execute para: ${SCOPE}
+          3. Processe TODOS os jogos elegiveis (nao apenas 1)
+          4. Pule o passo 5 (validacao com agentes) e passo 7 (verificacao pos-gravacao) para economizar tokens
+          5. Ao final, escreva o arquivo /tmp/odds-summary.txt com EXATAMENTE este formato:
+
+          TOTAL_GAMES=<numero>
+          TOTAL_UPDATED=<numero>
+          TOTAL_UNAVAILABLE=<numero>
+          STATUS=OK
+          DETAILS
+          <Jogo> (<HH:MM>) — <Liga> — <X>/4 OK
+          ...
+          END
+
+          Se nenhum jogo elegivel, escreva:
+          TOTAL_GAMES=0
+          STATUS=EMPTY
+
+          Se houver erro critico, escreva:
+          STATUS=ERROR
+          ERROR_MSG=<descricao>
+          PROMPT
+          )" \
+            --model claude-sonnet-4-6 \
+            --max-turns 300 \
+            --allowedTools "Bash(read_only=false),Read,Write,Glob,Grep,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
+            2>&1 | tee /tmp/claude-output.txt || true
+
+          # Verificar se summary foi gerado
+          if [ -f /tmp/odds-summary.txt ]; then
+            echo "summary_exists=true" >> $GITHUB_OUTPUT
+            cat /tmp/odds-summary.txt
+          else
+            echo "summary_exists=false" >> $GITHUB_OUTPUT
+            echo "STATUS=ERROR" > /tmp/odds-summary.txt
+            echo "ERROR_MSG=Claude nao gerou summary" >> /tmp/odds-summary.txt
+          fi
+
+      - name: Send Telegram notification
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_GROUP_ID: ${{ secrets.TELEGRAM_ADMIN_GROUP_ID }}
+        run: |
+          SUMMARY="/tmp/odds-summary.txt"
+          STATUS=$(grep "^STATUS=" "$SUMMARY" 2>/dev/null | cut -d= -f2 || echo "ERROR")
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TIMESTAMP=$(TZ=America/Sao_Paulo date +'%d/%m/%Y %H:%M')
+
+          if [ "$STATUS" = "OK" ]; then
+            GAMES=$(grep "^TOTAL_GAMES=" "$SUMMARY" | cut -d= -f2)
+            UPDATED=$(grep "^TOTAL_UPDATED=" "$SUMMARY" | cut -d= -f2)
+            UNAVAIL=$(grep "^TOTAL_UNAVAILABLE=" "$SUMMARY" | cut -d= -f2)
+            DETAILS=$(sed -n '/^DETAILS$/,/^END$/p' "$SUMMARY" | grep -v "^DETAILS$" | grep -v "^END$")
+
+            # Construir mensagem
+            read -r -d '' MSG << EOFMSG || true
+          🎯 *ODDS COLLECTOR OK*
+
+          🏟️ ${GAMES} jogos processados
+          ✅ ${UPDATED} apostas atualizadas
+          ⚠️ ${UNAVAIL} indisponíveis
+
+          ${DETAILS}
+
+          🕐 ${TIMESTAMP} BRT
+          EOFMSG
+
+          elif [ "$STATUS" = "EMPTY" ]; then
+            read -r -d '' MSG << EOFMSG || true
+          🎯 *ODDS COLLECTOR*
+
+          📭 Nenhum jogo elegível encontrado
+
+          🕐 ${TIMESTAMP} BRT
+          EOFMSG
+
+          else
+            ERROR_MSG=$(grep "^ERROR_MSG=" "$SUMMARY" 2>/dev/null | cut -d= -f2 || echo "Erro desconhecido")
+            read -r -d '' MSG << EOFMSG || true
+          🔴 *ODDS COLLECTOR FAILED*
+
+          ❌ ${ERROR_MSG}
+          🔗 [Ver logs](${RUN_URL})
+
+          🕐 ${TIMESTAMP} BRT
+          EOFMSG
+          fi
+
+          # Enviar para Telegram
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$(python3 -c "
+          import json, sys
+          msg = '''${MSG}'''
+          print(json.dumps({
+              'chat_id': '${TELEGRAM_ADMIN_GROUP_ID}',
+              'parse_mode': 'Markdown',
+              'text': msg.strip()
+          }))
+          ")"
