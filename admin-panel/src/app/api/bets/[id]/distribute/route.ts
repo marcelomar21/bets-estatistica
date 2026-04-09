@@ -75,7 +75,7 @@ export const POST = createApiHandler(
     // Fetch current bet
     const { data: currentBet, error: fetchError } = await supabase
       .from('suggested_bets')
-      .select('id, group_id, bet_status')
+      .select('id, bet_status')
       .eq('id', betId)
       .single();
 
@@ -85,8 +85,6 @@ export const POST = createApiHandler(
         { status: 404 },
       );
     }
-
-    const oldGroupId = currentBet.group_id;
 
     // Check existing assignments in bet_group_assignments
     const { data: existingAssignments } = await supabase
@@ -161,16 +159,15 @@ export const POST = createApiHandler(
       }
     }
 
-    // Audit log for redistribution (#11: consistent structure)
-    const isRedistribution = oldGroupId !== null && created.length > 0;
-    if (isRedistribution) {
+    // Audit log when bet already had assignments in other groups
+    if (created.length > 0 && alreadyExisted.length > 0) {
       await supabase.from('audit_log').insert({
         table_name: 'bet_group_assignments',
         record_id: betId.toString(),
         action: 'distribute',
         changed_by: context.user.id,
         changes: {
-          old_group_id: oldGroupId,
+          existing_group_ids: alreadyExisted.map((a) => a.groupId),
           new_group_ids: created.map((c) => c.groupId),
           type: 'multi_group_distribute',
         },
@@ -190,7 +187,7 @@ export const POST = createApiHandler(
         alreadyExisted,
         skipped,
         // Backward compat fields (for existing frontend)
-        redistributed: isRedistribution,
+        redistributed: created.length > 0 && alreadyExisted.length > 0,
         groupName: firstGroupName,
       },
     });
