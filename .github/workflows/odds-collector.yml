@@ -42,37 +42,67 @@ jobs:
           # --print (-p): modo nao-interativo
           # --model: sonnet para custo menor
           # --max-turns: suficiente para ~10 jogos
-          npx -y @anthropic-ai/claude-code -p "$(cat <<PROMPT
-          Voce e o Odds Collector automatizado rodando em CI.
+          npx -y @anthropic-ai/claude-code -p "$(cat <<'PROMPT'
+          Voce e o Odds Collector. Coleta odds e bookingcodes da Betano para apostas pendentes.
 
-          1. Leia a skill em .claude/skills/odds-collector/SKILL.md
-          2. Execute para: ${SCOPE}
-          3. Processe TODOS os jogos elegiveis (nao apenas 1)
-          4. Pule o passo 5 (validacao com agentes) e passo 7 (verificacao pos-gravacao) para economizar tokens
-          5. Ao final, escreva o arquivo /tmp/odds-summary.txt com EXATAMENTE este formato:
+          CREDENCIAIS (env vars disponiveis):
+          - SUPABASE_URL e SUPABASE_SERVICE_KEY estao no ambiente. Use via curl.
 
-          TOTAL_GAMES=<numero>
-          TOTAL_UPDATED=<numero>
-          TOTAL_UNAVAILABLE=<numero>
+          PASSO 1 - Query apostas pendentes:
+          curl -s "${SUPABASE_URL}/rest/v1/suggested_bets?or=(odds.is.null,deep_link.is.null)&bet_status=neq.posted&order=id.desc&limit=500&select=id,match_id,bet_market,odds,deep_link,bet_status,league_matches(home_team_name,away_team_name,kickoff_time)" -H "apikey: ${SUPABASE_SERVICE_KEY}" -H "Authorization: Bearer ${SUPABASE_SERVICE_KEY}"
+          Filtrar kickoff nos proximos 3 dias. Agrupar por match_id. BUG: kickoff_time e BRT gravado como UTC, usar now-3h.
+
+          PASSO 2 - Para cada jogo, abrir Betano:
+          - browser_navigate para https://www.betano.bet.br/sport/futebol/jogos-de-hoje/ ou pagina da liga
+          - Dismiss popups (botao "Sim" + "SIM, EU ACEITO")
+          - Navegar ate o jogo, clicar aba "Todos", clicar expand-all (data-qa="expand-all")
+          - NUNCA usar browser_snapshot (estoura >100k chars). Sempre browser_evaluate com JS.
+
+          PASSO 3 - Extrair odds via browser_evaluate parseando document.body.innerText
+          PASSO 4 - Pegar bookingcodes: clicar odd, Compartilhar, Link, extrair do Facebook share href
+          PASSO 5 - PATCH no Supabase: {"odds": X, "deep_link": "URL", "bet_status": "ready"}
+
+          PASSO 6 - Ao final, escreva /tmp/odds-summary.txt:
+          TOTAL_GAMES=<N>
+          TOTAL_UPDATED=<N>
+          TOTAL_UNAVAILABLE=<N>
           STATUS=OK
           DETAILS
-          <Jogo> (<HH:MM>) — <Liga> — <X>/4 OK
-          ...
+          <Jogo> (<HH:MM>) - <Liga> - <X>/4 OK
           END
 
-          Se nenhum jogo elegivel, escreva:
-          TOTAL_GAMES=0
-          STATUS=EMPTY
-
-          Se houver erro critico, escreva:
-          STATUS=ERROR
-          ERROR_MSG=<descricao>
+          Se zero jogos: STATUS=EMPTY. Se erro: STATUS=ERROR com ERROR_MSG=<desc>.
           PROMPT
           )" \
+            --bare \
             --model claude-sonnet-4-6 \
             --max-turns 300 \
-            --allowedTools "Bash(read_only=false),Read,Write,Glob,Grep,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
-            2>&1 | tee /tmp/claude-output.txt || true
+            --output-format stream-json \
+            --verbose \
+            --allowedTools "Bash(read_only=false),Read,Write,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
+            2>&1 | python3 -u -c "
+          import sys, json, re
+          for raw in sys.stdin.buffer:
+              line = raw.decode('utf-8', errors='ignore').strip().rstrip('\r')
+              line = re.sub(r'^[\x00-\x1f]+', '', line)
+              if not line or line[0] != '{': continue
+              try:
+                  obj = json.loads(line)
+                  t = obj.get('type','')
+                  if t == 'assistant':
+                      for b in obj.get('message',{}).get('content',[]):
+                          if b.get('type') == 'text' and b.get('text','').strip():
+                              print(b['text'][:500], flush=True)
+                          elif b.get('type') == 'tool_use':
+                              inp = str(b.get('input',{}).get('command', b.get('input',{}).get('url','')))[:120]
+                              print(f'> {b[\"name\"]} {inp}', flush=True)
+                  elif t == 'result':
+                      cost = obj.get('total_cost_usd', 0)
+                      turns = obj.get('num_turns', 0)
+                      err = 'ERROR' if obj.get('is_error') else 'OK'
+                      print(f'=== DONE: {err} | {turns} turns | \${cost:.2f} ===', flush=True)
+              except: pass
+          " | tee /tmp/claude-output.txt || true
 
           # Verificar se summary foi gerado
           if [ -f /tmp/odds-summary.txt ]; then
