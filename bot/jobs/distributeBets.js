@@ -379,8 +379,18 @@ function distributeRoundRobin(bets, groups, groupCounts = {}, leaguePrefs = null
     runningCounts[g.id] = groupCounts[g.id] || 0;
   }
 
+  // Shuffle bets to break deterministic category clustering
+  // (AI generates bets in fixed category order per match, and kickoff_time
+  // ordering groups them together — without shuffle, same categories always
+  // land on the same groups)
+  const shuffled = [...bets];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
   const assignments = [];
-  for (const bet of bets) {
+  for (const bet of shuffled) {
     const leagueName = getBetLeagueName(bet);
     const leagueTier = (leagueTiers && leagueName) ? (leagueTiers.get(leagueName) || 'standard') : 'standard';
 
