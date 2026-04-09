@@ -31,7 +31,7 @@ jobs:
       - name: Run Odds Collector via Claude Code
         id: collect
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           SCOPE="${{ inputs.scope || 'jogos do dia' }}"
           echo "🎯 Escopo: $SCOPE"
