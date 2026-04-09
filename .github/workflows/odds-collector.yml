@@ -72,25 +72,30 @@ jobs:
             --model claude-sonnet-4-6 \
             --max-turns 300 \
             --output-format stream-json \
+            --verbose \
             --allowedTools "Bash(read_only=false),Read,Write,Glob,Grep,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
             2>&1 | tee /tmp/claude-raw.txt | python3 -u -c "
-          import sys, json
-          for line in sys.stdin:
-              line = line.strip()
-              if not line: continue
+          import sys, json, re
+          for raw in sys.stdin.buffer:
+              line = raw.decode('utf-8', errors='ignore').strip().strip('\r')
+              # Remove control chars
+              line = re.sub(r'^[\x00-\x09\x0b-\x1f]+', '', line)
+              if not line or line[0] != '{': continue
               try:
                   obj = json.loads(line)
                   t = obj.get('type','')
-                  if t == 'assistant' and 'message' in obj:
-                      for block in obj['message'].get('content',[]):
-                          if block.get('type') == 'text':
+                  if t == 'assistant':
+                      for block in obj.get('message',{}).get('content',[]):
+                          bt = block.get('type','')
+                          if bt == 'text':
                               print(f'[Claude] {block[\"text\"][:200]}', flush=True)
-                  elif t == 'tool_use':
-                      name = obj.get('tool','')
-                      print(f'[Tool] {name}', flush=True)
+                          elif bt == 'tool_use':
+                              print(f'[Tool] {block.get(\"name\",\"?\")}', flush=True)
                   elif t == 'result':
-                      txt = obj.get('result','')[:150]
-                      print(f'[Result] {txt}', flush=True)
+                      ok = 'OK' if not obj.get('is_error') else 'ERROR'
+                      cost = obj.get('total_cost_usd', 0)
+                      turns = obj.get('num_turns', 0)
+                      print(f'[Done] {ok} | {turns} turns | \${cost:.2f}', flush=True)
               except: pass
           " || true
 
