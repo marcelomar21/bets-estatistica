@@ -452,8 +452,8 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
-    // Track results - every hour between 13h and 23h (São Paulo time)
-    cron.schedule('0 13-23 * * *', async () => {
+    // Track results - 8h (before daily recap) + every hour 13h-23h (São Paulo time)
+    cron.schedule('0 8,13-23 * * *', async () => {
       logger.info('[scheduler] Running track-results job');
       try {
         await withExecutionLogging('track-results', runTrackResults);
