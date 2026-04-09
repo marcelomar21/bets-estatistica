@@ -76,9 +76,9 @@ jobs:
           )" \
             --model claude-sonnet-4-6 \
             --max-turns 300 \
+            --dangerously-skip-permissions \
             --output-format stream-json \
             --verbose \
-            --allowedTools "Bash(read_only=false),Read,Write,Agent,mcp__playwright__browser_navigate,mcp__playwright__browser_evaluate,mcp__playwright__create_session,mcp__playwright__close_session,mcp__playwright__browser_click" \
             2>&1 | python3 -u -c "
           import sys, json, re
           for raw in sys.stdin.buffer:
