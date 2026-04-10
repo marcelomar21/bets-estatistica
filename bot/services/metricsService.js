@@ -328,8 +328,9 @@ async function getYesterdayWins(groupId) {
       return { success: false, error: { code: 'DB_ERROR', message: error.message } };
     }
 
-    const wins = (data || []).filter(b => b.bet_result === 'success');
-    const totalCount = (data || []).length;
+    const allBets = data || [];
+    const wins = allBets.filter(b => b.bet_result === 'success');
+    const totalCount = allBets.length;
     const winCount = wins.length;
     const rate = totalCount > 0 ? (winCount / totalCount) * 100 : null;
 
@@ -337,7 +338,7 @@ async function getYesterdayWins(groupId) {
 
     return {
       success: true,
-      data: { wins, winCount, totalCount, rate },
+      data: { wins, allBets, winCount, totalCount, rate },
     };
   } catch (err) {
     logger.error('Error fetching yesterday wins', { groupId, error: err.message });

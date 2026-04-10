@@ -95,6 +95,8 @@ describe('getYesterdayWins', () => {
     expect(result.data.rate).toBeCloseTo(66.67, 1);
     expect(result.data.wins).toHaveLength(2);
     expect(result.data.wins.every(b => b.bet_result === 'success')).toBe(true);
+    expect(result.data.allBets).toHaveLength(3);
+    expect(result.data.allBets.map(b => b.bet_result)).toEqual(['success', 'success', 'failure']);
   });
 
   it('should return winCount=0 when all bets failed', async () => {

@@ -285,7 +285,8 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       }
     }
 
-    const winsList = (winsData.wins || []).map(w => {
+    const bets = winsData.allBets || winsData.wins || [];
+    const betsList = bets.map(w => {
       const home = w.league_matches?.home_team_name || '?';
       const away = w.league_matches?.away_team_name || '?';
       // Prefer per-group posting odds (bet_group_assignments), fall back to original analysis odds (suggested_bets.odds)
@@ -293,19 +294,26 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       const oddsSegment = rawOdds != null
         ? ` | ${toneConfig?.oddLabel || 'Odd'}: ${parseFloat(rawOdds).toFixed(2)}`
         : '';
-      return `- ${home} x ${away} | Mercado: ${w.bet_market} | Pick: ${w.bet_pick || 'N/A'}${oddsSegment}`;
+      const result = w.bet_result === 'success' ? '✅ GREEN' : '❌ RED';
+      // When pick and market are identical, only show market to avoid redundancy
+      const pickSegment = w.bet_pick && w.bet_pick !== w.bet_market
+        ? ` | Pick: ${w.bet_pick}`
+        : '';
+      return `- ${result} | ${home} x ${away} | Mercado: ${w.bet_market}${pickSegment}${oddsSegment}`;
     }).join('\n');
 
-    const humanMessage = `Gere uma mensagem de RECAP celebrando os acertos de ontem para o grupo de Telegram.
+    const humanMessage = `Gere uma mensagem de RECAP dos resultados de ontem para o grupo de Telegram.
 
 DADOS:
-- Acertos: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
-- Jogos acertados:
-${winsList}
+- Taxa do dia: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
+- Resultados:
+${betsList}
 
 Regras:
-- Celebre os acertos sem arrogancia
-- Mencione cada jogo acertado com mercado, pick e odd
+- Mostre TODOS os jogos com o resultado (GREEN = acerto, RED = erro)
+- Celebre os acertos sem arrogancia, mas reconheca os erros com leveza
+- Mencione cada jogo com mercado, odd e resultado (GREEN ou RED)
+- Quando o Pick for diferente do Mercado, mencione ambos
 - Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
 - Emojis moderados (nao exagere)
 - Inclua um chamado para acao no final convidando o leitor a continuar acompanhando ou apostar

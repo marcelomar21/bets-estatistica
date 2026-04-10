@@ -70,8 +70,29 @@ describe('POST-03: CTA label sanitization', () => {
           bet_pick: 'Over',
           odds_at_post: null,
           odds: 1.90,
+          bet_result: 'success',
           bet_group_assignments: [{ odds_at_post: 1.90 }],
           league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
+        },
+      ],
+      allBets: [
+        {
+          bet_market: 'Over 2.5',
+          bet_pick: 'Over',
+          odds_at_post: null,
+          odds: 1.90,
+          bet_result: 'success',
+          bet_group_assignments: [{ odds_at_post: 1.90 }],
+          league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
+        },
+        {
+          bet_market: '1X2',
+          bet_pick: 'Home',
+          odds_at_post: null,
+          odds: 2.10,
+          bet_result: 'failure',
+          bet_group_assignments: [{ odds_at_post: 2.10 }],
+          league_matches: { home_team_name: 'Gremio', away_team_name: 'Inter' },
         },
       ],
     };
@@ -199,6 +220,85 @@ describe('POST-03: CTA label sanitization', () => {
   });
 });
 
+describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    capturedMessages = [];
+  });
+
+  it('includes GREEN and RED result indicators in prompt', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos resultados!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 2,
+      rate: 50,
+      wins: [
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.80, bet_group_assignments: [{ odds_at_post: 1.80 }], league_matches: { home_team_name: 'A', away_team_name: 'B' } },
+      ],
+      allBets: [
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.80, bet_group_assignments: [{ odds_at_post: 1.80 }], league_matches: { home_team_name: 'A', away_team_name: 'B' } },
+        { bet_market: 'BTTS', bet_pick: 'Sim', bet_result: 'failure', odds_at_post: 1.95, bet_group_assignments: [{ odds_at_post: 1.95 }], league_matches: { home_team_name: 'C', away_team_name: 'D' } },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('✅ GREEN');
+    expect(humanMessage[1]).toContain('❌ RED');
+  });
+
+  it('skips Pick when identical to Market', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos resultados!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        { bet_market: 'Menos de 8.5 escanteios', bet_pick: 'Menos de 8.5 escanteios', bet_result: 'success', odds_at_post: 1.87, bet_group_assignments: [{ odds_at_post: 1.87 }], league_matches: { home_team_name: 'Freiburg', away_team_name: 'Celta de Vigo' } },
+      ],
+      allBets: [
+        { bet_market: 'Menos de 8.5 escanteios', bet_pick: 'Menos de 8.5 escanteios', bet_result: 'success', odds_at_post: 1.87, bet_group_assignments: [{ odds_at_post: 1.87 }], league_matches: { home_team_name: 'Freiburg', away_team_name: 'Celta de Vigo' } },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('Mercado: Menos de 8.5 escanteios');
+    expect(humanMessage[1]).not.toContain('Pick:');
+  });
+
+  it('shows Pick when different from Market', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos resultados!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
+      ],
+      allBets: [
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
+      ],
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).toContain('Pick: Over');
+  });
+});
+
 describe('POST-04: Odds reading from bet_group_assignments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -210,20 +310,22 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
       content: 'Recap dos acertos!',
     });
 
+    const bet = {
+      bet_market: 'Over 2.5',
+      bet_pick: 'Over',
+      odds_at_post: null,
+      odds: 1.50,
+      bet_result: 'success',
+      bet_group_assignments: [{ odds_at_post: 2.10 }],
+      league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
+    };
+
     const winsData = {
       winCount: 1,
       totalCount: 1,
       rate: 100,
-      wins: [
-        {
-          bet_market: 'Over 2.5',
-          bet_pick: 'Over',
-          odds_at_post: null,
-          odds: 1.50,
-          bet_group_assignments: [{ odds_at_post: 2.10 }],
-          league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
-        },
-      ],
+      wins: [bet],
+      allBets: [bet],
     };
 
     await generateWinsRecapCopy(winsData, null);
@@ -238,19 +340,21 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
       content: 'Recap dos acertos!',
     });
 
+    const bet = {
+      bet_market: 'Moneyline',
+      bet_pick: 'Home',
+      odds_at_post: 1.85,
+      bet_result: 'success',
+      bet_group_assignments: [{ odds_at_post: null }],
+      league_matches: { home_team_name: 'Santos', away_team_name: 'Palmeiras' },
+    };
+
     const winsData = {
       winCount: 1,
       totalCount: 1,
       rate: 100,
-      wins: [
-        {
-          bet_market: 'Moneyline',
-          bet_pick: 'Home',
-          odds_at_post: 1.85,
-          bet_group_assignments: [{ odds_at_post: null }],
-          league_matches: { home_team_name: 'Santos', away_team_name: 'Palmeiras' },
-        },
-      ],
+      wins: [bet],
+      allBets: [bet],
     };
 
     await generateWinsRecapCopy(winsData, null);
@@ -264,20 +368,22 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
       content: 'Recap dos acertos!',
     });
 
+    const bet = {
+      bet_market: 'Both Teams Score',
+      bet_pick: 'Yes',
+      odds_at_post: null,
+      odds: null,
+      bet_result: 'success',
+      bet_group_assignments: [{ odds_at_post: null }],
+      league_matches: { home_team_name: 'Corinthians', away_team_name: 'Sao Paulo' },
+    };
+
     const winsData = {
       winCount: 1,
       totalCount: 1,
       rate: 100,
-      wins: [
-        {
-          bet_market: 'Both Teams Score',
-          bet_pick: 'Yes',
-          odds_at_post: null,
-          odds: null,
-          bet_group_assignments: [{ odds_at_post: null }],
-          league_matches: { home_team_name: 'Corinthians', away_team_name: 'Sao Paulo' },
-        },
-      ],
+      wins: [bet],
+      allBets: [bet],
     };
 
     await generateWinsRecapCopy(winsData, null);
@@ -292,20 +398,22 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
       content: 'Recap dos acertos!',
     });
 
+    const bet = {
+      bet_market: 'Over 1.5',
+      bet_pick: 'Over',
+      odds_at_post: null,
+      odds: null,
+      bet_result: 'success',
+      bet_group_assignments: [{ odds_at_post: 3 }],
+      league_matches: { home_team_name: 'Botafogo', away_team_name: 'Fluminense' },
+    };
+
     const winsData = {
       winCount: 1,
       totalCount: 1,
       rate: 100,
-      wins: [
-        {
-          bet_market: 'Over 1.5',
-          bet_pick: 'Over',
-          odds_at_post: null,
-          odds: null,
-          bet_group_assignments: [{ odds_at_post: 3 }],
-          league_matches: { home_team_name: 'Botafogo', away_team_name: 'Fluminense' },
-        },
-      ],
+      wins: [bet],
+      allBets: [bet],
     };
 
     await generateWinsRecapCopy(winsData, null);
@@ -319,20 +427,22 @@ describe('POST-04: Odds reading from bet_group_assignments', () => {
       content: 'Recap dos acertos!',
     });
 
+    const bet = {
+      bet_market: 'Over 2.5',
+      bet_pick: 'Over',
+      odds_at_post: null,
+      odds: null,
+      bet_result: 'success',
+      bet_group_assignments: [{ odds_at_post: 2.50 }],
+      league_matches: { home_team_name: 'Gremio', away_team_name: 'Internacional' },
+    };
+
     const winsData = {
       winCount: 1,
       totalCount: 1,
       rate: 100,
-      wins: [
-        {
-          bet_market: 'Over 2.5',
-          bet_pick: 'Over',
-          odds_at_post: null,
-          odds: null,
-          bet_group_assignments: [{ odds_at_post: 2.50 }],
-          league_matches: { home_team_name: 'Gremio', away_team_name: 'Internacional' },
-        },
-      ],
+      wins: [bet],
+      allBets: [bet],
     };
 
     const toneConfig = { oddLabel: 'Cotacao' };
