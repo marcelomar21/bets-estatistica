@@ -285,8 +285,7 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       }
     }
 
-    const bets = winsData.allBets || winsData.wins || [];
-    const betsList = bets.map(w => {
+    const winsList = (winsData.wins || []).map(w => {
       const home = w.league_matches?.home_team_name || '?';
       const away = w.league_matches?.away_team_name || '?';
       // Prefer per-group posting odds (bet_group_assignments), fall back to original analysis odds (suggested_bets.odds)
@@ -294,25 +293,27 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       const oddsSegment = rawOdds != null
         ? ` | ${toneConfig?.oddLabel || 'Odd'}: ${parseFloat(rawOdds).toFixed(2)}`
         : '';
-      const result = w.bet_result === 'success' ? '✅ GREEN' : '❌ RED';
       // When pick and market are identical, only show market to avoid redundancy
       const pickSegment = w.bet_pick && w.bet_pick !== w.bet_market
         ? ` | Pick: ${w.bet_pick}`
         : '';
-      return `- ${result} | ${home} x ${away} | Mercado: ${w.bet_market}${pickSegment}${oddsSegment}`;
+      // Show actual outcome from result_reason (e.g. "Total de escanteios: 9 > 8.5")
+      const reasonSegment = w.result_reason
+        ? ` | Resultado: ${w.result_reason.replace(/\s*\(deterministic\)\s*$/i, '').replace(/\s*\(consensus\)\s*$/i, '').replace(/\s*\(llm\)\s*$/i, '').trim()}`
+        : '';
+      return `- ${home} x ${away} | Mercado: ${w.bet_market}${pickSegment}${oddsSegment}${reasonSegment}`;
     }).join('\n');
 
-    const humanMessage = `Gere uma mensagem de RECAP dos resultados de ontem para o grupo de Telegram.
+    const humanMessage = `Gere uma mensagem de RECAP celebrando os acertos de ontem para o grupo de Telegram.
 
 DADOS:
-- Taxa do dia: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
-- Resultados:
-${betsList}
+- Acertos: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
+- Jogos acertados:
+${winsList}
 
 Regras:
-- Mostre TODOS os jogos com o resultado (GREEN = acerto, RED = erro)
-- Celebre os acertos sem arrogancia, mas reconheca os erros com leveza
-- Mencione cada jogo com mercado, odd e resultado (GREEN ou RED)
+- Celebre os acertos sem arrogancia
+- Mencione cada jogo acertado com mercado, odd e o resultado real (ex: "foram 9 escanteios", "placar: 3x1")
 - Quando o Pick for diferente do Mercado, mencione ambos
 - Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
 - Emojis moderados (nao exagere)

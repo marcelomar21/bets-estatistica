@@ -313,7 +313,7 @@ async function getYesterdayWins(groupId) {
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
-        id, bet_market, bet_pick, odds_at_post, bet_result,
+        id, bet_market, bet_pick, odds_at_post, bet_result, result_reason,
         bet_group_assignments!inner(group_id, posting_status, odds_at_post, telegram_posted_at),
         league_matches!inner(home_team_name, away_team_name, kickoff_time)
       `)

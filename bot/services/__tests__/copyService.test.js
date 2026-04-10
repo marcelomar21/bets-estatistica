@@ -75,26 +75,6 @@ describe('POST-03: CTA label sanitization', () => {
           league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
         },
       ],
-      allBets: [
-        {
-          bet_market: 'Over 2.5',
-          bet_pick: 'Over',
-          odds_at_post: null,
-          odds: 1.90,
-          bet_result: 'success',
-          bet_group_assignments: [{ odds_at_post: 1.90 }],
-          league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' },
-        },
-        {
-          bet_market: '1X2',
-          bet_pick: 'Home',
-          odds_at_post: null,
-          odds: 2.10,
-          bet_result: 'failure',
-          bet_group_assignments: [{ odds_at_post: 2.10 }],
-          league_matches: { home_team_name: 'Gremio', away_team_name: 'Inter' },
-        },
-      ],
     };
 
     const result = await generateWinsRecapCopy(winsData, null);
@@ -220,15 +200,15 @@ describe('POST-03: CTA label sanitization', () => {
   });
 });
 
-describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
+describe('RECAP: result_reason display and pick/market dedup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     capturedMessages = [];
   });
 
-  it('includes GREEN and RED result indicators in prompt', async () => {
+  it('includes result_reason in prompt (stripped of source tag)', async () => {
     mockInvoke.mockResolvedValue({
-      content: 'Recap dos resultados!',
+      content: 'Recap dos acertos!',
     });
 
     const winsData = {
@@ -236,24 +216,20 @@ describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
       totalCount: 2,
       rate: 50,
       wins: [
-        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.80, bet_group_assignments: [{ odds_at_post: 1.80 }], league_matches: { home_team_name: 'A', away_team_name: 'B' } },
-      ],
-      allBets: [
-        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.80, bet_group_assignments: [{ odds_at_post: 1.80 }], league_matches: { home_team_name: 'A', away_team_name: 'B' } },
-        { bet_market: 'BTTS', bet_pick: 'Sim', bet_result: 'failure', odds_at_post: 1.95, bet_group_assignments: [{ odds_at_post: 1.95 }], league_matches: { home_team_name: 'C', away_team_name: 'D' } },
+        { bet_market: 'Over 8.5 escanteios', bet_pick: 'Over', bet_result: 'success', result_reason: 'Total de escanteios: 9 > 8.5 (deterministic)', odds_at_post: 1.80, bet_group_assignments: [{ odds_at_post: 1.80 }], league_matches: { home_team_name: 'A', away_team_name: 'B' } },
       ],
     };
 
     await generateWinsRecapCopy(winsData, null);
 
     const humanMessage = capturedMessages.find(m => m[0] === 'human');
-    expect(humanMessage[1]).toContain('✅ GREEN');
-    expect(humanMessage[1]).toContain('❌ RED');
+    expect(humanMessage[1]).toContain('Resultado: Total de escanteios: 9 > 8.5');
+    expect(humanMessage[1]).not.toContain('(deterministic)');
   });
 
-  it('skips Pick when identical to Market', async () => {
+  it('omits result segment when result_reason is null', async () => {
     mockInvoke.mockResolvedValue({
-      content: 'Recap dos resultados!',
+      content: 'Recap dos acertos!',
     });
 
     const winsData = {
@@ -261,10 +237,27 @@ describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
       totalCount: 1,
       rate: 100,
       wins: [
-        { bet_market: 'Menos de 8.5 escanteios', bet_pick: 'Menos de 8.5 escanteios', bet_result: 'success', odds_at_post: 1.87, bet_group_assignments: [{ odds_at_post: 1.87 }], league_matches: { home_team_name: 'Freiburg', away_team_name: 'Celta de Vigo' } },
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', result_reason: null, odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
       ],
-      allBets: [
-        { bet_market: 'Menos de 8.5 escanteios', bet_pick: 'Menos de 8.5 escanteios', bet_result: 'success', odds_at_post: 1.87, bet_group_assignments: [{ odds_at_post: 1.87 }], league_matches: { home_team_name: 'Freiburg', away_team_name: 'Celta de Vigo' } },
+    };
+
+    await generateWinsRecapCopy(winsData, null);
+
+    const humanMessage = capturedMessages.find(m => m[0] === 'human');
+    expect(humanMessage[1]).not.toContain('Resultado:');
+  });
+
+  it('skips Pick when identical to Market', async () => {
+    mockInvoke.mockResolvedValue({
+      content: 'Recap dos acertos!',
+    });
+
+    const winsData = {
+      winCount: 1,
+      totalCount: 1,
+      rate: 100,
+      wins: [
+        { bet_market: 'Menos de 8.5 escanteios', bet_pick: 'Menos de 8.5 escanteios', bet_result: 'success', result_reason: 'Total de escanteios: 6 < 8.5 (deterministic)', odds_at_post: 1.87, bet_group_assignments: [{ odds_at_post: 1.87 }], league_matches: { home_team_name: 'Freiburg', away_team_name: 'Celta de Vigo' } },
       ],
     };
 
@@ -277,7 +270,7 @@ describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
 
   it('shows Pick when different from Market', async () => {
     mockInvoke.mockResolvedValue({
-      content: 'Recap dos resultados!',
+      content: 'Recap dos acertos!',
     });
 
     const winsData = {
@@ -285,10 +278,7 @@ describe('RECAP: GREEN/RED result display and pick/market dedup', () => {
       totalCount: 1,
       rate: 100,
       wins: [
-        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
-      ],
-      allBets: [
-        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
+        { bet_market: 'Over 2.5', bet_pick: 'Over', bet_result: 'success', result_reason: null, odds_at_post: 1.90, bet_group_assignments: [{ odds_at_post: 1.90 }], league_matches: { home_team_name: 'Flamengo', away_team_name: 'Vasco' } },
       ],
     };
 
