@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 Phase: 03
 Plan: Not started
 Status: Executing Phase 3
-Last activity: 2026-04-08
+Last activity: 2026-04-10 - Completed quick task 260410-eqt: Fix RECAP copy pick/market dedup + GREEN/RED results
 
 Progress: [..........] 0%
 
@@ -71,6 +71,12 @@ None yet.
 ### Blockers/Concerns
 
 None yet.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260410-eqt | Fix RECAP copy: pick/market dedup + GREEN/RED results | 2026-04-10 | 3dc5174 | [260410-eqt-fix-recap-copy-pick-vs-mercado-duplicado](./quick/260410-eqt-fix-recap-copy-pick-vs-mercado-duplicado/) |
 
 ## Session Continuity
 
