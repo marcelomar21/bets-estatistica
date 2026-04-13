@@ -211,6 +211,17 @@ function formatResult(jobName, result) {
         return `${requested} requested`;
       }
 
+      case 'generate-daily-art': {
+        const gen = result.generated || 0;
+        const sent = result.sent || 0;
+        const failed = result.failed || 0;
+        if (gen > 0 || sent > 0) {
+          const failPart = failed > 0 ? `, ${failed} fail` : '';
+          return `${sent} sent, ${gen} gen${failPart}`;
+        }
+        return result.skipped ? `${result.skipped} skipped` : 'nenhum';
+      }
+
       case 'send-scheduled-messages': {
         const sent = result.sent || 0;
         const failed = result.failed || 0;
