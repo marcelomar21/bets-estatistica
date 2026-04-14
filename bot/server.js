@@ -544,6 +544,17 @@ async function setupScheduler() {
       }
     }, { timezone: TZ });
 
+    // Audit results pre-recap - 08:30 São Paulo (rescue unknowns before 09:00 recap)
+    cron.schedule('30 8 * * *', async () => {
+      logger.info('[scheduler] Running audit-results (pre-recap)');
+      try {
+        await withExecutionLogging('audit-results-pre-recap', runAuditResults);
+        logger.info('[scheduler] audit-results (pre-recap) complete');
+      } catch (err) {
+        logger.error('[scheduler] audit-results (pre-recap) failed', { error: err.message });
+      }
+    }, { timezone: TZ });
+
     // Cleanup stuck job executions - every hour at minute 0
     cron.schedule('0 * * * *', async () => {
       logger.debug('[scheduler] Running cleanup-stuck-jobs');
@@ -574,6 +585,7 @@ async function setupScheduler() {
     console.log('   00:30 - Check affiliate expiration (membership)');
     console.log('   03:00 - Cakto reconciliation (membership)');
     console.log('   03:30 - Audit results (daily double-check)');
+    console.log('   08:30 - Audit results pre-recap (rescue unknowns)');
     console.log('   08:00 - Enrich odds');
     console.log('   13-23 - Track results (hourly)');
     console.log('   */15  - Distribute bets (round-robin)');

@@ -304,10 +304,14 @@ async function generateWinsRecapCopy(winsData, toneConfig = null) {
       return `- ${home} x ${away} | Mercado: ${w.bet_market}${pickSegment}${oddsSegment}${reasonSegment}`;
     }).join('\n');
 
+    const pendingNote = winsData.pendingCount > 0
+      ? `\n- Jogos ainda pendentes de resultado: ${winsData.pendingCount}`
+      : '';
+
     const humanMessage = `Gere uma mensagem de RECAP celebrando os acertos de ontem para o grupo de Telegram.
 
 DADOS:
-- Acertos: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)
+- Acertos: ${winsData.winCount}/${winsData.totalCount} (${winsData.rate?.toFixed(1) || 0}%)${pendingNote}
 - Jogos acertados:
 ${winsList}
 
@@ -316,6 +320,7 @@ Regras:
 - Mencione cada jogo acertado com mercado, odd e o resultado real (ex: "foram 9 escanteios", "placar: 3x1")
 - Quando o Pick for diferente do Mercado, mencione ambos
 - Inclua a taxa de acerto do dia (${winsData.winCount}/${winsData.totalCount})
+- Se houver jogos pendentes de resultado, mencione brevemente que X jogos ainda aguardam resultado
 - Emojis moderados (nao exagere)
 - Inclua um chamado para acao no final convidando o leitor a continuar acompanhando ou apostar
 - Formato: Markdown do Telegram (*bold*, _italic_)

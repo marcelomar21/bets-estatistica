@@ -319,7 +319,7 @@ async function getYesterdayWins(groupId) {
       `)
       .eq('bet_group_assignments.group_id', groupId)
       .eq('bet_group_assignments.posting_status', 'posted')
-      .in('bet_result', ['success', 'failure'])
+      .not('bet_result', 'eq', 'cancelled')
       .gte('bet_group_assignments.telegram_posted_at', startUtc.toISOString())
       .lt('bet_group_assignments.telegram_posted_at', endUtc.toISOString());
 
@@ -332,13 +332,14 @@ async function getYesterdayWins(groupId) {
     const wins = allBets.filter(b => b.bet_result === 'success');
     const totalCount = allBets.length;
     const winCount = wins.length;
+    const pendingCount = allBets.filter(b => !['success', 'failure'].includes(b.bet_result)).length;
     const rate = totalCount > 0 ? (winCount / totalCount) * 100 : null;
 
-    logger.debug('Yesterday wins fetched', { groupId, winCount, totalCount, rate });
+    logger.debug('Yesterday wins fetched', { groupId, winCount, totalCount, pendingCount, rate });
 
     return {
       success: true,
-      data: { wins, allBets, winCount, totalCount, rate },
+      data: { wins, allBets, winCount, totalCount, pendingCount, rate },
     };
   } catch (err) {
     logger.error('Error fetching yesterday wins', { groupId, error: err.message });
