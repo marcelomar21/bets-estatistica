@@ -28,7 +28,7 @@ describe('getYesterdayWins', () => {
     const chain = {
       select: jest.fn().mockReturnThis(),
       eq: jest.fn().mockReturnThis(),
-      in: jest.fn().mockReturnThis(),
+      not: jest.fn().mockReturnThis(),
       gte: jest.fn().mockReturnThis(),
       lt: jest.fn().mockResolvedValue(resolvedValue),
     };
@@ -79,11 +79,12 @@ describe('getYesterdayWins', () => {
     expect(directGroupId).toBeUndefined();
   });
 
-  it('should return wins, winCount, totalCount and rate for mixed results', async () => {
+  it('should return wins, winCount, totalCount, pendingCount and rate for mixed results', async () => {
     const mockData = [
       { id: 1, bet_market: 'Over 2.5', bet_pick: 'Over', odds_at_post: 1.80, bet_result: 'success', league_matches: { home_team_name: 'A', away_team_name: 'B', kickoff_time: '2026-04-04T20:00:00Z' } },
       { id: 2, bet_market: 'BTTS', bet_pick: 'Sim', odds_at_post: 1.95, bet_result: 'success', league_matches: { home_team_name: 'C', away_team_name: 'D', kickoff_time: '2026-04-04T21:00:00Z' } },
       { id: 3, bet_market: '1X2', bet_pick: 'Home', odds_at_post: 2.10, bet_result: 'failure', league_matches: { home_team_name: 'E', away_team_name: 'F', kickoff_time: '2026-04-04T22:00:00Z' } },
+      { id: 4, bet_market: 'Under 3.5', bet_pick: 'Under', odds_at_post: 1.65, bet_result: 'pending', league_matches: { home_team_name: 'G', away_team_name: 'H', kickoff_time: '2026-04-04T22:30:00Z' } },
     ];
     buildMockChain({ data: mockData, error: null });
 
@@ -91,12 +92,29 @@ describe('getYesterdayWins', () => {
 
     expect(result.success).toBe(true);
     expect(result.data.winCount).toBe(2);
-    expect(result.data.totalCount).toBe(3);
-    expect(result.data.rate).toBeCloseTo(66.67, 1);
+    expect(result.data.totalCount).toBe(4);
+    expect(result.data.pendingCount).toBe(1);
+    expect(result.data.rate).toBeCloseTo(50.0, 1);
     expect(result.data.wins).toHaveLength(2);
     expect(result.data.wins.every(b => b.bet_result === 'success')).toBe(true);
-    expect(result.data.allBets).toHaveLength(3);
-    expect(result.data.allBets.map(b => b.bet_result)).toEqual(['success', 'success', 'failure']);
+    expect(result.data.allBets).toHaveLength(4);
+  });
+
+  it('should count unknown bets as pending in pendingCount', async () => {
+    const mockData = [
+      { id: 1, bet_result: 'success', league_matches: {} },
+      { id: 2, bet_result: 'unknown', league_matches: {} },
+      { id: 3, bet_result: 'pending', league_matches: {} },
+    ];
+    buildMockChain({ data: mockData, error: null });
+
+    const result = await getYesterdayWins('group-abc');
+
+    expect(result.success).toBe(true);
+    expect(result.data.winCount).toBe(1);
+    expect(result.data.totalCount).toBe(3);
+    expect(result.data.pendingCount).toBe(2);
+    expect(result.data.rate).toBeCloseTo(33.33, 1);
   });
 
   it('should return winCount=0 when all bets failed', async () => {
@@ -110,6 +128,7 @@ describe('getYesterdayWins', () => {
     expect(result.success).toBe(true);
     expect(result.data.winCount).toBe(0);
     expect(result.data.totalCount).toBe(1);
+    expect(result.data.pendingCount).toBe(0);
     expect(result.data.rate).toBe(0);
   });
 
