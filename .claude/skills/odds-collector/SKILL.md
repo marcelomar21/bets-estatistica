@@ -56,22 +56,35 @@ Extrair odds via `browser_evaluate` parseando `document.body.innerText`:
 - Mercados de cartoes/escanteios podem ter linhas limitadas (ex: Betano oferece 4.5+ cartoes mas nao 3.5)
 - Se a linha exata nao existir, marcar como INDISPONIVEL
 
-### 4. Pegar bookingcodes (PARALELO — multiplas sessoes)
+### 4. Pegar bookingcodes
 
-Usar `playwright-parallel-mcp` com `create_session` para coletar bookingcodes em paralelo. Uma sessao por aposta.
+**REGRA CRITICA: 1 APOSTA POR BOOKINGCODE.** Cada bookingcode deve conter EXATAMENTE 1 selecao. Se o cupom acumular multiplas selecoes, o bookingcode gerado tera todas elas — isso e ERRADO. O usuario abre o link e ve 2-3 apostas em vez de 1.
 
-**Fluxo:**
+**Fluxo para cada aposta (sequencial, 1 por vez):**
 
-1. Criar N sessoes com `create_session` em **uma unica mensagem** (paralelo real)
-2. Em cada sessao, via `browser_navigate(sessionId=X)`: ir para a URL do jogo
-3. Em cada sessao, via `browser_evaluate(sessionId=X)`: dismiss popups (Sim + cookies)
-4. Em cada sessao, via `browser_evaluate(sessionId=X)` (NAO browser_run_code — da timeout):
-   - Clicar aba "Todos" + "Expand all" (sessoes novas abrem em "Principais" — odds de escanteios/cartoes nao aparecem)
-   - Clicar na odd especifica da aposta
-   - Clicar "Compartilhar" → usar `Promise` + `setTimeout` para esperar → clicar "Link" → extrair bookingcode do Facebook share href
+1. **Limpar cupom**: antes de clicar qualquer odd, garantir que o cupom esta vazio
    ```js
-   // Pattern para Compartilhar + Link + extrair (tudo em 1 evaluate com Promise)
+   // Remover TODAS as selecoes ativas do cupom
+   document.querySelectorAll('[data-qa="event-selection"]').forEach(sel => {
+     if (sel.classList.contains('active') || sel.getAttribute('aria-pressed') === 'true') sel.click();
+   });
+   // Tambem remover links de bookingcode antigos do DOM (cache stale)
+   document.querySelectorAll('a[href*="bookingcode"]').forEach(a => a.remove());
+   ```
+
+2. **Clicar na odd especifica** da aposta (1 unica selecao)
+
+3. **Verificar que o cupom tem exatamente 1 selecao** antes de compartilhar
+   ```js
+   const activeCount = document.querySelectorAll('[data-qa="event-selection"].active, [data-qa="event-selection"][aria-pressed="true"]').length;
+   if (activeCount !== 1) throw new Error(`Cupom tem ${activeCount} selecoes, esperava 1`);
+   ```
+
+4. **Extrair bookingcode**: Compartilhar → Link → Facebook href
+   ```js
    () => {
+     // Remover links antigos primeiro (evita cache stale)
+     document.querySelectorAll('a[href*="bookingcode"]').forEach(a => a.remove());
      const share = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Compartilhar'));
      if (share) share.click();
      return new Promise(resolve => {
@@ -86,11 +99,74 @@ Usar `playwright-parallel-mcp` com `create_session` para coletar bookingcodes em
      });
    }
    ```
-5. Fechar todas: `close_session` por sessao
 
-**IMPORTANTE**: Cada sessao tem browser isolado (flag `--isolated` no backend). Nao compartilham cookies nem perfil Chrome.
+5. **Desselecionar a aposta** apos extrair o bookingcode (clicar novamente para remover do cupom)
 
-**Todas as tools `browser_*` aceitam `sessionId`.** Chamar operacoes em sessoes diferentes na mesma mensagem = paralelo real.
+**Pattern otimizado para coleta sequencial (chained promises):**
+```js
+const getCode = (selText) => new Promise(resolve => {
+  // 1. Clicar na odd
+  const sels = document.querySelectorAll('[data-qa="event-selection"]');
+  for (const sel of sels) { if (sel.textContent.trim() === selText) { sel.click(); break; } }
+  setTimeout(() => {
+    // 2. Limpar links antigos + Compartilhar + Link + Extrair
+    document.querySelectorAll('a[href*="bookingcode"]').forEach(a => a.remove());
+    const share = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Compartilhar'));
+    if (share) share.click();
+    setTimeout(() => {
+      const linkBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'Link');
+      if (linkBtn) linkBtn.click();
+      setTimeout(() => {
+        const fb = document.querySelector('a[href*="facebook.com/sharer"]');
+        const code = fb ? new URL(fb.href).searchParams.get('u') : 'not found';
+        // 3. Desselecionar
+        for (const sel of document.querySelectorAll('[data-qa="event-selection"]')) {
+          if (sel.textContent.trim() === selText) { sel.click(); break; }
+        }
+        resolve(code);
+      }, 2000);
+    }, 2000);
+  }, 500);
+});
+
+// Encadear todas as apostas do jogo
+return getCode('Menos de3.51.53').then(c1 =>
+  getCode('Mais de3.51.78').then(c2 =>
+    getCode('Mais de9.51.62').then(c3 =>
+      getCode('Sim1.75').then(c4 => ({c1, c2, c3, c4}))
+    )
+  )
+);
+```
+
+**Sobre sessoes paralelas:** Se `--isolated` estiver configurado no backend, pode usar `create_session` para coletar em paralelo (1 sessao por aposta = cupom sempre limpo). Sem `--isolated`, usar sequencial com o pattern acima.
+
+### 4.1. Verificacao dos bookingcodes (1 aposta por link)
+
+**OBRIGATORIO.** Apos coletar todos os bookingcodes do jogo, verificar que CADA link contem exatamente 1 aposta.
+
+Navegar para cada bookingcode URL e contar quantas selecoes aparecem:
+```js
+// Para cada bookingcode coletado:
+// browser_navigate → https://www.betano.bet.br/bookingcode/XXXXXXXX
+// browser_evaluate:
+() => {
+  // Contar selecoes no cupom carregado pelo bookingcode
+  const selections = document.querySelectorAll('[data-qa="event-selection"].active, [data-qa="event-selection"][aria-pressed="true"]');
+  // Alternativa: contar itens no betslip
+  const betslipItems = document.querySelectorAll('.betslip-item, .bet-item, [data-qa="betslip-selection"]');
+  return {
+    activeSelections: selections.length,
+    betslipItems: betslipItems.length,
+    // Extrair texto das selecoes para confirmar qual aposta e
+    details: Array.from(selections).map(s => s.textContent.trim().substring(0, 60))
+  };
+}
+```
+
+**Se qualquer bookingcode tiver != 1 selecao**: PARAR e reportar. Nao gravar no banco. O bookingcode esta errado e precisa ser recoletado com cupom limpo.
+
+**Dica**: Se usar sessoes paralelas (`--isolated`), cada sessao tem cupom independente e este problema nao acontece. No modo sequencial (1 sessao), a limpeza do cupom entre apostas e critica.
 
 ### 5. Validacao pre-gravacao (3 agentes paralelos, model: sonnet)
 
@@ -189,3 +265,5 @@ Se liga desconhecida: navegar para `/sport/futebol/` e buscar links com `href` c
 11. O backend precisa de `--isolated` para multiplas sessoes (sem isso: "Browser already in use"). Patch manual no `dist/index.js` do pacote npx
 12. `browser_run_code` da timeout no `playwright-parallel-mcp` — usar `browser_evaluate` com `Promise` + `setTimeout` para operacoes async
 13. Sessoes paralelas abrem na aba "Principais" — clicar "Todos" + "Expand all" ANTES de buscar odds de escanteios/cartoes
+14. **BOOKINGCODE COM MULTIPLAS APOSTAS** — Se nao desselecionar a aposta anterior antes de clicar a proxima, o cupom acumula selecoes e o bookingcode gerado contem 2+ apostas. SEMPRE limpar cupom antes de cada clique. Remover links `a[href*="bookingcode"]` do DOM antes de extrair (cache stale)
+15. Ao encadear coletas sequenciais com `getCode()`, cada chamada deve desselecionar a aposta no final. Verificar com step 4.1 que cada bookingcode tem exatamente 1 selecao
