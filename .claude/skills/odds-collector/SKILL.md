@@ -1,10 +1,16 @@
 # Odds Collector (Betano)
 
-Coleta odds e bookingcodes da Betano para apostas pendentes. Resolve **1 jogo por execucao** (~4 apostas).
+Coleta odds e bookingcodes da Betano para apostas pendentes.
+
+## Single ou batch
+
+Se o pedido soar como "resolve as pendencias" (sem apontar um jogo), rodar **batch**: loop pelos jogos elegiveis (independente do dia). Se apontar um jogo especifico ou pedir apenas um, rodar **single**.
+
+Em batch, reusar o mesmo browser entre jogos (so `browser_navigate`) e reportar uma linha de progresso ao terminar cada jogo — ex: `[2/5] Flamengo vs Santos — 4 OK`. Se um jogo falhar validacao, registrar e seguir para o proximo. Resumo consolidado no final.
 
 ## REGRA CRITICA: Execucao continua
 
-**Executar TODOS os 8 passos de uma vez, sem parar no meio.** Nao pausar para mostrar progresso, nao esperar confirmacao entre passos. A unica razao para parar e se um agente de validacao retornar INVALIDO. O usuario so ve o resumo final (passo 8).
+Rodar todos os passos sem pausar para confirmacao. A unica pausa e INVALIDO (em batch, pula o jogo e segue).
 
 ## Pre-requisitos
 
