@@ -8,8 +8,10 @@ PROJECT_DIR="/Users/wehandle/Projetos/pessoal/bets-estatistica"
 LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/odds-collector-$(date +%Y%m%d-%H%M).log"
 SUMMARY_FILE="/tmp/odds-summary.txt"
+CACHE_DIR="$HOME/.cache/odds-collector"
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" "$CACHE_DIR"
+chmod 700 "$CACHE_DIR"
 
 echo "=== Odds Collector $(date) ===" | tee "$LOG_FILE"
 
@@ -21,7 +23,7 @@ export SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL//\\n/}"
 export SUPABASE_SERVICE_KEY="${SUPABASE_SERVICE_KEY//\\n/}"
 
 # Obter bot token do Render (cached)
-BOT_TOKEN_FILE="$LOG_DIR/.bot-token-cache"
+BOT_TOKEN_FILE="$CACHE_DIR/bot-token"
 if [ -f "$BOT_TOKEN_FILE" ] && [ "$(find "$BOT_TOKEN_FILE" -mtime -7)" ]; then
   TELEGRAM_BOT_TOKEN=$(cat "$BOT_TOKEN_FILE")
 else
@@ -30,7 +32,9 @@ else
   TELEGRAM_BOT_TOKEN=$(curl -s "https://api.render.com/v1/services/srv-d6fliv6a2pns7382ckd0/env-vars" \
     -H "Authorization: Bearer ${RENDER_API_KEY:-}" | \
     python3 -c "import sys,json; [print(v['envVar']['value']) for v in json.load(sys.stdin) if v['envVar']['key']=='TELEGRAM_BOT_TOKEN']" 2>/dev/null || echo "")
-  [ -n "$TELEGRAM_BOT_TOKEN" ] && echo "$TELEGRAM_BOT_TOKEN" > "$BOT_TOKEN_FILE"
+  if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+    (umask 077 && echo "$TELEGRAM_BOT_TOKEN" > "$BOT_TOKEN_FILE")
+  fi
 fi
 
 ADMIN_GROUP="-1003363567204"
