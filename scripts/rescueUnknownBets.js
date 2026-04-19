@@ -24,7 +24,7 @@ async function fetchAllUnknownBets() {
   let allData = [];
   let offset = 0;
 
-  while (true) {
+  for (;;) {
     const { data, error } = await supabase
       .from('suggested_bets')
       .select(`
