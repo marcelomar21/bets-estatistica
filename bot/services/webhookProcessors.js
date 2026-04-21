@@ -998,8 +998,9 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
 
     return { success: true, data: { memberId: member.id, action: 'recovered' } };
 
-  } else if (member.status === 'removido') {
-    // Reativação após remoção - SEM RESTRIÇÃO DE TEMPO
+  } else if (member.status === 'removido' || member.status === 'evadido') {
+    // Reativação após remoção (kick) ou evasão (voluntary leave) — sem
+    // restrição de tempo. reactivateRemovedMember agora aceita ambos.
     const reactivateResult = await memberService.reactivateRemovedMember(member.id, {
       subscriptionId: subscriptionId || member.mp_subscription_id,
       paymentMethod
@@ -1299,12 +1300,21 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
 
   const member = memberResult.data;
 
-  // Já está removido? Ignorar
-  if (member.status === 'removido') {
-    logger.info('[webhookProcessors] handleSubscriptionCancelled: member already removed', {
-      memberId: member.id
+  // Já está em estado terminal (removido) ou já saiu (evadido)? Ignorar.
+  if (member.status === 'removido' || member.status === 'evadido') {
+    logger.info('[webhookProcessors] handleSubscriptionCancelled: member already exited', {
+      memberId: member.id,
+      currentStatus: member.status,
     });
-    return { success: true, data: { skipped: true, reason: 'already_removed' } };
+    return {
+      success: true,
+      data: {
+        skipped: true,
+        // Keep the historical 'already_removed' key for 'removido' to avoid
+        // breaking callers that assert on it; flag evaded exits distinctly.
+        reason: member.status === 'removido' ? 'already_removed' : 'already_evaded',
+      },
+    };
   }
 
   const reason = member.status === 'trial' ? 'trial_not_converted' : 'subscription_cancelled';
