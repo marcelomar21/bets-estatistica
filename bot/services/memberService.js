@@ -11,8 +11,12 @@ const { normalizeTelegramChatId } = require('../../lib/telegramChatId');
 
 /**
  * Valid status values for members
+ *
+ * 'evadido' added in migration 067 — distinguishes voluntary leavers
+ * (detected via left_chat_member / chat_member webhook updates) from
+ * members kicked by our system ('removido').
  */
-const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido', 'cancelado'];
+const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido', 'cancelado', 'evadido'];
 
 /**
  * State Machine: Valid transitions between member statuses
@@ -22,14 +26,18 @@ const MEMBER_STATUSES = ['trial', 'ativo', 'inadimplente', 'removido', 'cancelad
  *   │             │                ▼
  *   └─────────────┴──────────► removido
  *
- * Extras: trial/ativo → cancelado, cancelado → ativo
+ * Extras:
+ *   - trial/ativo → cancelado, cancelado → ativo
+ *   - trial/ativo/inadimplente → evadido (voluntary leave)
+ *   - evadido → trial/ativo (rejoin or post-payment reactivation)
  */
 const VALID_TRANSITIONS = {
-  trial: ['ativo', 'removido', 'cancelado'],
-  ativo: ['trial', 'inadimplente', 'removido', 'cancelado'],
-  inadimplente: ['ativo', 'removido'],
+  trial: ['ativo', 'removido', 'cancelado', 'evadido'],
+  ativo: ['trial', 'inadimplente', 'removido', 'cancelado', 'evadido'],
+  inadimplente: ['ativo', 'removido', 'evadido'],
   removido: [],    // Estado final - sem transições permitidas
   cancelado: ['ativo'],   // Reativação pelo operador
+  evadido: ['trial', 'ativo'],  // Rejoin (<24h) or post-payment reactivation
 };
 
 /**
@@ -899,10 +907,10 @@ async function createActiveMember({ email, subscriptionData, affiliateCoupon, gr
 }
 
 /**
- * Check if a removed member can rejoin the group (within 24h of kick)
- * Story 16.4: Added for member entry detection
+ * Check if a removed or evaded member can rejoin the group (within 24h of exit).
+ * Story 16.4 (+ B2): 'removido' uses kicked_at, 'evadido' uses left_at.
  * @param {number} memberId - Internal member ID
- * @returns {Promise<{success: boolean, data?: {canRejoin: boolean, hoursSinceKick?: number}, error?: object}>}
+ * @returns {Promise<{success: boolean, data?: {canRejoin: boolean, hoursSinceKick?: number, reason?: string}, error?: object}>}
  */
 async function canRejoinGroup(memberId) {
   try {
@@ -914,33 +922,42 @@ async function canRejoinGroup(memberId) {
 
     const member = memberResult.data;
 
-    // Only removed members can rejoin
-    if (member.status !== 'removido') {
-      return { success: true, data: { canRejoin: false, reason: 'not_removed' } };
+    // Only removed/evaded members can rejoin
+    if (member.status !== 'removido' && member.status !== 'evadido') {
+      return { success: true, data: { canRejoin: false, reason: 'not_exited' } };
     }
 
-    // If no kicked_at, treat as inconsistent state - don't allow rejoin
-    if (!member.kicked_at) {
-      logger.warn('[memberService] canRejoinGroup: removed member without kicked_at', { memberId });
-      return { success: true, data: { canRejoin: false, reason: 'no_kicked_at' } };
+    // Use kicked_at (system kick) OR left_at (voluntary leave) as the exit anchor.
+    const anchorTimestamp = member.kicked_at || member.left_at;
+
+    if (!anchorTimestamp) {
+      logger.warn('[memberService] canRejoinGroup: exited member without kicked_at or left_at', {
+        memberId,
+        status: member.status,
+      });
+      return { success: true, data: { canRejoin: false, reason: 'no_exit_timestamp' } };
     }
 
-    const kickedAt = new Date(member.kicked_at);
+    const exitedAt = new Date(anchorTimestamp);
     const now = new Date();
-    const hoursSinceKick = (now.getTime() - kickedAt.getTime()) / (1000 * 60 * 60);
+    const hoursSinceExit = (now.getTime() - exitedAt.getTime()) / (1000 * 60 * 60);
 
     // Can rejoin within 24 hours
-    const canRejoin = hoursSinceKick < 24;
+    const canRejoin = hoursSinceExit < 24;
 
     logger.debug('[memberService] canRejoinGroup: checked', {
       memberId,
-      hoursSinceKick: hoursSinceKick.toFixed(2),
-      canRejoin
+      status: member.status,
+      anchor: member.kicked_at ? 'kicked_at' : 'left_at',
+      hoursSinceExit: hoursSinceExit.toFixed(2),
+      canRejoin,
     });
 
+    // Keep the existing `hoursSinceKick` key name for backward-compat with
+    // callers that log it (e.g. memberEvents' rejoin branch).
     return {
       success: true,
-      data: { canRejoin, hoursSinceKick }
+      data: { canRejoin, hoursSinceKick: hoursSinceExit },
     };
   } catch (err) {
     logger.error('[memberService] canRejoinGroup: unexpected error', { memberId, error: err.message });
@@ -1180,6 +1197,82 @@ async function markMemberAsRemoved(memberId, reason = null) {
     return { success: true, data };
   } catch (err) {
     logger.error('[memberService] markMemberAsRemoved: unexpected error', { memberId, error: err.message });
+    return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
+  }
+}
+
+/**
+ * Mark a member as evaded (voluntary leave).
+ * Updates status to 'evadido' and sets left_at timestamp. Intended to be
+ * called from the left_chat_member / chat_member webhook handlers when the
+ * user leaves the group without the system kicking them.
+ * @param {string} memberId - Internal member ID
+ * @param {string|null} reason - Reason/source tag (e.g., 'telegram_left_event')
+ * @returns {Promise<{success: boolean, data?: object, error?: object}>}
+ */
+async function markMemberAsEvaded(memberId, reason = null) {
+  try {
+    const memberResult = await getMemberById(memberId);
+    if (!memberResult.success) {
+      return memberResult;
+    }
+
+    const currentStatus = memberResult.data.status;
+
+    if (!canTransition(currentStatus, 'evadido')) {
+      logger.warn('[memberService] markMemberAsEvaded: invalid transition', {
+        memberId,
+        currentStatus,
+        targetStatus: 'evadido',
+      });
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_MEMBER_STATUS',
+          message: `Cannot evade member from '${currentStatus}' status.`,
+        },
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('members')
+      .update({
+        status: 'evadido',
+        left_at: new Date().toISOString(),
+        notes: reason ? `Evaded: ${reason}` : null,
+      })
+      .eq('id', memberId)
+      .eq('status', currentStatus) // Optimistic lock
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        logger.warn('[memberService] markMemberAsEvaded: race condition', { memberId });
+        return {
+          success: false,
+          error: { code: 'RACE_CONDITION', message: 'Member status changed during update' },
+        };
+      }
+      logger.error('[memberService] markMemberAsEvaded: database error', {
+        memberId,
+        error: error.message,
+      });
+      return { success: false, error: { code: 'DB_ERROR', message: error.message } };
+    }
+
+    logger.info('[memberService] markMemberAsEvaded: success', {
+      memberId,
+      previousStatus: currentStatus,
+      reason,
+    });
+
+    return { success: true, data };
+  } catch (err) {
+    logger.error('[memberService] markMemberAsEvaded: unexpected error', {
+      memberId,
+      error: err.message,
+    });
     return { success: false, error: { code: 'UNEXPECTED_ERROR', message: err.message } };
   }
 }
@@ -2418,6 +2511,9 @@ module.exports = {
   // Story 16.6: Kick expired members helpers
   kickMemberFromGroup,
   markMemberAsRemoved,
+
+  // Voluntary leave detection
+  markMemberAsEvaded,
 
   // Story 16.7: Statistics functions (AC: #1)
   getMemberStats,
