@@ -514,7 +514,19 @@ async function testConnection(botCtx) {
 }
 
 /**
- * Set up webhook for the bot
+ * Updates we ask the Telegram servers to deliver via webhook.
+ *
+ * Besides the usual message/callback_query, we need `chat_member`
+ * to detect external kicks (another admin removing a user) so we can
+ * reconcile the member status in real time. `chat_member` only
+ * arrives when the bot is admin with `can_manage_chat` — for other
+ * setups the `left_chat_member` part of `message` updates is our
+ * fallback source.
+ */
+const ALLOWED_UPDATES = ['message', 'callback_query', 'chat_member'];
+
+/**
+ * Set up webhook for the bot with the correct allowed_updates list.
  * @param {string} webhookUrl - Full webhook URL
  * @param {BotContext} [botCtx] - Optional BotContext for multi-bot
  * @returns {Promise<{success: boolean, error?: object}>}
@@ -523,8 +535,11 @@ async function setWebhook(webhookUrl, botCtx) {
   try {
     const targetBot = botCtx ? botCtx.bot : getBot();
     const token = botCtx ? botCtx.botToken : config.telegram.botToken;
-    await targetBot.setWebHook(webhookUrl);
-    logger.info('Webhook set', { url: webhookUrl.replace(token, '***') });
+    await targetBot.setWebHook(webhookUrl, { allowed_updates: ALLOWED_UPDATES });
+    logger.info('Webhook set', {
+      url: webhookUrl.replace(token, '***'),
+      allowedUpdates: ALLOWED_UPDATES,
+    });
     return { success: true };
   } catch (err) {
     logger.error('Failed to set webhook', { error: err.message });
@@ -554,6 +569,7 @@ module.exports = {
   alertAdmin,
   testConnection,
   setWebhook,
+  ALLOWED_UPDATES,
 
   // Legacy export for backwards compatibility
   get bot() {

@@ -19,7 +19,7 @@ const express = require('express');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
-const { initBots, hydrateBotIds, getBotForGroup, getAllBots } = require('./telegram');
+const { initBots, hydrateBotIds, getBotForGroup, getAllBots, ALLOWED_UPDATES } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
 const { handleNewChatMembers } = require('./handlers/memberEvents');
@@ -753,10 +753,11 @@ async function start() {
       if (WEBHOOK_URL) {
         const webhookUrl = `${WEBHOOK_URL}${botWebhookPath}`;
         try {
-          await botCtx.bot.setWebHook(webhookUrl);
+          await botCtx.bot.setWebHook(webhookUrl, { allowed_updates: ALLOWED_UPDATES });
           logger.info('[server] Multi-bot webhook registered', {
             groupId,
             url: webhookUrl.replace(botCtx.botToken, '***'),
+            allowedUpdates: ALLOWED_UPDATES,
           });
         } catch (err) {
           logger.error('[server] Failed to register multi-bot webhook', { groupId, error: err.message });
