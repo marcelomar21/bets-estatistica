@@ -7,6 +7,7 @@ const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { validateMemberId, validateTelegramId } = require('../../lib/validators');
 const { getConfig } = require('../lib/configHelper');
+const { normalizeTelegramChatId } = require('../../lib/telegramChatId');
 
 /**
  * Valid status values for members
@@ -1033,14 +1034,33 @@ async function kickMemberFromGroup(telegramId, chatId, botInstance = null) {
   const { getBot } = require('../telegram');
   const bot = botInstance || getBot();
 
+  const normalizedChatId = normalizeTelegramChatId(chatId);
+  if (!normalizedChatId) {
+    logger.warn('[memberService] kickMemberFromGroup: invalid chat_id', {
+      telegramId,
+      rawChatId: chatId,
+    });
+    return {
+      success: false,
+      error: {
+        code: 'INVALID_CHAT_ID',
+        message: 'chat_id inválido ou vazio',
+      },
+    };
+  }
+
   try {
     // Ban temporario de 24h (permite reentrada depois)
     // until_date = Unix timestamp (segundos desde epoch)
     const until_date = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
 
-    await bot.banChatMember(chatId, telegramId, { until_date });
+    await bot.banChatMember(normalizedChatId, telegramId, { until_date });
 
-    logger.info('[memberService] kickMemberFromGroup: success', { telegramId, chatId, until_date });
+    logger.info('[memberService] kickMemberFromGroup: success', {
+      telegramId,
+      chatId: normalizedChatId,
+      until_date,
+    });
     return { success: true, data: { until_date } };
   } catch (err) {
     // Usuario nao encontrado no grupo (400)
@@ -1054,16 +1074,37 @@ async function kickMemberFromGroup(telegramId, chatId, botInstance = null) {
         logger.warn('[memberService] kickMemberFromGroup: user already kicked', { telegramId });
         return { success: false, error: { code: 'USER_NOT_IN_GROUP', message: 'User was already kicked' } };
       }
+      if (description.includes('chat not found')) {
+        logger.error('[memberService] kickMemberFromGroup: chat not found (misconfigured telegram_group_id?)', {
+          telegramId,
+          chatId: normalizedChatId,
+          rawChatId: chatId,
+        });
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_CHAT_ID',
+            message: 'Telegram chat not found for the normalized chat_id',
+          },
+        };
+      }
     }
 
     // Bot sem permissao (403)
     if (err.response?.statusCode === 403) {
-      logger.error('[memberService] kickMemberFromGroup: bot lacks permissions', { telegramId, chatId });
+      logger.error('[memberService] kickMemberFromGroup: bot lacks permissions', {
+        telegramId,
+        chatId: normalizedChatId,
+      });
       return { success: false, error: { code: 'BOT_NO_PERMISSION', message: 'Bot lacks permission to ban users' } };
     }
 
     // Outros erros
-    logger.error('[memberService] kickMemberFromGroup: failed', { telegramId, chatId, error: err.message });
+    logger.error('[memberService] kickMemberFromGroup: failed', {
+      telegramId,
+      chatId: normalizedChatId,
+      error: err.message,
+    });
     return { success: false, error: { code: 'TELEGRAM_ERROR', message: err.message } };
   }
 }
