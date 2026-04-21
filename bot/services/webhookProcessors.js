@@ -14,6 +14,7 @@ const mercadoPagoService = require('./mercadoPagoService');
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
+const { normalizeTelegramChatId } = require('../../lib/telegramChatId');
 
 const { insertAdminNotification } = require('./notificationHelper');
 
@@ -1055,12 +1056,15 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
     } else if (member.telegram_id) {
       // Telegram reactivation flow
       // Resolve Telegram group ID from DB group, fallback to default bot context
-      const groupTelegramId = group?.telegram_group_id || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
+      const rawGroupTelegramId = group?.telegram_group_id
+        || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
+      const groupTelegramId = normalizeTelegramChatId(rawGroupTelegramId);
 
       if (!groupTelegramId) {
-        logger.warn('[webhook:payment] Missing telegram group for reactivation flow', {
+        logger.warn('[webhook:payment] Missing or invalid telegram group for reactivation flow', {
           memberId: member.id,
-          groupId: groupId || null
+          groupId: groupId || null,
+          rawGroupTelegramId,
         });
       } else {
         try {
