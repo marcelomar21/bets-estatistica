@@ -615,3 +615,98 @@ describe('Story 3-2: Terms acceptance in /start flow', () => {
     });
   });
 });
+
+describe('started_bot tracking for existing active/trial members', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockHasAcceptedVersion.mockResolvedValue({
+      success: true,
+      data: { accepted: true, acceptance: { id: 'existing-acceptance' } },
+    });
+  });
+
+  function getNotificationInserts() {
+    // Returns all insert calls against the member_notifications table.
+    const notifCalls = [];
+    for (const call of mockSupabaseFrom.mock.calls) {
+      if (call[0] !== 'member_notifications') continue;
+      const result = mockSupabaseFrom.mock.results.find(r => r.value).value;
+      const insertMock = result.insert;
+      for (const insertCall of insertMock.mock.calls) {
+        notifCalls.push(insertCall[0]);
+      }
+    }
+    return notifCalls;
+  }
+
+  it('records started_bot when existing trial member /start and is still in group', async () => {
+    mockGetConfig.mockResolvedValue('internal');
+    mockGetMemberByTelegramId.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'uuid-trial',
+        telegram_id: '12345',
+        status: 'trial',
+        joined_group_at: '2026-02-20T00:00:00.000Z',
+      },
+    });
+    mockGetChatMember.mockResolvedValue({ status: 'member' });
+    mockGetTrialDaysRemaining.mockResolvedValue({
+      success: true,
+      data: { daysRemaining: 5 },
+    });
+
+    const result = await handleStartCommand(createMsg());
+
+    expect(result.action).toBe('already_in_group');
+    const inserts = getNotificationInserts();
+    const startedBotInsert = inserts.find(i => i.type === 'started_bot');
+    expect(startedBotInsert).toBeDefined();
+    expect(startedBotInsert.member_id).toBe('uuid-trial');
+    expect(startedBotInsert.channel).toBe('telegram');
+  });
+
+  it('records started_bot when existing ativo member /start and is still in group', async () => {
+    mockGetConfig.mockResolvedValue('internal');
+    mockGetMemberByTelegramId.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'uuid-ativo',
+        telegram_id: '12345',
+        status: 'ativo',
+        joined_group_at: '2026-02-20T00:00:00.000Z',
+        subscription_ends_at: '2026-12-31T00:00:00.000Z',
+      },
+    });
+    mockGetChatMember.mockResolvedValue({ status: 'member' });
+
+    await handleStartCommand(createMsg());
+
+    const inserts = getNotificationInserts();
+    const startedBotInsert = inserts.find(i => i.type === 'started_bot');
+    expect(startedBotInsert).toBeDefined();
+    expect(startedBotInsert.member_id).toBe('uuid-ativo');
+  });
+
+  it('records started_bot even when member left the group and needs new invite', async () => {
+    mockGetConfig.mockResolvedValue('internal');
+    mockGetMemberByTelegramId.mockResolvedValue({
+      success: true,
+      data: {
+        id: 'uuid-left',
+        telegram_id: '12345',
+        status: 'ativo',
+        joined_group_at: '2026-02-20T00:00:00.000Z',
+      },
+    });
+    // API says user is NOT in the group anymore → should regenerate invite
+    mockGetChatMember.mockResolvedValue({ status: 'left' });
+
+    await handleStartCommand(createMsg());
+
+    const inserts = getNotificationInserts();
+    const startedBotInsert = inserts.find(i => i.type === 'started_bot');
+    expect(startedBotInsert).toBeDefined();
+    expect(startedBotInsert.member_id).toBe('uuid-left');
+  });
+});

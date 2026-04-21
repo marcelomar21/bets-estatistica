@@ -287,6 +287,12 @@ async function handleActiveOrTrialMember(bot, chatId, firstName, member, botCtx 
   const effectiveBotCtx = botCtx || getDefaultBotCtx();
   const groupId = effectiveBotCtx?.publicGroupId;
 
+  // Leave a trace that this existing active/trial member interacted with the bot.
+  // Ghost-member eviction filters on the absence of this notification, so every
+  // /start from a real user must be recorded — regardless of which branch below
+  // is taken (already_in_group, left-and-back, never-joined).
+  await recordNotification(member.id, 'started_bot', null);
+
   // Check if member has joined the group according to DB
   const hasJoinedGroupInDb = !!member.joined_group_at;
 
