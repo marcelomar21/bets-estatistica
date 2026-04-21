@@ -1153,6 +1153,7 @@ async function markMemberAsRemoved(memberId, reason = null) {
     }
 
     const currentStatus = memberResult.data.status;
+    const currentNotes = memberResult.data.notes;
 
     // Validate transition using state machine
     // VALID_TRANSITIONS allows: trial->removido, ativo->removido, inadimplente->removido
@@ -1172,13 +1173,21 @@ async function markMemberAsRemoved(memberId, reason = null) {
       };
     }
 
+    // Preserve existing notes as an audit trail: append the new line instead of overwriting.
+    // If there's no reason to record, keep previous notes intact (do not nullify).
+    // Fall back to null (never undefined) so the DB row receives an explicit NULL.
+    const newNoteLine = reason ? `Removed: ${reason}` : null;
+    const updatedNotes = newNoteLine
+      ? (currentNotes ? `${currentNotes}\n${newNoteLine}` : newNoteLine)
+      : (currentNotes ?? null);
+
     // Update with optimistic locking
     const { data, error } = await supabase
       .from('members')
       .update({
         status: 'removido',
         kicked_at: new Date().toISOString(),
-        notes: reason ? `Removed: ${reason}` : null
+        notes: updatedNotes
       })
       .eq('id', memberId)
       .eq('status', currentStatus) // Optimistic lock
@@ -1227,6 +1236,7 @@ async function markMemberAsEvaded(memberId, reason = null) {
     }
 
     const currentStatus = memberResult.data.status;
+    const currentNotes = memberResult.data.notes;
 
     if (!canTransition(currentStatus, 'evadido')) {
       logger.warn('[memberService] markMemberAsEvaded: invalid transition', {
@@ -1243,12 +1253,20 @@ async function markMemberAsEvaded(memberId, reason = null) {
       };
     }
 
+    // Preserve existing notes as audit trail: append the new line instead of overwriting.
+    // If there's no reason to record, keep previous notes intact (do not nullify).
+    // Fall back to null (never undefined) so the DB row receives an explicit NULL.
+    const newNoteLine = reason ? `Evaded: ${reason}` : null;
+    const updatedNotes = newNoteLine
+      ? (currentNotes ? `${currentNotes}\n${newNoteLine}` : newNoteLine)
+      : (currentNotes ?? null);
+
     const { data, error } = await supabase
       .from('members')
       .update({
         status: 'evadido',
         left_at: new Date().toISOString(),
-        notes: reason ? `Evaded: ${reason}` : null,
+        notes: updatedNotes,
       })
       .eq('id', memberId)
       .eq('status', currentStatus) // Optimistic lock

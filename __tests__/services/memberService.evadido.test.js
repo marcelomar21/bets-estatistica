@@ -142,7 +142,7 @@ describe('markMemberAsEvaded', () => {
     expect(result.error.code).toBe('RACE_CONDITION');
   });
 
-  test('M12: null reason stores notes=null', async () => {
+  test('M12: null reason with no existing notes stores notes=null', async () => {
     const selectChain = buildSelectChain({ id: 'uuid-4', status: 'ativo' });
     const updateChain = buildUpdateChain({ id: 'uuid-4', status: 'evadido' });
 
@@ -155,6 +155,42 @@ describe('markMemberAsEvaded', () => {
     expect(result.success).toBe(true);
     expect(updateChain.update).toHaveBeenCalledWith(expect.objectContaining({
       notes: null,
+    }));
+  });
+
+  test('M12b: preserves existing notes when reason is null (no audit loss)', async () => {
+    const selectChain = buildSelectChain({
+      id: 'uuid-4b', status: 'ativo', notes: 'Previously: onboarded'
+    });
+    const updateChain = buildUpdateChain({ id: 'uuid-4b', status: 'evadido' });
+
+    supabase.from
+      .mockReturnValueOnce(selectChain)
+      .mockReturnValueOnce(updateChain);
+
+    const result = await markMemberAsEvaded('uuid-4b', null);
+
+    expect(result.success).toBe(true);
+    expect(updateChain.update).toHaveBeenCalledWith(expect.objectContaining({
+      notes: 'Previously: onboarded',
+    }));
+  });
+
+  test('M12c: appends Evaded line to existing notes (preserves audit trail)', async () => {
+    const selectChain = buildSelectChain({
+      id: 'uuid-4c', status: 'trial', notes: 'Previously: trial_started'
+    });
+    const updateChain = buildUpdateChain({ id: 'uuid-4c', status: 'evadido' });
+
+    supabase.from
+      .mockReturnValueOnce(selectChain)
+      .mockReturnValueOnce(updateChain);
+
+    const result = await markMemberAsEvaded('uuid-4c', 'telegram_left_event');
+
+    expect(result.success).toBe(true);
+    expect(updateChain.update).toHaveBeenCalledWith(expect.objectContaining({
+      notes: 'Previously: trial_started\nEvaded: telegram_left_event',
     }));
   });
 });
