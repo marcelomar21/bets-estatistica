@@ -35,6 +35,7 @@ const {
 const {
   kickMemberFromGroup,
   markMemberAsRemoved,
+  getMemberById,
 } = require('../../services/memberService');
 const { alertAdmin } = require('../../services/alertService');
 const { registerMemberEvent } = require('../../handlers/memberEvents');
@@ -486,6 +487,32 @@ async function _processTelegramKick(member, reason, groupData, botInstance, botC
   const removeResult = await markMemberAsRemoved(memberId, reason);
 
   if (!removeResult.success) {
+    // B5: race with a concurrent chat_member webhook that already wrote the
+    // kick record. Re-check final status before declaring a critical error.
+    if (removeResult.error?.code === 'RACE_CONDITION') {
+      const recheck = await getMemberById(memberId);
+      if (recheck.success && recheck.data?.status === 'removido') {
+        logger.info('[membership:kick-expired] processMemberKick: race with webhook, final status correct', {
+          memberId,
+          telegramId,
+        });
+        const auditResultRace = await registerKickAuditEvent(memberId, reason, groupData, {
+          raceResolved: true,
+          untilDate: kickResult.data?.until_date || null,
+        });
+        if (!auditResultRace.success) {
+          await alertAdmin(
+            `ERRO DE AUDITORIA (race): kick executado, mas evento nao foi registrado.\n\nMembro: ${username ? `@${username}` : memberId}`
+          );
+          return { success: false, error: auditResultRace.error };
+        }
+        return {
+          success: true,
+          data: { kicked: true, reason, raceWithWebhook: true },
+        };
+      }
+    }
+
     logger.error('[membership:kick-expired] processMemberKick: kick succeeded but DB update failed', {
       memberId,
       error: removeResult.error,
