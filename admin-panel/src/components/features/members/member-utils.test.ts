@@ -13,6 +13,17 @@ describe('member-utils', () => {
     expect(memberStatusConfig.inadimplente.label).toBe('Inadimplente');
     expect(memberStatusConfig.expirado.label).toBe('Expirado');
     expect(memberStatusConfig.removido.label).toBe('Removido');
+    expect(memberStatusConfig.cancelado.label).toBe('Cancelado');
+    expect(memberStatusConfig.evadido.label).toBe('Evadido');
+  });
+
+  it('UT1: getDisplayStatus retorna evadido quando status é evadido', () => {
+    expect(getDisplayStatus({ status: 'evadido', subscription_ends_at: null })).toBe('evadido');
+  });
+
+  it('UT2: memberStatusConfig.evadido tem label Evadido e className laranja', () => {
+    expect(memberStatusConfig.evadido.label).toBe('Evadido');
+    expect(memberStatusConfig.evadido.className).toContain('orange');
   });
 
   it('retorna vencendo para membro ativo que vence em menos de 7 dias', () => {

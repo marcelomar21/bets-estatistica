@@ -19,13 +19,18 @@ const express = require('express');
 const { config, validateConfig } = require('../lib/config');
 const logger = require('../lib/logger');
 const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
-const { initBots, getBotForGroup, getAllBots } = require('./telegram');
+const { initBots, hydrateBotIds, getBotForGroup, getAllBots, ALLOWED_UPDATES } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
-const { handleNewChatMembers } = require('./handlers/memberEvents');
+const {
+  handleNewChatMembers,
+  handleLeftChatMember,
+  handleChatMemberUpdate,
+} = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput, handleTermsAcceptCallback } = require('./handlers/startCommand');
 const { handleCancelCommand, handleCancelCallback } = require('./handlers/cancelCommand');
 const { supabase } = require('../lib/supabase');
+const { normalizeTelegramChatId } = require('../lib/telegramChatId');
 
 // Validate config
 validateConfig();
@@ -213,6 +218,14 @@ async function processWebhookUpdate(update, botCtx = null) {
       await handleNewChatMembers(msg, botCtx?.groupId);
     }
 
+    // Detect voluntary leaves in the public group (or users kicked by an
+    // admin — Telegram also emits `left_chat_member` for that). This is the
+    // always-available source for evadido detection, even when the bot lacks
+    // `can_manage_chat` and does not receive `chat_member` updates.
+    if (msg.left_chat_member && msg.chat.id.toString() === expectedGroupChatId) {
+      await handleLeftChatMember(msg, botCtx?.groupId);
+    }
+
     // Story 16.9: Handle /start command in private chats (Gate Entry)
     if (msg.chat.type === 'private' && msg.text) {
       if (msg.text.startsWith('/start')) {
@@ -262,6 +275,17 @@ async function processWebhookUpdate(update, botCtx = null) {
         // Handle removal callbacks (existing)
         await handleRemovalCallback(bot, callbackQuery, botCtx);
       }
+    }
+  }
+
+  // chat_member updates: status transitions of any user in a chat. Used
+  // primarily for detecting external kicks (admin removes user). Requires
+  // bot to be admin with `can_manage_chat` — configured via
+  // setWebhook({ allowed_updates: [..., 'chat_member'] }).
+  if (update.chat_member) {
+    const chatId = update.chat_member.chat?.id;
+    if (chatId !== undefined && String(chatId) === publicGroupId) {
+      await handleChatMemberUpdate(update.chat_member, botCtx?.groupId, botCtx);
     }
   }
 }
@@ -619,6 +643,17 @@ async function start() {
     await initBots(supabase);
     const allBots = getAllBots();
     logger.info('[server] Multi-bot registry initialized', { count: allBots.size });
+
+    // Hydrate botId (from bot.getMe()) for each registered bot — required for
+    // self-kick dedup in the chat_member update handler.
+    try {
+      const hydrated = await hydrateBotIds();
+      logger.info('[server] Bot ids hydrated', hydrated);
+    } catch (err) {
+      logger.warn('[server] hydrateBotIds failed (self-kick dedup may be less strict)', {
+        error: err.message,
+      });
+    }
   } catch (err) {
     logger.warn('[server] Multi-bot initialization failed, continuing with single bot', { error: err.message });
   }
@@ -638,11 +673,19 @@ async function start() {
           error: error.message
         });
       } else if (group && group.telegram_group_id) {
-        cachedGroupChatId = group.telegram_group_id.toString();
-        logger.info('[server] Multi-tenant: cached group chat ID', {
-          groupId: config.membership.groupId,
-          telegramGroupId: cachedGroupChatId
-        });
+        const normalizedChatId = normalizeTelegramChatId(group.telegram_group_id);
+        if (normalizedChatId) {
+          cachedGroupChatId = normalizedChatId;
+          logger.info('[server] Multi-tenant: cached group chat ID', {
+            groupId: config.membership.groupId,
+            telegramGroupId: cachedGroupChatId
+          });
+        } else {
+          logger.warn('[server] Multi-tenant: group telegram_group_id invalid after normalization', {
+            groupId: config.membership.groupId,
+            rawTelegramGroupId: group.telegram_group_id
+          });
+        }
       } else {
         logger.warn('[server] Multi-tenant: group has no telegram_group_id', {
           groupId: config.membership.groupId
@@ -733,10 +776,11 @@ async function start() {
       if (WEBHOOK_URL) {
         const webhookUrl = `${WEBHOOK_URL}${botWebhookPath}`;
         try {
-          await botCtx.bot.setWebHook(webhookUrl);
+          await botCtx.bot.setWebHook(webhookUrl, { allowed_updates: ALLOWED_UPDATES });
           logger.info('[server] Multi-bot webhook registered', {
             groupId,
             url: webhookUrl.replace(botCtx.botToken, '***'),
+            allowedUpdates: ALLOWED_UPDATES,
           });
         } catch (err) {
           logger.error('[server] Failed to register multi-bot webhook', { groupId, error: err.message });

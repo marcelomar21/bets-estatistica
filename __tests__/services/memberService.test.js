@@ -74,21 +74,21 @@ describe('memberService', () => {
   // ============================================
   describe('MEMBER_STATUSES', () => {
     test('contém todos os status válidos', () => {
-      expect(MEMBER_STATUSES).toEqual(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado']);
+      expect(MEMBER_STATUSES).toEqual(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado', 'evadido']);
     });
   });
 
   describe('VALID_TRANSITIONS', () => {
-    test('trial pode ir para ativo, removido ou cancelado', () => {
-      expect(VALID_TRANSITIONS.trial).toEqual(['ativo', 'removido', 'cancelado']);
+    test('trial pode ir para ativo, removido, cancelado ou evadido', () => {
+      expect(VALID_TRANSITIONS.trial).toEqual(['ativo', 'removido', 'cancelado', 'evadido']);
     });
 
-    test('ativo pode ir para trial, inadimplente, removido ou cancelado', () => {
-      expect(VALID_TRANSITIONS.ativo).toEqual(['trial', 'inadimplente', 'removido', 'cancelado']);
+    test('ativo pode ir para trial, inadimplente, removido, cancelado ou evadido', () => {
+      expect(VALID_TRANSITIONS.ativo).toEqual(['trial', 'inadimplente', 'removido', 'cancelado', 'evadido']);
     });
 
-    test('inadimplente pode ir para ativo ou removido', () => {
-      expect(VALID_TRANSITIONS.inadimplente).toEqual(['ativo', 'removido']);
+    test('inadimplente pode ir para ativo, removido ou evadido', () => {
+      expect(VALID_TRANSITIONS.inadimplente).toEqual(['ativo', 'removido', 'evadido']);
     });
 
     test('removido é estado final (sem transições)', () => {
@@ -97,6 +97,10 @@ describe('memberService', () => {
 
     test('cancelado pode ser reativado para ativo', () => {
       expect(VALID_TRANSITIONS.cancelado).toEqual(['ativo']);
+    });
+
+    test('evadido pode voltar para trial ou ativo (rejoin/pagamento)', () => {
+      expect(VALID_TRANSITIONS.evadido).toEqual(['trial', 'ativo']);
     });
   });
 
@@ -651,7 +655,7 @@ describe('memberService', () => {
       expect(result.data.hoursSinceKick).toBeGreaterThan(24);
     });
 
-    test('retorna canRejoin false se status não é removido', async () => {
+    test('retorna canRejoin false se status não é removido nem evadido', async () => {
       const mockMember = { id: 1, status: 'ativo' };
 
       const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
@@ -664,11 +668,11 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.canRejoin).toBe(false);
-      expect(result.data.reason).toBe('not_removed');
+      expect(result.data.reason).toBe('not_exited');
     });
 
-    test('retorna canRejoin false se kicked_at é null (estado inconsistente)', async () => {
-      const mockMember = { id: 1, status: 'removido', kicked_at: null };
+    test('retorna canRejoin false se removido sem kicked_at nem left_at (estado inconsistente)', async () => {
+      const mockMember = { id: 1, status: 'removido', kicked_at: null, left_at: null };
 
       const singleMock = jest.fn().mockResolvedValue({ data: mockMember, error: null });
       const eqMock = jest.fn().mockReturnValue({ single: singleMock });
@@ -680,7 +684,7 @@ describe('memberService', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.canRejoin).toBe(false);
-      expect(result.data.reason).toBe('no_kicked_at');
+      expect(result.data.reason).toBe('no_exit_timestamp');
     });
 
     test('retorna erro MEMBER_NOT_FOUND se membro não existe', async () => {
@@ -1504,7 +1508,8 @@ describe('memberService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('INVALID_MEMBER_STATUS');
-      expect(result.error.message).toContain("Expected 'removido'");
+      expect(result.error.message).toContain('removido');
+      expect(result.error.message).toContain('evadido');
     });
 
     test('retorna erro quando membro não encontrado', async () => {

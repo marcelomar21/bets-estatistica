@@ -14,6 +14,7 @@ const mercadoPagoService = require('./mercadoPagoService');
 const logger = require('../../lib/logger');
 const { config } = require('../../lib/config');
 const { supabase } = require('../../lib/supabase');
+const { normalizeTelegramChatId } = require('../../lib/telegramChatId');
 
 const { insertAdminNotification } = require('./notificationHelper');
 
@@ -997,8 +998,9 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
 
     return { success: true, data: { memberId: member.id, action: 'recovered' } };
 
-  } else if (member.status === 'removido') {
-    // Reativação após remoção - SEM RESTRIÇÃO DE TEMPO
+  } else if (member.status === 'removido' || member.status === 'evadido') {
+    // Reativação após remoção (kick) ou evasão (voluntary leave) — sem
+    // restrição de tempo. reactivateRemovedMember agora aceita ambos.
     const reactivateResult = await memberService.reactivateRemovedMember(member.id, {
       subscriptionId: subscriptionId || member.mp_subscription_id,
       paymentMethod
@@ -1055,12 +1057,15 @@ async function handlePaymentApproved(payload, eventContext = {}, paymentData = n
     } else if (member.telegram_id) {
       // Telegram reactivation flow
       // Resolve Telegram group ID from DB group, fallback to default bot context
-      const groupTelegramId = group?.telegram_group_id || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
+      const rawGroupTelegramId = group?.telegram_group_id
+        || (!groupId ? getDefaultBotCtxLazy()?.publicGroupId : null);
+      const groupTelegramId = normalizeTelegramChatId(rawGroupTelegramId);
 
       if (!groupTelegramId) {
-        logger.warn('[webhook:payment] Missing telegram group for reactivation flow', {
+        logger.warn('[webhook:payment] Missing or invalid telegram group for reactivation flow', {
           memberId: member.id,
-          groupId: groupId || null
+          groupId: groupId || null,
+          rawGroupTelegramId,
         });
       } else {
         try {
@@ -1295,12 +1300,21 @@ async function handleSubscriptionCancelled(payload, eventContext = {}) {
 
   const member = memberResult.data;
 
-  // Já está removido? Ignorar
-  if (member.status === 'removido') {
-    logger.info('[webhookProcessors] handleSubscriptionCancelled: member already removed', {
-      memberId: member.id
+  // Já está em estado terminal (removido) ou já saiu (evadido)? Ignorar.
+  if (member.status === 'removido' || member.status === 'evadido') {
+    logger.info('[webhookProcessors] handleSubscriptionCancelled: member already exited', {
+      memberId: member.id,
+      currentStatus: member.status,
     });
-    return { success: true, data: { skipped: true, reason: 'already_removed' } };
+    return {
+      success: true,
+      data: {
+        skipped: true,
+        // Keep the historical 'already_removed' key for 'removido' to avoid
+        // breaking callers that assert on it; flag evaded exits distinctly.
+        reason: member.status === 'removido' ? 'already_removed' : 'already_evaded',
+      },
+    };
   }
 
   const reason = member.status === 'trial' ? 'trial_not_converted' : 'subscription_cancelled';

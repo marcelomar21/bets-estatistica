@@ -35,9 +35,11 @@ const {
 const {
   kickMemberFromGroup,
   markMemberAsRemoved,
+  getMemberById,
 } = require('../../services/memberService');
 const { alertAdmin } = require('../../services/alertService');
 const { registerMemberEvent } = require('../../handlers/memberEvents');
+const { normalizeTelegramChatId } = require('../../../lib/telegramChatId');
 const { sendDM: channelSendDM } = require('../../../lib/channelAdapter');
 const { phoneToJid } = require('../../../lib/phoneUtils');
 const { resolveGroupClient, revokeInviteLink } = require('../../../whatsapp/services/inviteLinkService');
@@ -196,18 +198,32 @@ function shouldKickMember(member) {
  */
 function resolveKickChatId(groupData, botCtx = null) {
   if (groupData?.telegram_group_id) {
-    return { success: true, data: { chatId: groupData.telegram_group_id } };
+    const normalized = normalizeTelegramChatId(groupData.telegram_group_id);
+    if (normalized) {
+      return { success: true, data: { chatId: normalized } };
+    }
+    logger.warn('[kick-expired] resolveKickChatId: groupData.telegram_group_id invalid after normalization', {
+      rawTelegramGroupId: groupData.telegram_group_id,
+      groupId: groupData?.id || null,
+    });
   }
 
   if (botCtx?.publicGroupId) {
-    return { success: true, data: { chatId: botCtx.publicGroupId } };
+    const normalized = normalizeTelegramChatId(botCtx.publicGroupId);
+    if (normalized) {
+      return { success: true, data: { chatId: normalized } };
+    }
+    logger.warn('[kick-expired] resolveKickChatId: botCtx.publicGroupId invalid after normalization', {
+      rawPublicGroupId: botCtx.publicGroupId,
+      groupId: botCtx?.groupId || null,
+    });
   }
 
   return {
     success: false,
     error: {
-      code: 'GROUP_CHAT_ID_MISSING',
-      message: 'No Telegram group chat ID available for kick (groupData and botCtx both missing)',
+      code: 'INVALID_CHAT_ID',
+      message: 'No valid Telegram group chat ID available for kick (normalization failed or missing)',
     },
   };
 }
@@ -471,6 +487,32 @@ async function _processTelegramKick(member, reason, groupData, botInstance, botC
   const removeResult = await markMemberAsRemoved(memberId, reason);
 
   if (!removeResult.success) {
+    // B5: race with a concurrent chat_member webhook that already wrote the
+    // kick record. Re-check final status before declaring a critical error.
+    if (removeResult.error?.code === 'RACE_CONDITION') {
+      const recheck = await getMemberById(memberId);
+      if (recheck.success && recheck.data?.status === 'removido') {
+        logger.info('[membership:kick-expired] processMemberKick: race with webhook, final status correct', {
+          memberId,
+          telegramId,
+        });
+        const auditResultRace = await registerKickAuditEvent(memberId, reason, groupData, {
+          raceResolved: true,
+          untilDate: kickResult.data?.until_date || null,
+        });
+        if (!auditResultRace.success) {
+          await alertAdmin(
+            `ERRO DE AUDITORIA (race): kick executado, mas evento nao foi registrado.\n\nMembro: ${username ? `@${username}` : memberId}`
+          );
+          return { success: false, error: auditResultRace.error };
+        }
+        return {
+          success: true,
+          data: { kicked: true, reason, raceWithWebhook: true },
+        };
+      }
+    }
+
     logger.error('[membership:kick-expired] processMemberKick: kick succeeded but DB update failed', {
       memberId,
       error: removeResult.error,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { normalizeTelegramChatId } from '@/lib/telegram-chat-id';
 
 const CANCELLABLE_STATUSES = new Set(['trial', 'ativo']);
 
@@ -121,7 +122,7 @@ export const POST = createApiHandler(
 
         if (botData?.bot_token) {
           const botToken = botData.bot_token;
-          const publicGroupId = botData.public_group_id;
+          const publicGroupId = normalizeTelegramChatId(botData.public_group_id);
           const groupsData = botData.groups as unknown as { checkout_url: string | null } | { checkout_url: string | null }[] | null;
           const checkoutUrl = (Array.isArray(groupsData) ? groupsData[0]?.checkout_url : groupsData?.checkout_url) || '';
 
@@ -145,6 +146,11 @@ export const POST = createApiHandler(
             } catch (err) {
               console.warn('[cancel] Telegram banChatMember error:', err instanceof Error ? err.message : err);
             }
+          } else {
+            console.warn('[cancel] Skipping banChatMember: publicGroupId invalid after normalization', {
+              rawPublicGroupId: botData.public_group_id,
+              memberId,
+            });
           }
 
           // Send farewell DM (best-effort)

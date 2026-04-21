@@ -5,7 +5,7 @@ import type { MemberListItem } from '@/types/database';
 import { MemberList } from '@/components/features/members/MemberList';
 import { CancelMemberModal } from '@/components/features/members/CancelMemberModal';
 
-type StatusFilter = 'todos' | 'trial' | 'ativo' | 'vencendo' | 'expirado' | 'inadimplente' | 'removido' | 'cancelado';
+type StatusFilter = 'todos' | 'trial' | 'ativo' | 'vencendo' | 'expirado' | 'inadimplente' | 'removido' | 'cancelado' | 'evadido';
 type ChannelFilter = '' | 'telegram' | 'whatsapp';
 
 interface MembersApiPayload {
@@ -22,6 +22,7 @@ interface MembersApiPayload {
     ativo: number;
     vencendo: number;
     admins: number;
+    evadido: number;
   };
 }
 
@@ -38,6 +39,7 @@ const INITIAL_COUNTERS = {
   ativo: 0,
   vencendo: 0,
   admins: 0,
+  evadido: 0,
 };
 
 export default function MembersPage() {
@@ -284,7 +286,7 @@ export default function MembersPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Membros</h1>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
           <div className="rounded-lg bg-white p-3 shadow">
             <p className="text-xs text-gray-500">Total</p>
             <p className="text-xl font-bold text-gray-900">{counters.total}</p>
@@ -300,6 +302,10 @@ export default function MembersPage() {
           <div className="rounded-lg bg-white p-3 shadow">
             <p className="text-xs text-gray-500">Vencendo em 7d</p>
             <p className="text-xl font-bold text-gray-900">{counters.vencendo}</p>
+          </div>
+          <div className="rounded-lg bg-orange-50 p-3 shadow">
+            <p className="text-xs text-orange-600">Evadidos</p>
+            <p className="text-xl font-bold text-orange-700">{counters.evadido}</p>
           </div>
           <div className="rounded-lg bg-purple-50 p-3 shadow">
             <p className="text-xs text-purple-600">Admins</p>
@@ -328,6 +334,7 @@ export default function MembersPage() {
               <option value="inadimplente">Inadimplentes</option>
               <option value="removido">Removidos</option>
               <option value="cancelado">Cancelados</option>
+              <option value="evadido">Evadidos</option>
             </select>
           </div>
 

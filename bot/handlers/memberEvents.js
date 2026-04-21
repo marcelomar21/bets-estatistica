@@ -124,6 +124,44 @@ async function processNewMember(user, groupId = null) {
       return { processed: false, action: 'already_exists' };
     }
 
+    if (member.status === 'evadido') {
+      // Voluntary leaver coming back. Mirror the 'removido' rejoin logic:
+      // <24h since left_at → reactivate as trial; >24h → require payment.
+      const rejoinResult = await canRejoinGroup(member.id);
+
+      if (rejoinResult.success && rejoinResult.data.canRejoin) {
+        const reactivateResult = await reactivateMember(member.id);
+        if (reactivateResult.success) {
+          await confirmMemberJoinedGroup(member.id, telegramId, username);
+          await registerMemberEvent(member.id, 'join', {
+            telegram_id: telegramId,
+            telegram_username: username,
+            source: 'telegram_webhook',
+            action: 'rejoin_after_evasion',
+            hours_since_exit: rejoinResult.data.hoursSinceKick,
+          });
+          logger.info('[membership:member-events] Evaded member rejoined', {
+            memberId: member.id,
+            telegramId,
+            hoursSinceExit: rejoinResult.data.hoursSinceKick?.toFixed(2),
+          });
+          return { processed: true, action: 'rejoin_after_evasion' };
+        }
+        logger.error('[membership:member-events] Failed to reactivate evaded member', {
+          memberId: member.id,
+          error: reactivateResult.error,
+        });
+        return { processed: false, action: 'reactivation_failed' };
+      }
+
+      logger.info('[membership:member-events] Evaded member re-entered outside 24h window', {
+        memberId: member.id,
+        hoursSinceExit: rejoinResult.data?.hoursSinceKick?.toFixed(2),
+      });
+      await sendPaymentRequiredMessage(telegramId, member.id, groupId);
+      return { processed: true, action: 'payment_required_after_evasion' };
+    }
+
     if (member.status === 'removido') {
       // Check if can rejoin (< 24h since kick)
       const rejoinResult = await canRejoinGroup(member.id);
@@ -638,8 +676,160 @@ Boas apostas! 🍀
   }
 }
 
+/**
+ * Handle Telegram `left_chat_member` event (user left/was removed from the group).
+ *
+ * This is the primary source for detecting voluntary departures. If the user
+ * is already in a terminal status (removido/evadido/cancelado) we skip — the
+ * update is redundant, probably arriving after a system kick we initiated.
+ *
+ * @param {object} msg - Telegram message object with left_chat_member populated.
+ * @param {string|null} [groupId=null] - Group UUID for multi-tenant filtering.
+ * @returns {Promise<{processed: boolean, action: string}>}
+ */
+async function handleLeftChatMember(msg, groupId = null) {
+  const user = msg?.left_chat_member;
+  if (!user) return { processed: false, action: 'no_left_member' };
+  if (user.is_bot) return { processed: false, action: 'bot_left' };
+
+  const telegramId = user.id;
+  const username = user.username || null;
+
+  const existingResult = await getMemberByTelegramId(telegramId, groupId);
+  if (!existingResult.success) {
+    if (existingResult.error?.code === 'MEMBER_NOT_FOUND') {
+      return { processed: false, action: 'not_found' };
+    }
+    logger.warn('[membership:member-events] left_chat_member fetch error', {
+      telegramId,
+      error: existingResult.error,
+    });
+    return { processed: false, action: 'error' };
+  }
+
+  const member = existingResult.data;
+  if (['removido', 'evadido', 'cancelado'].includes(member.status)) {
+    return { processed: false, action: 'already_terminal' };
+  }
+
+  // Lazy require to avoid circular dependency at module-load time.
+  const { markMemberAsEvaded } = require('../services/memberService');
+  const evadeResult = await markMemberAsEvaded(member.id, 'telegram_left_event');
+
+  if (!evadeResult.success) {
+    if (evadeResult.error?.code === 'RACE_CONDITION') {
+      logger.debug('[membership:member-events] left_chat_member: race condition (ok)', {
+        memberId: member.id,
+      });
+      return { processed: false, action: 'race_condition' };
+    }
+    logger.warn('[membership:member-events] left_chat_member: failed to mark as evaded', {
+      memberId: member.id,
+      error: evadeResult.error,
+    });
+    return { processed: false, action: 'evade_failed' };
+  }
+
+  await registerMemberEvent(member.id, 'left', {
+    telegram_id: telegramId,
+    telegram_username: username,
+    source: 'telegram_webhook',
+    previous_status: member.status,
+  });
+
+  return { processed: true, action: 'evaded' };
+}
+
+/**
+ * Handle Telegram `chat_member` update — user's status in the chat changed.
+ *
+ * Main use: detect external kicks (another admin removed a user bypassing
+ * our bot's code path). When the `from` user equals our own bot id, the
+ * kick originated from our system (e.g. kick-expired) and we skip to avoid
+ * double-processing.
+ *
+ * Only fires when the bot is admin with `can_manage_chat` — otherwise
+ * Telegram does not deliver `chat_member` updates for this bot.
+ *
+ * @param {object} update - The `chat_member` field from a Telegram Update.
+ * @param {string|null} [groupId=null] - Group UUID for multi-tenant filtering.
+ * @param {object|null} [botCtx=null] - BotContext for self-kick dedup (botId).
+ * @returns {Promise<{processed: boolean, action: string}>}
+ */
+async function handleChatMemberUpdate(update, groupId = null, botCtx = null) {
+  const oldStatus = update?.old_chat_member?.status;
+  const newStatus = update?.new_chat_member?.status;
+  const user = update?.new_chat_member?.user;
+
+  if (!user || user.is_bot) return { processed: false, action: 'bot_or_invalid' };
+  if (!['kicked', 'banned'].includes(newStatus)) {
+    return { processed: false, action: 'not_kick' };
+  }
+  if (!['member', 'restricted', 'administrator'].includes(oldStatus)) {
+    return { processed: false, action: 'not_from_active' };
+  }
+
+  // Self-kick dedup: if the `from` user that performed the transition is our
+  // own bot (e.g. a kick-expired job run), the memberService write path has
+  // already set status=removido. Skip to avoid overwriting notes / firing
+  // duplicate alerts.
+  const fromUserId = update?.from?.id;
+  if (fromUserId && botCtx?.botId && fromUserId === botCtx.botId) {
+    logger.debug('[membership:member-events] chat_member: our bot kicked (skip)', {
+      userId: user.id,
+      botId: botCtx.botId,
+    });
+    return { processed: false, action: 'self_kick_dedup' };
+  }
+
+  const existingResult = await getMemberByTelegramId(user.id, groupId);
+  if (!existingResult.success) {
+    if (existingResult.error?.code === 'MEMBER_NOT_FOUND') {
+      return { processed: false, action: 'not_found' };
+    }
+    logger.warn('[membership:member-events] chat_member fetch error', {
+      telegramId: user.id,
+      error: existingResult.error,
+    });
+    return { processed: false, action: 'error' };
+  }
+
+  const member = existingResult.data;
+  if (['removido', 'evadido', 'cancelado'].includes(member.status)) {
+    return { processed: false, action: 'already_terminal' };
+  }
+
+  const { markMemberAsRemoved } = require('../services/memberService');
+  const removeResult = await markMemberAsRemoved(member.id, 'external_kick');
+
+  if (!removeResult.success) {
+    if (removeResult.error?.code === 'RACE_CONDITION') {
+      logger.debug('[membership:member-events] chat_member: race condition (ok)', {
+        memberId: member.id,
+      });
+      return { processed: false, action: 'race_condition' };
+    }
+    logger.warn('[membership:member-events] chat_member: failed to mark as removed', {
+      memberId: member.id,
+      error: removeResult.error,
+    });
+    return { processed: false, action: 'remove_failed' };
+  }
+
+  await registerMemberEvent(member.id, 'kick', {
+    telegram_id: user.id,
+    source: 'telegram_chat_member_event',
+    reason: 'external_kick',
+    previous_status: member.status,
+  });
+
+  return { processed: true, action: 'external_kick' };
+}
+
 module.exports = {
   handleNewChatMembers,
+  handleLeftChatMember,
+  handleChatMemberUpdate,
   processNewMember,
   sendWelcomeMessage,
   sendPaymentRequiredMessage,

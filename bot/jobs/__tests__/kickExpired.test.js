@@ -29,11 +29,15 @@ jest.mock('../../services/notificationService', () => ({
 
 const mockKickMemberFromGroup = jest.fn();
 const mockMarkMemberAsRemoved = jest.fn();
+const mockGetMemberById = jest.fn();
 
 jest.mock('../../services/memberService', () => ({
   kickMemberFromGroup: mockKickMemberFromGroup,
   markMemberAsRemoved: mockMarkMemberAsRemoved,
+  getMemberById: mockGetMemberById,
 }));
+
+const { alertAdmin: mockAlertAdmin } = require('../../services/alertService');
 
 jest.mock('../../services/alertService', () => ({
   alertAdmin: jest.fn(),
@@ -261,5 +265,122 @@ describe('kick-expired — Telegram kick flow (unchanged)', () => {
     expect(result.success).toBe(true);
     expect(mockKickMemberFromGroup).toHaveBeenCalled();
     expect(mockChannelSendDM).not.toHaveBeenCalled();
+  });
+});
+
+describe('kick-expired — telegram_group_id normalization (B4 regression)', () => {
+  const telegramMember = {
+    id: 'member-tg-pos',
+    telegram_id: 99999,
+    telegram_username: 'positive_group_user',
+    channel: 'telegram',
+    channel_user_id: null,
+    group_id: 'group-uuid-pos',
+    status: 'inadimplente',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMarkMemberAsRemoved.mockResolvedValue({ success: true, data: { id: 'member-tg-pos' } });
+    mockRegisterMemberEvent.mockResolvedValue({ success: true });
+    mockKickMemberFromGroup.mockResolvedValue({ success: true, data: { until_date: 123 } });
+    mockFormatFarewellMessage.mockReturnValue('Farewell');
+    mockSendPrivateMessage.mockResolvedValue({ success: true, data: { messageId: 'tg-msg' } });
+  });
+
+  it('K1: kicks a telegram member when group.telegram_group_id is stored positive (no -100 prefix)', async () => {
+    const groupData = {
+      id: 'group-uuid-pos',
+      name: 'MEMBROS MIL GRAU',
+      telegram_group_id: 3836475731, // positive — stored without -100 prefix
+      checkout_url: null,
+    };
+
+    const result = await processMemberKick(telegramMember, 'trial_expired', groupData, { bot: true });
+
+    expect(result.success).toBe(true);
+    expect(result.data.kicked).toBe(true);
+    // kickMemberFromGroup should receive the normalized form
+    expect(mockKickMemberFromGroup).toHaveBeenCalledWith(
+      99999,
+      '-1003836475731',
+      { bot: true }
+    );
+  });
+
+  it('K4: returns INVALID_CHAT_ID error when telegram_group_id is null and no botCtx fallback', async () => {
+    const groupData = {
+      id: 'group-uuid-pos',
+      name: 'Bad group',
+      telegram_group_id: null,
+      checkout_url: null,
+    };
+
+    const result = await processMemberKick(telegramMember, 'trial_expired', groupData, null);
+
+    expect(result.success).toBe(false);
+    expect(result.error.code).toBe('INVALID_CHAT_ID');
+    expect(mockKickMemberFromGroup).not.toHaveBeenCalled();
+  });
+});
+
+describe('kick-expired — RACE_CONDITION recheck (B5 fix)', () => {
+  const groupData = {
+    id: 'group-uuid-race',
+    name: 'Race group',
+    telegram_group_id: '-1003659711655',
+    checkout_url: null,
+  };
+
+  const telegramMember = {
+    id: 'member-race',
+    telegram_id: 42,
+    telegram_username: 'racer',
+    channel: 'telegram',
+    channel_user_id: null,
+    group_id: 'group-uuid-race',
+    status: 'inadimplente',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRegisterMemberEvent.mockResolvedValue({ success: true });
+    mockKickMemberFromGroup.mockResolvedValue({ success: true, data: { until_date: 123 } });
+    mockFormatFarewellMessage.mockReturnValue('Farewell');
+    mockSendPrivateMessage.mockResolvedValue({ success: true, data: { messageId: 'tg-msg' } });
+  });
+
+  it('K2: race + final status = removido → success without alertAdmin', async () => {
+    mockMarkMemberAsRemoved.mockResolvedValue({
+      success: false,
+      error: { code: 'RACE_CONDITION', message: 'race' },
+    });
+    mockGetMemberById.mockResolvedValue({
+      success: true,
+      data: { id: 'member-race', status: 'removido' },
+    });
+
+    const result = await processMemberKick(telegramMember, 'trial_expired', groupData, { bot: true });
+
+    expect(result.success).toBe(true);
+    expect(result.data.raceWithWebhook).toBe(true);
+    expect(mockAlertAdmin).not.toHaveBeenCalled();
+  });
+
+  it('K3: race + final status != removido → original critical alertAdmin path', async () => {
+    mockMarkMemberAsRemoved.mockResolvedValue({
+      success: false,
+      error: { code: 'RACE_CONDITION', message: 'race' },
+    });
+    mockGetMemberById.mockResolvedValue({
+      success: true,
+      data: { id: 'member-race', status: 'ativo' },
+    });
+
+    const result = await processMemberKick(telegramMember, 'trial_expired', groupData, { bot: true });
+
+    expect(result.success).toBe(false);
+    expect(result.error.code).toBe('REMOVE_AFTER_KICK_FAILED');
+    expect(mockAlertAdmin).toHaveBeenCalled();
   });
 });

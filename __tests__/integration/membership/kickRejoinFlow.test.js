@@ -290,7 +290,7 @@ describe('Kick and Rejoin Flow Integration Tests', () => {
   // EDGE CASES
   // ============================================
   describe('Edge Cases', () => {
-    test('canRejoinGroup returns false if member not removed', async () => {
+    test('canRejoinGroup returns false if member not removed nor evaded', async () => {
       const activeMember = createMockMember({
         status: 'ativo', // Not removed
       });
@@ -303,13 +303,14 @@ describe('Kick and Rejoin Flow Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.canRejoin).toBe(false);
-      expect(result.data.reason).toBe('not_removed');
+      expect(result.data.reason).toBe('not_exited');
     });
 
-    test('canRejoinGroup returns false if kicked_at is null', async () => {
+    test('canRejoinGroup returns false if exit timestamp is null', async () => {
       const inconsistentMember = createMockMember({
         status: 'removido',
         kicked_at: null, // Inconsistent state
+        left_at: null,
       });
 
       setupMemberMock(inconsistentMember);
@@ -320,7 +321,7 @@ describe('Kick and Rejoin Flow Integration Tests', () => {
 
       expect(result.success).toBe(true);
       expect(result.data.canRejoin).toBe(false);
-      expect(result.data.reason).toBe('no_kicked_at');
+      expect(result.data.reason).toBe('no_exit_timestamp');
     });
 
     test('canRejoinGroup returns error if member not found', async () => {

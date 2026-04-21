@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createApiHandler } from '@/middleware/api-handler';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { normalizeTelegramChatId } from '@/lib/telegram-chat-id';
 
 /**
  * POST /api/members/[id]/reactivate
@@ -85,12 +86,13 @@ export const POST = createApiHandler(
           .eq('is_active', true)
           .single();
 
-        if (botData?.bot_token && botData.public_group_id) {
+        const normalizedPublicGroupId = normalizeTelegramChatId(botData?.public_group_id);
+        if (botData?.bot_token && normalizedPublicGroupId) {
           const res = await fetch(`https://api.telegram.org/bot${botData.bot_token}/unbanChatMember`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              chat_id: botData.public_group_id,
+              chat_id: normalizedPublicGroupId,
               user_id: member.telegram_id,
               only_if_banned: true,
             }),
@@ -99,6 +101,11 @@ export const POST = createApiHandler(
             const body = await res.json().catch(() => null);
             console.warn('[reactivate] Telegram unbanChatMember failed:', body);
           }
+        } else if (botData?.bot_token) {
+          console.warn('[reactivate] Skipping unbanChatMember: publicGroupId invalid after normalization', {
+            rawPublicGroupId: botData?.public_group_id,
+            memberId,
+          });
         }
       } catch (err) {
         console.warn('[reactivate] Telegram unbanChatMember error:', err instanceof Error ? err.message : err);

@@ -15,25 +15,13 @@ const { sleep } = require('../../../lib/utils');
 const { config } = require('../../../lib/config');
 const { supabase } = require('../../../lib/supabase');
 const { getBot } = require('../../telegram');
+const { normalizeTelegramChatId } = require('../../../lib/telegramChatId');
 
 const JOB_NAME = 'membership:sync-group-members';
 const RATE_LIMIT_MS = 100; // 10 req/s — same as reconciliation.js
 
 // Lock to prevent concurrent runs
 let syncRunning = false;
-
-/**
- * Normalize Telegram group ID to supergroup format (-100{id}).
- * @param {number|string} id - Telegram group ID
- * @returns {string} Normalized chat ID
- */
-function normalizeChatId(id) {
-  const numId = Number(id);
-  if (numId > 0) {
-    return `-100${numId}`;
-  }
-  return String(numId);
-}
 
 /**
  * Resolve the group's chat ID and group UUID.
@@ -61,7 +49,7 @@ async function resolveGroup(overrideGroupId = null) {
 
     return {
       groupId: group.id,
-      chatId: normalizeChatId(group.telegram_group_id),
+      chatId: normalizeTelegramChatId(group.telegram_group_id),
     };
   }
 
