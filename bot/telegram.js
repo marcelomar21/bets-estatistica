@@ -18,6 +18,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { config } = require('../lib/config');
 const logger = require('../lib/logger');
 const { sanitizeTelegramMarkdown } = require('./lib/telegramMarkdown');
+const { normalizeTelegramChatId } = require('../lib/telegramChatId');
 
 // ==========================================
 // Legacy singleton state (backward-compat)
@@ -176,9 +177,14 @@ async function initBots(supabaseClient) {
       const ctx = {
         bot: botInstance,
         groupId: row.group_id,
-        adminGroupId: row.admin_group_id || row.groups?.telegram_admin_group_id,
-        publicGroupId: row.public_group_id || row.groups?.telegram_group_id,
+        adminGroupId: normalizeTelegramChatId(
+          row.admin_group_id || row.groups?.telegram_admin_group_id
+        ),
+        publicGroupId: normalizeTelegramChatId(
+          row.public_group_id || row.groups?.telegram_group_id
+        ),
         botToken: row.bot_token,
+        botId: null, // Populated lazily via bot.getMe() — see hydrateBotIds()
         groupConfig,
         channels: row.groups?.channels || ['telegram'],
         whatsappGroupJid: row.groups?.whatsapp_group_jid || null,
@@ -214,9 +220,10 @@ async function initBots(supabaseClient) {
     botRegistry.set(config.membership.groupId, {
       bot: legacyBot,
       groupId: config.membership.groupId,
-      adminGroupId: config.telegram.adminGroupId,
-      publicGroupId: config.telegram.publicGroupId,
+      adminGroupId: normalizeTelegramChatId(config.telegram.adminGroupId),
+      publicGroupId: normalizeTelegramChatId(config.telegram.publicGroupId),
       botToken: config.telegram.botToken,
+      botId: null, // Populated lazily via bot.getMe() — see hydrateBotIds()
       groupConfig: {},
     });
     logger.info('Legacy bot registered in registry', { groupId: config.membership.groupId });
@@ -224,6 +231,42 @@ async function initBots(supabaseClient) {
 
   logger.info('Bot registry initialized', { count: botRegistry.size });
   return botRegistry;
+}
+
+/**
+ * Populate the `botId` field of every registered BotContext by calling
+ * `bot.getMe()` once per bot. Required for self-kick dedup in the
+ * `chat_member` update handler — we need to know our own bot id so we
+ * don't process our own kick as an external kick.
+ *
+ * Safe to call multiple times; subsequent calls re-fetch and refresh.
+ * @returns {Promise<{success: boolean, count: number, failures: number}>}
+ */
+async function hydrateBotIds() {
+  let count = 0;
+  let failures = 0;
+
+  for (const ctx of botRegistry.values()) {
+    try {
+      const me = await ctx.bot.getMe();
+      ctx.botId = me?.id ?? null;
+      if (ctx.botId) {
+        count += 1;
+      } else {
+        failures += 1;
+        logger.warn('hydrateBotIds: getMe returned no id', { groupId: ctx.groupId });
+      }
+    } catch (err) {
+      failures += 1;
+      logger.warn('hydrateBotIds: getMe failed', {
+        groupId: ctx.groupId,
+        error: err.message,
+      });
+    }
+  }
+
+  logger.info('Bot ids hydrated', { count, failures });
+  return { success: failures === 0, count, failures };
 }
 
 /**
@@ -498,6 +541,7 @@ module.exports = {
 
   // Multi-bot management (Phase 2)
   initBots,
+  hydrateBotIds,
   refreshGroupConfig,
   getBotForGroup,
   getAllBots,
