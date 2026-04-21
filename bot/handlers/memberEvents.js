@@ -124,6 +124,44 @@ async function processNewMember(user, groupId = null) {
       return { processed: false, action: 'already_exists' };
     }
 
+    if (member.status === 'evadido') {
+      // Voluntary leaver coming back. Mirror the 'removido' rejoin logic:
+      // <24h since left_at → reactivate as trial; >24h → require payment.
+      const rejoinResult = await canRejoinGroup(member.id);
+
+      if (rejoinResult.success && rejoinResult.data.canRejoin) {
+        const reactivateResult = await reactivateMember(member.id);
+        if (reactivateResult.success) {
+          await confirmMemberJoinedGroup(member.id, telegramId, username);
+          await registerMemberEvent(member.id, 'join', {
+            telegram_id: telegramId,
+            telegram_username: username,
+            source: 'telegram_webhook',
+            action: 'rejoin_after_evasion',
+            hours_since_exit: rejoinResult.data.hoursSinceKick,
+          });
+          logger.info('[membership:member-events] Evaded member rejoined', {
+            memberId: member.id,
+            telegramId,
+            hoursSinceExit: rejoinResult.data.hoursSinceKick?.toFixed(2),
+          });
+          return { processed: true, action: 'rejoin_after_evasion' };
+        }
+        logger.error('[membership:member-events] Failed to reactivate evaded member', {
+          memberId: member.id,
+          error: reactivateResult.error,
+        });
+        return { processed: false, action: 'reactivation_failed' };
+      }
+
+      logger.info('[membership:member-events] Evaded member re-entered outside 24h window', {
+        memberId: member.id,
+        hoursSinceExit: rejoinResult.data?.hoursSinceKick?.toFixed(2),
+      });
+      await sendPaymentRequiredMessage(telegramId, member.id, groupId);
+      return { processed: true, action: 'payment_required_after_evasion' };
+    }
+
     if (member.status === 'removido') {
       // Check if can rejoin (< 24h since kick)
       const rejoinResult = await canRejoinGroup(member.id);
