@@ -1508,7 +1508,8 @@ describe('memberService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error.code).toBe('INVALID_MEMBER_STATUS');
-      expect(result.error.message).toContain("Expected 'removido'");
+      expect(result.error.message).toContain('removido');
+      expect(result.error.message).toContain('evadido');
     });
 
     test('retorna erro quando membro não encontrado', async () => {

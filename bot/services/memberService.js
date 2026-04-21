@@ -670,18 +670,22 @@ async function reactivateRemovedMember(memberId, options = {}) {
     const member = memberResult.data;
     const currentStatus = member.status;
 
-    // Validate that member is in 'removido' status
-    if (currentStatus !== 'removido') {
-      logger.warn('[memberService] reactivateRemovedMember: member not in removido status', {
+    // Validate that member is in a reactivable status.
+    // Both 'removido' (system-kicked) and 'evadido' (voluntary leave) are
+    // accepted entry points for post-payment reactivation.
+    const REACTIVATABLE_STATUSES = ['removido', 'evadido'];
+    if (!REACTIVATABLE_STATUSES.includes(currentStatus)) {
+      logger.warn('[memberService] reactivateRemovedMember: member not in reactivatable status', {
         memberId,
-        currentStatus
+        currentStatus,
+        accepted: REACTIVATABLE_STATUSES,
       });
       return {
         success: false,
         error: {
           code: 'INVALID_MEMBER_STATUS',
-          message: `Cannot reactivate member with status '${currentStatus}'. Expected 'removido'.`
-        }
+          message: `Cannot reactivate member with status '${currentStatus}'. Expected one of: ${REACTIVATABLE_STATUSES.join(', ')}.`,
+        },
       };
     }
 
@@ -701,12 +705,17 @@ async function reactivateRemovedMember(memberId, options = {}) {
       reactivationNote = 'Reativado após pagamento';
     }
 
-    // Update member with optimistic locking
+    // Update member with optimistic locking.
+    // The optimistic lock matches on currentStatus (captured above) so the
+    // update works identically whether reactivating from 'removido' or
+    // 'evadido'. Both kicked_at and left_at are cleared so the new
+    // subscription starts with a clean state.
     const { data, error } = await supabase
       .from('members')
       .update({
         status: 'ativo',
         kicked_at: null,
+        left_at: null,
         subscription_started_at: subscriptionStartsAt.toISOString(),
         subscription_ends_at: subscriptionEndsAt.toISOString(),
         last_payment_at: now.toISOString(),
@@ -722,7 +731,7 @@ async function reactivateRemovedMember(memberId, options = {}) {
         ...(options.paymentMethod && { payment_method: options.paymentMethod })
       })
       .eq('id', memberId)
-      .eq('status', 'removido') // Optimistic lock
+      .eq('status', currentStatus) // Optimistic lock (removido OR evadido)
       .select()
       .single();
 
