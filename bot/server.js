@@ -22,7 +22,11 @@ const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { initBots, hydrateBotIds, getBotForGroup, getAllBots, ALLOWED_UPDATES } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
-const { handleNewChatMembers, handleLeftChatMember } = require('./handlers/memberEvents');
+const {
+  handleNewChatMembers,
+  handleLeftChatMember,
+  handleChatMemberUpdate,
+} = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput, handleTermsAcceptCallback } = require('./handlers/startCommand');
 const { handleCancelCommand, handleCancelCallback } = require('./handlers/cancelCommand');
 const { supabase } = require('../lib/supabase');
@@ -271,6 +275,17 @@ async function processWebhookUpdate(update, botCtx = null) {
         // Handle removal callbacks (existing)
         await handleRemovalCallback(bot, callbackQuery, botCtx);
       }
+    }
+  }
+
+  // chat_member updates: status transitions of any user in a chat. Used
+  // primarily for detecting external kicks (admin removes user). Requires
+  // bot to be admin with `can_manage_chat` — configured via
+  // setWebhook({ allowed_updates: [..., 'chat_member'] }).
+  if (update.chat_member) {
+    const chatId = update.chat_member.chat?.id;
+    if (chatId !== undefined && String(chatId) === publicGroupId) {
+      await handleChatMemberUpdate(update.chat_member, botCtx?.groupId, botCtx);
     }
   }
 }

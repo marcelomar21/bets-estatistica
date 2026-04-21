@@ -740,9 +740,96 @@ async function handleLeftChatMember(msg, groupId = null) {
   return { processed: true, action: 'evaded' };
 }
 
+/**
+ * Handle Telegram `chat_member` update — user's status in the chat changed.
+ *
+ * Main use: detect external kicks (another admin removed a user bypassing
+ * our bot's code path). When the `from` user equals our own bot id, the
+ * kick originated from our system (e.g. kick-expired) and we skip to avoid
+ * double-processing.
+ *
+ * Only fires when the bot is admin with `can_manage_chat` — otherwise
+ * Telegram does not deliver `chat_member` updates for this bot.
+ *
+ * @param {object} update - The `chat_member` field from a Telegram Update.
+ * @param {string|null} [groupId=null] - Group UUID for multi-tenant filtering.
+ * @param {object|null} [botCtx=null] - BotContext for self-kick dedup (botId).
+ * @returns {Promise<{processed: boolean, action: string}>}
+ */
+async function handleChatMemberUpdate(update, groupId = null, botCtx = null) {
+  const oldStatus = update?.old_chat_member?.status;
+  const newStatus = update?.new_chat_member?.status;
+  const user = update?.new_chat_member?.user;
+
+  if (!user || user.is_bot) return { processed: false, action: 'bot_or_invalid' };
+  if (!['kicked', 'banned'].includes(newStatus)) {
+    return { processed: false, action: 'not_kick' };
+  }
+  if (!['member', 'restricted', 'administrator'].includes(oldStatus)) {
+    return { processed: false, action: 'not_from_active' };
+  }
+
+  // Self-kick dedup: if the `from` user that performed the transition is our
+  // own bot (e.g. a kick-expired job run), the memberService write path has
+  // already set status=removido. Skip to avoid overwriting notes / firing
+  // duplicate alerts.
+  const fromUserId = update?.from?.id;
+  if (fromUserId && botCtx?.botId && fromUserId === botCtx.botId) {
+    logger.debug('[membership:member-events] chat_member: our bot kicked (skip)', {
+      userId: user.id,
+      botId: botCtx.botId,
+    });
+    return { processed: false, action: 'self_kick_dedup' };
+  }
+
+  const existingResult = await getMemberByTelegramId(user.id, groupId);
+  if (!existingResult.success) {
+    if (existingResult.error?.code === 'MEMBER_NOT_FOUND') {
+      return { processed: false, action: 'not_found' };
+    }
+    logger.warn('[membership:member-events] chat_member fetch error', {
+      telegramId: user.id,
+      error: existingResult.error,
+    });
+    return { processed: false, action: 'error' };
+  }
+
+  const member = existingResult.data;
+  if (['removido', 'evadido', 'cancelado'].includes(member.status)) {
+    return { processed: false, action: 'already_terminal' };
+  }
+
+  const { markMemberAsRemoved } = require('../services/memberService');
+  const removeResult = await markMemberAsRemoved(member.id, 'external_kick');
+
+  if (!removeResult.success) {
+    if (removeResult.error?.code === 'RACE_CONDITION') {
+      logger.debug('[membership:member-events] chat_member: race condition (ok)', {
+        memberId: member.id,
+      });
+      return { processed: false, action: 'race_condition' };
+    }
+    logger.warn('[membership:member-events] chat_member: failed to mark as removed', {
+      memberId: member.id,
+      error: removeResult.error,
+    });
+    return { processed: false, action: 'remove_failed' };
+  }
+
+  await registerMemberEvent(member.id, 'kick', {
+    telegram_id: user.id,
+    source: 'telegram_chat_member_event',
+    reason: 'external_kick',
+    previous_status: member.status,
+  });
+
+  return { processed: true, action: 'external_kick' };
+}
+
 module.exports = {
   handleNewChatMembers,
   handleLeftChatMember,
+  handleChatMemberUpdate,
   processNewMember,
   sendWelcomeMessage,
   sendPaymentRequiredMessage,
