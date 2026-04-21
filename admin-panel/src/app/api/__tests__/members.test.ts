@@ -112,6 +112,7 @@ describe('GET /api/members', () => {
         { data: null, error: null, count: 1 }, // ativo
         zeroCounter, // vencendo
         zeroCounter, // admins
+        zeroCounter, // evadido
       ],
     });
     const context = createMockContext('super_admin', supabase);
@@ -123,9 +124,10 @@ describe('GET /api/members', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.items).toEqual(rows);
+    // cancelled_by_email is always injected (null when no cancelled_by populated)
+    expect(body.data.items).toEqual(rows.map((r) => ({ ...r, cancelled_by_email: null })));
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin, groups(name)',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin, kicked_at, left_at, cancellation_reason, cancelled_by, groups(name)',
       { count: 'exact' },
     );
     expect(supabase.query.order).toHaveBeenCalledWith('created_at', { ascending: false });
@@ -134,6 +136,7 @@ describe('GET /api/members', () => {
     expect(body.data.counters).toBeDefined();
     expect(body.data.counters.total).toBe(1);
     expect(body.data.counters.admins).toBe(0);
+    expect(body.data.counters.evadido).toBe(0);
   });
 
   it('counters.total equals pagination.total (both include admins)', async () => {
@@ -175,9 +178,9 @@ describe('GET /api/members', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    expect(body.data.items).toEqual(rows);
+    expect(body.data.items).toEqual(rows.map((r) => ({ ...r, cancelled_by_email: null })));
     expect(supabase.query.select).toHaveBeenCalledWith(
-      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin',
+      'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin, kicked_at, left_at, cancellation_reason, cancelled_by',
       { count: 'exact' },
     );
     expect(supabase.query.eq).toHaveBeenCalledWith('group_id', 'group-uuid-1');
@@ -399,11 +402,11 @@ describe('GET /api/members', () => {
 
     expect(response.status).toBe(200);
     expect(body.success).toBe(true);
-    // eq should be called with group_id multiple times (main query + 4 counter queries = 5 total)
+    // eq should be called with group_id on main + 5 counter queries = 6 total
     const eqCalls = supabase.query.eq.mock.calls.filter(
       (call: unknown[]) => call[0] === 'group_id' && call[1] === validGroupId,
     );
-    expect(eqCalls.length).toBe(5);
+    expect(eqCalls.length).toBe(6);
   });
 
   it('aplica filtro por canal whatsapp', async () => {
@@ -414,11 +417,11 @@ describe('GET /api/members', () => {
     const { GET } = await import('@/app/api/members/route');
     await GET(createMockRequest('http://localhost/api/members?channel=whatsapp'));
 
-    // eq should be called with channel for main query + 4 counter queries = 5 total
+    // eq should be called with channel on main + 5 counter queries = 6 total
     const eqCalls = supabase.query.eq.mock.calls.filter(
       (call: unknown[]) => call[0] === 'channel' && call[1] === 'whatsapp',
     );
-    expect(eqCalls.length).toBe(5);
+    expect(eqCalls.length).toBe(6);
   });
 
   it('retorna 400 quando canal e invalido', async () => {

@@ -6,7 +6,7 @@ const DEFAULT_PER_PAGE = 50;
 const MAX_PER_PAGE = 200;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado']);
+const SIMPLE_STATUS_FILTERS = new Set(['trial', 'ativo', 'inadimplente', 'removido', 'cancelado', 'evadido']);
 const VALID_CHANNELS = new Set(['telegram', 'whatsapp']);
 
 function parsePositiveInt(rawValue: string | null, fallback: number): number {
@@ -54,10 +54,12 @@ export const GET = createApiHandler(
     const nowIso = new Date().toISOString();
     const sevenDaysIso = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const baseCols = 'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin';
-    const cancelCols = statusFilter === 'cancelado' ? ', cancellation_reason, cancelled_by, kicked_at' : '';
+    // Always select kicked_at/left_at/cancellation_reason/cancelled_by so the
+    // UI can render them for any status filter (evadido shows left_at,
+    // removido shows kicked_at, cancelado shows cancellation_reason + actor).
+    const baseCols = 'id, telegram_id, telegram_username, channel, channel_user_id, status, subscription_ends_at, created_at, group_id, is_admin, kicked_at, left_at, cancellation_reason, cancelled_by';
     const groupCols = role === 'super_admin' ? ', groups(name)' : '';
-    const select = baseCols + cancelCols + groupCols;
+    const select = baseCols + groupCols;
 
     let query = supabase
       .from('members')
@@ -107,17 +109,20 @@ export const GET = createApiHandler(
       .gte('subscription_ends_at', nowIso)
       .lte('subscription_ends_at', sevenDaysIso);
     let adminsQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('is_admin', true);
+    let evadidoQuery = supabase.from('members').select('*', { count: 'exact', head: true }).eq('status', 'evadido');
 
     if (groupFilter) {
       trialQuery = trialQuery.eq('group_id', groupFilter);
       ativoQuery = ativoQuery.eq('group_id', groupFilter);
       vencendoQuery = vencendoQuery.eq('group_id', groupFilter);
       adminsQuery = adminsQuery.eq('group_id', groupFilter);
+      evadidoQuery = evadidoQuery.eq('group_id', groupFilter);
     } else if (groupIdParam) {
       trialQuery = trialQuery.eq('group_id', groupIdParam);
       ativoQuery = ativoQuery.eq('group_id', groupIdParam);
       vencendoQuery = vencendoQuery.eq('group_id', groupIdParam);
       adminsQuery = adminsQuery.eq('group_id', groupIdParam);
+      evadidoQuery = evadidoQuery.eq('group_id', groupIdParam);
     }
 
     if (channelFilter) {
@@ -125,17 +130,26 @@ export const GET = createApiHandler(
       ativoQuery = ativoQuery.eq('channel', channelFilter);
       vencendoQuery = vencendoQuery.eq('channel', channelFilter);
       adminsQuery = adminsQuery.eq('channel', channelFilter);
+      evadidoQuery = evadidoQuery.eq('channel', channelFilter);
     }
 
-    const [mainResult, trialResult, ativoResult, vencendoResult, adminsResult] = await Promise.all([
+    const [mainResult, trialResult, ativoResult, vencendoResult, adminsResult, evadidoResult] = await Promise.all([
       query.order('created_at', { ascending: false }).range(from, from + perPage - 1),
       trialQuery,
       ativoQuery,
       vencendoQuery,
       adminsQuery,
+      evadidoQuery,
     ]);
 
-    if (mainResult.error || trialResult.error || ativoResult.error || vencendoResult.error || adminsResult.error) {
+    if (
+      mainResult.error
+      || trialResult.error
+      || ativoResult.error
+      || vencendoResult.error
+      || adminsResult.error
+      || evadidoResult.error
+    ) {
       return dbErrorResponse();
     }
 
@@ -143,30 +157,41 @@ export const GET = createApiHandler(
     const adminsCount = adminsResult.count ?? 0;
     const totalPages = total > 0 ? Math.ceil(total / perPage) : 0;
 
-    // Resolve cancelled_by UUIDs to emails when filtering by cancelado
+    // Resolve cancelled_by UUIDs to emails whenever any row in the current
+    // page has a populated cancelled_by (may appear for statuses other than
+    // 'cancelado' now that cancelled_by is always selected).
     let items: unknown[] = mainResult.data ?? [];
-    if (statusFilter === 'cancelado' && items.length > 0) {
+    if (items.length > 0) {
       const rawItems = items as Array<Record<string, unknown>>;
       const cancelledByIds = [...new Set(
         rawItems
           .map((m) => m.cancelled_by as string | null)
           .filter((id): id is string => !!id),
       )];
-      let emailMap = new Map<string, string>();
       if (cancelledByIds.length > 0) {
         const { data: admins } = await supabase
           .from('admin_users')
           .select('id, email')
           .in('id', cancelledByIds);
-        emailMap = new Map((admins ?? []).map((a: { id: string; email: string }) => [a.id, a.email]));
+        const emailMap = new Map(
+          (admins ?? []).map((a: { id: string; email: string }) => [a.id, a.email]),
+        );
+        items = rawItems.map((m) => {
+          const { cancelled_by, ...rest } = m;
+          return {
+            ...rest,
+            cancelled_by_email: cancelled_by ? emailMap.get(cancelled_by as string) ?? null : null,
+          };
+        });
+      } else {
+        // No cancelled_by values in this page — strip the raw column so callers
+        // only see the derived `cancelled_by_email` field (null).
+        items = rawItems.map((m) => {
+          const { cancelled_by, ...rest } = m;
+          void cancelled_by;
+          return { ...rest, cancelled_by_email: null };
+        });
       }
-      items = rawItems.map((m) => {
-        const { cancelled_by, ...rest } = m;
-        return {
-          ...rest,
-          cancelled_by_email: emailMap.get(cancelled_by as string) ?? null,
-        };
-      });
     }
 
     return NextResponse.json({
@@ -185,6 +210,7 @@ export const GET = createApiHandler(
           ativo: ativoResult.count ?? 0,
           vencendo: vencendoResult.count ?? 0,
           admins: adminsCount,
+          evadido: evadidoResult.count ?? 0,
         },
       },
     });
