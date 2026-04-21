@@ -197,6 +197,60 @@ describe('GET /api/members', () => {
     expect(supabase.query.eq).toHaveBeenCalledWith('status', 'trial');
   });
 
+  it('A1: aplica filtro status=evadido no main query', async () => {
+    const supabase = createMembersSupabaseMock({ data: [], error: null, count: 0 });
+    const context = createMockContext('group_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    await GET(createMockRequest('http://localhost/api/members?status=evadido'));
+
+    expect(supabase.query.eq).toHaveBeenCalledWith('status', 'evadido');
+  });
+
+  it('A2: counters.evadido vem preenchido do counter query', async () => {
+    const zeroCounter = { data: null, error: null, count: 0 };
+    const supabase = createMembersSupabaseMock({
+      main: { data: [], error: null, count: 0 },
+      counters: [
+        zeroCounter, // trial
+        zeroCounter, // ativo
+        zeroCounter, // vencendo
+        zeroCounter, // admins
+        { data: null, error: null, count: 9 }, // evadido
+      ],
+    });
+    const context = createMockContext('super_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    const response = await GET(createMockRequest('http://localhost/api/members'));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.counters.evadido).toBe(9);
+  });
+
+  it('A5: select sempre inclui left_at + kicked_at + cancellation_reason + cancelled_by', async () => {
+    const supabase = createMembersSupabaseMock({ data: [], error: null, count: 0 });
+    const context = createMockContext('group_admin', supabase);
+    mockWithTenant.mockResolvedValue({ success: true, context });
+
+    const { GET } = await import('@/app/api/members/route');
+    // Note: filter by trial so the test covers the non-cancelado path specifically.
+    await GET(createMockRequest('http://localhost/api/members?status=trial'));
+
+    const selectCall = supabase.query.select.mock.calls.find(
+      (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('telegram_id'),
+    );
+    expect(selectCall).toBeDefined();
+    const selectString = selectCall![0] as string;
+    expect(selectString).toContain('kicked_at');
+    expect(selectString).toContain('left_at');
+    expect(selectString).toContain('cancellation_reason');
+    expect(selectString).toContain('cancelled_by');
+  });
+
   it('aplica filtro especial vencendo (ativo + intervalo de 7 dias)', async () => {
     const supabase = createMembersSupabaseMock({ data: [], error: null, count: 0 });
     const context = createMockContext('super_admin', supabase);
