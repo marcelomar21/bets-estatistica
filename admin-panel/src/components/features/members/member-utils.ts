@@ -7,7 +7,8 @@ export type MemberDisplayStatus =
   | 'inadimplente'
   | 'removido'
   | 'expirado'
-  | 'cancelado';
+  | 'cancelado'
+  | 'evadido';
 
 export const memberStatusConfig: Record<MemberDisplayStatus, { label: string; className: string }> = {
   trial: { label: 'Trial', className: 'bg-blue-100 text-blue-800' },
@@ -17,6 +18,7 @@ export const memberStatusConfig: Record<MemberDisplayStatus, { label: string; cl
   expirado: { label: 'Expirado', className: 'bg-red-100 text-red-800' },
   removido: { label: 'Removido', className: 'bg-gray-100 text-gray-800' },
   cancelado: { label: 'Cancelado', className: 'bg-gray-100 text-gray-800' },
+  evadido: { label: 'Evadido', className: 'bg-orange-100 text-orange-800' },
 };
 
 type DisplayStatusInput = Pick<Member, 'status' | 'subscription_ends_at'> & { is_admin?: boolean };

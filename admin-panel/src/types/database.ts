@@ -63,7 +63,7 @@ export interface Member {
   telegram_id: number | null;
   telegram_username: string | null;
   email: string | null;
-  status: 'trial' | 'ativo' | 'inadimplente' | 'removido' | 'cancelado';
+  status: 'trial' | 'ativo' | 'inadimplente' | 'removido' | 'cancelado' | 'evadido';
   channel: 'telegram' | 'whatsapp';
   channel_user_id: string | null;
   mp_subscription_id: string | null;
@@ -74,6 +74,7 @@ export interface Member {
   payment_method: string | null;
   last_payment_at: string | null;
   kicked_at: string | null;
+  left_at: string | null;
   notes: string | null;
   group_id: string | null;
   cancellation_reason: string | null;
@@ -91,6 +92,7 @@ export type MemberListItem = Pick<
   cancellation_reason?: string | null;
   cancelled_by_email?: string | null;
   kicked_at?: string | null;
+  left_at?: string | null;
 };
 
 export interface DashboardSummary {
