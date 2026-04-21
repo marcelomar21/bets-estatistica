@@ -676,8 +676,73 @@ Boas apostas! 🍀
   }
 }
 
+/**
+ * Handle Telegram `left_chat_member` event (user left/was removed from the group).
+ *
+ * This is the primary source for detecting voluntary departures. If the user
+ * is already in a terminal status (removido/evadido/cancelado) we skip — the
+ * update is redundant, probably arriving after a system kick we initiated.
+ *
+ * @param {object} msg - Telegram message object with left_chat_member populated.
+ * @param {string|null} [groupId=null] - Group UUID for multi-tenant filtering.
+ * @returns {Promise<{processed: boolean, action: string}>}
+ */
+async function handleLeftChatMember(msg, groupId = null) {
+  const user = msg?.left_chat_member;
+  if (!user) return { processed: false, action: 'no_left_member' };
+  if (user.is_bot) return { processed: false, action: 'bot_left' };
+
+  const telegramId = user.id;
+  const username = user.username || null;
+
+  const existingResult = await getMemberByTelegramId(telegramId, groupId);
+  if (!existingResult.success) {
+    if (existingResult.error?.code === 'MEMBER_NOT_FOUND') {
+      return { processed: false, action: 'not_found' };
+    }
+    logger.warn('[membership:member-events] left_chat_member fetch error', {
+      telegramId,
+      error: existingResult.error,
+    });
+    return { processed: false, action: 'error' };
+  }
+
+  const member = existingResult.data;
+  if (['removido', 'evadido', 'cancelado'].includes(member.status)) {
+    return { processed: false, action: 'already_terminal' };
+  }
+
+  // Lazy require to avoid circular dependency at module-load time.
+  const { markMemberAsEvaded } = require('../services/memberService');
+  const evadeResult = await markMemberAsEvaded(member.id, 'telegram_left_event');
+
+  if (!evadeResult.success) {
+    if (evadeResult.error?.code === 'RACE_CONDITION') {
+      logger.debug('[membership:member-events] left_chat_member: race condition (ok)', {
+        memberId: member.id,
+      });
+      return { processed: false, action: 'race_condition' };
+    }
+    logger.warn('[membership:member-events] left_chat_member: failed to mark as evaded', {
+      memberId: member.id,
+      error: evadeResult.error,
+    });
+    return { processed: false, action: 'evade_failed' };
+  }
+
+  await registerMemberEvent(member.id, 'left', {
+    telegram_id: telegramId,
+    telegram_username: username,
+    source: 'telegram_webhook',
+    previous_status: member.status,
+  });
+
+  return { processed: true, action: 'evaded' };
+}
+
 module.exports = {
   handleNewChatMembers,
+  handleLeftChatMember,
   processNewMember,
   sendWelcomeMessage,
   sendPaymentRequiredMessage,

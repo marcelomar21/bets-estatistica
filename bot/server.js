@@ -22,7 +22,7 @@ const { initBot, getBot, setWebhook, testConnection } = require('./telegram');
 const { initBots, hydrateBotIds, getBotForGroup, getAllBots, ALLOWED_UPDATES } = require('./telegram');
 const { handleAdminMessage, handleRemovalCallback } = require('./handlers/adminGroup');
 const { handlePostConfirmation } = require('./jobs/postBets');
-const { handleNewChatMembers } = require('./handlers/memberEvents');
+const { handleNewChatMembers, handleLeftChatMember } = require('./handlers/memberEvents');
 const { handleStartCommand, handleStatusCommand, handleEmailInput, shouldHandleAsEmailInput, handleTermsAcceptCallback } = require('./handlers/startCommand');
 const { handleCancelCommand, handleCancelCallback } = require('./handlers/cancelCommand');
 const { supabase } = require('../lib/supabase');
@@ -212,6 +212,14 @@ async function processWebhookUpdate(update, botCtx = null) {
     const expectedGroupChatId = publicGroupId;
     if (msg.new_chat_members && msg.chat.id.toString() === expectedGroupChatId) {
       await handleNewChatMembers(msg, botCtx?.groupId);
+    }
+
+    // Detect voluntary leaves in the public group (or users kicked by an
+    // admin — Telegram also emits `left_chat_member` for that). This is the
+    // always-available source for evadido detection, even when the bot lacks
+    // `can_manage_chat` and does not receive `chat_member` updates.
+    if (msg.left_chat_member && msg.chat.id.toString() === expectedGroupChatId) {
+      await handleLeftChatMember(msg, botCtx?.groupId);
     }
 
     // Story 16.9: Handle /start command in private chats (Gate Entry)
