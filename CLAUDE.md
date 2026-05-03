@@ -209,6 +209,7 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 |-------|-------------|------|
 | odds-collector |  | `.claude/skills/odds-collector/SKILL.md` |
 | pre-merge |  | `.claude/skills/pre-merge/SKILL.md` |
+| religar-produto | Religar GuruBet apos shutdown — passo a passo interativo | `.claude/skills/religar-produto/SKILL.md` |
 | vault-explore |  | `.claude/skills/vault-explore/SKILL.md` |
 <!-- GSD:skills-end -->
 
