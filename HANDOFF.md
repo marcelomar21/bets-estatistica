@@ -355,15 +355,15 @@ Esclarecimento útil para evitar busca em vão:
 | Secret | Serviço | Onde está armazenado | Onde rotacionar/regenerar |
 |---|---|---|---|
 | `SUPABASE_URL` | Supabase | `.env`, GH Secrets, Vercel env, Render env group `bets-secrets` | Console Supabase (URL é fixa do projeto, não rotaciona) |
-| `SUPABASE_SERVICE_KEY` | Supabase | idem | Supabase → Settings → API → "Reveal" / "Reset" |
+| `SUPABASE_SERVICE_KEY` | Supabase | `.env`, GH Secrets, Vercel env, Render env group `bets-secrets` | Supabase → Settings → API → "Reveal" / "Reset" |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase | Vercel env do admin-panel, `admin-panel/.env.local` | Supabase → Settings → API |
 | `SUPABASE_DB_PASSWORD` | Supabase | `.env` (raiz), Render env group | Supabase → Settings → Database → Reset password (também invalida `DATABASE_URL`) |
 | `DATABASE_URL` | Supabase (Postgres) | `.env`, GH Secrets, Render env group | Reconstruir após reset de senha |
 | `TELEGRAM_BOT_TOKEN` | Telegram (BotFather) | GH Secrets (workflows), tabela `bot_pool` no banco (produção) | @BotFather → `/revoke` no chat com o bot |
 | `TELEGRAM_ADMIN_GROUP_ID` | Telegram | GH Secrets, Render env group | É só um chat_id, não é secret de fato |
-| `TELEGRAM_PUBLIC_GROUP_ID` | Telegram | GH Secrets | idem |
+| `TELEGRAM_PUBLIC_GROUP_ID` | Telegram | GH Secrets | É só um chat_id, não é secret de fato |
 | `TELEGRAM_API_ID` | Telegram MTProto | `admin-panel/.env.local`, Vercel env | https://my.telegram.org → API tools |
-| `TELEGRAM_API_HASH` | Telegram MTProto | idem | idem |
+| `TELEGRAM_API_HASH` | Telegram MTProto | `admin-panel/.env.local`, Vercel env | https://my.telegram.org → API tools |
 | `OPENAI_API_KEY` | OpenAI | `.env`, GH Secrets, Vercel env, Render env group | https://platform.openai.com/api-keys |
 | `FOOTYSTATS_API_KEY` | FootyStats | `.env`, GH Secrets, Render env group | https://footystats.org/api → painel |
 | `THE_ODDS_API_KEY` | The Odds API | `.env`, GH Secrets, Render env group | https://the-odds-api.com → painel |
@@ -371,8 +371,8 @@ Esclarecimento útil para evitar busca em vão:
 | `MP_WEBHOOK_SECRET` | Mercado Pago | `.env`, Render env group | Painel MP → Webhooks → "Generate" |
 | `MP_CHECKOUT_URL` | Mercado Pago | `.env`, Render env group | URL gerada por preferência (geralmente armazenada por grupo no banco) |
 | `CAKTO_CLIENT_ID` | Cakto (legado) | Render env group | ❌ deprecado — manter por enquanto, código tem fallback para MP |
-| `CAKTO_CLIENT_SECRET` | Cakto (legado) | Render env group | idem |
-| `CAKTO_WEBHOOK_SECRET` | Cakto (legado) | Render env group | idem |
+| `CAKTO_CLIENT_SECRET` | Cakto (legado) | Render env group | ❌ deprecado — manter por enquanto, código tem fallback para MP |
+| `CAKTO_WEBHOOK_SECRET` | Cakto (legado) | Render env group | ❌ deprecado — manter por enquanto, código tem fallback para MP |
 | `WHATSAPP_ENCRYPTION_KEY` | WhatsApp/Baileys | `.env`, Render env group | `openssl rand -hex 32` — **se rotacionar, invalida todas as sessões salvas** |
 | `ENCRYPTION_KEY` | Admin-panel (sessões locais) | `admin-panel/.env.local`, Vercel env | `openssl rand -hex 32` |
 | `RENDER_API_KEY` | Render | GH Secrets, Vercel env (admin-panel usa para restartar bot) | Render → Account → API Keys |
@@ -382,29 +382,73 @@ Esclarecimento útil para evitar busca em vão:
 | `BOT_PREVIEW_API_KEY` | Interno (admin → bot) | `.env.render` (Vercel pull), bot env | Gerar string aleatória — sincronizar entre admin-panel e bot |
 | `SEED_ADMIN_PASSWORD` | Interno (seed dev) | `.env` local (somente dev) | Não usar em produção |
 
-### Onde estão armazenados os secrets reais hoje
+### Onde os secrets vivem em produção (na nuvem)
 
-| Local | Conteúdo | Como acessar |
+Esses lugares persistem entre operadores — basta o próximo dev receber acesso à conta correspondente para ler/atualizar:
+
+| Cloud | Conteúdo | Como acessar |
 |---|---|---|
-| `.env` (raiz, gitignored) | secrets do bot rodando localmente | arquivo no Mac do operador |
-| `admin-panel/.env.local` (gitignored) | secrets do admin-panel rodando localmente | arquivo no Mac do operador |
-| `admin-panel/.env.render` (gitignored, gerado) | env vars do Vercel pulled localmente | `cd admin-panel && npx vercel env pull .env.render --environment production --yes` |
-| GitHub Secrets | usados nos 3 workflows | https://github.com/marcelomar21/bets-estatistica/settings/secrets/actions |
-| Render Env Group `bets-secrets` | usado pelos 3 serviços Render | Console Render → Env Groups |
-| Vercel Env Vars (admin-panel) | runtime do admin-panel | Vercel → projeto admin-panel → Settings → Environment Variables |
-| Vercel Env Vars (landing-page) | runtime da landing | idem para projeto landing-page |
-| macOS Keychain | token do Supabase CLI | `security find-generic-password -s "Supabase CLI" -w` |
+| GitHub Secrets | usados nos 3 workflows do CI | https://github.com/marcelomar21/bets-estatistica/settings/secrets/actions |
+| Render Env Group `bets-secrets` | runtime dos 3 serviços Render | Console Render → Env Groups → `bets-secrets` |
+| Vercel Env Vars (admin-panel) | runtime do admin-panel | Vercel → projeto `admin-panel` → Settings → Environment Variables |
+| Vercel Env Vars (landing-page) | runtime da landing-page | Vercel → projeto `landing-page` → Settings → Environment Variables |
 
-### Templates de exemplo (sem valores reais)
+### Setup local do zero (próximo dev)
 
-- **`.env.example`** (raiz) — completo, com 30+ env vars do bot
-- **`admin-panel/.env.example`** — admin-panel (7 env vars)
+⚠️ **Importante**: o repo **só tem templates** (`.env.example`, `admin-panel/.env.example`). Os arquivos com valores reais (`.env`, `admin-panel/.env.local`, `admin-panel/.env.render`) são gitignored — **não vêm no clone** e ficam só na máquina do dev anterior. O próximo dev precisa criá-los do zero.
 
-> **Sempre copiar e preencher antes de rodar local**:
-> ```bash
-> cp .env.example .env
-> cp admin-panel/.env.example admin-panel/.env.local
-> ```
+**Templates disponíveis no repo:**
+- `.env.example` (raiz) — 30+ env vars do bot
+- `admin-panel/.env.example` — 7 env vars do admin-panel
+
+**Passo a passo para o próximo dev:**
+
+```bash
+# 1. Clonar e instalar
+git clone https://github.com/marcelomar21/bets-estatistica
+cd bets-estatistica
+nvm install 20 && nvm use 20
+npm install
+cd admin-panel && npm install && cd ..
+
+# 2. Criar os arquivos de env a partir dos templates
+cp .env.example .env
+cp admin-panel/.env.example admin-panel/.env.local
+
+# 3. Preencher cada variável (ver opções abaixo)
+
+# 4. Validar setup
+npm test                          # roda Jest do bot
+cd admin-panel && npm test        # roda Vitest do admin
+cd admin-panel && npm run build   # build do Next com TS strict
+```
+
+**Como obter o valor real de cada variável** (consultar tabela acima e cruzar com este checklist):
+
+1. **Variáveis que existem na nuvem** → o próximo dev recebe acesso à conta correspondente e pega de lá:
+   - **Vercel** (`admin-panel`): rodar `cd admin-panel && npx vercel env pull .env.render --environment production --yes` (precisa estar logado: `npx vercel login`). Isso baixa todas as env vars do projeto Vercel para `admin-panel/.env.render`. Daí pode copiar o que precisar.
+   - **Render** (`bets-secrets`): abrir Console Render → Env Groups → `bets-secrets` e copiar manualmente (não há CLI oficial).
+   - **GitHub Secrets**: não dá pra ler valores existentes (apenas escrever) — pegar do mesmo lugar de onde foram colocados originalmente (Vercel/Render/Marcelo).
+
+2. **Variáveis que existem só na máquina do dev anterior** (chaves que nunca foram para a nuvem, ou geradas localmente):
+   - Pedir ao operador anterior (Marcelo, `marcelomar21@gmail.com`) que entregue de forma segura — 1Password share, arquivo encriptado via Signal/Telegram, ou colar manualmente em chamada de vídeo.
+
+3. **Variáveis que podem ser geradas do zero pelo novo dev** (não precisam ser herdadas):
+   - `WHATSAPP_ENCRYPTION_KEY`, `ENCRYPTION_KEY` → `openssl rand -hex 32` (mas atenção: rotacionar `WHATSAPP_ENCRYPTION_KEY` invalida todas as sessões Baileys salvas no banco)
+   - `BOT_PREVIEW_API_KEY` → string aleatória qualquer, só precisa ser igual nos dois lados (admin e bot)
+   - `SEED_ADMIN_PASSWORD` → qualquer senha forte, só usada em scripts de seed dev
+
+4. **Variáveis que precisam ser obtidas direto no painel do serviço** (independente do dev anterior):
+   - `OPENAI_API_KEY` → criar nova em https://platform.openai.com/api-keys (precisa ter sido convidado para a org da conta OpenAI do projeto)
+   - `FOOTYSTATS_API_KEY` → painel FootyStats (login do projeto)
+   - `THE_ODDS_API_KEY` → painel The Odds API (login do projeto)
+   - `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` → painel Mercado Pago (login do projeto)
+   - `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` → https://my.telegram.org → API Development Tools (login com o número Telegram do owner)
+
+**Token do Supabase CLI** (usado em scripts de migration):
+- Não é env var, fica no macOS Keychain após `supabase login`
+- O próximo dev roda `supabase login` na sua própria máquina e o token novo dele entra no Keychain dele
+- Para extrair via script: `security find-generic-password -s "Supabase CLI" -w | sed 's/go-keyring-base64://' | base64 -d`
 
 ---
 
@@ -487,19 +531,21 @@ Definidos em `bot/server.scheduler.js`. Executam só enquanto o serviço Render 
 
 Pausar tudo: basta suspender o serviço `bets-bot-unified` no Render.
 
-### 9.3. launchd (macOS — apenas no Mac do operador)
+### 9.3. launchd (macOS — só executa em máquina onde os plists foram manualmente instalados)
 
-Plists em `scripts/launchd/`. Apenas para limpeza one-off de "ghost members":
+Plists em `scripts/launchd/` no repo. Apenas para limpeza one-off de "ghost members" (não é cron permanente — são 2 disparos únicos em 2026-05-01).
 
 | Plist | Quando dispara | O que faz |
 |---|---|---|
 | `com.gurubet.evict-ghost-dry.plist` | **2026-05-01 14:00 BRT** (one-off) | dry-run da eviction |
 | `com.gurubet.evict-ghost-apply.plist` | **2026-05-01 15:00 BRT** (one-off) | aplica a eviction |
 
-⚠️ Importante:
-- O caminho hardcoded no plist é `/Users/wehandle/Projetos/pessoal/bets-estatistica` — **não corresponde ao Mac atual** (`/Users/marcelomendes/...`). Se ainda estiverem instalados em `~/Library/LaunchAgents/`, **vão falhar silenciosamente** quando dispararem.
-- Os plists têm guard de ano "2026 only" no script `run-evict-ghost.sh` — não vão re-disparar em 2027+.
-- A data 2026-05-01 já passou (hoje é 2026-05-03), então o agendamento já fez ou perdeu o trigger.
+**Como funciona o launchd nesse caso**: os plists só executam se forem copiados manualmente para `~/Library/LaunchAgents/` da máquina e carregados com `launchctl load`. O repo guarda apenas as cópias de referência — clonar o repo não ativa nada.
+
+⚠️ Importante para o próximo dev:
+- O caminho hardcoded dentro dos plists é `/Users/wehandle/Projetos/pessoal/bets-estatistica` — não corresponde a nenhum Mac atual. Quem quiser ressuscitar essa lógica precisa **editar o caminho** no plist antes de instalar.
+- Os plists têm guard de ano "2026 only" no script `run-evict-ghost.sh` — não vão re-disparar em 2027+ mesmo se forem instalados.
+- A data 2026-05-01 já passou (hoje é 2026-05-03), então mesmo se estiverem instalados em algum Mac, o agendamento já passou. Não há ação pendente.
 
 ### 9.4. Webhooks (event-driven, não agendados)
 
@@ -630,7 +676,7 @@ Manter o projeto criado mas parar de receber tráfego em produção:
 
 **Opção A — Disable production deployments (mantém URL viva temporariamente até cache expirar):**
 1. Vercel → projeto `admin-panel` → Settings → Git → toggle "Production Deployment" off
-2. Idem para `landing-page`
+2. Vercel → projeto `landing-page` → Settings → Git → toggle "Production Deployment" off
 
 **Opção B — Remover domínio custom (mais agressivo):**
 1. Settings → Domains → remover `admin.gurudabet.com.br`
