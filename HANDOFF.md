@@ -753,24 +753,24 @@ Se quiser ser ainda mais cauteloso: **revogar as API keys** nos respectivos pain
 
 ## 13. Como religar o projeto
 
+> 💡 **Atalho**: existe uma skill Claude Code que executa todo este procedimento passo a passo, com confirmação humana entre cada etapa e validações automáticas. Para usar: dentro do Claude Code, invoque a skill `religar-produto` (`.claude/skills/religar-produto/SKILL.md`). Ela cobre os 3 sub-itens abaixo (pré-requisitos, religar serviços, sanity check) com comandos exatos e perguntas de confirmação. Se preferir executar manualmente sem a skill, siga os passos abaixo na ordem.
+
 Sequência inversa do shutdown, mais alguns passos:
 
-### 13.1. Pré-requisitos no Mac novo
+### 13.1. Pré-requisitos na máquina nova
 1. Clonar o repo: `git clone https://github.com/marcelomar21/bets-estatistica`
 2. Instalar Node 20: `nvm install 20 && nvm use 20`
 3. Instalar deps: `npm install` (raiz) + `cd admin-panel && npm install`
-4. Restaurar arquivos de env do cofre:
-   - `.env` (raiz)
-   - `admin-panel/.env.local`
+4. Criar `.env` e `admin-panel/.env.local` a partir dos templates (`.env.example`, `admin-panel/.env.example`) e preencher conforme seção 7 ("Setup local do zero")
 
 ### 13.2. Religar serviços (ordem reversa)
 1. **Supabase**: console → Restore project (espera ~5 min)
-2. **Render**: console → cada serviço → Resume
-3. **Vercel**: re-habilitar production deploy → trigger redeploy (push vazio em main ou botão Redeploy)
-4. **Telegram**: Render bot ao subir já registra webhook automaticamente
-5. **Mercado Pago**: re-habilitar webhook no painel
-6. **GitHub**: `gh workflow enable "<nome>"` para os 3 workflows
-7. (Opcional) Atualizar API keys revogadas nos painéis dos serviços e propagar para GH Secrets / Vercel / Render env group
+2. **Render**: console → cada serviço (`bets-bot-unified`, `bets-webhook`, `bets-whatsapp`) → Resume
+3. **Vercel**: re-habilitar production deploy → trigger redeploy (push vazio em main ou botão Redeploy) nos 2 projetos (`admin-panel`, `landing-page`)
+4. **Telegram**: o `bets-bot-unified` re-registra webhooks automaticamente no startup ao ler `bot_pool`
+5. **Mercado Pago**: re-habilitar webhook no painel MP
+6. **GitHub**: `gh workflow enable "CI/CD"`, `gh workflow enable "Daily Pipeline"`, `gh workflow enable "Odds Collector"`
+7. (Opcional) Atualizar API keys revogadas nos painéis dos serviços e propagar para GH Secrets / Vercel env / Render env group
 
 ### 13.3. Sanity check
 ```bash
