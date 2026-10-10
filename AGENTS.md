@@ -1,0 +1,234 @@
+# Project: bets-estatistica (GuruBet)
+
+## Regra: Sem truncamento de conteudo (OBRIGATORIO)
+
+**NUNCA** truncar, cortar ou limitar conteudo por contagem de caracteres. Isso causa perda de informacao.
+
+- Sem `.substring()`, `.slice()`, `.substr()` para cortar texto de mensagens, reasoning, copy ou analise
+- Sem limites artificiais de caracteres em prompts LLM (ex: "maximo 40 caracteres por bullet")
+- Sem "..." ou ellipsis para indicar texto cortado
+- O unico limite aceitavel e o do Telegram (4096 chars por mensagem) — nesse caso, dividir em multiplas mensagens, nunca truncar
+- Se encontrar truncamento existente no codigo, remover
+
+## LLM Models
+
+Configurados em `lib/config.js:84`:
+
+| Modelo | Uso | Valor atual |
+|--------|-----|-------------|
+| `config.llm.heavyModel` | Análise de jogos, avaliação de resultados | `gpt-5.4` |
+| `config.llm.lightModel` | Copy, interpretação de mercado, preview | `gpt-5.4-nano` |
+
+O bot usa LangChain (`@langchain/openai`) em `bot/services/copyService.js`. **Nunca** hardcodar modelo — sempre usar `config.llm.*`.
+
+## Supabase
+
+- **Project ref:** `vqrcuttvcgmozabsqqja`
+- **Region:** East US (North Virginia)
+- **Env file:** `admin-panel/.env.local`
+
+## Migrations
+
+As migrations SQL ficam em `sql/migrations/` com numeracao sequencial (ex: `028_descricao.sql`).
+
+### Como aplicar migrations
+
+Usar a **Supabase Management API** via curl:
+
+```bash
+curl -s -X POST "https://api.supabase.com/v1/projects/vqrcuttvcgmozabsqqja/database/query" \
+  -H "Authorization: Bearer <SUPABASE_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "<SQL_AQUI>"}'
+```
+
+O access token do CLI fica no macOS Keychain (service: "Supabase CLI"). Para extrair:
+
+```bash
+security find-generic-password -s "Supabase CLI" -w | sed 's/go-keyring-base64://' | base64 -d
+```
+
+### Verificar se a migration foi aplicada
+
+Consultar as policies/tabelas via a mesma API para confirmar que o objeto foi criado.
+
+Resposta `[]` (array vazio) indica sucesso para comandos DDL (CREATE, ALTER, DROP).
+
+## Validacao pre-merge (OBRIGATORIO)
+
+**SEMPRE** rodar **todos** os passos abaixo antes de criar PR ou mergear:
+
+1. `cd admin-panel && npm test` — roda vitest (testes unitarios)
+2. `npm run build` — roda o build do Next.js com checagem TypeScript strict
+3. **Playwright E2E** — abrir o navegador via Playwright MCP e testar o fluxo afetado na aplicacao rodando (`localhost:3000`). Verificar que a mudanca funciona de verdade na UI.
+
+Os tres devem passar sem erros. Nunca mergear apenas com testes unitarios + build.
+
+## Testes no navegador (E2E) — OBRIGATORIO
+
+O Playwright MCP esta configurado para testes via navegador.
+
+**SEMPRE rodar testes E2E via Playwright antes de criar PR.** Isso nao e opcional — faz parte da validacao pre-merge assim como `npm test` e `npm run build`.
+
+### Quando rodar
+
+- **Qualquer mudanca em API routes** (`/api/**`): testar a funcionalidade correspondente na UI
+- **Qualquer mudanca em componentes** (`/components/**`): testar o componente no navegador
+- **Qualquer mudanca em lib** (`/lib/**`): testar o fluxo que usa aquela lib na UI
+- Na duvida, **sempre rodar**. Melhor testar demais do que de menos.
+
+### Como rodar
+
+1. Garantir que o dev server esta rodando (`npm run dev` no admin-panel)
+2. Usar o Playwright MCP para navegar ate a pagina afetada
+3. Executar o fluxo completo que a mudanca afeta
+4. Verificar resultado final (nao apenas acao intermediaria)
+
+### Rigor nos testes E2E (OBRIGATORIO)
+
+Ao testar fluxos via Playwright, ser **extremamente criterioso**:
+
+- **Validar o resultado final**, nao apenas a acao intermediaria. Se o fluxo envolve enviar algo ao Telegram, abrir o Telegram Web e verificar que a mensagem chegou corretamente.
+- **Questionar mensagens de sucesso**: se o sistema diz "promovido com sucesso" mas o item nao aparece onde deveria, isso e um bug — reportar imediatamente.
+- **Testar fluxos completos end-to-end**: nao parar no meio. Se o teste e "promover e postar", ir ate o final e verificar no destino (Telegram, banco, etc).
+- **Validar pre-condicoes**: antes de executar uma acao (ex: promover), verificar se a aposta tem os dados necessarios (link, odds). Se nao tem, o sistema deveria bloquear — se nao bloqueia, e bug.
+- **Nao ignorar inconsistencias**: se algo parece errado (contadores nao batem, item sumiu, mensagem no lugar errado), investigar e reportar.
+
+## Admin Panel — Credenciais de teste
+
+| Role | Email | Senha |
+|------|-------|-------|
+| super_admin | `super@admin.test` | `admin123` |
+
+## Telegram — Debug de mensagens
+
+### Servicos no Render
+
+Projeto **GuruBet** (`prj-d5hos5n5r7bs73bjc190`) no workspace "My Workspace":
+
+| Service ID | Nome | Funcao |
+|---|---|---|
+| `srv-d6fliv6a2pns7382ckd0` | bets-bot-unified | Bot principal (BOT_MODE=group) |
+| `srv-d5m5cmje5dus73e8ds10` | bets-webhook | Webhook de pagamento (Mercado Pago) |
+
+Ambos estao no environment **Production** (`evm-d5hos5n5r7bs73bjc19g`).
+
+### Passo 1: Obter RENDER_API_KEY (esta no Vercel)
+
+```bash
+cd admin-panel && npx vercel env pull .env.render --environment production --yes
+```
+
+### Passo 2: Obter BOT_TOKEN do Render
+
+```bash
+source admin-panel/.env.render && \
+curl -s "https://api.render.com/v1/services/srv-d6fliv6a2pns7382ckd0/env-vars" \
+  -H "Authorization: Bearer $RENDER_API_KEY" | \
+  python3 -c "import sys,json; [print(v['envVar']['value']) for v in json.load(sys.stdin) if v['envVar']['key']=='TELEGRAM_BOT_TOKEN']"
+```
+
+### Passo 3: Diagnosticar grupo/chat no Telegram
+
+```bash
+# Verificar se o bot tem acesso a um grupo
+curl -s "https://api.telegram.org/bot<TOKEN>/getChat?chat_id=<CHAT_ID>" | python3 -m json.tool
+
+# Verificar webhook ativo
+curl -s "https://api.telegram.org/bot<TOKEN>/getWebhookInfo" | python3 -m json.tool
+```
+
+### Passo 4: Consultar execucoes de jobs (Supabase)
+
+```bash
+# Ultimas 5 execucoes de post manual
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/job_executions?order=created_at.desc&limit=5&job_name=eq.post-bets-manual" \
+  -H "apikey: <SUPABASE_SERVICE_KEY>" \
+  -H "Authorization: Bearer <SUPABASE_SERVICE_KEY>" | python3 -m json.tool
+
+# Ultimas 5 execucoes de distribute-bets
+curl -s "https://vqrcuttvcgmozabsqqja.supabase.co/rest/v1/job_executions?order=created_at.desc&limit=5&job_name=eq.distribute-bets" \
+  -H "apikey: <SUPABASE_SERVICE_KEY>" \
+  -H "Authorization: Bearer <SUPABASE_SERVICE_KEY>" | python3 -m json.tool
+```
+
+O SUPABASE_SERVICE_KEY esta em `admin-panel/.env.local` (variavel `SUPABASE_SERVICE_KEY`).
+
+### IDs dos grupos
+
+| Grupo | Chat ID |
+|---|---|
+| Osmar Palpites (admin) | `-1003363567204` |
+| Osmar Palpites (publico) | `-1003647535811` |
+| GuruBet (publico) | `-1003659711655` |
+| CAP 1000 Tips | `-1003836475731` |
+| Rajizito Tips (publico) | `-1003581390882` |
+| Zebrismos Tips | `-1003761566384` |
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**GuruBet**
+
+Plataforma SaaS multi-tenant para gestão de grupos de apostas esportivas no Telegram e WhatsApp. Influencers operam seus próprios grupos, o sistema usa IA (GPT via LangChain) para analisar partidas e gerar recomendações, distribui apostas automaticamente nos canais, e gerencia membros com cobrança via Mercado Pago. Admin Panel completo em Next.js para dashboard, configuração e operação.
+
+**Core Value:** Influencers recebem apostas analisadas por IA e as entregam automaticamente aos seus grupos com qualidade consistente — sem esforço manual, sem erro humano, sem downtime.
+
+### Constraints
+
+- **Multi-tenancy**: Toda query deve respeitar RLS e filtrar por group_id — isolamento de tenant é inviolável
+- **Telegram API**: Limite de 4096 chars por mensagem — dividir em múltiplas, nunca truncar
+- **WhatsApp (Baileys)**: Rate limit ~10-20 msgs/min por número, sessões WebSocket persistentes 24/7
+- **LLM Models**: Sempre via `config.llm.*`, nunca hardcodar — heavy/light model configuráveis
+- **Conventional Commits**: Obrigatório para todos os commits
+- **Testes obrigatórios**: Vitest (admin-panel) + Jest (bot) + Playwright E2E antes de qualquer PR
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:STACK.md -->
+## Technology Stack
+
+Technology stack not yet documented. Will populate after codebase mapping or first phase.
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+Conventions not yet established. Will populate as patterns emerge during development.
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+Architecture not yet mapped. Follow existing patterns found in the codebase.
+<!-- GSD:architecture-end -->
+
+<!-- GSD:skills-start source:skills/ -->
+## Project Skills
+
+| Skill | Description | Path |
+|-------|-------------|------|
+| odds-collector |  | `.claude/skills/odds-collector/SKILL.md` |
+| pre-merge |  | `.claude/skills/pre-merge/SKILL.md` |
+| religar-produto | Religar GuruBet apos shutdown — passo a passo interativo | `.claude/skills/religar-produto/SKILL.md` |
+| vault-explore |  | `.claude/skills/vault-explore/SKILL.md` |
+<!-- GSD:skills-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->
